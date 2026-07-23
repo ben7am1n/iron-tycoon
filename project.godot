@@ -1,0 +1,17 @@
+; Godot 4.7.1 Project Configuration
+; Gym Manager — cozy gym management sim
+
+config_version=5
+
+[application]
+
+config/name="GymManager"
+config/features=PackedStringArray("4.7", "Forward Plus")
+
+[rendering]
+
+renderer/rendering_method.mobile="forward_plus"
+
+[input]
+
+; Placeholder — input map will be configured during UI implementation

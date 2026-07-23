@@ -40,6 +40,7 @@ dist/
 
 # === Engine: Godot ===
 .godot/
+!.godot/global_script_class_cache.cfg
 *.translation
 export_presets.cfg
 # Uncomment if using Godot:
