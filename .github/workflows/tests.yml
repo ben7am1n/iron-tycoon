@@ -1,0 +1,26 @@
+name: Automated Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Run Headless Tests (Godot 4.7.1)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Run Headless Test Suite
+        uses: ./
+        # Godot 4.7.1 headless — 纯 SceneTree runner，零插件依赖
+        # 注意：核心集成测试依赖 prototypes/ 下的实现类
+        # 正式 src/ 代码产出后，preload 路径会切换
+        run: |
+          godot --headless --script tests/headless_runner.gd
