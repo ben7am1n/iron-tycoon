@@ -5,8 +5,18 @@
 #      --script res://src/sim/integration_test.gd
 # （源文件仍在原型项目中——本文件是生产标准化版本）
 
-# 注意：此测试依赖原型项目的 src/ 实现类。
-# 待正式 src/ 代码产出后，preload 路径会从 prototypes/ 改为 src/。
+# ⚠️ 已隔离 —— 见 tests/headless_runner.gd 的 PENDING_FILES，不在 CI 中运行。
+#
+# 原因（两条，都必须解决）：
+#   1. 下方 preload 路径 `res://../../prototypes/...` 无法解析 —— res:// 已是项目根，
+#      不能再向上跳。此脚本从未加载成功过：旧 runner 忽略了 load() 失败，
+#      于是它一边从未运行、一边被报告为通过。
+#   2. 即便路径修对，它测的仍是原型实现，违反 .claude/rules/prototype-code.md。
+#
+# 重新启用的前提：core 层 epic 落地 —— PlacementSystem + Navigation + MemberSim
+# + Congestion 的 src/ 实现产出后，把 preload 指向 src/、按真实 API 重写断言，
+# 再把 path 移入 TEST_FILES。断言本身（决定性、布局影响人流、access 阻塞）是
+# 垂直切片验证过的核心循环规格，值得保留。
 extends Node
 
 const GRID_SYSTEM := preload("res://../../prototypes/gym-flow-vertical-slice/src/core/grid_system.gd")
@@ -35,7 +45,8 @@ func _init() -> void:
 	print("=".repeat(48))
 
 
-func run_all() -> bool:
+## 返回 {"pass": int, "fail": int} —— 见 tests/headless_runner.gd 的测试文件契约
+func run_all() -> Dictionary:
 	_test_determinism()
 	_test_layout_matters()
 	_test_access_blocked()
@@ -43,7 +54,7 @@ func run_all() -> bool:
 	_test_placement()
 	_test_overlay()
 	print("\n=== INTEGRATION TEST: %d passed, %d failed ===" % [_pass, _fail])
-	return _fail == 0
+	return {"pass": _pass, "fail": _fail}
 
 
 func _check(cond: bool, msg: String) -> void:

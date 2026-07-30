@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main]
 
+env:
+  GODOT_VERSION: 4.7.1
+
 jobs:
   test:
     name: Run Headless Tests (Godot 4.7.1)
@@ -17,10 +20,29 @@ jobs:
         with:
           lfs: true
 
-      - name: Run Headless Test Suite
-        uses: ./
-        # Godot 4.7.1 headless — 纯 SceneTree runner，零插件依赖
-        # 注意：核心集成测试依赖 prototypes/ 下的实现类
-        # 正式 src/ 代码产出后，preload 路径会切换
+      - name: Cache Godot binary
+        id: cache-godot
+        uses: actions/cache@v4
+        with:
+          path: ~/godot-bin
+          key: godot-${{ env.GODOT_VERSION }}-linux-x86_64
+
+      - name: Download Godot ${{ env.GODOT_VERSION }}
+        if: steps.cache-godot.outputs.cache-hit != 'true'
         run: |
-          godot --headless --script tests/headless_runner.gd
+          set -euo pipefail
+          mkdir -p ~/godot-bin
+          archive="Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          curl -fsSL -o /tmp/godot.zip \
+            "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/${archive}"
+          unzip -q /tmp/godot.zip -d /tmp/godot
+          mv "/tmp/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" ~/godot-bin/godot
+          chmod +x ~/godot-bin/godot
+
+      - name: Verify Godot version
+        run: ~/godot-bin/godot --headless --version
+
+      - name: Run headless test suite
+        # runner 以退出码 1 表示任何失败：断言失败、空测试、解析错误、
+        # 或磁盘上存在却未注册的测试文件。隔离测试会打印为 SKIPPED，不影响退出码。
+        run: ~/godot-bin/godot --headless --script tests/headless_runner.gd

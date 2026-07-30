@@ -4,11 +4,23 @@
 # Run standalone: godot --headless --script tests/unit/grid_system/grid_core_cell_data_test.gd
 extends SceneTree
 
+const RUNNER_META := "gym_manager_test_runner_active"
+
 var _pass := 0
 var _fail := 0
 
 
+## 被 tests/headless_runner.gd 托管时立即返回 —— 用例由 runner 调用的 run_all() 驱动。
+## 否则 script.new() 触发的 _init() 与随后的 run_all() 会让每个用例跑两遍。
 func _init() -> void:
+	if Engine.has_meta(RUNNER_META):
+		return
+	var result := run_all()
+	quit(1 if int(result["fail"]) > 0 else 0)
+
+
+## 返回 {"pass": int, "fail": int} —— 见 tests/headless_runner.gd 的测试文件契约
+func run_all() -> Dictionary:
 	print("=".repeat(48))
 	print("  UNIT TEST: GridSystem — Cell Data Model (Story 001)")
 	print("=".repeat(48))
@@ -30,12 +42,7 @@ func _init() -> void:
 	_test_sim_system_base_class_not_directly_instantiable()
 
 	print("\n=== GRID CORE CELL DATA TEST: %d passed, %d failed ===" % [_pass, _fail])
-	quit(_fail > 0)
-
-
-func run_all() -> bool:
-	_init()
-	return _fail == 0
+	return {"pass": _pass, "fail": _fail}
 
 
 func _check(cond: bool, msg: String) -> void:

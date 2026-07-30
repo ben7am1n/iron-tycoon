@@ -2,7 +2,24 @@
 # 迁自 prototypes/gym-flow-vertical-slice/src/core/smoke_test.gd
 # 覆盖：GridSystem + SeededRNG 基础正确性
 # Run: godot --headless --script tests/smoke/core_smoke_test.gd
+#
+# ⚠️ 已隔离 —— 见 tests/headless_runner.gd 的 PENDING_FILES，不在 CI 中运行。
+#
+# 原因：下方 preload 从 prototypes/ 导入实现代码，违反 .claude/rules/prototype-code.md
+#   ("No production code may reference or import from prototypes/")。断言本身有价值，
+#   但它们针对的是原型 API（`GridSystem.new(region, buildable)` / `commit()` /
+#   `can_place()` / `get_speculative_snapshot()`），与 src/systems/grid_system.gd 的
+#   实际 API 不一致 —— 所以不能简单改指向 src/，必须等对应能力落地后重写。
+#
+# 重新启用的前提（改 preload 指向 src/ + 按 src API 重写断言，再移入 TEST_FILES）：
+#   - is_solid()              ← grid-system story-002
+#   - can_place()             ← grid-system story-004
+#   - commit() / clear()      ← grid-system story-005
+#   - 投机快照                ← grid-system story-006
+#   - SeededRNG               ← time-system story-003
 extends SceneTree
+
+const RUNNER_META := "gym_manager_test_runner_active"
 
 const SEEDED_RNG := preload("res://prototypes/gym-flow-vertical-slice/src/core/seeded_rng.gd")
 const GRID_SYSTEM := preload("res://prototypes/gym-flow-vertical-slice/src/core/grid_system.gd")
@@ -18,19 +35,23 @@ class SignalCounter extends RefCounted:
 		count += 1
 
 
+## 被 tests/headless_runner.gd 托管时立即返回 —— 用例由 runner 调用的 run_all() 驱动
 func _init() -> void:
+	if Engine.has_meta(RUNNER_META):
+		return
+	var result := run_all()
+	quit(1 if int(result["fail"]) > 0 else 0)
+
+
+## 返回 {"pass": int, "fail": int} —— 见 tests/headless_runner.gd 的测试文件契约
+func run_all() -> Dictionary:
 	print("=".repeat(48))
 	print("  SMOKE TEST: GridSystem + SeededRNG")
 	print("=".repeat(48))
 	_test_rng()
 	_test_grid()
 	print("\n=== SMOKE TEST: %d passed, %d failed ===" % [_pass, _fail])
-	quit(_fail > 0)
-
-
-func run_all() -> bool:
-	_init()
-	return _fail == 0
+	return {"pass": _pass, "fail": _fail}
 
 
 func _check(cond: bool, msg: String) -> void:
