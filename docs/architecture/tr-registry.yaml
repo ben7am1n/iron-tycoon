@@ -24,33 +24,1414 @@
 #
 # STATUS VALUES: active | deprecated | superseded-by: TR-[system]-NNN
 
-version: 1
-last_updated: ""
+version: 2
+last_updated: "2026-07-21"
 
-requirements: []
+requirements:
+  # ============================================================
+  # GridSystem (TR-GS-*)
+  # ============================================================
+  - id: TR-GS-001
+    system: grid-system
+    gdd: design/gdd/grid-system.md
+    requirement: "Origin (0,0) at room bounding-box top-left, col right-positive, row down-positive"
+    created: 2026-07-21
+    revised: ""
+    status: active
 
-# --- EXAMPLE ENTRIES (remove when first real entries are added) ---
-#
-# - id: TR-combat-001
-#   system: combat
-#   gdd: design/gdd/combat-system.md
-#   requirement: "Player takes damage from enemies based on attack power minus defence"
-#   created: 2026-03-10
-#   revised: ""
-#   status: active
-#
-# - id: TR-combat-002
-#   system: combat
-#   gdd: design/gdd/combat-system.md
-#   requirement: "Combo window timing is 0.4 seconds between hits"
-#   created: 2026-03-10
-#   revised: "2026-04-01"
-#   status: active
-#
-# - id: TR-combat-003
-#   system: combat
-#   gdd: design/gdd/combat-system.md
-#   requirement: "Old damage formula using raw stats"
-#   created: 2026-03-10
-#   revised: ""
-#   status: superseded-by: TR-combat-001
+  - id: TR-GS-002
+    system: grid-system
+    gdd: design/gdd/grid-system.md
+    requirement: "Orthogonal square grid (CELL_SHAPE_SQUARE); isometric appearance is art-only"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-GS-003
+    system: grid-system
+    gdd: design/gdd/grid-system.md
+    requirement: "Two orthogonal dimensions per cell: buildable (bool, static) and occupant_id (int, dynamic)"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-GS-004
+    system: grid-system
+    gdd: design/gdd/grid-system.md
+    requirement: "occupant_id stored as PackedInt32Array indexed by flat_index (y*width+x); -1 sentinel for empty"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-GS-005
+    system: grid-system
+    gdd: design/gdd/grid-system.md
+    requirement: "buildable stored as PackedByteArray (static, loaded once, read-only during gameplay)"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-GS-006
+    system: grid-system
+    gdd: design/gdd/grid-system.md
+    requirement: "access_ids stored as sparse Dictionary (most cells empty, dense array would waste memory)"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-GS-007
+    system: grid-system
+    gdd: design/gdd/grid-system.md
+    requirement: "occupant_id and access_ids are two independent fields, must not be merged"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-GS-008
+    system: grid-system
+    gdd: design/gdd/grid-system.md
+    requirement: "occupant_id is single-value (mutually exclusive per cell)"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-GS-009
+    system: grid-system
+    gdd: design/gdd/grid-system.md
+    requirement: "access_ids is multi-value (non-mutually-exclusive per cell, multiple equipment can share access cell)"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-GS-010
+    system: grid-system
+    gdd: design/gdd/grid-system.md
+    requirement: "GridSystem only stores integer occupant_id, never equipment type or zone membership"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-GS-011
+    system: grid-system
+    gdd: design/gdd/grid-system.md
+    requirement: "Anchor convention: (0,0) = declared bounding box top-left of canonical(0 degree) footprint+access union"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-GS-012
+    system: grid-system
+    gdd: design/gdd/grid-system.md
+    requirement: "Rotation transform: 4-branch formula using union bounding box (W,H), called once with same (W,H) for footprint AND access"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-GS-013
+    system: grid-system
+    gdd: design/gdd/grid-system.md
+    requirement: "footprint and access MUST share same declared bounding box for rotation -- using footprint-only bbox causes negative coordinates at 90/270"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-GS-014
+    system: grid-system
+    gdd: design/gdd/grid-system.md
+    requirement: "get_transformed_cells() returns TransformedFootprint composite, never accepts bare cell set"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-GS-015
+    system: grid-system
+    gdd: design/gdd/grid-system.md
+    requirement: "can_place() returns one of 5 FAIL codes: OUT_OF_BOUNDS, BLOCKED_BY_ROOM_GEOMETRY, OVERLAPS_EXISTING_EQUIPMENT, ACCESS_OUT_OF_BOUNDS, ACCESS_BLOCKED_BY_ROOM_GEOMETRY"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-GS-016
+    system: grid-system
+    gdd: design/gdd/grid-system.md
+    requirement: "access cells NOT included in is_solid; occupancy of access cell by footprint is allowed (access_blocked scenario)"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-GS-017
+    system: grid-system
+    gdd: design/gdd/grid-system.md
+    requirement: "commit()/clear() with reverse index; reverse index is mandatory, not optional"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-GS-018
+    system: grid-system
+    gdd: design/gdd/grid-system.md
+    requirement: "instance_id >= 0 monotonic integer, never reused within session; PlacementSystem allocates, GridSystem consumes"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-GS-019
+    system: grid-system
+    gdd: design/gdd/grid-system.md
+    requirement: "serialize() stores reverse index; deserialize() is two-stage validate-then-commit, all-or-nothing"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-GS-020
+    system: grid-system
+    gdd: design/gdd/grid-system.md
+    requirement: "buildable NOT in save file -- injected separately by level loader before deserialize"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-GS-021
+    system: grid-system
+    gdd: design/gdd/grid-system.md
+    requirement: "grid_changed(footprint_cells_changed, access_cells_changed) emitted once per commit/clear, never on drag preview"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-GS-022
+    system: grid-system
+    gdd: design/gdd/grid-system.md
+    requirement: "is_solid(cell) = NOT buildable(cell) OR occupant_id(cell) != -1; access_ids explicitly excluded"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-GS-023
+    system: grid-system
+    gdd: design/gdd/grid-system.md
+    requirement: "GridSystem extends RefCounted, NOT Node/Autoload/singleton; injected via SimulationOrchestrator"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-GS-024
+    system: grid-system
+    gdd: design/gdd/grid-system.md
+    requirement: "GridStateReader abstract base class shared by GridSystem and GridSnapshot; @abstract methods for read surface"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-GS-025
+    system: grid-system
+    gdd: design/gdd/grid-system.md
+    requirement: "ZoneRules.evaluate(snapshot: GridStateReader) typed to abstract base, cannot distinguish real vs speculative"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-GS-026
+    system: grid-system
+    gdd: design/gdd/grid-system.md
+    requirement: "Commit-to-grid must succeed at 130 cells MVP; get_snapshot() < 100us expected"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-GS-027
+    system: grid-system
+    gdd: design/gdd/grid-system.md
+    requirement: "Drag smoke test: 300 consecutive get_speculative_snapshot calls must total < 50ms, single max < 5ms"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-GS-028
+    system: grid-system
+    gdd: design/gdd/grid-system.md
+    requirement: "Footprint shapes: 1x1, 1x2, 2x2 rectangular AABB only; L-shapes permanently excluded"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-GS-029
+    system: grid-system
+    gdd: design/gdd/grid-system.md
+    requirement: "rotation typed as enum Rotation; exhaust 4 branches + assert(false) fallback, never silent fallthrough"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-GS-030
+    system: grid-system
+    gdd: design/gdd/grid-system.md
+    requirement: "occupant_id = 0 is legal (first piece placed); truthy check is a bug"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  # ============================================================
+  # EquipmentCatalog (TR-EC-*)
+  # ============================================================
+  - id: TR-EC-001
+    system: equipment-catalog
+    gdd: design/gdd/equipment-catalog.md
+    requirement: "EquipmentDef immutable record: id, display_name, zone_membership, footprint_cells, access_cells, cost, unlock_requirement, effects, use_duration_mean/stddev/min/max_ticks"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-EC-002
+    system: equipment-catalog
+    gdd: design/gdd/equipment-catalog.md
+    requirement: "footprint_cells shapes locked to 1x1, 1x2, 2x2 rectangular AABB; access_cells = exactly 1 cell orthogonally adjacent"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-EC-003
+    system: equipment-catalog
+    gdd: design/gdd/equipment-catalog.md
+    requirement: "anchor_normalization at load: subtract (min_x, min_y) from union bbox; result must have min == (0,0)"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-EC-004
+    system: equipment-catalog
+    gdd: design/gdd/equipment-catalog.md
+    requirement: "Load-time validation: footprint non-empty, anchor normalized, access∩footprint empty, access count==1, use_duration fields valid"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-EC-005
+    system: equipment-catalog
+    gdd: design/gdd/equipment-catalog.md
+    requirement: "Catalog frozen after load; no runtime writes, only get_definition(id) read-only query"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-EC-006
+    system: equipment-catalog
+    gdd: design/gdd/equipment-catalog.md
+    requirement: "strict_mode injectable boolean controls debug-abort vs release-skip-and-push_error behavior"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-EC-007
+    system: equipment-catalog
+    gdd: design/gdd/equipment-catalog.md
+    requirement: "4 pre-rotated variants per equipment explicitly forbidden; only canonical 0 degree stored"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-EC-008
+    system: equipment-catalog
+    gdd: design/gdd/equipment-catalog.md
+    requirement: "provisional_equipment_cost = base_cost + tier_step * (footprint_area - 1); MVP values: 200/350/650"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-EC-009
+    system: equipment-catalog
+    gdd: design/gdd/equipment-catalog.md
+    requirement: "effects container = Array[{tag: String, magnitude: float}]; tag vocabulary owned by ZoneRules"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-EC-010
+    system: equipment-catalog
+    gdd: design/gdd/equipment-catalog.md
+    requirement: "Catalog loaded once at startup via DI injection; no Autoload"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  # ============================================================
+  # TimeSystem (TR-TS-*)
+  # ============================================================
+  - id: TR-TS-001
+    system: time-system
+    gdd: design/gdd/time-system.md
+    requirement: "Custom fixed-timestep accumulator independent of _physics_process; TICK_DURATION_SECONDS = 0.1 (10 Hz)"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-TS-002
+    system: time-system
+    gdd: design/gdd/time-system.md
+    requirement: "MAX_TICKS_PER_FRAME = 8 safety clamp; speed in {0,1,2,3}; pause freezes accumulator entirely"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-TS-003
+    system: time-system
+    gdd: design/gdd/time-system.md
+    requirement: "Fixed system call order: MemberSim -> Congestion -> Satisfaction -> Economy -> tick_count++ -> tick_completed"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-TS-004
+    system: time-system
+    gdd: design/gdd/time-system.md
+    requirement: "No mid-tick yielding (no await in on_tick); guarantees tick-boundary = safe save point"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-TS-005
+    system: time-system
+    gdd: design/gdd/time-system.md
+    requirement: "Per-system RNG sub-streams via FNV-1a64 + SplitMix64 derivation from master_seed"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-TS-006
+    system: time-system
+    gdd: design/gdd/time-system.md
+    requirement: "register_system(name) once per system, double=hard error; get_rng(name) idempotent"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-TS-007
+    system: time-system
+    gdd: design/gdd/time-system.md
+    requirement: "SplitMix64 requires logical right-shift (GDScript >> is arithmetic, must implement lsr helper)"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-TS-008
+    system: time-system
+    gdd: design/gdd/time-system.md
+    requirement: "serialize(): tick_count, master_seed, per_system_rng_states, speed_multiplier, paused"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-TS-009
+    system: time-system
+    gdd: design/gdd/time-system.md
+    requirement: "deserialize() restores each sub-stream's exact internal state, not re-derived from master_seed"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-TS-010
+    system: time-system
+    gdd: design/gdd/time-system.md
+    requirement: "Load always resumes PAUSED regardless of saved speed"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-TS-011
+    system: time-system
+    gdd: design/gdd/time-system.md
+    requirement: "Determinism contract: same master_seed + same tick sequence = bit-identical replay"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-TS-012
+    system: time-system
+    gdd: design/gdd/time-system.md
+    requirement: "tick_accumulator float checked for drift across 72,000 ticks (< 1e-6s tolerance)"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  # ============================================================
+  # PlacementSystem (TR-PS-*)
+  # ============================================================
+  - id: TR-PS-001
+    system: placement-system
+    gdd: design/gdd/placement-system.md
+    requirement: "Single interactive surface for BOTH new placement and relocation (begin_relocate)"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-PS-002
+    system: placement-system
+    gdd: design/gdd/placement-system.md
+    requirement: "Live preview via GridSystem.can_place against REAL grid state each frame (no mutation)"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-PS-003
+    system: placement-system
+    gdd: design/gdd/placement-system.md
+    requirement: "Commit-on-drop: can_place check, allocate instance_id, GridSystem.commit, emit placement_committed"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-PS-004
+    system: placement-system
+    gdd: design/gdd/placement-system.md
+    requirement: "Rejected drop: no instance_id, no commit, no grid_changed; emit placement_rejected(fail_code)"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-PS-005
+    system: placement-system
+    gdd: design/gdd/placement-system.md
+    requirement: "Silent cancel (Esc/out-of-bounds/focus-loss): no signal at all"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-PS-006
+    system: placement-system
+    gdd: design/gdd/placement-system.md
+    requirement: "instance_id allocation: single monotonically-increasing counter; next_instance_id = max(all occupant_ids) + 1 on load"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-PS-007
+    system: placement-system
+    gdd: design/gdd/placement-system.md
+    requirement: "PlacementSystem stores NO data in save file; instance_id counter fully reconstructible from GridSystem"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-PS-008
+    system: placement-system
+    gdd: design/gdd/placement-system.md
+    requirement: "Relocate: begin_relocate clears occupancy at drag-START, re-commits same id on valid drop, restores on cancel"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-PS-009
+    system: placement-system
+    gdd: design/gdd/placement-system.md
+    requirement: "Cost/affordability out of scope; PlacementSystem assumes drag is pre-cleared by Shop"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-PS-010
+    system: placement-system
+    gdd: design/gdd/placement-system.md
+    requirement: "is_dragging() -> bool public query required by Shop/Purchase"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-PS-011
+    system: placement-system
+    gdd: design/gdd/placement-system.md
+    requirement: "PlacementSystem extends RefCounted; bridge Node forwards input events (owned by composition root)"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-PS-012
+    system: placement-system
+    gdd: design/gdd/placement-system.md
+    requirement: "Mouse-move preview forwarding must use InputEventMouseMotion, not _process polling"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  # ============================================================
+  # Navigation (TR-NAV-*)
+  # ============================================================
+  - id: TR-NAV-001
+    system: navigation
+    gdd: design/gdd/navigation.md
+    requirement: "Single AStarGrid2D instance; diagonal_mode = DIAGONAL_MODE_ONLY_IF_NO_OBSTACLES; HEURISTIC_OCTILE"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-NAV-002
+    system: navigation
+    gdd: design/gdd/navigation.md
+    requirement: "Cell-space only: get_id_path returns Array[Vector2i]; get_point_path forbidden"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-NAV-003
+    system: navigation
+    gdd: design/gdd/navigation.md
+    requirement: "Solidity sync: subscribe grid_changed, call set_point_solid + update() after push (corrected for 4.7.1)"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-NAV-004
+    system: navigation
+    gdd: design/gdd/navigation.md
+    requirement: "Congestion-blind: Congestion(t-1) NEVER enters path cost; influences target selection only"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-NAV-005
+    system: navigation
+    gdd: design/gdd/navigation.md
+    requirement: "Navigation contributes NOTHING to save file; AStarGrid2D rebuilt from GridSystem occupancy on load"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-NAV-006
+    system: navigation
+    gdd: design/gdd/navigation.md
+    requirement: "HARD GATE: AStarGrid2D cross-process tie-break stability unverified -- must pass before save-load trustable"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-NAV-007
+    system: navigation
+    gdd: design/gdd/navigation.md
+    requirement: "Path step cost: 1.0 orthogonal, sqrt(2) diagonal; octile heuristic admissible and consistent"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-NAV-008
+    system: navigation
+    gdd: design/gdd/navigation.md
+    requirement: "cell_size independence by construction (only cell indices, no world coords)"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  # ============================================================
+  # MemberSim (TR-MS-*)
+  # ============================================================
+  - id: TR-MS-001
+    system: member-sim
+    gdd: design/gdd/member-sim.md
+    requirement: "Tick-driven, runs FIRST each tick before Congestion; all randomness via get_rng('MemberSim') sub-stream"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-MS-002
+    system: member-sim
+    gdd: design/gdd/member-sim.md
+    requirement: "Member lifecycle state machine: ENTERING -> SELECTING_TARGET -> WALKING_TO -> [QUEUEING] -> USING -> LEAVING -> GONE"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-MS-003
+    system: member-sim
+    gdd: design/gdd/member-sim.md
+    requirement: "Target selection: build candidate pool, weight from Congestion(t-1)/distance/novelty, top-K=3-5, path-check, weighted-random draw"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-MS-004
+    system: member-sim
+    gdd: design/gdd/member-sim.md
+    requirement: "Access-cell reservation map: reservations[equipment_instance_id] = {occupant, next_claimant}; queue depth=1 MVP"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-MS-005
+    system: member-sim
+    gdd: design/gdd/member-sim.md
+    requirement: "Release invariant: member leaving without becoming occupant must clear next_claimant same tick"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-MS-006
+    system: member-sim
+    gdd: design/gdd/member-sim.md
+    requirement: "Fairness/determinism: all contention resolved by ascending member_id iteration order"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-MS-007
+    system: member-sim
+    gdd: design/gdd/member-sim.md
+    requirement: "Path invalidation: compare cached grid_version each tick; on mismatch re-query Navigation"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-MS-008
+    system: member-sim
+    gdd: design/gdd/member-sim.md
+    requirement: "member_arrival_rate: Bernoulli draw = clamp(base/min * TICK_DURATION * satisfaction_modifier * capacity_gate, 0, 1)"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-MS-009
+    system: member-sim
+    gdd: design/gdd/member-sim.md
+    requirement: "use_duration = round(clamp(randfn(mean, stddev), min, max)); per-equipment fields from EquipmentCatalog"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-MS-010
+    system: member-sim
+    gdd: design/gdd/member-sim.md
+    requirement: "exercises_per_visit = round(clamp(randfn(mean * visit_length_modifier, stddev), min=1, max=5))"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-MS-011
+    system: member-sim
+    gdd: design/gdd/member-sim.md
+    requirement: "member_id_counter MUST be serialized explicitly -- cannot re-derive from active set (retired ids would be reused)"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-MS-012
+    system: member-sim
+    gdd: design/gdd/member-sim.md
+    requirement: "member_id never reused; lifecycle ends at GONE, id retired permanently"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-MS-013
+    system: member-sim
+    gdd: design/gdd/member-sim.md
+    requirement: "entrance_cell and exit_cell = HARD upstream dependency on GridSystem/level definition"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-MS-014
+    system: member-sim
+    gdd: design/gdd/member-sim.md
+    requirement: "Emit member_completed_visit signal (only for quota-met departures)"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  # ============================================================
+  # Congestion (TR-CONG-*)
+  # ============================================================
+  - id: TR-CONG-001
+    system: congestion
+    gdd: design/gdd/congestion.md
+    requirement: "Runs SECOND each tick after MemberSim; pure function of member state, NO RNG"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-CONG-002
+    system: congestion
+    gdd: design/gdd/congestion.md
+    requirement: "Double-buffering: prev (read-only) and next (write target); single swap after all entities processed"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-CONG-003
+    system: congestion
+    gdd: design/gdd/congestion.md
+    requirement: "Per-equipment congestion [0,1] = occupancy tier + local density + EMA smoothing (alpha=0.3)"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-CONG-004
+    system: congestion
+    gdd: design/gdd/congestion.md
+    requirement: "Per-cell density field [0,1]: kernel splat (self=1.0, 4-neighbors=w_n) + EMA (beta=0.4) + normalization"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-CONG-005
+    system: congestion
+    gdd: design/gdd/congestion.md
+    requirement: "access_reachable flag: event-driven recompute on grid_changed via Navigation.get_path"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-CONG-006
+    system: congestion
+    gdd: design/gdd/congestion.md
+    requirement: "Serialize prev + per-cell smoothed; next transient; access_reachable recomputed on load"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-CONG-007
+    system: congestion
+    gdd: design/gdd/congestion.md
+    requirement: "Determinism requires fixed float-summation order (ascending cell index / ascending equipment_instance_id)"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-CONG-008
+    system: congestion
+    gdd: design/gdd/congestion.md
+    requirement: "Emit congestion_updated signal (10 Hz) for overlay consumption"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-CONG-009
+    system: congestion
+    gdd: design/gdd/congestion.md
+    requirement: "EMA smoothing: alpha=0.3 gives tau~3.3 ticks; prevents thrash"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  # ============================================================
+  # Congestion/Flow Overlay (TR-CFO-*)
+  # ============================================================
+  - id: TR-CFO-001
+    system: congestion-flow-overlay
+    gdd: design/gdd/congestion-flow-overlay.md
+    requirement: "Three render layers: heatmap (default OFF), per-equipment glyph (toggle-gated), access-blocked (always-on)"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-CFO-002
+    system: congestion-flow-overlay
+    gdd: design/gdd/congestion-flow-overlay.md
+    requirement: "Heatmap: 13x10 Image/ImageTexture + CanvasItem shader with per-sampler BILINEAR (exception to global Nearest)"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-CFO-003
+    system: congestion-flow-overlay
+    gdd: design/gdd/congestion-flow-overlay.md
+    requirement: "ImageTexture updated ONLY on congestion_updated signal (10 Hz), not in _process"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-CFO-004
+    system: congestion-flow-overlay
+    gdd: design/gdd/congestion-flow-overlay.md
+    requirement: "Per-equipment glyph: shape-fill primary, Dusty Rose tint secondary; colorblind-safe by construction"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-CFO-005
+    system: congestion-flow-overlay
+    gdd: design/gdd/congestion-flow-overlay.md
+    requirement: "Access-blocked MUST be default-visible on scene load (barricade/broken-link glyph at access cell, always-on)"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-CFO-006
+    system: congestion-flow-overlay
+    gdd: design/gdd/congestion-flow-overlay.md
+    requirement: "Placement rejection: 400ms hold delay, 2-bucket messages (footprint/access); 5 FAIL codes collapsed"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-CFO-007
+    system: congestion-flow-overlay
+    gdd: design/gdd/congestion-flow-overlay.md
+    requirement: "Information layering priority: access-blocked > placement ghost > congestion glyph > heatmap"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-CFO-008
+    system: congestion-flow-overlay
+    gdd: design/gdd/congestion-flow-overlay.md
+    requirement: "Heatmap dims to <=20% opacity during placement drag; restores on drag end"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-CFO-009
+    system: congestion-flow-overlay
+    gdd: design/gdd/congestion-flow-overlay.md
+    requirement: "density_to_heat: heat_alpha = smoothstep(low_cut=0.2, high_cut=0.8, density_cell); Dusty Rose #E0A0A0"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-CFO-010
+    system: congestion-flow-overlay
+    gdd: design/gdd/congestion-flow-overlay.md
+    requirement: "DrawableTexture2D explicitly NOT used for MVP (unverified against 4.7.1, zero benefit at 130 texels)"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-CFO-011
+    system: congestion-flow-overlay
+    gdd: design/gdd/congestion-flow-overlay.md
+    requirement: "Colorblind/high-contrast: every cue distinguishable by shape/fill/icon alone; high-contrast thickens outlines"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  # ============================================================
+  # ZoneRules (TR-ZR-*)
+  # ============================================================
+  - id: TR-ZR-001
+    system: zone-rules
+    gdd: design/gdd/zone-rules.md
+    requirement: "Pure function evaluate(snapshot: GridStateReader) -> Dictionary; no mutable state, no RNG"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-ZR-002
+    system: zone-rules
+    gdd: design/gdd/zone-rules.md
+    requirement: "Requires GridStateReader to expose get_placed_instances() -> Array[PlacedInstance] (hard prerequisite)"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-ZR-003
+    system: zone-rules
+    gdd: design/gdd/zone-rules.md
+    requirement: "Effect-tag vocabulary: comfort (Catalog-authored), zone_synergy (computed), spaciousness (computed); all non-negative"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-ZR-004
+    system: zone-rules
+    gdd: design/gdd/zone-rules.md
+    requirement: "zone_synergy = S_max * (1 - e^(-k * r_i)) where r_i = n_same_i / N_max_i (perimeter-normalized)"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-ZR-005
+    system: zone-rules
+    gdd: design/gdd/zone-rules.md
+    requirement: "spaciousness = C_max * (open_adj_i / total_adj_i); reads only static solidity, no member data"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-ZR-006
+    system: zone-rules
+    gdd: design/gdd/zone-rules.md
+    requirement: "Adjacency = orthogonal edge-sharing only (no diagonal), consistent with Navigation no-corner-cut rule"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-ZR-007
+    system: zone-rules
+    gdd: design/gdd/zone-rules.md
+    requirement: "ZoneRules has NO serialization; stateless pure function"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  # ============================================================
+  # Satisfaction (TR-SAT-*)
+  # ============================================================
+  - id: TR-SAT-001
+    system: satisfaction
+    gdd: design/gdd/satisfaction.md
+    requirement: "Tick-driven, runs after Congestion; deterministic, no RNG"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-SAT-002
+    system: satisfaction
+    gdd: design/gdd/satisfaction.md
+    requirement: "Per-member accumulator: member_accumulators[member_id] = {S_acc, n_uses, queue_ticks, n_fail, n_interrupt}"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-SAT-003
+    system: satisfaction
+    gdd: design/gdd/satisfaction.md
+    requirement: "use_quality_i = w_zone * clamp(total_i / Z_NORM, 0, 1) - w_cong * Congestion_i(t-1); w_zone = w_cong = 0.5"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-SAT-004
+    system: satisfaction
+    gdd: design/gdd/satisfaction.md
+    requirement: "S_member = clamp(S_base + avg(use_quality) - queue_penalty - fail_penalty - interrupt_penalty, 0, 1); S_base=0.5"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-SAT-005
+    system: satisfaction
+    gdd: design/gdd/satisfaction.md
+    requirement: "global_satisfaction: slow event-driven EMA (alpha_g=0.05); updated only on member departure; init 0.5"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-SAT-006
+    system: satisfaction
+    gdd: design/gdd/satisfaction.md
+    requirement: "satisfaction_modifier = piecewise-linear; range [0.5, 2.0]; structurally floors at 0.5 (never zero, anti-death-spiral)"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-SAT-007
+    system: satisfaction
+    gdd: design/gdd/satisfaction.md
+    requirement: "visit_length_modifier = 1 + (satisfaction_modifier - 1) * damp, damp=0.5; range [0.75, 1.5]"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-SAT-008
+    system: satisfaction
+    gdd: design/gdd/satisfaction.md
+    requirement: "Self-correcting loop: low satisfaction -> fewer members -> less congestion -> satisfaction recovers"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-SAT-009
+    system: satisfaction
+    gdd: design/gdd/satisfaction.md
+    requirement: "Serialized: global_satisfaction + member_accumulators"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-SAT-010
+    system: satisfaction
+    gdd: design/gdd/satisfaction.md
+    requirement: "Economy does NOT read satisfaction directly; influence is indirect via MemberSim arrival volume"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  # ============================================================
+  # Economy (TR-ECON-*)
+  # ============================================================
+  - id: TR-ECON-001
+    system: economy
+    gdd: design/gdd/economy.md
+    requirement: "Tick-driven, runs after Satisfaction; deterministic, no RNG"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-ECON-002
+    system: economy
+    gdd: design/gdd/economy.md
+    requirement: "balance: int (never float); revenue = flat fee R_visit ($12) per quota-met completed visit"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-ECON-003
+    system: economy
+    gdd: design/gdd/economy.md
+    requirement: "Only quota-met departures earn revenue; walk-failure/patience-exhausted earn $0"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-ECON-004
+    system: economy
+    gdd: design/gdd/economy.md
+    requirement: "Revenue contains zero reference to satisfaction -- single-channel throughput decoupling"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-ECON-005
+    system: economy
+    gdd: design/gdd/economy.md
+    requirement: "starting_capital = $500; balance floor = 0 (defensive max(0, balance)); no upkeep (MVP)"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-ECON-006
+    system: economy
+    gdd: design/gdd/economy.md
+    requirement: "spend(amount) triple-gated: amount > 0, amount <= balance, Shop pre-checks can_afford; rejects amount <= 0"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-ECON-007
+    system: economy
+    gdd: design/gdd/economy.md
+    requirement: "emit balance_changed(new_balance, delta) on income and spend"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-ECON-008
+    system: economy
+    gdd: design/gdd/economy.md
+    requirement: "credit(amount, reason) method for sell-back refunds (SelectionSystem consumer)"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-ECON-009
+    system: economy
+    gdd: design/gdd/economy.md
+    requirement: "Serialize ONLY balance: int -- trivial exact round-trip"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  # ============================================================
+  # Shop/Purchase (TR-SHOP-*)
+  # ============================================================
+  - id: TR-SHOP-001
+    system: shop-purchase
+    gdd: design/gdd/shop-purchase.md
+    requirement: "can_purchase(id) = is_unlocked AND (cost==0 OR Economy.can_afford(cost)); cost==0 short-circuit required"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-SHOP-002
+    system: shop-purchase
+    gdd: design/gdd/shop-purchase.md
+    requirement: "Deduct-on-commit: money spent ONLY on placement_committed, only for purchase-initiated drags"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-SHOP-003
+    system: shop-purchase
+    gdd: design/gdd/shop-purchase.md
+    requirement: "_purchase_in_flight flag disambiguates purchase from relocate commits; cleared on commit/reject/cancel"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-SHOP-004
+    system: shop-purchase
+    gdd: design/gdd/shop-purchase.md
+    requirement: "Drag-start gate: can_purchase AND PlacementSystem.is_dragging() false; one-drag-at-a-time invariant"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-SHOP-005
+    system: shop-purchase
+    gdd: design/gdd/shop-purchase.md
+    requirement: "Block-at-selection: unaffordable items greyed, drag never starts"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-SHOP-006
+    system: shop-purchase
+    gdd: design/gdd/shop-purchase.md
+    requirement: "Unlock gating: is_unlocked = (unlock_requirement == null); non-null -> false (MVP fail-closed)"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-SHOP-007
+    system: shop-purchase
+    gdd: design/gdd/shop-purchase.md
+    requirement: "Shop owns minimal transient state; _purchase_in_flight never serialized"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  # ============================================================
+  # SelectionSystem (TR-SEL-*)
+  # ============================================================
+  - id: TR-SEL-001
+    system: selection-system
+    gdd: design/gdd/selection-system.md
+    requirement: "Single-select (MVP); click placed=select, empty=deselect, different=direct swap; click selected=no-op"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-SEL-002
+    system: selection-system
+    gdd: design/gdd/selection-system.md
+    requirement: "Three actions: Inspect (Info Panel), Move (hand off to PlacementSystem relocate), Sell (soft inline confirm)"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-SEL-003
+    system: selection-system
+    gdd: design/gdd/selection-system.md
+    requirement: "Sell requires Economy credit path (synchronous, immediate); refund = int(round(0.5 * cost))"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-SEL-004
+    system: selection-system
+    gdd: design/gdd/selection-system.md
+    requirement: "Signal: selection_changed(instance_id, equipment_def, cell, rotation) or selection_changed(null) on deselect"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-SEL-005
+    system: selection-system
+    gdd: design/gdd/selection-system.md
+    requirement: "Self-maintains instance_id -> {equipment_id, anchor, rotation} mapping via signals"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-SEL-006
+    system: selection-system
+    gdd: design/gdd/selection-system.md
+    requirement: "Load-time mapping rebuild: after GridSystem.deserialize, iterate occupied cells, rebuild mapping"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-SEL-007
+    system: selection-system
+    gdd: design/gdd/selection-system.md
+    requirement: "Sells contribute nothing to save file; mapping rebuilt from GridSystem on load"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-SEL-008
+    system: selection-system
+    gdd: design/gdd/selection-system.md
+    requirement: "RefCounted; no scene-tree; bridge Node forwards clicks/key events and owns 2s sell-confirm timer"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-SEL-009
+    system: selection-system
+    gdd: design/gdd/selection-system.md
+    requirement: "Keyboard: Esc=deselect/cancel sell-confirm; Del=triggers Sell soft-confirm (no instant destructive sell)"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-SEL-010
+    system: selection-system
+    gdd: design/gdd/selection-system.md
+    requirement: "Selection cue: Soft Charcoal outline + tint glow + corner icon; slow ~1.5s breathe, no flash; colorblind-safe"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  # ============================================================
+  # SaveLoad (TR-SL-*)
+  # ============================================================
+  - id: TR-SL-001
+    system: save-load
+    gdd: design/gdd/save-load.md
+    requirement: "Coordinator, not state owner; tick-boundary saves via TimeSystem.tick_completed signal"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-SL-002
+    system: save-load
+    gdd: design/gdd/save-load.md
+    requirement: "Save blob: {version, master_seed, time_system, grid_system, member_sim, congestion, satisfaction, economy}"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-SL-003
+    system: save-load
+    gdd: design/gdd/save-load.md
+    requirement: "Load order enforced: TimeSystem -> GridSystem -> PlacementSystem.rederive -> SelectionSystem.rebuild -> Navigation.rebuild -> MemberSim -> Congestion -> Satisfaction -> Economy"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-SL-004
+    system: save-load
+    gdd: design/gdd/save-load.md
+    requirement: "All-or-nothing: Phase A (validate, zero mutation) -> Phase B (commit only if all valid)"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-SL-005
+    system: save-load
+    gdd: design/gdd/save-load.md
+    requirement: "Every coordinated system's deserialize must support non-mutating validate/dry-run mode"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-SL-006
+    system: save-load
+    gdd: design/gdd/save-load.md
+    requirement: "Navigation OQ1 (AStarGrid2D cross-rebuild tie-break) = HARD blocking prerequisite"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-SL-007
+    system: save-load
+    gdd: design/gdd/save-load.md
+    requirement: "Versioning: exact-match only MVP; mismatch rejected gracefully; resume always paused"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-SL-008
+    system: save-load
+    gdd: design/gdd/save-load.md
+    requirement: "ZoneRules, Navigation, PlacementSystem, SelectionSystem contribute NOTHING to save blob"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  # ============================================================
+  # Build/Shop UI (TR-BSUI-*)
+  # ============================================================
+  - id: TR-BSUI-001
+    system: build-shop-ui
+    gdd: design/gdd/build-shop-ui.md
+    requirement: "Shop palette renders catalog items: icon, name, price; queries Shop.can_purchase and is_unlocked"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-BSUI-002
+    system: build-shop-ui
+    gdd: design/gdd/build-shop-ui.md
+    requirement: "Palette re-evaluates greying on Economy.balance_changed signal"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-BSUI-003
+    system: build-shop-ui
+    gdd: design/gdd/build-shop-ui.md
+    requirement: "One-purchase-drag-at-a-time: UI disables all other palette interactions during active drag"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-BSUI-004
+    system: build-shop-ui
+    gdd: design/gdd/build-shop-ui.md
+    requirement: "Build mode vs select mode mutually exclusive; placement ghost suppressed when selection active"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-BSUI-005
+    system: build-shop-ui
+    gdd: design/gdd/build-shop-ui.md
+    requirement: "Hover 'Save $X more' tooltip on greyed items (X = cost - balance)"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-BSUI-006
+    system: build-shop-ui
+    gdd: design/gdd/build-shop-ui.md
+    requirement: "Colorblind-safe: affordable/unaffordable/locked distinguishable by tint-desaturation + lock icon shape"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  # ============================================================
+  # HUD (TR-HUD-*)
+  # ============================================================
+  - id: TR-HUD-001
+    system: hud
+    gdd: design/gdd/hud.md
+    requirement: "Minimal top bar: money (Butter, coin icon), satisfaction meter, day/time + pause/speed cluster"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-HUD-002
+    system: hud
+    gdd: design/gdd/hud.md
+    requirement: "Satisfaction meter: Sage (high) -> warm neutral (mid) -> soft muted Dusty Rose (low); never saturated red, never pulse"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-HUD-003
+    system: hud
+    gdd: design/gdd/hud.md
+    requirement: "Satisfaction meter paired with numeric % AND face/heart icon shape change = colorblind-safe"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-HUD-004
+    system: hud
+    gdd: design/gdd/hud.md
+    requirement: "Money count: tween digits old->new over ~0.3s on balance_changed; never red flash on spend"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-HUD-005
+    system: hud
+    gdd: design/gdd/hud.md
+    requirement: "Hotkeys: Space=toggle pause; 1/2/3=set speed and implicitly unpause"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-HUD-006
+    system: hud
+    gdd: design/gdd/hud.md
+    requirement: "Read-only + transport only; no popups, toasts, or badges on HUD; event feedback belongs to in-world micro-feedback"
+    created: 2026-07-21
+    revised: ""
+    status: active
+
+  - id: TR-HUD-007
+    system: hud
+    gdd: design/gdd/hud.md
+    requirement: "On load: renders paused state and loaded values immediately; money tween independent of sim ticks"
+    created: 2026-07-21
+    revised: ""
+    status: active

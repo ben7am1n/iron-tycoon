@@ -37,7 +37,7 @@
 #   Each entry: name, status, source, referenced_by[], attributes{}, added, revised
 
 version: 1
-last_updated: ""
+last_updated: 2026-07-19
 
 # ─── ENTITIES ────────────────────────────────────────────────────────────────
 # Named game-world objects: enemies, NPCs, characters, factions, bosses.
@@ -106,7 +106,392 @@ items: []
 #   output_range[min, max], added
 # Optional: expression (the actual formula), notes
 
-formulas: []
+formulas:
+  - name: rotation_transform
+    status: active
+    source: design/gdd/grid-system.md
+    referenced_by:
+      - design/gdd/grid-system.md
+    variables:
+      - x
+      - y
+      - W
+      - H
+      - rotation
+    output_range: [0, 2]   # 分量范围 [0, max(W,H)-1]；MVP 器械声明包围盒上限 ~3x3
+    expression: "R_0=(x,y); R_90=(H-1-y,x); R_180=(W-1-x,H-1-y); R_270=(y,W-1-x)"
+    notes: >
+      footprint 与 access cells 的 4 向旋转映射。分段函数，非封闭式。
+      🔴 最高危规则：(W,H) 必须是 footprint_cells ∪ access_cells 的【并集】包围盒，
+      不是 footprint 自己的局部包围盒。误用局部包围盒会在 90°/270° 产生负坐标，
+      且 0°/180° 测试无法暴露（对称掩盖）。
+      被 PlacementSystem（放置+预览）与 SelectionSystem 间接消费。
+    added: 2026-07-16
+    revised: ""
+
+  - name: is_solid
+    status: active
+    source: design/gdd/grid-system.md
+    referenced_by:
+      - design/gdd/grid-system.md
+    variables:
+      - buildable
+      - occupant_id
+    output_range: [0, 1]   # 布尔
+    expression: "is_solid(cell) = NOT buildable(cell) OR occupant_id(cell) != -1"
+    notes: >
+      Navigation 消费的唯一 solidity 契约，直接喂给 AStarGrid2D.set_point_solid()。
+      🔴 access_ids 刻意【不】参与判定 —— 若实现者把 access 纳入 solidity，
+      会员将再也走不到任何使用位。亦严禁用"让 access 变 solid"来解决
+      "两会员抢同一格"的运行时预定问题（会退化成永久死锁）。
+      越界坐标返回 true（"墙外都算实心"），防止 AStarGrid2D 向界外寻路。
+    added: 2026-07-16
+    revised: ""
+
+  - name: declared_bounds
+    status: active
+    source: design/gdd/grid-system.md
+    referenced_by:
+      - design/gdd/grid-system.md
+      - design/gdd/equipment-catalog.md
+    variables:
+      - footprint_cells
+      - access_cells
+    output_range: [1, 3]   # W,H >= 1；MVP 预期不超过 3x3（上界来自 EquipmentCatalog 数据契约）
+    expression: "W = max{x : (x,y) in footprint ∪ access} + 1; H = max{y : ...} + 1"
+    notes: >
+      rotation_transform 的 (W,H) 输入来源。上界由 EquipmentCatalog 的
+      footprint 上限（art-bible 锁定为 1x1/1x2/2x2）与 access 扩展幅度共同决定 ——
+      本公式本身无上界约束力。
+      前置校验（min_x=0, min_y=0 的锚点约定）归 EquipmentCatalog 加载期；
+      GridSystem 侧仅 debug-only assert 兜底（release 编译期剔除）。
+      N 上限已由 EquipmentCatalog GDD 确认为 1（2026-07-17，见 access_cell_count_max）——
+      footprint≤2×2 + access 正交相邻（最多外扩1格）共同证明并集包围盒恒 ≤ 3×3。
+    added: 2026-07-16
+    revised: "2026-07-17"
+
+  - name: anchor_normalization
+    status: active
+    source: design/gdd/equipment-catalog.md
+    referenced_by:
+      - design/gdd/equipment-catalog.md
+    variables:
+      - footprint_cells
+      - access_cells
+      - min_x
+      - min_y
+    output_range: [0, 2]   # 每轴；归一化后并集包围盒 ≤ 3x3
+    expression: "x' = x - min_x, y' = y - min_y; (min_x, min_y) = min{(x,y) : (x,y) in footprint_cells ∪ access_cells}"
+    notes: >
+      grid-system.md 的 declared_bounds 公式依赖但自身无法证明的锚点前置条件
+      （并集包围盒 min == (0,0)）由本公式在 EquipmentCatalog 加载期强制执行。
+      接住 grid-system.md Open Question #13 的 (b) 项。
+    added: 2026-07-17
+    revised: ""
+
+  - name: provisional_equipment_cost
+    status: active   # ✅ VALIDATED by economy.md (2026-07-18) — values held, no longer "provisional to be replaced"
+    source: design/gdd/equipment-catalog.md
+    referenced_by:
+      - design/gdd/equipment-catalog.md
+      - design/gdd/economy.md   # validated the cost table against revenue_per_visit
+    variables:
+      - footprint_area
+      - base_cost
+      - tier_step
+    output_range: [200, 650]   # base_cost=200, tier_step=150
+    expression: "cost = base_cost + tier_step × (footprint_area - 1)"
+    notes: >
+      footprint_area ∈ {1,2,4}（对应 1x1/1x2/2x2）。base_cost=200, tier_step=150 →
+      1x1=200, 1x2=350, 2x2=650。
+      ✅ 2026-07-18: Economy GDD (#11) 已用 revenue_per_visit (R_visit=12) 验证该价目表 ——
+      存钱节奏合理（首个 2×2 约 game-min 32），values 保留、不再是"待取代的临时锚点"。
+      EquipmentCatalog OQ2 由此关闭。最终购买事务与展示仍归 Shop/Purchase (#12)，
+      但成本【数值】已在此锚定。仍标 provisional 命名只因数字待 playtest 微调。
+    added: 2026-07-17
+    revised: "2026-07-18"
+
+  - name: per_equipment_congestion
+    status: active
+    source: design/gdd/congestion.md
+    referenced_by:
+      - design/gdd/congestion.md
+      - design/gdd/member-sim.md      # reads Congestion(t-1) in target selection
+    variables:
+      - occupancy_state_i
+      - N_i
+      - D_max
+      - w_occ
+      - w_dense
+      - alpha
+    output_range: [0, 1]   # 0 = idle, 1 = fully congested (interface committed to MemberSim)
+    expression: "Congestion_i(t) = clamp(alpha*clamp(w_occ*(occupancy_state_i/2) + w_dense*clamp(N_i/D_max,0,1),0,1) + (1-alpha)*Congestion_i(t-1), 0, 1)"
+    notes: >
+      Per-equipment-instance congestion scalar, EMA-smoothed (alpha=0.3 default).
+      MemberSim reads it at ONE-TICK LAG as Congestion_i(t-1), weighting target
+      selection by exp(-k_congestion * Congestion_i(t-1)). occupancy_state tier
+      {0,1,2} = free / in-use / in-use+queued (queue cap 1). N_i excludes
+      occupant and next_claimant (no double-count). Provisional MVP knobs, to be
+      tuned at the fun-validation playtest. Also consumed by the Overlay (#8) and
+      Satisfaction (#10) — ✅ confirmed: read as Congestion_i(t-1) at use-start in
+      satisfaction.md `use_quality` (w_cong=0.5).
+    added: 2026-07-18
+    revised: ""
+
+  - name: per_cell_density
+    status: active
+    source: design/gdd/congestion.md
+    referenced_by:
+      - design/gdd/congestion.md
+    variables:
+      - w_n
+      - beta
+      - D_cell_max
+    output_range: [0, 1]   # per-cell, normalized for overlay coloring
+    expression: "density_cell(c,t) = clamp((beta*Σ_m kernel(c,cell_m) + (1-beta)*smoothed(c,t-1)) / D_cell_max, 0, 1); kernel = 1 on member cell, w_n on in-bounds 4-neighbors"
+    notes: >
+      Per-cell member-density field for the Congestion/Flow Overlay (#8) heatmap.
+      EMA-smoothed (beta=0.4 default). Out-of-bounds neighbors dropped (not wrapped).
+      Summation order must be fixed (ascending cell index) for bit-identical
+      determinism. Provisional MVP knobs. Currently consumed only by #8.
+    added: 2026-07-18
+    revised: ""
+
+  - name: zone_synergy_formula
+    status: active
+    source: design/gdd/zone-rules.md
+    referenced_by:
+      - design/gdd/zone-rules.md
+    variables:
+      - n_same_i
+      - S_max
+      - k
+    output_range: [0, 1]   # [0, S_max); S_max provisional 1.0, strictly below ceiling
+    expression: "zone_synergy_i = S_max * (1 - e^(-k * n_same_i))"
+    notes: >
+      Per-instance same-zone adjacency bonus (ZoneRules-computed OUTPUT, never authored
+      in EquipmentCatalog). n_same_i = count of DISTINCT neighboring instances sharing
+      >=1 zone via ORTHOGONAL footprint-edge adjacency (diagonal touching does NOT count,
+      consistent with no-corner-cut movement). Provisional S_max=1.0, k=0.6
+      (n=0→0, n=1→0.451, n=3→0.835; asymptotic, never reaches S_max → no infinite-cluster
+      dominant strategy). This is the "cluster for synergy" PULL that opposes Congestion's
+      "spread for flow" PUSH — the core spatial-optimization trade-off (Pillar 1).
+      Provisional MVP anchors. ✅ Balance RECONCILED by satisfaction.md `use_quality`
+      (w_zone=w_cong=0.5, Z_NORM=2.0) — synergy and congestion carry equal weight in a use event.
+    added: 2026-07-18
+    revised: ""
+
+  - name: spaciousness_formula
+    status: active
+    source: design/gdd/zone-rules.md
+    referenced_by:
+      - design/gdd/zone-rules.md
+    variables:
+      - open_adj_i
+      - total_adj_i
+      - C_max
+    output_range: [0, 0.5]   # [0, C_max]; C_max provisional 0.5
+    expression: "spaciousness_i = C_max * (open_adj_i / total_adj_i); total_adj_i==0 -> 0"
+    notes: >
+      Per-instance open-breathing-room bonus (ZoneRules-computed OUTPUT). total_adj_i =
+      in-bounds cells orthogonally adjacent to (footprint ∪ access) excluding own cells;
+      open_adj_i = subset with is_solid==false. STATIC only — reads no member/occupant
+      position data, so zero overlap with per_cell_density (Congestion's dynamic field).
+      total_adj_i==0 defined as 0 (no divide-by-zero). Provisional C_max=0.5 (~half of
+      S_max, so zone_synergy is the dominant lever, spaciousness a quieter spread nudge).
+    added: 2026-07-18
+    revised: ""
+
+  - name: satisfaction_modifier
+    status: active
+    source: design/gdd/satisfaction.md
+    referenced_by:
+      - design/gdd/satisfaction.md
+      - design/gdd/member-sim.md   # arrival_rate uses satisfaction_modifier; exercises_per_visit uses the damped visit_length_modifier
+    variables:
+      - global_satisfaction
+    output_range: [0.5, 2.0]   # floors at 0.5 (anti-death-spiral), G=0.5 -> 1.0
+    expression: "satisfaction_modifier(G) = (G + 0.5) if G < 0.5 else (2G); visit_length_modifier(G) = 1 + (satisfaction_modifier(G) - 1) * 0.5"
+    notes: >
+      Answers MemberSim OQ3. `satisfaction_modifier` [0.5,2.0] drives MemberSim arrival_rate;
+      structurally floors at 0.5 (never 0) so arrivals never stop — the anti-death-spiral
+      mechanism. Piecewise-linear so G=0.5 maps exactly to 1.0 (seamless with MemberSim's
+      placeholder). `visit_length_modifier` [0.75,1.5] (damped, damp=0.5) drives
+      exercises_per_visit — MemberSim must switch to THIS for exercises to avoid ~modifier^2
+      occupancy oscillation (see satisfaction.md OQ1). Provisional; sigmoid alt flagged for playtest.
+    added: 2026-07-18
+    revised: ""
+
+  - name: global_satisfaction
+    status: active
+    source: design/gdd/satisfaction.md
+    referenced_by:
+      - design/gdd/satisfaction.md
+    variables:
+      - S_member_departing
+      - alpha_g
+    output_range: [0, 1]   # init 0.5 (neutral)
+    expression: "global_satisfaction(t) = alpha_g * S_member_departing + (1 - alpha_g) * global_satisfaction(t-1); unchanged on ticks with no departure"
+    notes: >
+      Slow event-driven EMA (alpha_g=0.05) of departing members' S_member. The gym's macro
+      reputation meter — HUD (#16) displays it, Economy (#11) will read it for revenue
+      (referenced_by to be appended when economy.md lands). Deliberately SLOW; the fast
+      "did my rearrange help" feedback is Congestion's heatmap + ZoneRules preview, not this.
+      Init 0.5. Multi-departure same tick folds ascending member_id (deterministic).
+    added: 2026-07-18
+    revised: ""
+
+  - name: use_quality
+    status: active
+    source: design/gdd/satisfaction.md
+    referenced_by:
+      - design/gdd/satisfaction.md
+    variables:
+      - total_i
+      - Z_NORM
+      - Congestion_i
+      - w_zone
+      - w_cong
+    output_range: [-0.5, 0.5]   # symmetric; w_zone=w_cong=0.5
+    expression: "use_quality_i = w_zone * clamp(total_i / Z_NORM, 0, 1) - w_cong * Congestion_i(t-1)"
+    notes: >
+      🔑 THE pull-vs-push reconciliation the upstream GDDs deferred to Satisfaction #10.
+      w_zone = w_cong = 0.5 (equal weight) so ZoneRules synergy (cluster) and Congestion
+      (spread) are势均力敌 in a single use event — neither dominates, the optimum is interior
+      (partial cluster + walkways). Z_NORM=2.0 puts the zone term on the same [0,1] scale as
+      congestion. This is what "balance reconciled when Satisfaction #10 lands" (in
+      zone_synergy_formula and per_equipment_congestion notes) refers to. Provisional MVP.
+    added: 2026-07-18
+    revised: ""
+
+  - name: revenue_per_visit
+    status: active
+    source: design/gdd/economy.md
+    referenced_by:
+      - design/gdd/economy.md
+    variables:
+      - R_visit
+    output_range: [8, 20]   # provisional R_visit=12
+    expression: "balance += R_visit on each member_completed_visit"
+    notes: >
+      Flat cash per completed member visit (R_visit=12 provisional). CRITICAL: contains
+      NO satisfaction multiplier — satisfaction already scales member VOLUME via arrival
+      rate (satisfaction_modifier), so multiplying revenue by satisfaction too would
+      double-count into runaway growth (breaks Pillar 2). So Economy reads NO satisfaction
+      data; satisfaction's only economic lever is throughput. Supersedes Satisfaction's OQ3
+      (Economy does NOT read global_satisfaction/modifier — HUD reads satisfaction directly).
+      Grounds provisional_equipment_cost: at R_visit=12, first 2×2 (650) affordable ~min 32.
+    added: 2026-07-18
+    revised: ""
+
+  - name: grid_world_conversion
+    status: active
+    source: design/gdd/grid-system.md
+    referenced_by:
+      - design/gdd/grid-system.md
+    variables:
+      - world_pos
+      - cell
+      - cell_size
+    output_range: [0, 416]  # width(13) * cell_size；cell_size 未定，此处按占位值 32 计
+    expression: >
+      world_to_grid(world_pos) = floor(world_pos / cell_size);
+      grid_to_world_corner(cell) = cell * cell_size;
+      grid_to_world_center(cell) = cell * cell_size + cell_size / 2
+    notes: >
+      ⚠️ cell_size 的【值】不由本 GDD 拥有 —— art-bible §8 原文写明
+      "32x32 或 16x16 逻辑像素，在架构阶段最终确定"。本条只登记公式形态。
+      output_range 按占位值 32 计算，架构阶段定值后须回填。
+      GridSystem 内部逻辑（occupancy/solidity/rotation）完全不依赖 cell_size 的值 ——
+      这是唯一需要它的地方，且只服务表现层换算。
+    added: 2026-07-16
+    revised: ""
+
+  - name: tick_duration_formula
+    status: active
+    source: design/gdd/time-system.md
+    referenced_by:
+      - design/gdd/time-system.md
+    variables:
+      - TICKS_PER_SECOND
+      - TICK_DURATION_SECONDS
+    output_range: [0.1, 0.1]   # locked constant for MVP, not runtime-variable
+    expression: "TICK_DURATION_SECONDS = 1.0 / TICKS_PER_SECOND"
+    notes: >
+      TICKS_PER_SECOND=10 locked default (safe range 5-20, see time-system.md
+      Tuning Knobs). Drives the custom fixed-timestep accumulator in _process() —
+      deliberately NOT tied to Godot's _physics_process internals.
+    added: 2026-07-17
+    revised: ""
+
+  - name: speed_to_realtime_formula
+    status: active
+    source: design/gdd/time-system.md
+    referenced_by:
+      - design/gdd/time-system.md
+    variables:
+      - speed_multiplier
+      - wall_seconds_per_tick
+      - MAX_TICKS_PER_FRAME
+    output_range: [0.033, 0.1]   # 3x to 1x; speed=0 (paused) never fires
+    expression: "wall_seconds_per_tick(speed) = TICK_DURATION_SECONDS / speed; ticks_this_frame = min(floor(tick_accumulator / TICK_DURATION_SECONDS), MAX_TICKS_PER_FRAME)"
+    notes: >
+      MAX_TICKS_PER_FRAME=8 locked default (safe range 4-15). Leftover
+      tick_accumulator always carries forward after the clamp — never discarded,
+      skipped, or reordered, preserving the bit-identical tick sequence
+      (time-system.md determinism contract, Core Rule 8) even after a frame hitch.
+    added: 2026-07-17
+    revised: ""
+
+  - name: rng_subseed_derivation_formula
+    status: active
+    source: design/gdd/time-system.md
+    referenced_by:
+      - design/gdd/time-system.md
+    variables:
+      - master_seed
+      - system_name
+      - name_hash
+      - combined
+      - sub_seed
+    output_range: [-9223372036854775808, 9223372036854775807]   # full int64 range
+    expression: "name_hash = FNV1A64(system_name); combined = master_seed XOR name_hash; sub_seed = SplitMix64(combined) using LOGICAL right-shift lsr(z,k)=(z>>k)&((1<<(64-k))-1)"
+    notes: >
+      Deliberately NOT GDScript's built-in hash() (not contractually stable
+      across engine versions) and NOT simple addition (master_seed + hash(name)
+      would correlate similarly-named systems' RNG streams). SplitMix64's avalanche
+      holds ONLY under logical right-shift; GDScript's native >> is arithmetic
+      (sign-extending), so the GDD pins an lsr() helper — required, not optional.
+      FNV-1a 64 constants pinned in the GDD (offset 0xCBF29CE484222325,
+      prime 0x100000001B3). Each consuming system (MemberSim, Congestion,
+      Satisfaction, Economy) calls register_system(name) once, then fetches its
+      own RandomNumberGenerator via the idempotent get_rng(name); no system
+      self-seeds. Relies on GDScript int's 64-bit two's-complement wraparound —
+      flagged as OQ4 in time-system.md to verify against the actual 4.7.1 runtime
+      at implementation time.
+    added: 2026-07-17
+    revised: ""
+
+  - name: equipment_use_duration
+    status: active
+    source: design/gdd/equipment-catalog.md
+    referenced_by:
+      - design/gdd/equipment-catalog.md
+      - design/gdd/member-sim.md   # reads the four fields in use_duration formula
+    variables:
+      - use_duration_mean_ticks
+      - use_duration_stddev_ticks
+      - use_duration_min_ticks
+      - use_duration_max_ticks
+    output_range: [1, 375]   # min 1 tick; ~1.5×250 mean upper bound
+    expression: "duration_ticks = round(clamp(randfn(mean, stddev), min, max))"
+    notes: >
+      Per-equipment use-duration parameters owned by EquipmentCatalog (added 2026-07-19,
+      OQ2 resolved). MemberSim's USING-state timer reads all four; Catalog load-time
+      validation (rules 7e-h) guarantees mean>0, stddev>=0, min<=mean<=max so the
+      clamp can never produce <=0 or min>max (which would trap a member in USING).
+    added: 2026-07-19
+    revised: ""
 
 # Example:
 #
@@ -139,7 +524,140 @@ formulas: []
 #
 # Required fields: name, status, source, referenced_by, value, unit, added
 
-constants: []
+constants:
+  - name: grid_width
+    status: active
+    source: design/gdd/grid-system.md
+    referenced_by:
+      - design/gdd/grid-system.md
+    value: 13
+    unit: cells
+    notes: >
+      MVP 房间【包围盒】宽度 —— 不是可用地板数。不规则房间的墙/柱/门/窗
+      (buildable=false) 会再吃掉 ~10-15% → 估算 ~110-115 可建造格（含 grid_height）。
+      🔴 MVP 假设值，prototype 验证前【不可视为终值】。安全范围 10-16。
+      game-concept 的 Risks 已把"空间优化深度 vs 松弛感平衡"列为最高设计风险，
+      并写明"只能靠原型验证"。房间尺寸是该平衡最直接的旋钮。
+      与 grid_height、buildable 密度三者共同决定唯一真正重要的量：可建造格总数。
+      Navigation 的 AStarGrid2D region 直接由此而来。
+    added: 2026-07-16
+    revised: ""
+
+  - name: grid_height
+    status: active
+    source: design/gdd/grid-system.md
+    referenced_by:
+      - design/gdd/grid-system.md
+    value: 10
+    unit: cells
+    notes: >
+      MVP 房间【包围盒】高度。见 grid_width 的完整说明 —— 同为 MVP 假设值，
+      待 prototype 校准。安全范围 8-12。
+    added: 2026-07-16
+    revised: ""
+
+  - name: access_cell_count_max
+    status: active
+    source: design/gdd/equipment-catalog.md
+    referenced_by:
+      - design/gdd/equipment-catalog.md
+      - design/gdd/grid-system.md
+    value: 1
+    unit: cells (per equipment, MVP)
+    notes: >
+      每件器械恰好 1 个 access cell（MVP 简化，非运行时可调旋钮，设计层锁定）。
+      与 footprint 上限 2x2（art-bible 锁定）共同保证 declared_bounds 的
+      并集包围盒 ≤ 3x3 假设成立。若未来 Congestion 设计需要"多人同时使用"
+      作为设计杠杆，需回到 equipment-catalog.md 重新开放此值（见其 Open Question #5）。
+    added: 2026-07-17
+    revised: ""
+
+  - name: effect_tag_vocabulary
+    status: active
+    source: design/gdd/zone-rules.md
+    referenced_by:
+      - design/gdd/zone-rules.md
+      - design/gdd/equipment-catalog.md   # authors `comfort` in its `effects` field
+    value: "comfort | zone_synergy | spaciousness"
+    unit: effect tags
+    notes: >
+      Fulfills EquipmentCatalog OQ#1 (it locked the {tag, magnitude} container shape and
+      handed the vocabulary to ZoneRules). Ownership split:
+        - comfort [0.0,1.0] = Catalog-DECLARED input, authored per equipment type in `effects`.
+        - zone_synergy [0.0,S_max) = ZoneRules-COMPUTED output (zone_synergy_formula), NEVER authored.
+        - spaciousness [0.0,C_max] = ZoneRules-COMPUTED output (spaciousness_formula), NEVER authored.
+      So EquipmentCatalog's `effects` array in MVP carries only `comfort` entries.
+    added: 2026-07-18
+    revised: ""
+
+  - name: zone_membership_set
+    status: active
+    source: design/gdd/zone-rules.md
+    referenced_by:
+      - design/gdd/zone-rules.md
+      - design/gdd/equipment-catalog.md   # each EquipmentDef declares zone_membership from this set
+    value: "Strength (力量区) | Cardio (有氧区) | Social (团课/社交区)"
+    unit: zones (MVP)
+    notes: >
+      MVP zone set, matching the art-bible color language (Sage / Sky / Peach). An
+      EquipmentDef's zone_membership is one or more of these (Array = multi-zone,
+      OR-matched for synergy). Empty membership = never earns zone_synergy.
+    added: 2026-07-18
+    revised: ""
+
+  - name: starting_capital
+    status: active
+    source: design/gdd/economy.md
+    referenced_by:
+      - design/gdd/economy.md
+    value: 500
+    unit: currency units (int)
+    notes: >
+      Cash balance at new-game start. Enough for two 1×1 machines ($400) so onboarding
+      isn't an empty room, leaving a taste of "almost afford the next." Provisional MVP.
+    added: 2026-07-18
+    revised: ""
+
+  - name: TICKS_PER_SECOND
+    status: active
+    source: design/gdd/time-system.md
+    referenced_by:
+      - design/gdd/time-system.md
+    value: 10
+    unit: ticks/second
+    notes: >
+      Sim ticks per real second at 1x speed. Safe tuning range 5-20
+      (see time-system.md Tuning Knobs for too-low/too-high behavior).
+      Drives tick_duration_formula (TICK_DURATION_SECONDS = 1.0/10 = 0.1s).
+    added: 2026-07-17
+    revised: ""
+
+  - name: MAX_TICKS_PER_FRAME
+    status: active
+    source: design/gdd/time-system.md
+    referenced_by:
+      - design/gdd/time-system.md
+    value: 8
+    unit: ticks (per _process() call)
+    notes: >
+      Safety clamp against frame-hitch tick pile-up. Safe tuning range 4-15.
+      See speed_to_realtime_formula.
+    added: 2026-07-17
+    revised: ""
+
+  - name: SPEED_OPTIONS
+    status: active
+    source: design/gdd/time-system.md
+    referenced_by:
+      - design/gdd/time-system.md
+    value: "{1, 2, 3}"
+    unit: speed multiplier (0 = paused, not a selectable "speed")
+    notes: >
+      Player-selectable simulation speeds. OQ3 in time-system.md flags a
+      possible post-MVP 4x option, which would require re-validating against
+      MAX_TICKS_PER_FRAME headroom before raising this value.
+    added: 2026-07-17
+    revised: ""
 
 # Example:
 #

@@ -1,8 +1,30 @@
 # Godot — Breaking Changes
 
-Last verified: 2026-02-12
+Last verified: 2026-07-15
 
 Changes between Godot versions, focused on post-LLM-cutoff changes (4.4+).
+
+## 4.6 → 4.7 (Jun 2026 — POST-CUTOFF, HIGH RISK)
+
+Minor version bump; most 4.6 projects migrate smoothly. Full guide:
+https://docs.godotengine.org/en/4.7/tutorials/migrating/upgrading_to_godot_4.7.html
+
+| Subsystem | Change | Details |
+|-----------|--------|---------|
+| Android | OBB support removed | (GH-118283) Legacy OBB export format removed. Migrate to Play Asset Delivery or PCK split. Only affects Android pipelines. |
+| Shaders | Custom 3D shader preprocessor macros | Behavior changed; shipped 3D projects using custom preprocessor macros should test carefully before upgrading. |
+| Animation | BlendSpace point handling | Compatibility break in how BlendSpace1D/2D points are handled — test 3D animation blend trees. |
+| UI | Control offset transforms (NEW) | Controls in Containers gain a visual offset transform the Container won't reset. Opt-in whether it affects input. Not breaking, but changes recommended patterns for animating UI. |
+| 2D/Textures | `DrawableTexture2D` (NEW) | Directly drawable texture — useful for minimaps, fog-of-war, heatmaps, in-game editors. |
+| Rendering | HDR output (NEW) | Windows/macOS/iOS/visionOS/Linux-Wayland. 2D and 3D. Opt-in. |
+| Rendering | AreaLight3D (NEW) | Real-time rectangular area lights (3D only). |
+| Rendering | Nearest-neighbor viewport scaling (NEW) | 3D rendering only — does NOT affect 2D. |
+| Animation | `tween_await()` (NEW) | Tweens can await signals — for cutscenes, UI/dialogue sequencing. |
+| Web | wasm64 support (NEW) | 64-bit WebAssembly raises heap beyond the 4GB 32-bit ceiling on supporting browsers. |
+| Mobile | VirtualJoystick node (NEW) | In-engine on-screen joystick (fixed/dynamic/following modes). |
+| Editor | Inspector category copy/paste, shader preview, MeshLibrary editor | Quality-of-life editor additions. |
+
+**Note:** `TileMap` remains DEPRECATED (since 4.3) — use `TileMapLayer`. 4.7 does not change this.
 
 ## 4.5 → 4.6 (Jan 2026 — POST-CUTOFF, HIGH RISK)
 

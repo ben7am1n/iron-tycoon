@@ -1,0 +1,2 @@
+- [Iron Tycoon locked context](project_iron_tycoon_context.md) — tick rate, grid size, access_cell_count_max=1, fun-validation milestone, Pillar 2 calm constraint
+- [MemberSim↔Congestion interface contract](membersim_congestion_interface_contract.md) — provisional Congestion(t-1) shape assumed by target_selection_weight, must reconfirm when Congestion GDD is authored

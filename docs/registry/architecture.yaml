@@ -30,7 +30,7 @@
 #   Superseded entries:     Grep pattern="status: superseded"
 
 version: 1
-last_updated: ""
+last_updated: "2026-07-21"
 
 # ─── STATE OWNERSHIP ─────────────────────────────────────────────────────────
 # Who is the authoritative owner of each piece of shared game state.
@@ -43,7 +43,50 @@ last_updated: ""
 # interface: how other systems access this state (read-only property, method call,
 #   signal, shared resource, etc.) — this is the contract other ADRs depend on.
 
-state_ownership: []
+state_ownership:
+  - state: simulation_lifecycle
+    status: active
+    owner_system: simulation-orchestrator
+    adr: docs/architecture/adr-0001-di-container-scene-bootstrap.md
+    interface: "SimulationOrchestrator (single Node-based composition root). Holds all 12 RefCounted systems as permanent fields. Only owner of system lifecycle (create, init, post_init, tick, destroy)."
+    write_access: orchestrator-only
+    referenced_by:
+      - docs/architecture/adr-0001-di-container-scene-bootstrap.md
+    added: 2026-07-21
+    revised: ""
+
+  - state: save_blob
+    status: active
+    owner_system: save-load
+    adr: docs/architecture/adr-0002-storage-format.md
+    interface: "JSON file (.sav.json) — format_version envelope + per-system serialize() output. SaveLoad owns the version envelope; individual systems own their payload fields. 64-bit integers encoded as hex strings per ADR-0002 mandatory rule."
+    write_access: save-load-only
+    referenced_by:
+      - docs/architecture/adr-0002-storage-format.md
+    added: 2026-07-21
+    revised: ""
+
+  - state: equipment_catalog_data
+    status: active
+    owner_system: equipment-catalog
+    adr: docs/architecture/adr-0002-storage-format.md
+    interface: "JSON file (.catalog.json) — loaded once at boot. EquipmentCatalog exposes read-only get_definition(id) query. Immutable after load. strict_mode injected at construction per ADR-0001."
+    write_access: catalog-only (no runtime writes)
+    referenced_by:
+      - docs/architecture/adr-0002-storage-format.md
+    added: 2026-07-21
+    revised: ""
+
+  - state: grid_occupancy
+    status: active
+    owner_system: grid-system
+    adr: docs/architecture/adr-0003-grid-state-reader.md
+    interface: "GridStateReader (@abstract extends SimSystem) — read-only spatial contract: is_solid, get_occupant_id, get_access_cells, get_dimensions, get_placed_instances(). Write methods (commit, clear) exist only on GridSystem, not on GridStateReader."
+    write_access: grid-system-only
+    referenced_by:
+      - docs/architecture/adr-0003-grid-state-reader.md
+    added: 2026-07-21
+    revised: ""
 
 # Example:
 #
@@ -71,15 +114,239 @@ state_ownership: []
 #
 # pattern options: signal | direct_call | event_bus | shared_resource | rpc | none
 
-interfaces: []
+interfaces:
+  - contract: system_init_pattern
+    status: active
+    pattern: direct_call
+    producer: adr-0001
+    consumers:
+      - All 12 simulation systems
+    adr: docs/architecture/adr-0001-di-container-scene-bootstrap.md
+    signal_signature: "init(...) -> void // two-phase: init() stores refs, _post_init() performs side effects"
+    referenced_by:
+      - docs/architecture/adr-0001-di-container-scene-bootstrap.md
+    added: 2026-07-21
+    revised: ""
 
-# Example:
-#
-# interfaces:
-#   - contract: damage_delivery
-#     status: active
-#     pattern: signal          # how the producer notifies consumers
-#     producer: combat-system
+  - contract: serialize_deserialize
+    status: active
+    pattern: direct_call
+    producer: save-load
+    consumers:
+      - time-system
+      - grid-system
+      - member-sim
+      - congestion
+      - satisfaction
+      - economy
+    adr: docs/architecture/adr-0002-storage-format.md
+    signal_signature: "serialize() -> Dictionary / deserialize(data: Dictionary, mode: String) -> {valid/success: bool, error: String}"
+    referenced_by:
+      - docs/architecture/adr-0002-storage-format.md
+    added: 2026-07-21
+    revised: ""
+
+  - contract: grid_read_surface
+    status: active
+    pattern: direct_call          # GridStateReader is a typed parameter, not a signal
+    producer: grid-system
+    consumers:
+      - zone-rules              # evaluate(snapshot: GridStateReader)
+      - placement-system        # preview via GridSnapshot
+      - congestion              # per-equipment cell queries
+      - satisfaction            # via ZoneRules
+      - selection-system        # get_occupant_id on click
+    adr: docs/architecture/adr-0003-grid-state-reader.md
+    signal_signature: "GridStateReader (@abstract extends SimSystem): is_solid(cell) → bool, get_occupant_id(cell) → int, get_access_cells(id) → Array, get_dimensions() → Vector2i, get_placed_instances() → Array[PlacedInstance]"
+    referenced_by:
+      - docs/architecture/adr-0003-grid-state-reader.md
+    added: 2026-07-21
+    revised: ""
+
+  - contract: rng_substream_registration
+    status: active
+    pattern: direct_call
+    producer: time-system
+    consumers:
+      - member-sim
+      - congestion              # if converted to RNG
+      - satisfaction            # if converted to RNG
+      - economy                 # if converted to RNG
+    adr: docs/architecture/adr-0004-seeded-rng-architecture.md
+    signal_signature: "register_system(name: String) -> void // called once per system in _post_init() phase; hard error on duplicate"
+    referenced_by:
+      - docs/architecture/adr-0004-seeded-rng-architecture.md
+    added: 2026-07-21
+    revised: ""
+
+  - contract: rng_access
+    status: active
+    pattern: direct_call
+    producer: time-system
+    consumers:
+      - member-sim
+      - congestion
+      - satisfaction
+      - economy
+    adr: docs/architecture/adr-0004-seeded-rng-architecture.md
+    signal_signature: "get_rng(name: String) -> RandomNumberGenerator // idempotent, returns existing instance, never creates or reseeds"
+    referenced_by:
+      - docs/architecture/adr-0004-seeded-rng-architecture.md
+    added: 2026-07-21
+    revised: ""
+
+  - contract: rng_serialization
+    status: active
+    pattern: direct_call
+    producer: time-system
+    consumers:
+      - save-load
+    adr: docs/architecture/adr-0004-seeded-rng-architecture.md
+    signal_signature: "rng.state -> hex string (per ADR-0002 64-bit hex rule) / restore via rng.state = hex_to_int() — state-based, not seed-based"
+    referenced_by:
+      - docs/architecture/adr-0004-seeded-rng-architecture.md
+    added: 2026-07-21
+    revised: ""
+
+  - contract: grid_changed_signal
+    status: active
+    pattern: signal
+    producer: grid-system
+    consumers:
+      - navigation
+      - congestion-flow-overlay
+      - selection-system
+    adr: docs/architecture/adr-0005-signal-bus-event-routing.md
+    signal_signature: "grid_changed(footprint_cells_changed: Array[Vector2i], access_cells_changed: Array[Vector2i]) — emitted once per commit()/clear(), never during drag preview"
+    referenced_by:
+      - docs/architecture/adr-0005-signal-bus-event-routing.md
+    added: 2026-07-21
+    revised: ""
+
+  - contract: tick_completed_signal
+    status: active
+    pattern: signal
+    producer: time-system
+    consumers:
+      - save-load
+    adr: docs/architecture/adr-0005-signal-bus-event-routing.md
+    signal_signature: "tick_completed(tick_count: int) — emitted at end of each tick sequence after all on_tick() calls"
+    referenced_by:
+      - docs/architecture/adr-0005-signal-bus-event-routing.md
+    added: 2026-07-21
+    revised: ""
+
+  - contract: placement_signals
+    status: active
+    pattern: signal
+    producer: placement-system
+    consumers:
+      - selection-system
+      - congestion-flow-overlay
+      - build-shop-ui
+    adr: docs/architecture/adr-0005-signal-bus-event-routing.md
+    signal_signature: "placement_committed(instance_id: int, equipment_id: String, footprint_cells: Array[Vector2i]) + placement_rejected(equipment_id: String, anchor: Vector2i, rotation: int, fail_code: int) — silent cancel emits neither"
+    referenced_by:
+      - docs/architecture/adr-0005-signal-bus-event-routing.md
+    added: 2026-07-21
+    revised: ""
+
+  - contract: member_completed_visit_signal
+    status: active
+    pattern: signal
+    producer: member-sim
+    consumers:
+      - economy
+      - satisfaction
+    adr: docs/architecture/adr-0005-signal-bus-event-routing.md
+    signal_signature: "member_completed_visit(member_id: int) — quota-met departures only; walk-failure/patience-exhausted do NOT emit"
+    referenced_by:
+      - docs/architecture/adr-0005-signal-bus-event-routing.md
+    added: 2026-07-21
+    revised: ""
+
+  - contract: balance_changed_signal
+    status: active
+    pattern: signal
+    producer: economy
+    consumers:
+      - hud
+      - shop-purchase
+    adr: docs/architecture/adr-0005-signal-bus-event-routing.md
+    signal_signature: "balance_changed(new_balance: int, delta: int) — signed delta for HUD animation direction"
+    referenced_by:
+      - docs/architecture/adr-0005-signal-bus-event-routing.md
+    added: 2026-07-21
+    revised: ""
+
+  - contract: selection_changed_signal
+    status: active
+    pattern: signal
+    producer: selection-system
+    consumers:
+      - info-panel
+      - build-shop-ui
+    adr: docs/architecture/adr-0005-signal-bus-event-routing.md
+    signal_signature: "selection_changed(instance_id: int, equipment_def: Dictionary, cell: Vector2i, rotation: int) — 4-arg select, 0-arg deselect"
+    referenced_by:
+      - docs/architecture/adr-0005-signal-bus-event-routing.md
+    added: 2026-07-21
+    revised: ""
+
+  - contract: congestion_updated_signal
+    status: active
+    pattern: signal
+    producer: congestion
+    consumers:
+      - congestion-flow-overlay
+    adr: docs/architecture/adr-0005-signal-bus-event-routing.md
+    signal_signature: "congestion_updated() — no payload; overlay reads Congestion state directly after signal"
+    referenced_by:
+      - docs/architecture/adr-0005-signal-bus-event-routing.md
+    added: 2026-07-21
+    revised: ""
+
+  - contract: tick_dispatch
+    status: active
+    pattern: direct_call
+    producer: simulation-orchestrator
+    consumers:
+      - member-sim
+      - congestion
+      - satisfaction
+      - economy
+    adr: docs/architecture/adr-0005-signal-bus-event-routing.md
+    signal_signature: "SimulationOrchestrator._advance_tick() — hardcoded sequence of direct on_tick(ctx) calls; synchronous, non-reentrant, fixed order"
+    referenced_by:
+      - docs/architecture/adr-0005-signal-bus-event-routing.md
+    added: 2026-07-21
+    revised: ""
+
+  - contract: economy_credit
+    status: active
+    pattern: direct_call
+    producer: economy
+    consumers:
+      - selection-system
+    adr: docs/architecture/adr-0006-economy-credit-interface.md
+    signal_signature: "credit(amount: int, reason: String) -> bool — adds amount to balance (guards: amount > 0); refund computed externally by caller; emits balance_changed(new, +amount)"
+    referenced_by:
+      - docs/architecture/adr-0006-economy-credit-interface.md
+    added: 2026-07-21
+    revised: ""
+
+  - contract: astar_rebuild_on_load
+    status: active
+    pattern: direct_call
+    producer: navigation
+    consumers:
+      - save-load
+    adr: docs/architecture/adr-0007-astargrid2d-determinism.md
+    signal_signature: "Navigation.rebuild(grid: GridStateReader) -> void — rebuilds AStarGrid2D from GridSystem occupancy on load; Navigation serializes nothing"
+    referenced_by:
+      - docs/architecture/adr-0007-astargrid2d-determinism.md
+    added: 2026-07-21
+    revised: ""
 #     consumers:
 #       - health-system        # receives damage_dealt signal, applies to health
 #       - ui-system            # receives damage_dealt signal, shows damage number
@@ -131,7 +398,83 @@ performance_budgets: []
 # Register an API decision when the choice is non-obvious and other ADRs might
 # make a different choice for the same purpose without knowing this was decided.
 
-api_decisions: []
+api_decisions:
+  - purpose: sim_system_base_class
+    status: active
+    api: "SimSystem extends RefCounted (@abstract)"
+    not: "Node or Resource base class for simulation systems"
+    adr: docs/architecture/adr-0001-di-container-scene-bootstrap.md
+    reason: "RefCounted is lighter than Node (no scene-tree overhead). Two-phase init (init() + _post_init()) works around GDScript RefCounted constructor limitations. @abstract enforces that SimSystem cannot be instantiated directly (Godot 4.5+, needs 4.7.1 verification)."
+    referenced_by:
+      - docs/architecture/adr-0001-di-container-scene-bootstrap.md
+    added: 2026-07-21
+    revised: ""
+
+  - purpose: storage_format_save
+    status: active
+    api: "JSON (.sav.json) with hex-encoded 64-bit integers for master_seed and RNG states"
+    not: "Godot Resource (.tres/.res) for runtime save data; JSON number literals for 64-bit values"
+    adr: docs/architecture/adr-0002-storage-format.md
+    reason: "JSON is debuggable, VCS-diffable, and works in headless CI. Hex encoding prevents IEEE 754 truncation of 64-bit ints in JSON. Godot Resources couple to editor resource cache and fail in headless mode."
+    referenced_by:
+      - docs/architecture/adr-0002-storage-format.md
+    added: 2026-07-21
+    revised: ""
+
+  - purpose: storage_format_catalog
+    status: active
+    api: "JSON (.catalog.json) with JSON.new() + json.parse() for line-number error reporting"
+    not: "Godot Resource (.tres) for designer-authored catalog data"
+    adr: docs/architecture/adr-0002-storage-format.md
+    reason: "Designer-authored data must be hand-editable and VCS-diffable. JSON.new().parse() provides line-number context for validation errors."
+    referenced_by:
+      - docs/architecture/adr-0002-storage-format.md
+    added: 2026-07-21
+    revised: ""
+
+  - purpose: storage_format_level
+    status: active
+    api: "Binary (.level.bin) — 28-byte header (7x int32 LE) + buildable mask (width*height bytes)"
+    not: "JSON or text format for level geometry"
+    adr: docs/architecture/adr-0002-storage-format.md
+    reason: "Level geometry is a large binary blob with no human-editing use case. Binary format is compact and fast to parse."
+    referenced_by:
+      - docs/architecture/adr-0002-storage-format.md
+    added: 2026-07-21
+    revised: ""
+
+  - purpose: grid_read_write_split
+    status: active
+    api: "GridStateReader (@abstract extends SimSystem) for reads; GridSystem subclass for writes"
+    not: "Single GridSystem class exposing both read and write to all consumers"
+    adr: docs/architecture/adr-0003-grid-state-reader.md
+    reason: "Type-level enforcement of read-only access. Consumers typed as GridStateReader cannot call commit()/clear() — those methods exist only on GridSystem. GridSnapshot implements the same interface for speculative views. Follows the @abstract pattern established by ADR-0001."
+    referenced_by:
+      - docs/architecture/adr-0003-grid-state-reader.md
+    added: 2026-07-21
+    revised: ""
+
+  - purpose: rng_subseed_derivation
+    status: active
+    api: "FNV-1a64(name) XOR master_seed → SplitMix64 finalizer → RandomNumberGenerator.seed"
+    not: "GDScript hash() for seed derivation; shared master RNG stream with sequential draws; master_seed + hash(name) without finalizer"
+    adr: docs/architecture/adr-0004-seeded-rng-architecture.md
+    reason: "Per-system RNG sub-streams derived through a published, language-agnostic pipeline (FNV-1a64 + SplitMix64) ensure that each system's randomness is independent of every other system's draw count. GDScript hash() is explicitly not stable across engine versions. SplitMix64 finalizer provides avalanche so similarly-named systems produce unrelated sub-streams. Logical right-shift (lsr()) is mandatory because GDScript >> is arithmetic."
+    referenced_by:
+      - docs/architecture/adr-0004-seeded-rng-architecture.md
+    added: 2026-07-21
+    revised: ""
+
+  - purpose: astar_determinism_gate
+    status: active
+    api: "AStarGrid2D cross-process tie-break stability test + lexicographic path selector fallback if non-deterministic"
+    not: "Assuming AStarGrid2D tie-break is deterministic without physical cross-process verification; serializing AStarGrid2D internal state (opaque, undocumented)"
+    adr: docs/architecture/adr-0007-astargrid2d-determinism.md
+    reason: "SaveLoad determinism requires that Navigation produces the same paths after rebuilding AStarGrid2D from restored occupancy. AStarGrid2D internal tie-break is undocumented and may depend on heap addresses or pointer order that changes across process restarts. A physical cross-process gate test proves or disproves determinism; if disproven, a lexicographic path selector fallback guarantees it in our own code."
+    referenced_by:
+      - docs/architecture/adr-0007-astargrid2d-determinism.md
+    added: 2026-07-21
+    revised: ""
 
 # Example:
 #
@@ -157,7 +500,25 @@ api_decisions: []
 # Register a pattern when an ADR explicitly bans it AND other ADRs might
 # unknowingly use it (i.e., it's a tempting but wrong approach for this project).
 
-forbidden_patterns: []
+forbidden_patterns:
+  - pattern: direct_autoload_coupling
+    status: active
+    description: "Simulation systems must not reference Autoload singletons by name. All dependencies must be passed via init() parameters."
+    why: "Tight coupling to Autoloads makes systems untestable in isolation and creates hidden dependencies. Violates the project's DI-over-Autoload requirement."
+    adr: docs/architecture/adr-0001-di-container-scene-bootstrap.md
+    added: 2026-07-21
+  - pattern: simulation_system_as_node
+    status: active
+    description: "Simulation systems (GridSystem, TimeSystem, PlacementSystem, Navigation, MemberSim, Congestion, ZoneRules, Satisfaction, Economy, Shop, SelectionSystem, SaveLoad) must extend SimSystem (RefCounted), not Node. Input-requiring systems use thin bridge Nodes that forward events to the RefCounted system."
+    why: "Node class carries scene-tree overhead (~100+ bytes per instance), lifecycle callbacks (_ready, _process, _exit_tree) that are inappropriate for pure simulation logic, and couples systems to the engine's object model. RefCounted is lighter, headless-testable, and avoids lifecycle callback confusion."
+    adr: docs/architecture/adr-0001-di-container-scene-bootstrap.md
+    added: 2026-07-21
+  - pattern: direct_grid_state_mutation
+    status: active
+    description: "Consumers must not modify PlacedInstance fields returned by GridStateReader.get_placed_instances(). Grid occupancy data must only be written through GridSystem.commit() and GridSystem.clear()."
+    why: "PlacedInstance objects are shared by reference between the base grid and speculative snapshots (GridSnapshot). Mutating a PlacedInstance would corrupt both the real grid state and any in-flight speculative views. The type system cannot enforce this — GDScript has no readonly/final field modifier — so it is enforced by convention and code review."
+    adr: docs/architecture/adr-0003-grid-state-reader.md
+    added: 2026-07-21
 
 # Example:
 #
