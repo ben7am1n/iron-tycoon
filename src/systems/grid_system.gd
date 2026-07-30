@@ -12,28 +12,25 @@
 ## affects the other. GridSystem stores only integer occupant_id,
 ## never equipment type or zone membership.
 ##
-## Extends RefCounted. Injected via SimulationOrchestrator,
-## never accessed through Autoload/singleton.
+## Extends SimSystem (ADR-0001 two-phase init pattern). Injected via
+## SimulationOrchestrator, never accessed through Autoload/singleton.
 ##
 ## In the future, GridStateReader will be inserted as an intermediate
-## base class (Story 006). For now, GridSystem extends RefCounted directly
-## and includes its own init guard.
-class_name GridSystem extends RefCounted
-
-
-# === Init guard (manual — @abstract non-functional on RefCounted in 4.7.1) ===
-
-var _initialized: bool = false
+## base class between SimSystem and GridSystem (Story 006).
+class_name GridSystem extends SimSystem
 
 
 ## Marks the system as initialized. Must be called exactly once.
 ## Parameterized by width and height so that callers get a compile
-## error if they forget to initialize the grid.
+## error if they forget to initialize the grid. Rejects non-positive
+## dimensions without marking the system initialized, so a caller can
+## retry with valid values.
 func init(grid_width: int, grid_height: int) -> void:
-	if _initialized:
-		push_error("GridSystem: init() called twice.")
+	if grid_width <= 0 or grid_height <= 0:
+		push_error("GridSystem: init() requires positive width and height, got (%d, %d)." % [grid_width, grid_height])
 		return
-	_initialized = true
+	if not _mark_initialized():
+		return
 	_width = grid_width
 	_height = grid_height
 	var size := grid_width * grid_height
@@ -46,14 +43,8 @@ func init(grid_width: int, grid_height: int) -> void:
 	_buildable_frozen = false
 
 
-func _post_init() -> void:
-	pass
-
-
-## Guards every public method against use-before-init.
-func _assert_initialized() -> void:
-	if not _initialized:
-		push_error("GridSystem: method called before init().")
+func system_name() -> String:
+	return "GridSystem"
 
 
 # === Storage (private — never expose as public API) ===
@@ -72,7 +63,8 @@ var _buildable_frozen: bool = false
 ## This read is completely independent of buildable state —
 ## setting buildable=false on a cell does not affect get_occupant_id().
 func get_occupant_id(cell: Vector2i) -> int:
-	_assert_initialized()
+	if not _assert_initialized():
+		return -1
 	if not is_in_bounds(cell):
 		return -1
 	return _occupant_id[flat_index(cell)]
@@ -81,7 +73,8 @@ func get_occupant_id(cell: Vector2i) -> int:
 ## Returns whether [cell] is flagged as buildable.
 ## buildable is static after level load — set once, then frozen.
 func get_buildable(cell: Vector2i) -> bool:
-	_assert_initialized()
+	if not _assert_initialized():
+		return false
 	if not is_in_bounds(cell):
 		return false
 	return _buildable[flat_index(cell)] != 0
@@ -91,7 +84,8 @@ func get_buildable(cell: Vector2i) -> bool:
 ## their access cell. Returns an empty array if this cell is not
 ## anyone's access cell.
 func get_access_ids(cell: Vector2i) -> Array:  # Array[int]
-	_assert_initialized()
+	if not _assert_initialized():
+		return []
 	if _access_ids.has(cell):
 		return (_access_ids[cell] as Array).duplicate()
 	return []
@@ -103,7 +97,8 @@ func get_access_ids(cell: Vector2i) -> Array:  # Array[int]
 ## Must be called BEFORE freeze_buildable() — after the level is loaded,
 ## this method push_errors and no-ops to enforce immutability.
 func set_buildable(cell: Vector2i, value: bool) -> void:
-	_assert_initialized()
+	if not _assert_initialized():
+		return
 	if _buildable_frozen:
 		push_error("GridSystem: set_buildable() called after level load. Buildable state is frozen.")
 		return
@@ -115,7 +110,8 @@ func set_buildable(cell: Vector2i, value: bool) -> void:
 
 ## Sets buildable for multiple cells at once. Same freeze check as set_buildable().
 func set_buildable_bulk(cells: Array, value: bool) -> void:
-	_assert_initialized()
+	if not _assert_initialized():
+		return
 	if _buildable_frozen:
 		push_error("GridSystem: set_buildable_bulk() called after level load. Buildable state is frozen.")
 		return
@@ -131,7 +127,8 @@ func set_buildable_bulk(cells: Array, value: bool) -> void:
 ## and set_buildable_bulk() calls are rejected with push_error().
 ## Called exactly once after level load completes.
 func freeze_buildable() -> void:
-	_assert_initialized()
+	if not _assert_initialized():
+		return
 	_buildable_frozen = true
 
 
@@ -143,8 +140,16 @@ func freeze_buildable() -> void:
 ##
 ## occupant_id = 0 is legal (first piece placed). The empty check uses
 ## explicit comparison against -1, never truthiness.
+##
+## occupant_id = -1 is rejected — it is the reserved empty sentinel and
+## committing it would make an occupied cell indistinguishable from an
+## empty one.
 func commit_occupant(cell: Vector2i, occupant_id: int) -> bool:
-	_assert_initialized()
+	if not _assert_initialized():
+		return false
+	if occupant_id == -1:
+		push_error("GridSystem: commit_occupant() rejected — occupant_id=-1 is the reserved empty sentinel.")
+		return false
 	if not is_in_bounds(cell):
 		push_error("GridSystem: commit_occupant() on out-of-bounds cell %s." % cell)
 		return false
@@ -157,7 +162,8 @@ func commit_occupant(cell: Vector2i, occupant_id: int) -> bool:
 
 ## Clears the occupant_id at [cell], setting it back to -1 (empty).
 func clear_occupant(cell: Vector2i) -> void:
-	_assert_initialized()
+	if not _assert_initialized():
+		return
 	if not is_in_bounds(cell):
 		push_error("GridSystem: clear_occupant() on out-of-bounds cell %s." % cell)
 		return
@@ -170,7 +176,8 @@ func clear_occupant(cell: Vector2i) -> void:
 ## Multiple occupant_ids can share the same access cell
 ## (non-mutually-exclusive multi-value semantics).
 func commit_access(cell: Vector2i, occupant_id: int) -> void:
-	_assert_initialized()
+	if not _assert_initialized():
+		return
 	if not is_in_bounds(cell):
 		push_error("GridSystem: commit_access() on out-of-bounds cell %s." % cell)
 		return
@@ -185,7 +192,8 @@ func commit_access(cell: Vector2i, occupant_id: int) -> void:
 ## Removes [occupant_id] from this cell's access_ids list.
 ## If the list becomes empty, the dictionary entry is removed entirely.
 func clear_access(cell: Vector2i, occupant_id: int) -> void:
-	_assert_initialized()
+	if not _assert_initialized():
+		return
 	if not is_in_bounds(cell):
 		push_error("GridSystem: clear_access() on out-of-bounds cell %s." % cell)
 		return
@@ -201,19 +209,26 @@ func clear_access(cell: Vector2i, occupant_id: int) -> void:
 
 ## Returns true if [cell] is within [0, width) × [0, height).
 func is_in_bounds(cell: Vector2i) -> bool:
-	_assert_initialized()
+	if not _assert_initialized():
+		return false
 	return cell.x >= 0 and cell.x < _width and cell.y >= 0 and cell.y < _height
 
 
 ## Returns the grid dimensions as (width, height).
 func get_dimensions() -> Vector2i:
-	_assert_initialized()
+	if not _assert_initialized():
+		return Vector2i.ZERO
 	return Vector2i(_width, _height)
 
 
 ## Converts a 2D cell coordinate to a flat array index.
 ## Uses row-major order: flat_index = row * width + col.
+## Callers must bounds-check with is_in_bounds() first — this method does
+## not validate the cell and returns -1 (never a valid index) if called
+## before init().
 func flat_index(cell: Vector2i) -> int:
+	if not _assert_initialized():
+		return -1
 	return cell.y * _width + cell.x
 
 
@@ -234,10 +249,11 @@ func get_transformed_cells(
 	anchor: Vector2i,
 	rotation: int       # 0, 90, 180, 270
 ) -> Dictionary:
-	_assert_initialized()
-
 	var transformed_footprint: Array[Vector2i] = []
 	var transformed_access: Array[Vector2i] = []
+
+	if not _assert_initialized():
+		return {"footprint": transformed_footprint, "access": transformed_access}
 
 	if rotation == 0:
 		for cell in footprint:
