@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<!--
+  PROTOTYPE - NOT FOR PRODUCTION
+  Question: Is tuning gym layout for member flow satisfying on its own?
+  Date: 2026-07-18 (reopened for playtest)
+  Throwaway HTML build. No architecture, no determinism, no save. Math.random used freely.
+  Covers the core loop from design order #1-#8 in simplified form:
+  grid + drag-place/rotate/move equipment + member pathfinding + congestion-weighted
+  target selection + a congestion heatmap overlay.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>撸铁大亨 — Core Loop Prototype</title>
+<style>
+  body { margin:0; background:#2b2a30; color:#F4E9D8; font-family:system-ui,-apple-system,sans-serif; }
+  #wrap { display:flex; gap:16px; padding:16px; align-items:flex-start; }
+  #left { }
+  canvas { background:#3C3A42; border-radius:8px; display:block; cursor:pointer; }
+  #palette { display:flex; gap:8px; margin-bottom:10px; }
+  .tool { padding:8px 12px; border-radius:6px; border:2px solid #5a5862; background:#46444d;
+          color:#F4E9D8; cursor:pointer; font-size:13px; user-select:none; }
+  .tool:hover { border-color:#8FBF9F; }
+  .tool.active { border-color:#F5D97B; background:#54525c; }
+  .sw { display:inline-block; width:12px; height:12px; border-radius:3px; margin-right:6px; vertical-align:middle; }
+  #side { width:250px; font-size:13px; line-height:1.6; }
+  #side h2 { font-size:15px; margin:0 0 6px; color:#F5D97B; }
+  .card { background:#36343c; border-radius:8px; padding:12px 14px; margin-bottom:12px; }
+  kbd { background:#54525c; border-radius:4px; padding:1px 6px; font-size:12px; }
+  #stats span { color:#8EC5E8; font-weight:600; }
+  #heatBtn.on { border-color:#E0A0A0; background:#54525c; }
+  .hint { color:#b8b4c0; font-size:12px; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="left">
+    <div id="palette">
+      <div class="tool" data-key="treadmill"><span class="sw" style="background:#8EC5E8"></span>Treadmill 1×2</div>
+      <div class="tool" data-key="bench"><span class="sw" style="background:#8FBF9F"></span>Bench 1×1</div>
+      <div class="tool" data-key="squat"><span class="sw" style="background:#F2B486"></span>Squat 2×2</div>
+      <div class="tool" id="heatBtn"><span class="sw" style="background:#E0A0A0"></span>Heatmap (H)</div>
+    </div>
+    <canvas id="cv" width="644" height="460"></canvas>
+    <div class="hint" style="margin-top:8px">
+      Click a tool then click the floor to place · <kbd>R</kbd> rotate · click a machine to pick it up &amp; move it ·
+      right-click to remove · <kbd>Esc</kbd> cancel · <kbd>H</kbd> heatmap
+    </div>
+  </div>
+  <div id="side">
+    <div class="card" id="stats">
+      Members inside: <span id="mCount">0</span><br>
+      Avg congestion: <span id="cAvg">0.00</span><br>
+      Queuing now: <span id="qCount">0</span>
+    </div>
+    <div class="card">
+      <h2>The idea</h2>
+      Members walk in from the left, pick a machine (avoiding crowded ones), use it, and leave.
+      The 3 machines start <b>clumped in the corner</b> — watch them jam up.
+      Spread the machines out and watch the flow smooth and the pink congestion fade.
+      <p class="hint">Toggle the heatmap to see crowding. Warmer = busier. The ⛔ marker means a machine is walled off / unreachable.</p>
+    </div>
+    <div class="card">
+      <h2>What to notice</h2>
+      Does rearranging <i>feel</i> like it matters? Do you get the "just move one more thing" itch?
+    </div>
+  </div>
+</div>
+<script>
+// ---------- config ----------
+const GRID_W = 14, GRID_H = 10, CELL = 46;
+const ENTRANCE = {x:0, y:5};          // gap in the left wall
+const MAX_MEMBERS = 10;
+const SPAWN_EVERY = 20;               // ticks between arrivals (10 ticks/sec)
+const MOVE_TICKS = 2;                 // ticks per cell step (~5 cells/sec)
+const USE_TICKS = {treadmill:45, bench:30, squat:55};
+const PATIENCE = 45;                  // ticks a member waits in a queue
+const EXERCISES = 3;                  // machines used per visit
+const K_CONG = 3.0;                   // congestion-avoidance strength
+const CONG_ALPHA = 0.3, DENS_BETA = 0.4;
+
+const COL = { floor:'#F4E9D8', wall:'#3C3A42', grid:'#e7dcc7',
+  treadmill:'#8EC5E8', bench:'#8FBF9F', squat:'#F2B486', rose:'#E0A0A0',
+  access:'#6f9a7d', ghostOk:'#8FBF9F', ghostBad:'#E08080',
+  mWalk:'#5B8FB0', mUse:'#4E9A6A', mWait:'#E0A050', mLeave:'#9A97A0' };
+
+const DEFS = {
+  treadmill:{ fp:[[0,0],[0,1]], access:[1,0], color:COL.treadmill },
+  bench:    { fp:[[0,0]],        access:[0,1], color:COL.bench },
+  squat:    { fp:[[0,0],[1,0],[0,1],[1,1]], access:[0,2], color:COL.squat },
+};
+
+// ---------- state ----------
+let buildable = [];   // [y][x] bool
+let occ = [];         // [y][x] equip id or -1  (footprint only; access NOT solid)
+let equips = [];      // {id,key,anchor:{x,y},rot,cells:[],access:{x,y},occupant,cong,reachable}
+let members = [];
+let nextEquipId = 1, nextMemberId = 1, tickCount = 0;
+let density = [];     // [y][x] smoothed
+let carry = null;     // {key,rot, existingId?, originAnchor?, originRot?}
+let mouseCell = null;
+let showHeat = false;
+
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+
+// ---------- grid helpers ----------
+function initGrid(){
+  for(let y=0;y<GRID_H;y++){ buildable[y]=[]; occ[y]=[]; density[y]=[];
+    for(let x=0;x<GRID_W;x++){
+      const border = (x===0||y===0||x===GRID_W-1||y===GRID_H-1);
+      buildable[y][x] = !border;
+      occ[y][x] = -1; density[y][x]=0;
+    }
+  }
+  buildable[ENTRANCE.y][ENTRANCE.x] = true;     // doorway gap
+}
+const inB = (x,y)=> x>=0&&y>=0&&x<GRID_W&&y<GRID_H;
+const solid = (x,y)=> !inB(x,y) || !buildable[y][x] || occ[y][x]!==-1;
+
+function rot90(p){ return [-p[1], p[0]]; }
+function transform(key, rot){
+  const d = DEFS[key]; let fp = d.fp.map(c=>c.slice()); let acc = d.access.slice();
+  for(let i=0;i<(rot/90)%4;i++){ fp = fp.map(rot90); acc = rot90(acc); }
+  const all = fp.concat([acc]);
+  const minx = Math.min(...all.map(c=>c[0])), miny = Math.min(...all.map(c=>c[1]));
+  fp = fp.map(c=>[c[0]-minx,c[1]-miny]); acc=[acc[0]-minx,acc[1]-miny];
+  return {fp, acc};
+}
+function cellsAt(key,rot,ax,ay){
+  const t = transform(key,rot);
+  return { fp: t.fp.map(c=>({x:ax+c[0], y:ay+c[1]})), access:{x:ax+t.acc[0], y:ay+t.acc[1]} };
+}
+function validPlace(key,rot,ax,ay, ignoreId){
+  const c = cellsAt(key,rot,ax,ay);
+  for(const f of c.fp){
+    if(!inB(f.x,f.y) || !buildable[f.y][f.x]) return false;
+    if(occ[f.y][f.x]!==-1 && occ[f.y][f.x]!==ignoreId) return false;
+  }
+  const a = c.access;
+  if(!inB(a.x,a.y) || !buildable[a.y][a.x]) return false;   // access on wall/oob = reject
+  if(occ[a.y][a.x]!==-1 && occ[a.y][a.x]!==ignoreId) return false;
+  return true;
+}
+function placeEquip(key,rot,ax,ay,reuseId){
+  const c = cellsAt(key,rot,ax,ay);
+  const id = reuseId || nextEquipId++;
+  for(const f of c.fp) occ[f.y][f.x]=id;
+  equips.push({id,key,anchor:{x:ax,y:ay},rot,cells:c.fp,access:c.access,
+    occupant:null,cong:0,reachable:true});
+  return id;
+}
+function removeEquip(id){
+  const e = equips.find(e=>e.id===id); if(!e) return null;
+  for(const f of e.cells) if(occ[f.y][f.x]===id) occ[f.y][f.x]=-1;
+  for(const m of members) if(m.target===id){ m.target=null; if(m.state!=='LEAVE') startLeaveOrRetarget(m); }
+  equips = equips.filter(e=>e.id!==id);
+  return e;
+}
+function getEquip(id){ return equips.find(e=>e.id===id); }
+
+// ---------- pathfinding (8-dir BFS, no corner cut) ----------
+const DIRS = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+function bfs(sx,sy,gx,gy){
+  if(sx===gx&&sy===gy) return [{x:sx,y:sy}];
+  const key=(x,y)=>y*GRID_W+x;
+  const prev = new Map(); const q=[[sx,sy]]; prev.set(key(sx,sy),null);
+  while(q.length){
+    const [x,y]=q.shift();
+    for(const [dx,dy] of DIRS){
+      const nx=x+dx, ny=y+dy;
+      if(!inB(nx,ny)) continue;
+      // goal cell may be an access cell (not solid); intermediate must be non-solid
+      const isGoal = (nx===gx&&ny===gy);
+      if(!isGoal && solid(nx,ny)) continue;
+      if(dx!==0&&dy!==0){ if(solid(x+dx,y)||solid(x,y+dy)) continue; } // no corner cut
+      const k=key(nx,ny); if(prev.has(k)) continue;
+      prev.set(k,[x,y]);
+      if(isGoal){
+        const path=[]; let cur=[nx,ny];
+        while(cur){ path.push({x:cur[0],y:cur[1]}); cur=prev.get(key(cur[0],cur[1])); }
+        return path.reverse();
+      }
+      if(!solid(nx,ny)) q.push([nx,ny]);
+    }
+  }
+  return [];
+}
+
+// ---------- members ----------
+function spawnMember(){
+  members.push({ id:nextMemberId++, cell:{x:ENTRANCE.x,y:ENTRANCE.y},
+    px:ENTRANCE.x*CELL+CELL/2, py:ENTRANCE.y*CELL+CELL/2,
+    path:[], pi:0, moveT:0, state:'CHOOSE', target:null, accessCell:null,
+    useT:0, patience:0, exLeft:EXERCISES, lastUsed:null, avoid:{} });
+}
+function chooseTarget(m){
+  const cands = equips.filter(e => !m.avoid[e.id]);
+  const scored = [];
+  for(const e of cands){
+    const path = bfs(m.cell.x,m.cell.y, e.access.x,e.access.y);
+    if(path.length===0) continue;
+    let w = Math.exp(-K_CONG*e.cong) * (e.id===m.lastUsed?0.3:1) * (0.85+Math.random()*0.3);
+    scored.push({e,path,w});
+  }
+  if(scored.length===0){ startLeave(m); return; }
+  let tot = scored.reduce((s,o)=>s+o.w,0), r=Math.random()*tot, pick=scored[0];
+  for(const o of scored){ r-=o.w; if(r<=0){ pick=o; break; } }
+  m.target=pick.e.id; m.path=pick.path; m.pi=0; m.accessCell={...pick.e.access}; m.state='WALK'; m.moveT=0;
+}
+function startLeave(m){
+  const path = bfs(m.cell.x,m.cell.y, ENTRANCE.x,ENTRANCE.y);
+  m.path = path.length?path:[{...m.cell}]; m.pi=0; m.state='LEAVE'; m.moveT=0; m.target=null;
+}
+function startLeaveOrRetarget(m){
+  if(m.exLeft>0) chooseTarget(m); else startLeave(m);
+}
+function updateMember(m){
+  if(m.state==='CHOOSE'){ chooseTarget(m); return; }
+  if(m.state==='WALK' || m.state==='LEAVE'){
+    m.moveT++; if(m.moveT<MOVE_TICKS) return; m.moveT=0;
+    // arrived?
+    if(m.pi >= m.path.length-1){
+      if(m.state==='LEAVE'){ m.dead=true; return; }
+      const e = getEquip(m.target);
+      if(!e){ startLeaveOrRetarget(m); return; }
+      if(e.occupant===null || e.occupant===m.id){ e.occupant=m.id; m.state='USE'; m.useT=USE_TICKS[e.key]; }
+      else { m.state='WAIT'; m.patience=PATIENCE; }
+      return;
+    }
+    const next = m.path[m.pi+1];
+    // machine placed on the path since we routed? re-path.
+    const goalReached = m.accessCell && next.x===m.accessCell.x && next.y===m.accessCell.y;
+    if(!goalReached && solid(next.x,next.y)){
+      const goal = m.state==='LEAVE'?ENTRANCE:m.accessCell;
+      const np = bfs(m.cell.x,m.cell.y, goal.x,goal.y);
+      if(np.length===0){ startLeaveOrRetarget(m); return; }
+      m.path=np; m.pi=0; return;
+    }
+    // if next is the (occupied) access cell held by someone else, wait one cell short
+    if(goalReached){
+      const e=getEquip(m.target);
+      if(e && e.occupant!==null && e.occupant!==m.id){ m.state='WAIT'; m.patience=PATIENCE; return; }
+    }
+    m.pi++; m.cell={...m.path[m.pi]};
+    return;
+  }
+  if(m.state==='WAIT'){
+    const e=getEquip(m.target);
+    if(!e){ startLeaveOrRetarget(m); return; }
+    if(e.occupant===null){ e.occupant=m.id; m.state='USE'; m.useT=USE_TICKS[e.key]; return; }
+    m.patience--;
+    if(m.patience<=0){ m.avoid[e.id]=true; setTimeout(()=>{},0); startLeaveOrRetarget(m); }
+    return;
+  }
+  if(m.state==='USE'){
+    m.useT--;
+    if(m.useT<=0){
+      const e=getEquip(m.target); if(e&&e.occupant===m.id) e.occupant=null;
+      m.lastUsed=m.target; m.exLeft--; m.avoid={};
+      if(m.exLeft<=0) startLeave(m); else chooseTarget(m);
+    }
+    return;
+  }
+}
+
+// ---------- congestion + density ----------
+function recompute(){
+  // per-equipment congestion (occupant + queue + nearby density), EMA
+  for(const e of equips){
+    const ac=e.access;
+    let near=0;
+    for(const m of members){ const dx=m.cell.x-ac.x, dy=m.cell.y-ac.y;
+      if(Math.abs(dx)<=1&&Math.abs(dy)<=1 && m.state!=='USE') near++; }
+    const occTier = (e.occupant!==null?0.35:0);
+    const queued = members.some(m=>m.state==='WAIT'&&m.target===e.id)?0.35:0;
+    let raw = Math.min(occTier+queued + Math.min(near/2,1)*0.5, 1);
+    e.cong = Math.max(0, Math.min(1, CONG_ALPHA*raw + (1-CONG_ALPHA)*e.cong));
+    // reachability from entrance
+    e.reachable = bfs(ENTRANCE.x,ENTRANCE.y, ac.x,ac.y).length>0;
+  }
+  // per-cell density, EMA
+  const raw = [];
+  for(let y=0;y<GRID_H;y++){ raw[y]=[]; for(let x=0;x<GRID_W;x++) raw[y][x]=0; }
+  for(const m of members){ const c=m.cell; if(!inB(c.x,c.y))continue;
+    raw[c.y][c.x]+=1;
+    for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){ const nx=c.x+dx,ny=c.y+dy;
+      if(inB(nx,ny)) raw[ny][nx]+=0.25; } }
+  for(let y=0;y<GRID_H;y++) for(let x=0;x<GRID_W;x++)
+    density[y][x] = DENS_BETA*Math.min(raw[y][x]/2.5,1) + (1-DENS_BETA)*density[y][x];
+}
+
+// ---------- sim ----------
+function simTick(){
+  tickCount++;
+  if(members.length<MAX_MEMBERS && tickCount%SPAWN_EVERY===0) spawnMember();
+  for(const m of members) updateMember(m);
+  members = members.filter(m=>!m.dead);
+  recompute();
+  // HUD
+  document.getElementById('mCount').textContent = members.length;
+  const avg = equips.length? (equips.reduce((s,e)=>s+e.cong,0)/equips.length):0;
+  document.getElementById('cAvg').textContent = avg.toFixed(2);
+  document.getElementById('qCount').textContent = members.filter(m=>m.state==='WAIT').length;
+}
+
+// ---------- render ----------
+function smoothstep(a,b,x){ x=Math.max(0,Math.min(1,(x-a)/(b-a))); return x*x*(3-2*x); }
+function draw(){
+  ctx.clearRect(0,0,cv.width,cv.height);
+  // floor / walls
+  for(let y=0;y<GRID_H;y++) for(let x=0;x<GRID_W;x++){
+    ctx.fillStyle = buildable[y][x]?COL.floor:COL.wall;
+    ctx.fillRect(x*CELL,y*CELL,CELL,CELL);
+    if(buildable[y][x]){ ctx.strokeStyle=COL.grid; ctx.lineWidth=1; ctx.strokeRect(x*CELL+.5,y*CELL+.5,CELL,CELL); }
+  }
+  // entrance marker
+  ctx.fillStyle='#F5D97B'; ctx.fillRect(ENTRANCE.x*CELL+4,ENTRANCE.y*CELL+CELL/2-3,CELL-8,6);
+  // heatmap
+  if(showHeat){
+    for(let y=0;y<GRID_H;y++) for(let x=0;x<GRID_W;x++){
+      const a = smoothstep(0.15,0.8,density[y][x]);
+      if(a>0.02){ ctx.globalAlpha=a*0.75; ctx.fillStyle=COL.rose;
+        ctx.fillRect(x*CELL,y*CELL,CELL,CELL); ctx.globalAlpha=1; }
+    }
+  }
+  // equipment
+  for(const e of equips){
+    for(const f of e.cells){
+      ctx.fillStyle=DEFS[e.key].color; ctx.fillRect(f.x*CELL+3,f.y*CELL+3,CELL-6,CELL-6);
+      ctx.strokeStyle='#3C3A42'; ctx.lineWidth=2; ctx.strokeRect(f.x*CELL+3,f.y*CELL+3,CELL-6,CELL-6);
+    }
+    // access cell marker (small ring)
+    const a=e.access; ctx.strokeStyle=COL.access; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.arc(a.x*CELL+CELL/2,a.y*CELL+CELL/2,7,0,7); ctx.stroke();
+    // congestion glyph (bar top-left of first fp cell)
+    const c0=e.cells[0]; const bw=CELL-14, bh=5;
+    ctx.fillStyle='#00000022'; ctx.fillRect(c0.x*CELL+7,c0.y*CELL+5,bw,bh);
+    ctx.fillStyle=COL.rose; ctx.fillRect(c0.x*CELL+7,c0.y*CELL+5,bw*e.cong,bh);
+    // access blocked marker
+    if(!e.reachable){
+      ctx.fillStyle='#E06060'; ctx.font='bold 20px sans-serif'; ctx.textAlign='center';
+      ctx.fillText('⛔', c0.x*CELL+CELL/2, c0.y*CELL-2);
+    }
+  }
+  // members
+  for(const m of members){
+    let col = m.state==='USE'?COL.mUse : m.state==='WAIT'?COL.mWait : m.state==='LEAVE'?COL.mLeave : COL.mWalk;
+    ctx.fillStyle=col; ctx.beginPath(); ctx.arc(m.px,m.py,8,0,7); ctx.fill();
+    ctx.strokeStyle='#3C3A42'; ctx.lineWidth=2; ctx.stroke();
+  }
+  // carry ghost
+  if(carry && mouseCell){
+    const ok = validPlace(carry.key,carry.rot,mouseCell.x,mouseCell.y, carry.existingId);
+    const c = cellsAt(carry.key,carry.rot,mouseCell.x,mouseCell.y);
+    ctx.globalAlpha=0.6;
+    for(const f of c.fp){ ctx.fillStyle= ok?COL.ghostOk:COL.ghostBad;
+      ctx.fillRect(f.x*CELL+3,f.y*CELL+3,CELL-6,CELL-6); }
+    ctx.globalAlpha=1;
+    const a=c.access; ctx.strokeStyle= ok?COL.access:COL.ghostBad; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.arc(a.x*CELL+CELL/2,a.y*CELL+CELL/2,7,0,7); ctx.stroke();
+  }
+}
+// smooth member interpolation toward cell center
+function lerpMembers(dt){
+  for(const m of members){
+    const tx=m.cell.x*CELL+CELL/2, ty=m.cell.y*CELL+CELL/2;
+    const k=Math.min(1, dt*10);
+    m.px+=(tx-m.px)*k; m.py+=(ty-m.py)*k;
+  }
+}
+
+// ---------- input ----------
+function cellFromEvent(ev){
+  const r=cv.getBoundingClientRect();
+  return { x:Math.floor((ev.clientX-r.left)/CELL), y:Math.floor((ev.clientY-r.top)/CELL) };
+}
+cv.addEventListener('mousemove', ev=>{ mouseCell=cellFromEvent(ev); });
+cv.addEventListener('mouseleave', ()=>{ mouseCell=null; });
+cv.addEventListener('contextmenu', ev=>{ ev.preventDefault();
+  const c=cellFromEvent(ev); const id=occ[c.y]?.[c.x];
+  if(id && id!==-1) removeEquip(id);
+});
+cv.addEventListener('click', ev=>{
+  const c=cellFromEvent(ev);
+  if(carry){
+    if(validPlace(carry.key,carry.rot,c.x,c.y, carry.existingId)){
+      placeEquip(carry.key,carry.rot,c.x,c.y, carry.existingId);
+      carry = carry.existingId ? null : {key:carry.key,rot:carry.rot}; // keep placing new; done for moves
+      updateActiveTool();
+    }
+    return;
+  }
+  // pick up existing
+  const id=occ[c.y]?.[c.x];
+  if(id && id!==-1){
+    const e=removeEquip(id);
+    carry={ key:e.key, rot:e.rot, existingId:e.id, originAnchor:{...e.anchor}, originRot:e.rot };
+  }
+});
+document.querySelectorAll('.tool[data-key]').forEach(el=>{
+  el.addEventListener('click',()=>{ carry={key:el.dataset.key, rot:0}; updateActiveTool(); });
+});
+document.getElementById('heatBtn').addEventListener('click',()=>toggleHeat());
+function updateActiveTool(){
+  document.querySelectorAll('.tool[data-key]').forEach(el=>
+    el.classList.toggle('active', carry && !carry.existingId && el.dataset.key===carry.key));
+}
+function toggleHeat(){ showHeat=!showHeat; document.getElementById('heatBtn').classList.toggle('on',showHeat); }
+window.addEventListener('keydown', ev=>{
+  if(ev.key==='r'||ev.key==='R'){ if(carry) carry.rot=(carry.rot+90)%360; }
+  else if(ev.key==='Escape'){
+    if(carry && carry.existingId) placeEquip(carry.key, carry.originRot, carry.originAnchor.x, carry.originAnchor.y, carry.existingId);
+    carry=null; updateActiveTool();
+  }
+  else if(ev.key==='h'||ev.key==='H'){ toggleHeat(); }
+});
+
+// ---------- boot: pre-place a clumped layout ----------
+initGrid();
+placeEquip('treadmill',0, 2,2);   // cells (2,2)(2,3) access (3,2)
+placeEquip('bench',0,     2,4);   // cell (2,4) access (2,5)
+placeEquip('squat',0,     3,3);   // cells (3,3)(4,3)(3,4)(4,4) access (3,5)
+
+// ---------- main loop ----------
+let acc=0, last=performance.now();
+const TICK_MS=100;
+function frame(now){
+  let dt=(now-last)/1000; last=now; acc+=dt*1000;
+  while(acc>=TICK_MS){ simTick(); acc-=TICK_MS; }
+  lerpMembers(dt);
+  draw();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

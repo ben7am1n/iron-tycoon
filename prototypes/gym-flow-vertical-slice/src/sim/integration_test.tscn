@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://b0testrunnerintegration"]
+
+[ext_resource type="Script" path="res://src/sim/integration_test.gd" id="1_integ"]
+
+[node name="IntegrationTest" type="Node"]
+script = ExtResource("1_integ")
