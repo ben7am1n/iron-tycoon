@@ -1,12 +1,12 @@
 # Story 006: GridStateReader and GridSnapshot
 
 > **Epic**: grid-system
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Foundation
 > **Type**: Logic
 > **Estimate**: M — 1 day (Sprint 1)
 > **Manifest Version**: 2026-07-23
-> **Last Updated**: [set by /dev-story when implementation begins]
+> **Last Updated**: 2026-08-02
 
 ## Context
 
@@ -30,11 +30,11 @@
 
 *From GDD `design/gdd/grid-system.md`, scoped to this story:*
 
-- [ ] AC-GSR.1 [BLOCKING][Logic] GIVEN identical underlying grid state, one from GridSystem instance and one from its get_snapshot(), WHEN calling same set of is_solid/get_occupant_id/get_access_cells/get_dimensions on both, THEN return values are pairwise equal
-- [ ] AC-GSR.2 [BLOCKING][Logic] GIVEN width=13,height=10 grid, WHEN calling get_dimensions(), THEN returns Vector2i(13,10), and get_snapshot() afterward preserves dimensions
-- [ ] AC-GSR.3 [ADVISORY][Code Review] GIVEN a variable typed GridStateReader holding a GridSnapshot instance, WHEN statically checking callable methods, THEN _commit_in_place/_clear_in_place are NOT in GridStateReader's declared method list
-- [ ] AC-X.2 [BLOCKING][Logic] GIVEN a get_snapshot() result, WHEN afterward executing commit/clear on the real grid, THEN the previously-obtained snapshot object's values do NOT change — deep copy semantics
-- [ ] AC-X.3 [BLOCKING][Logic] GIVEN real grid state S, WHEN calling get_speculative_snapshot(deltas) and performing arbitrary _commit_in_place/_clear_in_place on the returned snapshot, THEN real grid state still equals S (verified with get_snapshot()), AND no grid_changed emitted
+- [x] AC-GSR.1 [BLOCKING][Logic] GIVEN identical underlying grid state, one from GridSystem instance and one from its get_snapshot(), WHEN calling same set of is_solid/get_occupant_id/get_access_cells/get_dimensions on both, THEN return values are pairwise equal
+- [x] AC-GSR.2 [BLOCKING][Logic] GIVEN width=13,height=10 grid, WHEN calling get_dimensions(), THEN returns Vector2i(13,10), and get_snapshot() afterward preserves dimensions
+- [x] AC-GSR.3 [ADVISORY][Code Review] GIVEN a variable typed GridStateReader holding a GridSnapshot instance, WHEN statically checking callable methods, THEN _commit_in_place/_clear_in_place are NOT in GridStateReader's declared method list
+- [x] AC-X.2 [BLOCKING][Logic] GIVEN a get_snapshot() result, WHEN afterward executing commit/clear on the real grid, THEN the previously-obtained snapshot object's values do NOT change — deep copy semantics
+- [x] AC-X.3 [BLOCKING][Logic] GIVEN real grid state S, WHEN calling get_speculative_snapshot(deltas) and performing arbitrary _commit_in_place/_clear_in_place on the returned snapshot, THEN real grid state still equals S (verified with get_snapshot()), AND no grid_changed emitted
 
 ---
 
@@ -176,7 +176,17 @@ var access_cells: Array[Vector2i]
 **Required evidence**:
 - `tests/unit/grid_system/grid_state_reader_snapshot_test.gd` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing — 83 assertions, 0 failures (2026-08-02)
+
+**Test Evidence**: Logic — `tests/unit/grid_system/grid_state_reader_snapshot_test.gd` (83 assertions, 0 failures; full suite 398/398, up from 315; zero unexpected ERROR/SCRIPT ERROR lines in the new file — the abstract-guard push_errors are verified via the subprocess probe grid_state_reader_error_probe.gd in all 3 modes: abstract_new errored, stub_defaults errored, concrete_control clean).
+
+**Decisions recorded at close** (see docs/tech-debt-register.md for the full audit trail):
+1. **GridStateReader extends SimSystem, NOT RefCounted directly** — ADR-0003's governing hierarchy (RefCounted → SimSystem → GridStateReader → GridSystem/GridSnapshot) is authoritative over the story sketch's simplified `extends RefCounted`. GridSystem must keep SimSystem's two-phase init machinery through a single inheritance chain; this is exactly the tech-debt #1 resolution (GridSystem now extends GridStateReader, which sits between SimSystem and GridSystem).
+2. **Rotation convention closed**: PlacedInstance.rotation stores the DEGREE value (0/90/180/270), matching PlacementRecord.rotation and GridSystem.Rotation — supersedes ADR-0003's quarter-turn sketch. Degrees everywhere; do not reintroduce quarter-turns.
+3. **PlacedInstance.equipment_id is "" from GridSystem** — GridSystem stores only integer occupant_id by design (never equipment type); the equipment-catalog epic resolves id → equipment later. anchor is derived as min-offset of footprint ∪ access (correct by the AC-D5.2 anchor convention).
+4. **GridSnapshot wraps a deep-copied GridSystem as its _base** — get_snapshot() duplicates all storage (packed arrays, access_ids inner arrays, PlacementRecords), so later real-grid mutations cannot leak through (AC-X.2). Speculative deltas live in _adds/_removes dicts on top (AC-X.3).
+5. **PlacementDelta is a typed DTO** (not a bare Dictionary as the sketch's `{}` suggests) so `Array[PlacementDelta]` carries compile-time field safety — consistent with the Control Manifest's typed-DTO posture for PlacedInstance.
+6. **Test pitfall captured**: Godot's typed-array parameter boundary rejects untyped literals through `Object.call()`/`new()` — all delta/mutation arrays in tests are explicitly typed `Array[Vector2i]`/`Array[PlacementDelta]`. Also `Script.has_method()` does NOT reflect GDScript-declared methods in 4.7.1 — AC-GSR.3's static check walks `get_script_method_list()` instead.
 
 ---
 

@@ -12,16 +12,16 @@
 ## The record's cells are TRANSFORMED world-space cells (already rotated and
 ## offset by the anchor), exactly what commit() received from the caller.
 ##
-## Rotation convention (decided here, per the Story 003 tech-debt handoff):
+## Rotation convention (decided in Story 006, per the Story 003/005 handoff):
 ## [rotation] stores the DEGREE-VALUED GridSystem.Rotation value the commit
 ## caller passed (0/90/180/270) — NOT the quarter-turn count (0,1,2,3) that
-## ADR-0003's illustrative PlacedInstance.rotation sketch uses. ADR-0003's
-## PlacedInstance does not exist yet (Story 006); when it lands, whoever
-## builds it must reconcile the two conventions explicitly — see
-## docs/tech-debt-register.md (Story 003 / Story 005 entries). Storing as a
-## bare int (rather than the Rotation enum type) keeps this DTO decoupled
-## from GridSystem, exactly like PlacementCheckResult.fail_code carries
-## GridSystem.FailCode values as int.
+## ADR-0003's original illustrative PlacedInstance.rotation sketch used.
+## PlacedInstance (Story 006) stores the SAME degree int, so the two
+## conventions are reconciled — degrees everywhere. See
+## docs/tech-debt-register.md (Story 003 / Story 005 / Story 006 entries).
+## Storing as a bare int (rather than the Rotation enum type) keeps this DTO
+## decoupled from GridSystem, exactly like PlacementCheckResult.fail_code
+## carries GridSystem.FailCode values as int.
 ##
 ## Defensive duplication (strengthening deviation from the Story 005
 ## implementation sketch, which assigned caller arrays directly): _init()

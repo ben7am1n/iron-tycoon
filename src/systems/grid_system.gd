@@ -12,23 +12,29 @@
 ## affects the other. GridSystem stores only integer occupant_id,
 ## never equipment type or zone membership.
 ##
-## Extends SimSystem (ADR-0001 two-phase init pattern). Injected via
-## SimulationOrchestrator, never accessed through Autoload/singleton.
+## Extends GridStateReader (TR-GS-024, ADR-0003) which extends SimSystem
+## (ADR-0001 two-phase init pattern). GridStateReader was inserted as the
+## intermediate base class in Story 006 — this resolves tech-debt #1
+## (GridSystem should extend GridStateReader, not SimSystem directly).
+## Injected via SimulationOrchestrator, never accessed through
+## Autoload/singleton.
 ##
-## In the future, GridStateReader will be inserted as an intermediate
-## base class between SimSystem and GridSystem (Story 006).
-class_name GridSystem extends SimSystem
+## The write surface (commit/clear/can_place) exists ONLY here, not on
+## GridStateReader — consumers holding a GridStateReader reference can only
+## read (ADR-0003 §4, AC-GSR.3).
+class_name GridSystem extends GridStateReader
 
 
 ## Rotation values usable when placing equipment (GDD D.1, TR-GS-029).
 ## Degree-valued (0/90/180/270) to match the D.1 rotation formula directly.
 ##
-## NOTE -- deliberate discrepancy, not yet reconciled (see tech-debt register):
-## ADR-0003's illustrative PlacedInstance.rotation sketch uses quarter-turn
-## count (0,1,2,3) instead of degrees. PlacedInstance does not exist yet
-## (Story 006) and neither does the commit-time caller that would set
-## rotation (Story 005) -- whoever builds those must explicitly decide how
-## this enum's degree values map to that convention. Do not silently assume.
+## ROTATION CONVENTION (decided in Story 006, closing the Story 003/005
+## handoff in docs/tech-debt-register.md): ALL layers store the degree
+## value — commit() takes this enum, PlacementRecord.rotation stores the
+## degree int, and PlacedInstance.rotation carries the same degree int.
+## ADR-0003's original illustrative sketch used quarter-turn counts
+## (0,1,2,3); that convention is superseded. Do not introduce quarter-turn
+## values anywhere — the two conventions must not coexist.
 ##
 ## GDScript does NOT enforce that a Rotation-typed value is actually one of
 ## these four members at runtime -- illegal values (45, -90, 360) can still
@@ -195,6 +201,53 @@ func is_solid(cell: Vector2i) -> bool:
 		return true
 	var idx := flat_index(cell)
 	return _buildable[idx] == 0 or _occupant_id[idx] != -1
+
+
+## Returns the access cells registered for [instance_id] (transformed,
+## anchor-offset), per the GridStateReader contract (TR-GS-024). Resolves
+## via the reverse index — O(1), never a grid scan. Unknown instance_id
+## returns [] (a cleared or never-committed id has no access cells).
+##
+## Note: this is the instance→cells direction of the read surface. The
+## cell→ids direction (get_access_ids(cell)) remains a separate GridSystem
+## method; both coexist.
+func get_access_cells(instance_id: int) -> Array[Vector2i]:
+	var result: Array[Vector2i] = []
+	if not _assert_initialized():
+		return result
+	if not _reverse_index.has(instance_id):
+		return result
+	return (_reverse_index[instance_id] as PlacementRecord).access_cells.duplicate()
+
+
+## Returns all currently placed equipment instances as typed PlacedInstance
+## DTOs (TR-GS-024, ADR-0003 §2), built fresh from the reverse index.
+## Order is stable within a single grid state version but not guaranteed
+## across commits — consumers must not depend on insertion order.
+##
+## equipment_id is "" (GridSystem stores only integer occupant_id by design —
+## TR-GS; the equipment-catalog epic will resolve id → equipment later).
+## anchor is derived as the min-offset of footprint ∪ access (the anchor
+## convention, AC-D5.2, guarantees this equals the placement anchor);
+## rotation is the degree-valued GridSystem.Rotation int.
+func get_placed_instances() -> Array[PlacedInstance]:
+	var result: Array[PlacedInstance] = []
+	if not _assert_initialized():
+		return result
+	for instance_id in _reverse_index:
+		result.append(_to_placed_instance(instance_id))
+	return result
+
+
+## Builds a PlacedInstance DTO for [instance_id] from its reverse-index
+## record. Private helper of get_placed_instances().
+func _to_placed_instance(instance_id: int) -> PlacedInstance:
+	var record: PlacementRecord = _reverse_index[instance_id]
+	var anchor := _min_offset(record.footprint_cells + record.access_cells)
+	return PlacedInstance.new(
+		instance_id, "", anchor, record.rotation,
+		record.footprint_cells, record.access_cells
+	)
 
 
 # === Buildable Setup (level load only) ===
@@ -468,6 +521,66 @@ func clear(instance_id: int) -> void:
 	# Signal — once per clear, never per cell. Duplicated payload arrays
 	# (same rationale as commit()).
 	grid_changed.emit(record.footprint_cells.duplicate(), record.access_cells.duplicate())
+
+
+# === Snapshot (Story 006) ===
+
+## Returns a deep-copy snapshot of the current grid state (TR-GS-024,
+## AC-GSR.1/AC-GSR.2/AC-X.2). The returned GridSnapshot is fully
+## self-contained: it wraps a GridSystem copy with duplicated storage
+## (_occupant_id/_buildable/_access_ids/_reverse_index), so later
+## commit()/clear() on THIS grid cannot change the snapshot's values —
+## deep-copy semantics (AC-X.2). No grid_changed is emitted (read-only path).
+##
+## Before-init safe default: _assert_initialized() push_errors and the
+## returned snapshot wraps a fresh UNINITIALIZED GridSystem — its reads then
+## behave exactly like reads on an uninitialized grid (push_error + safe
+## defaults). Matches the file's loud-failure contract.
+func get_snapshot() -> GridSnapshot:
+	var snap := GridSnapshot.new()
+	if not _assert_initialized():
+		snap.init(GridSystem.new())
+		return snap
+	snap.init(_deep_copy_for_snapshot())
+	return snap
+
+
+## Returns a speculative snapshot: a deep copy of the current state with
+## [deltas] applied on top (GDD "推测性快照构造", AC-X.3). Operates on the
+## COPY ONLY — the real grid is never touched and no grid_changed is
+## emitted. Deltas are pre-validated by PlacementSystem; no can_place
+## re-validation happens here.
+func get_speculative_snapshot(deltas: Array[PlacementDelta]) -> GridSnapshot:
+	var snap := get_snapshot()
+	for delta in deltas:
+		if delta.is_removal:
+			snap._clear_in_place(delta.instance_id)
+		else:
+			snap._commit_in_place(delta.instance_id, delta.footprint_cells, delta.access_cells)
+	return snap
+
+
+## Creates a new GridSystem with duplicated storage — the deep-copy
+## primitive behind get_snapshot()/get_speculative_snapshot() (AC-X.2).
+## Every nested container is duplicated: the packed arrays via duplicate(),
+## the access_ids inner arrays via per-key duplicate(), and each
+## PlacementRecord via its own duplicating constructor.
+func _deep_copy_for_snapshot() -> GridSystem:
+	var copy := GridSystem.new()
+	copy._mark_initialized()
+	copy._width = _width
+	copy._height = _height
+	copy._occupant_id = _occupant_id.duplicate()
+	copy._buildable = _buildable.duplicate()
+	copy._buildable_frozen = _buildable_frozen
+	for cell in _access_ids:
+		copy._access_ids[cell] = (_access_ids[cell] as Array).duplicate()
+	for instance_id in _reverse_index:
+		var record: PlacementRecord = _reverse_index[instance_id]
+		copy._reverse_index[instance_id] = PlacementRecord.new(
+			record.footprint_cells, record.access_cells, record.rotation
+		)
+	return copy
 
 
 # === Geometry Helpers ===
