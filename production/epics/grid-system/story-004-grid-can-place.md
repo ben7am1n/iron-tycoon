@@ -1,12 +1,12 @@
 # Story 004: Placement Validation — can_place
 
 > **Epic**: grid-system
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Foundation
 > **Type**: Logic
 > **Estimate**: S — 0.5 day (Sprint 1)
 > **Manifest Version**: 2026-07-23
-> **Last Updated**: [set by /dev-story when implementation begins]
+> **Last Updated**: 2026-08-02
 
 ## Context
 
@@ -31,15 +31,15 @@
 
 *From GDD `design/gdd/grid-system.md`, scoped to this story:*
 
-- [ ] AC-C6.1 [BLOCKING][Logic] GIVEN footprint has one cell out of bounds → FAIL: OUT_OF_BOUNDS (must trigger before other checks)
-- [ ] AC-C6.2 [BLOCKING][Logic] GIVEN footprint in bounds but on buildable=false cell → FAIL: BLOCKED_BY_ROOM_GEOMETRY
-- [ ] AC-C6.3 [BLOCKING][Logic] GIVEN footprint legal but overlaps existing occupant → FAIL: OVERLAPS_EXISTING_EQUIPMENT
-- [ ] AC-C6.4 [BLOCKING][Logic] GIVEN access cell out of bounds → FAIL: ACCESS_OUT_OF_BOUNDS (must return DIFFERENT error code from footprint OOB)
-- [ ] AC-C6.5 [BLOCKING][Logic] GIVEN any can_place call, WHEN the call completes, THEN full-grid snapshot before and after is exactly equal — can_place is pure read-only, no side effects permitted
-- [ ] AC-C5.2 [BLOCKING][Logic] GIVEN empty grid, WHEN two commits use identical access cell but different footprints, THEN both succeed (can_place doesn't FAIL due to access overlap)
-- [ ] AC-C5.3 [BLOCKING][Logic] GIVEN cell (3,3) buildable=false, WHEN can_place access set contains (3,3), THEN returns FAIL: ACCESS_BLOCKED_BY_ROOM_GEOMETRY, AND no grid writes occur
-- [ ] AC-C5.4 [BLOCKING][Logic] GIVEN equipment A's footprint occupies cell (4,4), WHEN equipment B's access set contains (4,4), THEN can_place returns {valid:true}, commit succeeds, (4,4) occupant_id still A, access_ids contains B
-- [ ] AC-C5.5 [BLOCKING][Logic] GIVEN equipment with access_cells=[] (decorative/storage), WHEN can_place and commit, THEN both succeed; grid_changed access_cells_changed is empty array (not null); get_access_cells(id) returns empty array
+- [x] AC-C6.1 [BLOCKING][Logic] GIVEN footprint has one cell out of bounds → FAIL: OUT_OF_BOUNDS (must trigger before other checks)
+- [x] AC-C6.2 [BLOCKING][Logic] GIVEN footprint in bounds but on buildable=false cell → FAIL: BLOCKED_BY_ROOM_GEOMETRY
+- [x] AC-C6.3 [BLOCKING][Logic] GIVEN footprint legal but overlaps existing occupant → FAIL: OVERLAPS_EXISTING_EQUIPMENT
+- [x] AC-C6.4 [BLOCKING][Logic] GIVEN access cell out of bounds → FAIL: ACCESS_OUT_OF_BOUNDS (must return DIFFERENT error code from footprint OOB)
+- [x] AC-C6.5 [BLOCKING][Logic] GIVEN any can_place call, WHEN the call completes, THEN full-grid snapshot before and after is exactly equal — can_place is pure read-only, no side effects permitted
+- [x] AC-C5.2 [BLOCKING][Logic] GIVEN empty grid, WHEN two commits use identical access cell but different footprints, THEN both succeed (can_place doesn't FAIL due to access overlap)
+- [x] AC-C5.3 [BLOCKING][Logic] GIVEN cell (3,3) buildable=false, WHEN can_place access set contains (3,3), THEN returns FAIL: ACCESS_BLOCKED_BY_ROOM_GEOMETRY, AND no grid writes occur
+- [x] AC-C5.4 [BLOCKING][Logic] GIVEN equipment A's footprint occupies cell (4,4), WHEN equipment B's access set contains (4,4), THEN can_place returns {valid:true}, commit succeeds, (4,4) occupant_id still A, access_ids contains B
+- [x] AC-C5.5 [BLOCKING][Logic] GIVEN equipment with access_cells=[] (decorative/storage), WHEN can_place and commit, THEN both succeed; grid_changed access_cells_changed is empty array (not null); get_access_cells(id) returns empty array
 
 ---
 
@@ -173,7 +173,18 @@ func can_place(equipment_def: EquipmentDef, anchor_cell: Vector2i, rotation: int
 **Required evidence**:
 - `tests/unit/grid_system/grid_can_place_test.gd` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing — 64 assertions, 0 failures (2026-08-02)
+
+---
+
+## Completion Notes
+**Completed**: 2026-08-02
+**Criteria**: 9/9 blocking ACs passing (AC-C6.1..C6.5, AC-C5.2..C5.5), plus guard tests for before-init / empty footprint / illegal rotation
+**Deviations**:
+- ADR-0003's illustrative can_place(def: EquipmentDef, ...) signature uses EquipmentDef, which does not exist in src/ yet (equipment-catalog epic is out of this sprint's scope). Takes raw typed cell arrays instead, matching get_transformed_cells() — same documented deviation as declared_bounds(). Rotation typed as the degree-valued Rotation enum (consistent with get_transformed_cells), not the ADR sketch's bare int/quarter-turn. Both logged to tech-debt-register implications already tracked from Story 003.
+- AC-C6.5's "full snapshot comparison" uses a test-side snapshot built from the public read API (get_occupant_id / get_buildable / get_access_ids over every cell), because get_snapshot() itself is Story 006 (GridSnapshot) — out of this story's scope. The AC's intent (pure function, no side effects) is verified with the read surface available today.
+- AC-C5.4/C5.5's "commit succeeds" / "access_cells_changed is []" clauses reference commit() (Story 005) and grid_changed (Story 008) — both out of scope. The can_place-side behavior is verified directly; the commit-side post-state is simulated via the raw write primitives (commit_occupant/commit_access) so the AC's described end-state is still asserted today.
+**Test Evidence**: Logic — `tests/unit/grid_system/grid_can_place_test.gd` (64 assertions, 0 failures; full suite 256/256, verified with zero SCRIPT ERROR occurrences)
 
 ---
 

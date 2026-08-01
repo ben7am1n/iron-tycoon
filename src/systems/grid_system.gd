@@ -37,6 +37,28 @@ class_name GridSystem extends SimSystem
 enum Rotation { R0 = 0, R90 = 90, R180 = 180, R270 = 270 }
 
 
+## Placement validation failure codes (TR-GS-015, GDD C.6 / AC-C6.x).
+## Returned by can_place() in PlacementCheckResult.fail_code.
+##
+## VALID=0 is the success code — a PlacementCheckResult with valid=true
+## always carries VALID. The 5 failure codes are intentionally split between
+## footprint and access failure modes (and between OOB vs room-geometry
+## within each) so Build UI can render differentiated messages:
+##   - footprint OOB vs access OOB: "equipment won't fit" vs
+##     "access path extends outside room"
+##   - footprint geometry vs access geometry: same split
+## OVERLAPS_EXISTING_EQUIPMENT is ONLY for footprint-on-footprint overlap —
+## access cells deliberately never fail on occupancy (AC-C5.2/C5.4).
+enum FailCode {
+	VALID = 0,
+	OUT_OF_BOUNDS = 1,
+	BLOCKED_BY_ROOM_GEOMETRY = 2,
+	OVERLAPS_EXISTING_EQUIPMENT = 3,
+	ACCESS_OUT_OF_BOUNDS = 4,
+	ACCESS_BLOCKED_BY_ROOM_GEOMETRY = 5,
+}
+
+
 ## Marks the system as initialized. Must be called exactly once.
 ## Parameterized by width and height so that callers get a compile
 ## error if they forget to initialize the grid. Rejects non-positive
@@ -550,4 +572,112 @@ func get_transformed_cells(
 
 	result.new_size = Vector2i(h, w) if (rotation == Rotation.R90 or rotation == Rotation.R270) else Vector2i(w, h)
 
+	return result
+
+
+# === Placement Validation ===
+
+## Pure read-only placement validation (TR-GS-015, GDD C.6, Story 004).
+##
+## Checks whether an equipment with the given canonical (0-degree) footprint
+## and access cells, placed at [anchor] with [rotation], is legal on this
+## grid. Returns a PlacementCheckResult; valid=true only when every check
+## passes (fail_code == FailCode.VALID).
+##
+## Check sequence — MUST run in this order, early-exit on first failure
+## (GDD C.6 §6, ADR-0003):
+##   1. Transform canonical cells to world space via get_transformed_cells()
+##      (same call both footprint AND access must share — see that method).
+##   2. For each footprint cell fc:
+##      a. fc in bounds            -> else FAIL: OUT_OF_BOUNDS
+##      b. buildable[fc] == true   -> else FAIL: BLOCKED_BY_ROOM_GEOMETRY
+##      c. occupant_id[fc] == -1   -> else FAIL: OVERLAPS_EXISTING_EQUIPMENT
+##   3. For each access cell ac:
+##      a. ac in bounds            -> else FAIL: ACCESS_OUT_OF_BOUNDS
+##      b. buildable[ac] == true   -> else FAIL: ACCESS_BLOCKED_BY_ROOM_GEOMETRY
+##      c. DO NOT check occupant_id / access_ids — access-on-footprint and
+##         access-on-access are allowed by design (AC-C5.2/C5.4, TR-GS-016).
+##   4. All pass -> {valid: true, fail_code: VALID}
+##
+## PURE FUNCTION CONTRACT (AC-C6.5): can_place() must NOT modify any grid
+## state, must NOT emit grid_changed, and must NOT push_error for any of the
+## 5 expected FAIL codes (those are normal gameplay outcomes). push_error is
+## reserved for programming errors only (use-before-init; empty footprint
+## input, which would otherwise hit declared_bounds()'s debug assert).
+##
+## Deviation from ADR-0003's illustrative sketch (documented, not silent):
+## the ADR signature is can_place(def: EquipmentDef, ...). EquipmentDef does
+## not exist in src/ yet (equipment-catalog epic is out of this sprint's
+## scope) — this signature takes raw typed cell arrays instead, matching the
+## existing get_transformed_cells() style. See declared_bounds()'s doc
+## comment for the same deviation and its tech-debt consequence.
+## Rotation is typed as the degree-valued Rotation enum (0/90/180/270),
+## consistent with get_transformed_cells() — NOT the quarter-turn int that
+## ADR-0003's sketch implies. See the Rotation enum's doc comment for the
+## open degree-vs-quarter-turn reconciliation note.
+##
+## Before-init safe default: {valid: false, fail_code: OUT_OF_BOUNDS} — a
+## 0×0 grid can contain nothing. Matches the file's "loud failure + unusable
+## safe default" contract (cf. get_occupant_id() returning -1).
+func can_place(
+	footprint_cells: Array[Vector2i],
+	access_cells: Array[Vector2i],
+	anchor: Vector2i,
+	rotation: Rotation
+) -> PlacementCheckResult:
+	var result := PlacementCheckResult.new()
+
+	if not _assert_initialized():
+		result.fail_code = FailCode.OUT_OF_BOUNDS
+		return result
+
+	# Empty footprint is a programming error — declared_bounds() would
+	# assert on it in debug builds (AC-D5.3); here it gets a loud push_error
+	# plus the documented safe default. Access cells MAY be empty (AC-C5.5).
+	if footprint_cells.is_empty():
+		push_error("GridSystem: can_place() rejected — footprint_cells must not be empty.")
+		result.fail_code = FailCode.OUT_OF_BOUNDS
+		return result
+
+	# Illegal rotation values are rejected inside get_transformed_cells()
+	# (push_error + empty TransformedFootprint). We must not treat that
+	# empty result as a legal placement — the footprint check loop below
+	# would vacuously pass. Reject here with the documented safe default.
+	# (get_transformed_cells() already push_errored; no second error needed.)
+	if not _is_legal_rotation(rotation):
+		result.fail_code = FailCode.OUT_OF_BOUNDS
+		return result
+
+	var transformed := get_transformed_cells(footprint_cells, access_cells, anchor, rotation)
+
+	for fc in transformed.footprint_cells:
+		if not is_in_bounds(fc):
+			result.fail_code = FailCode.OUT_OF_BOUNDS
+			result.fail_cell = fc
+			return result
+		if not get_buildable(fc):
+			result.fail_code = FailCode.BLOCKED_BY_ROOM_GEOMETRY
+			result.fail_cell = fc
+			return result
+		# Explicit != -1, never a truthy check — occupant_id=0 is legal.
+		if get_occupant_id(fc) != -1:
+			result.fail_code = FailCode.OVERLAPS_EXISTING_EQUIPMENT
+			result.fail_cell = fc
+			return result
+
+	# Access cells: geometric hard constraints only (bounds + buildable).
+	# Deliberately NO occupant_id / access_ids check — sharing access cells
+	# and access-on-footprint are legal by design (AC-C5.2/C5.4, TR-GS-016).
+	for ac in transformed.access_cells:
+		if not is_in_bounds(ac):
+			result.fail_code = FailCode.ACCESS_OUT_OF_BOUNDS
+			result.fail_cell = ac
+			return result
+		if not get_buildable(ac):
+			result.fail_code = FailCode.ACCESS_BLOCKED_BY_ROOM_GEOMETRY
+			result.fail_cell = ac
+			return result
+
+	result.valid = true
+	result.fail_code = FailCode.VALID
 	return result
