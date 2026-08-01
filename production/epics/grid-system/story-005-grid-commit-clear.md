@@ -4,7 +4,7 @@
 > **Status**: Ready
 > **Layer**: Foundation
 > **Type**: Logic
-> **Estimate**: [hours or t-shirt size — fill before sprint planning]
+> **Estimate**: M — 1 day (Sprint 1)
 > **Manifest Version**: 2026-07-23
 > **Last Updated**: [set by /dev-story when implementation begins]
 
