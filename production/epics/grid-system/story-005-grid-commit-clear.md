@@ -1,12 +1,12 @@
 # Story 005: Commit, Clear, and Reverse Index
 
 > **Epic**: grid-system
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Foundation
 > **Type**: Logic
 > **Estimate**: M — 1 day (Sprint 1)
 > **Manifest Version**: 2026-07-23
-> **Last Updated**: [set by /dev-story when implementation begins]
+> **Last Updated**: 2026-08-02
 
 ## Context
 
@@ -31,11 +31,11 @@
 
 *From GDD `design/gdd/grid-system.md`, scoped to this story:*
 
-- [ ] AC-C7.1 [BLOCKING][Logic] GIVEN commit(id=9, ...) succeeds, WHEN immediately clear(9), THEN related cells occupant_id back to -1, access_ids remove 9 — proves reverse index correctly used
-- [ ] AC-C7.2 [BLOCKING][Logic] GIVEN id=9 already in reverse index, WHEN commit(9, ...) again (different cells), THEN call rejected with push_error(), old record NOT overwritten, old cell state unchanged
-- [ ] AC-C7.3 [BLOCKING][Logic] GIVEN id=99 never committed, WHEN calling clear(99), THEN push_error() fires, full-grid snapshot before and after completely equal, AND grid_changed NOT emitted
-- [ ] AC-C7.7 [BLOCKING][Logic] GIVEN empty grid, WHEN calling commit(instance_id=-1, ...) or commit(instance_id=-5, ...), THEN each case push_error() and reject commit, full-grid snapshot before/after equal, no grid_changed
-- [ ] AC-C7.8 [ADVISORY][Code Review] GIVEN an id that was committed then cleared, WHEN committing same id again for a DIFFERENT equipment, THEN GridSystem accepts normally — this IS expected behavior; GridSystem CANNOT detect "reuse", this is the allocator's contract (PlacementSystem)
+- [x] AC-C7.1 [BLOCKING][Logic] GIVEN commit(id=9, ...) succeeds, WHEN immediately clear(9), THEN related cells occupant_id back to -1, access_ids remove 9 — proves reverse index correctly used
+- [x] AC-C7.2 [BLOCKING][Logic] GIVEN id=9 already in reverse index, WHEN commit(9, ...) again (different cells), THEN call rejected with push_error(), old record NOT overwritten, old cell state unchanged
+- [x] AC-C7.3 [BLOCKING][Logic] GIVEN id=99 never committed, WHEN calling clear(99), THEN push_error() fires, full-grid snapshot before and after completely equal, AND grid_changed NOT emitted
+- [x] AC-C7.7 [BLOCKING][Logic] GIVEN empty grid, WHEN calling commit(instance_id=-1, ...) or commit(instance_id=-5, ...), THEN each case push_error() and reject commit, full-grid snapshot before/after equal, no grid_changed
+- [x] AC-C7.8 [ADVISORY][Code Review] GIVEN an id that was committed then cleared, WHEN committing same id again for a DIFFERENT equipment, THEN GridSystem accepts normally — this IS expected behavior; GridSystem CANNOT detect "reuse", this is the allocator's contract (PlacementSystem)
 
 ---
 
@@ -182,7 +182,21 @@ class PlacementRecord extends RefCounted:
 **Required evidence**:
 - `tests/unit/grid_system/grid_commit_clear_test.gd` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing — 59 assertions, 0 failures (2026-08-02)
+
+---
+
+## Completion Notes
+**Completed**: 2026-08-02
+**Criteria**: 4/4 blocking ACs passing (AC-C7.1, AC-C7.2, AC-C7.3, AC-C7.7) plus AC-C7.8 (advisory — behaviorally asserted and documented), the instance_id=0 legal pitfall, before-init guard paths, and the once-per-commit/clear grid_changed signal contract.
+**Deviations**:
+- The implementation sketch guards instance_id < 0 with `assert()`. Implemented with `push_error()` + return instead, because GDD §C.7 ("commit() 收到 instance_id < 0 → push_error() 并拒绝提交") and AC-C7.7 both literally require push_error(), assert() aborts the current function frame, and assert() is compiled out of release builds while the -1 sentinel protection must be active in release too.
+- PlacementRecord is a separate `class_name` DTO file (`src/systems/placement_record.gd`) rather than an inline class inside grid_system.gd, matching the repo's DTO convention (PlacementCheckResult / TransformedFootprint) — Story 007 reads the record type directly from the reverse index.
+- Rotation convention decided (closes the Story 003 tech-debt handoff's Story-005 half): commit() takes the degree-valued `GridSystem.Rotation` enum; PlacementRecord.rotation stores the degree int (0/90/180/270). NOT the quarter-turn count in ADR-0003's PlacedInstance sketch — reconciliation with PlacedInstance (when Story 006 builds it) remains tracked in the tech-debt register.
+- Defensive duplication (both stronger than the sketch, protecting against the GDD's silent-corruption class): PlacementRecord._init() duplicates its cell arrays so a caller reusing/mutating scratch arrays after commit() cannot corrupt the reverse index; commit()/clear() emit duplicated payload arrays so a signal subscriber mutating the payload cannot corrupt the record.
+- commit() dedups access ids per cell (a duplicate access cell in the input would otherwise leave a permanently leaked access registration after clear()'s single-occurrence erase()).
+- The literal "push_error() fires" clause of AC-C7.2/C7.3/C7.7 is verified via a subprocess probe (`grid_commit_clear_error_probe.gd`, Story 003's established pattern) because GDScript has no in-process push_error capture; the in-process test verifies the observable consequences (snapshot unchanged, reverse index untouched, no grid_changed).
+**Test Evidence**: Logic — `tests/unit/grid_system/grid_commit_clear_test.gd` (59 assertions, 0 failures; full suite 315/315, up from 256; the only ERROR lines in the run are the 10 expected push_errors the ACs require — zero unexpected script errors; probe verified: push_error fires on all three rejection modes and NOT on the legal commit+clear control)
 
 ---
 

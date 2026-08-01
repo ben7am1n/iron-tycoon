@@ -59,6 +59,23 @@ enum FailCode {
 }
 
 
+## Emitted exactly once per successful commit() or clear() — never per cell,
+## never from read-only paths (can_place, get_snapshot — Story 006) and never
+## during drag preview (TR-GS-021).
+##
+## Payload semantics (GDD signal design): the two arrays are "these cells'
+## state changed, go re-query" — they do NOT describe the direction of the
+## change. A consumer receiving the signal must re-read the cells' current
+## values via is_solid() / get_occupant_id() / get_access_ids(), not guess
+## from the payload whether a commit or a clear happened. Navigation only
+## needs footprint_cells_changed (solidity); ZoneRules/Congestion need both.
+##
+## The full payload contract (ordering, dedup expectations, subscriber
+## behavior) is tested in Story 008; this story declares the signal and
+## emits it from the two write paths.
+signal grid_changed(footprint_cells_changed: Array[Vector2i], access_cells_changed: Array[Vector2i])
+
+
 ## Marks the system as initialized. Must be called exactly once.
 ## Parameterized by width and height so that callers get a compile
 ## error if they forget to initialize the grid. Rejects non-positive
@@ -79,6 +96,7 @@ func init(grid_width: int, grid_height: int) -> void:
 		_occupant_id[i] = -1
 		_buildable[i] = 0
 	_access_ids.clear()
+	_reverse_index.clear()
 	_buildable_frozen = false
 
 
@@ -94,6 +112,18 @@ var _access_ids: Dictionary = {}  # Vector2i → Array (occupant_ids)
 var _width: int = 0
 var _height: int = 0
 var _buildable_frozen: bool = false
+
+# === Reverse index (instance_id → PlacementRecord) ===
+#
+# MANDATORY (TR-GS-017, GDD C.7): clear() must resolve an instance_id to its
+# occupied cells via THIS dictionary — never by scanning the whole grid.
+# It is also the single source of truth for serialization (Story 007 reads
+# this, not the derived occupant_id/access_ids arrays).
+#
+# NEVER exposed as public API (Control Manifest: Forbidden) — consumers that
+# need per-instance data go through the read surface (Story 006's
+# GridStateReader / get_placed_instances).
+var _reverse_index: Dictionary = {}  # instance_id:int → PlacementRecord
 
 
 # === Read Methods ===
@@ -279,6 +309,165 @@ func clear_access(cell: Vector2i, occupant_id: int) -> void:
 	arr.erase(occupant_id)
 	if arr.is_empty():
 		_access_ids.erase(cell)
+
+
+# === Commit / Clear (high-level write path, TR-GS-017, GDD C.7) ===
+#
+# commit()/clear() are the canonical mutation surface for placing and
+# removing equipment. They are the ONLY path that touches the reverse
+# index, and every commit/clear emits grid_changed exactly once. The raw
+# per-cell primitives above (commit_occupant/clear_occupant/commit_access/
+# clear_access) remain public for the older story tests and for callers
+# that need cell-level control, but new production code should go through
+# commit()/clear().
+
+## Commits an equipment placement into the grid (TR-GS-017, GDD C.7,
+## AC-C7.x, Story 005).
+##
+## Contract: called AFTER can_place() returned valid — commit() trusts the
+## caller and does NOT re-validate the placement (footprint/access overlap,
+## buildable state, rotation legality). It performs exactly the writes
+## can_place() greenlit:
+##   1. every footprint cell: occupant_id[cell] = instance_id
+##   2. every access cell: append instance_id to access_ids[cell]
+##      (deduplicated — an id never appears twice on one cell)
+##   3. reverse index: instance_id -> PlacementRecord (the single source of
+##      truth for serialization, Story 007)
+##   4. emit grid_changed ONCE (never per cell) with the committed cells
+##
+## Rejection paths — each is ATOMIC (decided before any cell write, so a
+## rejected commit leaves the grid byte-identical; AC-C7.2's "reject BEFORE
+## any cell writes" requirement):
+##   - use-before-init (via _assert_initialized — Control Manifest)
+##   - instance_id < 0 (AC-C7.7): -1 is the reserved empty sentinel; a
+##     negative id would make get_occupant_id() report its cells as empty
+##     forever, and clear() could never release them.
+##   - duplicate instance_id already active in the reverse index (AC-C7.2):
+##     prevents the overwrite-leak where the old record's cells become
+##     permanently orphaned (occupied but unreachable by clear()).
+##
+## PITFALL (Story 005): instance_id = 0 is LEGAL — it is the first piece
+## ever placed. All id checks here use explicit comparisons / Dictionary
+## has(), NEVER truthiness (a `if instance_id:` check would reject 0).
+##
+## Deviation from the Story 005 implementation sketch (documented, not
+## silent): the sketch guards instance_id >= 0 with assert(). The GDD
+## §C.7 ("commit() 收到 instance_id < 0 → push_error() 并拒绝提交") and
+## AC-C7.7 both demand push_error(), which assert() does not satisfy —
+## assert() aborts the current function frame and is compiled out of
+## release builds, while the -1 sentinel protection must be active in
+## release too. push_error() + return is used instead.
+##
+## Debug-only backstop (matches the sketch): each cell is bounds-checked
+## with assert() before the PackedInt32Array write. A firing assert
+## indicates the caller bypassed can_place() — in debug builds it aborts
+## this frame (possibly leaving earlier cells of THIS call written, which
+## is acceptable for a programming-error path; the reverse index entry and
+## signal are never emitted), in release builds the engine's own packed
+## array bounds check guards the write. The ACs do not exercise this path
+## — commit() is only ever called with can_place()-validated cells.
+func commit(instance_id: int, footprint_cells: Array[Vector2i], access_cells: Array[Vector2i], rotation: Rotation) -> void:
+	if not _assert_initialized():
+		return
+	# AC-C7.7: negative ids rejected BEFORE any write (also protects the
+	# -1 empty sentinel). Explicit comparison — never truthiness (id 0 is
+	# legal, see pitfall note above).
+	if instance_id < 0:
+		push_error("GridSystem: commit() rejected — instance_id must be >= 0; got %d. Negative ids collide with the -1 empty sentinel (AC-C7.7)." % instance_id)
+		return
+	# AC-C7.2: duplicate id rejected BEFORE any write — the old record must
+	# survive intact and the old cells must stay occupied. Dictionary.has()
+	# is an explicit membership check; id 0 is a legal key, not a falsey
+	# miss.
+	if _reverse_index.has(instance_id):
+		push_error("GridSystem: commit() rejected — instance_id %d is already in the reverse index; a duplicate commit is not allowed (AC-C7.2)." % instance_id)
+		return
+
+	# Write footprint occupancy. Direct packed-array write by flat index
+	# (GDD D.2); assert is the debug-only backstop for a caller that
+	# bypassed can_place().
+	for fc in footprint_cells:
+		assert(is_in_bounds(fc), "GridSystem: commit() footprint cell %s out of bounds — can_place() should have rejected this placement." % fc)
+		_occupant_id[flat_index(fc)] = instance_id
+
+	# Write access ids. Dedup guard keeps access_ids free of duplicate ids
+	# per cell — otherwise a duplicate access cell in the input would make
+	# clear()'s single-occurrence erase() leave a permanently leaked entry.
+	for ac in access_cells:
+		assert(is_in_bounds(ac), "GridSystem: commit() access cell %s out of bounds — can_place() should have rejected this placement." % ac)
+		if _access_ids.has(ac):
+			var arr: Array = _access_ids[ac]
+			if not arr.has(instance_id):
+				arr.append(instance_id)
+		else:
+			_access_ids[ac] = [instance_id]
+
+	# Reverse index — the single source of truth for serialization. The
+	# record duplicates its inputs (see placement_record.gd header).
+	var record := PlacementRecord.new(footprint_cells, access_cells, rotation)
+	_reverse_index[instance_id] = record
+
+	# Signal — once per commit, never per cell. Payload arrays are
+	# duplicated so a subscriber mutating the payload cannot corrupt the
+	# reverse index record (same defensive posture as get_access_ids()).
+	grid_changed.emit(record.footprint_cells.duplicate(), record.access_cells.duplicate())
+
+
+## Removes a previously committed placement from the grid (TR-GS-017,
+## GDD C.7, AC-C7.1/C7.3, Story 005).
+##
+## The reverse index is MANDATORY here (AC-C7.1): the instance's occupied
+## cells are resolved via _reverse_index[instance_id] — NEVER by scanning
+## the whole grid. Cost is O(footprint_cells + access_cells), not
+## O(grid cells). Access-cell id removal is O(k) per cell where k is the
+## number of ids sharing that cell (expected single digits in MVP — GDD
+## C.5's acknowledged complexity tail).
+##
+## Sequence:
+##   1. footprint cells: occupant_id[cell] = -1
+##   2. access cells: remove instance_id from access_ids[cell]; drop the
+##      dictionary entry when a cell's list becomes empty (stays sparse)
+##   3. remove the reverse index entry
+##   4. emit grid_changed ONCE with the cleared cells
+##
+## Rejection path (ATOMIC — nothing mutated, no signal emitted, AC-C7.3):
+##   - use-before-init (via _assert_initialized)
+##   - instance_id not in the reverse index: push_error() and return. The
+##     id was never committed, or was already cleared. This also covers
+##     negative ids (a never-committed -1 falls into this branch — clear()
+##     needs no separate negative-id check, per the Story 005 QA notes).
+func clear(instance_id: int) -> void:
+	if not _assert_initialized():
+		return
+	if not _reverse_index.has(instance_id):
+		push_error("GridSystem: clear() rejected — instance_id %d is not in the reverse index; nothing to clear (AC-C7.3)." % instance_id)
+		return
+
+	var record: PlacementRecord = _reverse_index[instance_id]
+
+	# Clear footprint occupancy back to the -1 empty sentinel.
+	for fc in record.footprint_cells:
+		_occupant_id[flat_index(fc)] = -1
+
+	# Remove this id from every access cell it owns; erase() removes the
+	# first occurrence, which is the only one that can exist (commit()
+	# dedups access ids per cell).
+	for ac in record.access_cells:
+		if not _access_ids.has(ac):
+			continue
+		var arr: Array = _access_ids[ac]
+		arr.erase(instance_id)
+		if arr.is_empty():
+			_access_ids.erase(ac)
+
+	# Drop the reverse index entry — after this, the id is clearable
+	# again (AC-C7.8's documented reuse path) and serialize() (Story 007)
+	# no longer sees it.
+	_reverse_index.erase(instance_id)
+
+	# Signal — once per clear, never per cell. Duplicated payload arrays
+	# (same rationale as commit()).
+	grid_changed.emit(record.footprint_cells.duplicate(), record.access_cells.duplicate())
 
 
 # === Geometry Helpers ===
