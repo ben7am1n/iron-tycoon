@@ -1,12 +1,12 @@
 # Story 007: Serialization and Deserialization
 
 > **Epic**: grid-system
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Foundation
 > **Type**: Integration
 > **Estimate**: M — 1 day (Sprint 1)
 > **Manifest Version**: 2026-07-23
-> **Last Updated**: [set by /dev-story when implementation begins]
+> **Last Updated**: 2026-08-02
 
 ## Context
 
@@ -31,17 +31,17 @@
 
 *From GDD `design/gdd/grid-system.md`, scoped to this story:*
 
-- [ ] AC-C8.1 [BLOCKING][Integration] (round-trip consistency) GIVEN an operation sequence (multiple commit/clear, including at least one rotation ≠ 0°) applied to grid A then serialized, WHEN using the returned Dictionary + same buildable_snapshot to deserialize into fresh instance B, THEN (a) per-cell occupant_id + access_ids equal for EVERY cell, AND (b) per-instance_id get_access_cells equal for every committed id, AND DeserializeResult.success == true
-- [ ] AC-C8.2 [BLOCKING][Logic] (rotation preserved) GIVEN an equipment committed with rotation=90°, WHEN serialize() then deserialize(), THEN reverse index PlacementRecord.rotation == 90
-- [ ] AC-C8.3 [BLOCKING][Logic] (deterministic output — full deep equality) GIVEN out-of-order instance_id insertions (e.g. commit 5 then commit 2), WHEN two independently constructed but identically-sequenced instances A/B each call serialize(), THEN A.serialize() == B.serialize() (full deep Dictionary equality), AND records sorted by instance_id ascending
-- [ ] AC-C8.3b [BLOCKING][Integration] (serialize output stable across round-trip) GIVEN grid A's serialize() output S_A, WHEN deserializing S_A into fresh B then B.serialize() to get S_B, THEN S_A == S_B (full deep equality)
-- [ ] AC-C8.4 [BLOCKING][Logic] (LEVEL_GEOMETRY_MISMATCH — footprint on wall) GIVEN a record whose footprint cell is buildable=false in the snapshot, WHEN deserialize(), THEN returns {success:false, errors:[...LEVEL_GEOMETRY_MISMATCH...]}, AND grid has no writes
-- [ ] AC-C8.5 [BLOCKING][Logic] (LEVEL_GEOMETRY_MISMATCH — access on wall) GIVEN a record whose access cell is buildable=false, WHEN deserialize(), THEN returns FAIL: LEVEL_GEOMETRY_MISMATCH, no writes
-- [ ] AC-C8.6 [BLOCKING][Logic] (LEVEL_GEOMETRY_MISMATCH — dimension mismatch) GIVEN data.width/height differs from current grid, WHEN deserialize(), THEN immediately returns FAIL: LEVEL_GEOMETRY_MISMATCH, no records processed
-- [ ] AC-C8.7 [BLOCKING][Logic] (CORRUPTED_SAVE_OUT_OF_BOUNDS) GIVEN a record with footprint or access coordinates outside [0,width)×[0,height), WHEN deserialize(), THEN returns FAIL: CORRUPTED_SAVE_OUT_OF_BOUNDS, intercepted BEFORE write phase — no PackedArray OOB writes
-- [ ] AC-C8.8 [BLOCKING][Logic] (CORRUPTED_SAVE_OVERLAP) GIVEN two records with overlapping footprint cells, WHEN deserialize(), THEN returns FAIL: CORRUPTED_SAVE_OVERLAP — access cell overlap does NOT error (allowed by design)
-- [ ] AC-C8.9 [BLOCKING][Logic] (no partial recovery) GIVEN 5 valid records + 1 triggering CORRUPTED_SAVE_OVERLAP, WHEN deserialize(), THEN first 5 do NOT take effect either — get_snapshot() shows initial empty state, not "5 committed, 6th failed"
-- [ ] AC-C8.10 [BLOCKING][Logic] (single signal emission) GIVEN save data with 3 valid records, WHEN deserialize() succeeds, THEN grid_changed fires exactly 1 time (not 3), payload covers union of all 3 records' cell sets
+- [x] AC-C8.1 [BLOCKING][Integration] (round-trip consistency) GIVEN an operation sequence (multiple commit/clear, including at least one rotation ≠ 0°) applied to grid A then serialized, WHEN using the returned Dictionary + same buildable_snapshot to deserialize into fresh instance B, THEN (a) per-cell occupant_id + access_ids equal for EVERY cell, AND (b) per-instance_id get_access_cells equal for every committed id, AND DeserializeResult.success == true
+- [x] AC-C8.2 [BLOCKING][Logic] (rotation preserved) GIVEN an equipment committed with rotation=90°, WHEN serialize() then deserialize(), THEN reverse index PlacementRecord.rotation == 90
+- [x] AC-C8.3 [BLOCKING][Logic] (deterministic output — full deep equality) GIVEN out-of-order instance_id insertions (e.g. commit 5 then commit 2), WHEN two independently constructed but identically-sequenced instances A/B each call serialize(), THEN A.serialize() == B.serialize() (full deep Dictionary equality), AND records sorted by instance_id ascending
+- [x] AC-C8.3b [BLOCKING][Integration] (serialize output stable across round-trip) GIVEN grid A's serialize() output S_A, WHEN deserializing S_A into fresh B then B.serialize() to get S_B, THEN S_A == S_B (full deep equality)
+- [x] AC-C8.4 [BLOCKING][Logic] (LEVEL_GEOMETRY_MISMATCH — footprint on wall) GIVEN a record whose footprint cell is buildable=false in the snapshot, WHEN deserialize(), THEN returns {success:false, errors:[...LEVEL_GEOMETRY_MISMATCH...]}, AND grid has no writes
+- [x] AC-C8.5 [BLOCKING][Logic] (LEVEL_GEOMETRY_MISMATCH — access on wall) GIVEN a record whose access cell is buildable=false, WHEN deserialize(), THEN returns FAIL: LEVEL_GEOMETRY_MISMATCH, no writes
+- [x] AC-C8.6 [BLOCKING][Logic] (LEVEL_GEOMETRY_MISMATCH — dimension mismatch) GIVEN data.width/height differs from current grid, WHEN deserialize(), THEN immediately returns FAIL: LEVEL_GEOMETRY_MISMATCH, no records processed
+- [x] AC-C8.7 [BLOCKING][Logic] (CORRUPTED_SAVE_OUT_OF_BOUNDS) GIVEN a record with footprint or access coordinates outside [0,width)×[0,height), WHEN deserialize(), THEN returns FAIL: CORRUPTED_SAVE_OUT_OF_BOUNDS, intercepted BEFORE write phase — no PackedArray OOB writes
+- [x] AC-C8.8 [BLOCKING][Logic] (CORRUPTED_SAVE_OVERLAP) GIVEN two records with overlapping footprint cells, WHEN deserialize(), THEN returns FAIL: CORRUPTED_SAVE_OVERLAP — access cell overlap does NOT error (allowed by design)
+- [x] AC-C8.9 [BLOCKING][Logic] (no partial recovery) GIVEN 5 valid records + 1 triggering CORRUPTED_SAVE_OVERLAP, WHEN deserialize(), THEN first 5 do NOT take effect either — get_snapshot() shows initial empty state, not "5 committed, 6th failed"
+- [x] AC-C8.10 [BLOCKING][Logic] (single signal emission) GIVEN save data with 3 valid records, WHEN deserialize() succeeds, THEN grid_changed fires exactly 1 time (not 3), payload covers union of all 3 records' cell sets
 
 ---
 
@@ -243,7 +243,18 @@ class DeserializeResult extends RefCounted:
 **Required evidence**:
 - `tests/integration/grid_system/grid_serialization_test.gd` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing — 82 assertions, 0 failures (2026-08-02)
+
+**Test Evidence**: Integration — `tests/integration/grid_system/grid_serialization_test.gd` (82 assertions, 0 failures; full suite 480/480, up from 398; zero unexpected ERROR/SCRIPT ERROR lines from the new code path). Covers all 10 blocking ACs (AC-C8.1..C8.10), plus validate-mode zero-mutation contract, JSON blob round-trip through `JSON.stringify(_, "", true, true)` → `JSON.parse_string` (float coercion), unknown-mode INTERNAL_ERROR, schema_version exact-match, structural strengtheners (negative/duplicate ids, illegal rotation, empty footprint, malformed cells, short snapshot), and signal-quiet failure paths.
+
+**Decisions recorded at close** (see docs/tech-debt-register.md for the full audit trail):
+1. **serialize() emits cells as [x, y] int arrays, NOT raw Vector2i** — verified empirically in 4.7.1 that `JSON.stringify()` renders Vector2i as the string `"(1, 2)"` and `JSON.parse_string()` returns that string back, so raw Vector2i cannot survive a JSON round-trip. The Control Manifest requires the save blob to be JSON with `JSON.stringify(full_precision, sort_keys)` — cells as `[x, y]` arrays (matching ADR-0002's catalog format) are the only encoding that satisfies both the manifest and AC-C8.3/3b byte-determinism. deserialize() accepts BOTH encodings (Vector2i for in-memory round-trips, [x,y] arrays from JSON files).
+2. **deserialize() signature is 3-arg: `deserialize(data, buildable_snapshot, mode)`** — the story sketch's form, reconciling ADR-0002's `(data, mode)` contract with GDD §C.8's `(data, buildable_snapshot)` form. buildable MUST be injected separately (TR-GS-020); mode is "validate" (Phase A only) or "commit" (Phase A + Phase B). Return type is DeserializeResult (a typed DTO, not ADR-0002's sketch `Dictionary`), consistent with the typed-DTO posture of PlacementCheckResult/PlacementRecord.
+3. **Error taxonomy extends GDD's three categories with CORRUPTED_SAVE and INTERNAL_ERROR** — the GDD enumerates LEVEL_GEOMETRY_MISMATCH / CORRUPTED_SAVE_OUT_OF_BOUNDS / CORRUPTED_SAVE_OVERLAP for SaveLoad/UI display; structural corruption (schema_version mismatch, negative/duplicate ids, illegal rotation, empty footprint, malformed cells) and programming errors (unknown mode, short buildable_snapshot) need distinct categories so the UI never mis-labels a bad-schema save as a geometry problem.
+4. **Strengthening validation beyond the sketch** — negative instance_id (collides with the -1 sentinel, same class as commit()'s AC-C7.7), duplicate instance_id (would orphan the first record's cells, same class as AC-C7.2), illegal rotation (would store a state normal can_place() can never produce), empty footprint (AC-D5.3), and malformed cells are all rejected as CORRUPTED_SAVE. This preserves the GDD's core rule: deserialize must never create states the normal placement flow could not produce.
+5. **Signal emission on commit** — single grid_changed after the whole load (AC-C8.10), payload = union of all committed cells. Deviation from the sketch's unconditional emit: a completely empty load into an already-empty grid emits NOTHING (nothing changed — Story 007 QA edge case); emptying a populated grid DOES emit (the clear is a real change). Failed loads never emit.
+6. **Cell-order determinism across round-trip** — serialize sorts cells (y,x) lexicographic per record; deserialize replays records in the save's ascending-instance_id order, so per-cell access_ids insertion order may differ from the original commit order (multi-value set semantics per GDD C.5). Tests compare access_ids and get_access_cells as sorted sets ("格归属" membership — GDD's own framing of AC-C8.1(b)).
+7. **JSON.parse_string returns floats for all numbers** in 4.7.1 (probed) — deserialize coerces ids/rotations/cells through `int()` so a JSON-parsed blob (float ids, float coordinates) loads identically to an in-memory Dictionary round-trip. Verified by the JSON blob test.
 
 ---
 

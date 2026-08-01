@@ -65,6 +65,37 @@ enum FailCode {
 }
 
 
+## DeserializeResult error categories (GDD §C.8, Story 007).
+##
+## The three categories SaveLoad/UI display (GDD "存档加载失败的说明"):
+##   - LEVEL_GEOMETRY_MISMATCH     — save disagrees with the CURRENT level:
+##                                   dimension mismatch, or a footprint/access
+##                                   cell on buildable=false ground.
+##   - CORRUPTED_SAVE_OUT_OF_BOUNDS — a cell coordinate outside
+##                                   [0,width)×[0,height); intercepted in the
+##                                   validation phase, BEFORE any write (no
+##                                   PackedArray OOB access possible).
+##   - CORRUPTED_SAVE_OVERLAP      — two records share a footprint cell.
+##                                   Access-cell overlap is LEGAL and does not
+##                                   error (AC-C8.8).
+##
+## Two structural categories beyond the GDD's three (added because the GDD
+## list only covers geometry/corruption classes, not malformed-structure or
+## programming-error classes; SaveLoad treats these as load-abort too):
+##   - CORRUPTED_SAVE              — malformed save structure: bad
+##                                   schema_version, missing keys, non-numeric
+##                                   ids/rotations, malformed cells, negative
+##                                   or duplicate instance_ids, empty footprint.
+##   - INTERNAL_ERROR              — programming error: unknown mode,
+##                                   buildable_snapshot size mismatch, or
+##                                   use-before-init.
+const ERR_LEVEL_GEOMETRY_MISMATCH := "LEVEL_GEOMETRY_MISMATCH"
+const ERR_CORRUPTED_SAVE_OUT_OF_BOUNDS := "CORRUPTED_SAVE_OUT_OF_BOUNDS"
+const ERR_CORRUPTED_SAVE_OVERLAP := "CORRUPTED_SAVE_OVERLAP"
+const ERR_CORRUPTED_SAVE := "CORRUPTED_SAVE"
+const ERR_INTERNAL_ERROR := "INTERNAL_ERROR"
+
+
 ## Emitted exactly once per successful commit() or clear() — never per cell,
 ## never from read-only paths (can_place, get_snapshot — Story 006) and never
 ## during drag preview (TR-GS-021).
@@ -582,6 +613,340 @@ func _deep_copy_for_snapshot() -> GridSystem:
 		)
 	return copy
 
+
+	# === Serialization (Story 007) ===
+
+## Serializes the grid's placed instances into a plain Dictionary
+## (TR-GS-019, GDD §C.8 rule 8, ADR-0002).
+##
+## WHAT IS STORED: the reverse index only (instance_id → PlacementRecord),
+## NEVER the derived occupant_id / access_ids arrays. The reverse index is
+## the single source of truth that structurally cannot desync (GDD §C.8:
+## storing both representations would make any one-sided write bug produce a
+## silent, load-time-only inconsistency) — and it is the only place rotation
+## lives, so serializing it preserves rotation by construction (AC-C8.2).
+##
+## DETERMINISM (AC-C8.3 / AC-C8.3b): output is fully deterministic —
+##   - records sorted by instance_id ASCENDING (Dictionary iteration order
+##     is insertion order, so we sort explicitly),
+##   - within each record, footprint_cells and access_cells sorted by (y, x)
+##     lexicographic.
+## Two identically-built grids produce byte-identical output; save→load→save
+## produces a byte-identical blob (AC-C8.3b).
+##
+## JSON-SAFE CELL ENCODING (DEVIATION from the Story 007 sketch, verified
+## empirically in 4.7.1): the sketch emits `rec.footprint_cells` — raw
+## Vector2i arrays. JSON.stringify() renders Vector2i as the STRING "(1, 2)",
+## and JSON.parse_string() returns that string back — a Vector2i cannot
+## survive a JSON round-trip in 4.7.1 (probed: STR1 output shows
+## "footprint_cells":["(1, 2)"]). The Control Manifest requires the save blob
+## to be JSON with JSON.stringify(full_precision, sort_keys) — so cells are
+## emitted as [x, y] INT ARRAYS, matching ADR-0002's catalog format
+## ("footprint_cells": [[0, 0], [1, 0]]). deserialize() accepts BOTH encodings
+## (Vector2i for in-memory round-trips, [x,y] arrays from JSON files) — see
+## _cell_from_variant().
+##
+## buildable is deliberately NOT in the save file (TR-GS-020) — it is level
+## geometry, injected separately by the level loader before deserialize().
+##
+## Before-init safe default: a schema-versioned empty dictionary (width/height
+## 0, no records), consistent with the file's loud-failure contract.
+func serialize() -> Dictionary:
+	if not _assert_initialized():
+		return {"schema_version": 1, "width": 0, "height": 0, "records": []}
+
+	var records: Array = []
+	var ids: Array = _reverse_index.keys()
+	ids.sort()  # ascending by instance_id — deterministic (AC-C8.3)
+	for instance_id in ids:
+		var rec: PlacementRecord = _reverse_index[instance_id]
+		var fp := _serialize_cells(rec.footprint_cells)
+		var ac := _serialize_cells(rec.access_cells)
+		records.append({
+			"instance_id": instance_id,
+			"footprint_cells": fp,
+			"access_cells": ac,
+			"rotation": rec.rotation,
+		})
+
+	return {
+		"schema_version": 1,
+		"width": _width,
+		"height": _height,
+		"records": records,
+	}
+
+
+## Converts transformed Vector2i cells to JSON-safe [x, y] int arrays, sorted
+## by (y, x) lexicographic — deterministic cell ordering within each record
+## (GDD §C.8 "确定性写出"; AC-C8.3). See serialize() for why cells are not
+## emitted as raw Vector2i.
+func _serialize_cells(cells: Array[Vector2i]) -> Array:
+	var out: Array = []
+	for cell in cells:
+		out.append([cell.x, cell.y])
+	out.sort_custom(func(a: Array, b: Array): return a[1] < b[1] or (a[1] == b[1] and a[0] < b[0]))
+	return out
+
+
+## Two-stage deserialization (TR-GS-019, ADR-0002, GDD §C.8 rule 8).
+##
+## Phase A ("validate"): validates EVERY record against [buildable_snapshot]
+## with ZERO mutation. Any record-level failure aborts the entire load —
+## "no partial recovery" (AC-C8.9) is structural: when Phase A returns a
+## failure, nothing has been written, so there is nothing to roll back.
+##
+## Phase B ("commit"): only reached when Phase A passed fully. Resets the
+## grid to empty (occupancy + access + reverse index; buildable is level data
+## and is NOT touched), replays every validated record, then emits grid_changed
+## EXACTLY ONCE with the union of all committed cells (AC-C8.10).
+##
+## [buildable_snapshot] is the level's buildable mask (PackedByteArray, one
+## byte per cell, row-major) injected by the level loader BEFORE this call —
+## it is NOT part of the save data (TR-GS-020). deserialize() cross-validates
+## the save against it (dimensions + per-cell buildable), catching
+## save-vs-level mismatches (AC-C8.4..C8.6).
+##
+## [mode] is "validate" (Phase A only, zero mutation) or "commit" (Phase A +
+## Phase B). Unknown modes are a programming error → INTERNAL_ERROR.
+##
+## Validation order (must run in this order — GDD §C.8):
+##   1. schema_version exact match (MVP, no migration)      → CORRUPTED_SAVE
+##   2. data.width/height == current grid dimensions         → LEVEL_GEOMETRY_MISMATCH
+##      (AC-C8.6: returns immediately, no records processed)
+##   3. per-record structural shape (ids, rotations, cells)  → CORRUPTED_SAVE
+##   4. per-cell bounds, footprint AND access                → CORRUPTED_SAVE_OUT_OF_BOUNDS
+##      (BEFORE any buildable_snapshot index or write — AC-C8.7)
+##   5. per-cell buildable, footprint AND access             → LEVEL_GEOMETRY_MISMATCH
+##      (AC-C8.4/C8.5 — access must be checked too, GDD rule 5 mirror)
+##   6. footprint overlap across records (access overlap is
+##      legal — AC-C8.8)                                     → CORRUPTED_SAVE_OVERLAP
+##
+## Strengthening checks (beyond the Story 007 sketch, documented not silent):
+##   - negative instance_id (would collide with the -1 empty sentinel and
+##     break clear() forever — same class as commit()'s AC-C7.7 rejection)
+##   - duplicate instance_id (would orphan the first record's cells — same
+##     class as commit()'s AC-C7.2 rejection)
+##   - illegal rotation value (would store a state normal can_place() could
+##     never produce — same class as AC-C8.5's "no impossible states" rule)
+##   - empty footprint (declared_bounds() asserts non-empty, AC-D5.3)
+##   - malformed cells (non-Vector2i/non-[x,y] values) → CORRUPTED_SAVE
+## All map to CORRUPTED_SAVE: the save data is structurally corrupt.
+##
+## Rotation is NOT validated against the level (it's pure metadata) but IS
+## validated for legality — a record storing rotation=45 would silently
+## reintroduce the ADR-0003 quarter-turn/degree ambiguity on reload.
+##
+## Failures are returned, never push_error'd — corrupt saves and level
+## mismatches are NORMAL gameplay outcomes, same convention as can_place()'s
+## FAIL codes. push_error is reserved for programming errors (unknown mode,
+## buildable_snapshot size mismatch, use-before-init).
+func deserialize(data: Dictionary, buildable_snapshot: PackedByteArray, mode: String) -> DeserializeResult:
+	if not _assert_initialized():
+		return DeserializeResult.fail(ERR_INTERNAL_ERROR, "deserialize() called before init()")
+
+	# Caller contract (level loader): snapshot must cover the full grid.
+	# A too-short snapshot would make buildable_snapshot[...] read out of
+	# bounds during validation — the same class of PackedArray OOB hazard
+	# AC-C8.7 exists to prevent, so we reject it up front (INTERNAL_ERROR:
+	# this is a programming error, not a save-data failure).
+	if buildable_snapshot.size() != _width * _height:
+		return DeserializeResult.fail(
+			ERR_INTERNAL_ERROR,
+			"buildable_snapshot size %d does not match grid %dx%d — level loader must inject width*height bytes (TR-GS-020)" % [buildable_snapshot.size(), _width, _height]
+		)
+
+	# ── Phase A: validate everything, mutate nothing ─────────────────
+
+	# 1. Schema — MVP exact-match only (Story 007 / ADR-0002 version policy).
+	if not data.has("schema_version") or int(data.get("schema_version", -1)) != 1:
+		return DeserializeResult.fail(
+			ERR_CORRUPTED_SAVE,
+			"schema_version must be 1 (MVP exact-match, no migration); got %s" % str(data.get("schema_version", "<missing>"))
+		)
+
+	# 2. Dimension check — immediately, before any record is processed
+	# (AC-C8.6). Missing dims = structurally corrupt save.
+	if not data.has("width") or not data.has("height"):
+		return DeserializeResult.fail(ERR_CORRUPTED_SAVE, "save data missing width/height")
+	if int(data["width"]) != _width or int(data["height"]) != _height:
+		return DeserializeResult.fail(
+			ERR_LEVEL_GEOMETRY_MISMATCH,
+			"grid dimensions differ — save %dx%d, current %dx%d" % [int(data["width"]), int(data["height"]), _width, _height]
+		)
+
+	if not data.has("records") or not (data["records"] is Array):
+		return DeserializeResult.fail(ERR_CORRUPTED_SAVE, "save data missing 'records' array")
+
+	var all_records: Array = data["records"]
+	var all_fp_keys: Dictionary = {}  # "x,y" → instance_id (footprint overlap scan)
+	var seen_ids: Dictionary = {}
+
+	for i in all_records.size():
+		var record = all_records[i]
+		if not (record is Dictionary):
+			return DeserializeResult.fail(ERR_CORRUPTED_SAVE, "record %d is not a Dictionary" % i)
+		if not record.has("instance_id") or not record.has("footprint_cells") or not record.has("access_cells") or not record.has("rotation"):
+			return DeserializeResult.fail(ERR_CORRUPTED_SAVE, "record %d missing required keys (instance_id/footprint_cells/access_cells/rotation)" % i)
+
+		# Strengthening: id + rotation numeric, id >= 0, no duplicate ids.
+		var id_val: Variant = record["instance_id"]
+		if typeof(id_val) != TYPE_INT and typeof(id_val) != TYPE_FLOAT:
+			return DeserializeResult.fail(ERR_CORRUPTED_SAVE, "record %d instance_id is not numeric: %s" % [i, str(id_val)])
+		var instance_id := int(id_val)
+		if instance_id < 0:
+			return DeserializeResult.fail(ERR_CORRUPTED_SAVE, "record %d has negative instance_id %d (collides with the -1 empty sentinel)" % [i, instance_id])
+		if seen_ids.has(instance_id):
+			return DeserializeResult.fail(ERR_CORRUPTED_SAVE, "duplicate instance_id %d in save data" % instance_id)
+		seen_ids[instance_id] = true
+
+		var rot_val: Variant = record["rotation"]
+		if typeof(rot_val) != TYPE_INT and typeof(rot_val) != TYPE_FLOAT:
+			return DeserializeResult.fail(ERR_CORRUPTED_SAVE, "record %d rotation is not numeric: %s" % [i, str(rot_val)])
+		var rotation := int(rot_val)
+		if not _is_legal_rotation(rotation):
+			return DeserializeResult.fail(ERR_CORRUPTED_SAVE, "record %d has illegal rotation %d (must be 0/90/180/270)" % [i, rotation])
+
+		# Cell arrays must exist and footprint must be non-empty (AC-D5.3).
+		var fp_raw: Variant = record["footprint_cells"]
+		var ac_raw: Variant = record["access_cells"]
+		if not (fp_raw is Array) or not (ac_raw is Array):
+			return DeserializeResult.fail(ERR_CORRUPTED_SAVE, "record %d footprint_cells/access_cells must be arrays" % i)
+		if (fp_raw as Array).is_empty():
+			return DeserializeResult.fail(ERR_CORRUPTED_SAVE, "record %d has empty footprint_cells (equipment with no footprint is not legal)" % i)
+
+		# 3+4. Bounds check (footprint AND access) — BEFORE any write and
+		# BEFORE any buildable_snapshot index (AC-C8.7: no PackedArray OOB).
+		var fp: Array[Vector2i] = []
+		for raw_cell in fp_raw:
+			if not _is_cell_shape_valid(raw_cell):
+				return DeserializeResult.fail(ERR_CORRUPTED_SAVE, "record %d has malformed footprint cell %s" % [i, str(raw_cell)])
+			var cell := _cell_from_variant(raw_cell)
+			if not is_in_bounds(cell):
+				return DeserializeResult.fail(ERR_CORRUPTED_SAVE_OUT_OF_BOUNDS, "record %d footprint cell %s out of bounds [0,%d)x[0,%d)" % [i, cell, _width, _height])
+			fp.append(cell)
+
+		var ac: Array[Vector2i] = []
+		for raw_cell in ac_raw:
+			if not _is_cell_shape_valid(raw_cell):
+				return DeserializeResult.fail(ERR_CORRUPTED_SAVE, "record %d has malformed access cell %s" % [i, str(raw_cell)])
+			var cell := _cell_from_variant(raw_cell)
+			if not is_in_bounds(cell):
+				return DeserializeResult.fail(ERR_CORRUPTED_SAVE_OUT_OF_BOUNDS, "record %d access cell %s out of bounds [0,%d)x[0,%d)" % [i, cell, _width, _height])
+			ac.append(cell)
+
+		# 5. Buildable check — footprint AND access (AC-C8.4/C8.5, GDD rule 5
+		# mirror). Both must sit on buildable=true ground.
+		for cell in fp:
+			if buildable_snapshot[flat_index(cell)] == 0:
+				return DeserializeResult.fail(ERR_LEVEL_GEOMETRY_MISMATCH, "record %d footprint on non-buildable cell %s" % [i, cell])
+		for cell in ac:
+			if buildable_snapshot[flat_index(cell)] == 0:
+				return DeserializeResult.fail(ERR_LEVEL_GEOMETRY_MISMATCH, "record %d access on non-buildable cell %s" % [i, cell])
+
+		# 6. Footprint overlap — access overlap is LEGAL (AC-C8.8). Duplicate
+		# footprint cells within ONE record are also caught here (same "x,y"
+		# key twice → overlap between the record and itself).
+		for cell in fp:
+			var key := "%d,%d" % [cell.x, cell.y]
+			if all_fp_keys.has(key):
+				return DeserializeResult.fail(
+					ERR_CORRUPTED_SAVE_OVERLAP,
+					"footprint overlap at %s between ids %d and %d" % [cell, all_fp_keys[key], instance_id]
+				)
+			all_fp_keys[key] = instance_id
+
+	if mode == "validate":
+		return DeserializeResult.ok()  # validated, zero mutation
+
+	if mode == "commit":
+		# ── Phase B: commit — all records validated, safe to write ──
+		var had_state := not _reverse_index.is_empty()
+		_clear_all()  # silent reset; the single signal below covers the change
+
+		var all_fp: Array[Vector2i] = []
+		var all_ac: Array[Vector2i] = []
+		for record in all_records:
+			var instance_id := int(record["instance_id"])
+			var fp := _cells_from_variant_array(record["footprint_cells"])
+			var ac := _cells_from_variant_array(record["access_cells"])
+			_write_record(instance_id, fp, ac, int(record["rotation"]))
+			all_fp.append_array(fp)
+			all_ac.append_array(ac)
+
+		# Single signal for the entire load (AC-C8.10) — payload is the union
+		# of all committed cells. A completely empty load into an already-empty
+		# grid emits nothing (nothing changed — Story 007 QA edge case);
+		# emptying a populated grid DOES emit (the clear is a real change).
+		if had_state or not all_records.is_empty():
+			grid_changed.emit(all_fp, all_ac)
+		return DeserializeResult.ok()
+
+	return DeserializeResult.fail(ERR_INTERNAL_ERROR, "unknown deserialize mode: %s" % mode)
+
+
+## Returns true if [v] is a cell-shaped value: a Vector2i, or an Array of
+## exactly two numbers ([x, y] — the JSON-safe encoding). Anything else is a
+## structurally corrupt save (CORRUPTED_SAVE).
+func _is_cell_shape_valid(v: Variant) -> bool:
+	if v is Vector2i:
+		return true
+	if not (v is Array) or (v as Array).size() != 2:
+		return false
+	var arr: Array = v
+	for component in arr:
+		if typeof(component) != TYPE_INT and typeof(component) != TYPE_FLOAT:
+			return false
+	return true
+
+
+## Converts a cell-shaped variant to Vector2i. Accepts both the JSON-safe
+## [x, y] int/float array encoding (JSON.parse_string returns floats for all
+## numbers — probed in 4.7.1) and a raw Vector2i (in-memory round-trip).
+## Caller MUST have passed _is_cell_shape_valid() first.
+func _cell_from_variant(v: Variant) -> Vector2i:
+	if v is Vector2i:
+		return v
+	var arr: Array = v
+	return Vector2i(int(arr[0]), int(arr[1]))
+
+
+## Batch conversion for Phase B — every element already passed
+## _is_cell_shape_valid() in Phase A.
+func _cells_from_variant_array(cells: Array) -> Array[Vector2i]:
+	var out: Array[Vector2i] = []
+	for v in cells:
+		out.append(_cell_from_variant(v))
+	return out
+
+
+## Resets all placement state to empty: occupancy → -1, access_ids cleared,
+## reverse index cleared. buildable is deliberately NOT touched (level
+## geometry, frozen after load). Silent — deserialize() emits its single
+## grid_changed after the whole batch, never per-record.
+func _clear_all() -> void:
+	for i in _occupant_id.size():
+		_occupant_id[i] = -1
+	_access_ids.clear()
+	_reverse_index.clear()
+
+
+## Writes one already-validated record into the occupancy/access/reverse-index
+## state. Phase B helper — no re-validation (Phase A already established
+## legality; GDD §C.8 step 7: "直接写...不需要重新判定合法性"). Access ids are
+## deduplicated per cell, matching commit()'s write semantics. Silent — the
+## single grid_changed for the whole load is emitted by deserialize().
+func _write_record(instance_id: int, footprint_cells: Array[Vector2i], access_cells: Array[Vector2i], rotation: int) -> void:
+	for fc in footprint_cells:
+		_occupant_id[flat_index(fc)] = instance_id
+	for ac in access_cells:
+		if _access_ids.has(ac):
+			var arr: Array = _access_ids[ac]
+			if not arr.has(instance_id):
+				arr.append(instance_id)
+		else:
+			_access_ids[ac] = [instance_id]
+	_reverse_index[instance_id] = PlacementRecord.new(footprint_cells, access_cells, rotation)
 
 # === Geometry Helpers ===
 

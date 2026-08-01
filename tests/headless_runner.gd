@@ -22,6 +22,7 @@ const TEST_FILES := [
 	"tests/unit/grid_system/grid_can_place_test.gd",
 	"tests/unit/grid_system/grid_commit_clear_test.gd",
 	"tests/unit/grid_system/grid_state_reader_snapshot_test.gd",
+	"tests/integration/grid_system/grid_serialization_test.gd",
 ]
 
 # === 隔离的测试文件 ===
