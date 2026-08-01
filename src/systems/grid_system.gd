@@ -234,6 +234,34 @@ func is_solid(cell: Vector2i) -> bool:
 	return _buildable[idx] == 0 or _occupant_id[idx] != -1
 
 
+## Returns a bulk solidity mask for the whole grid — one byte per cell in
+## row-major flat_index order: 1 = solid, 0 = non-solid (GDD D.3 / AC-X.1,
+## Navigation read surface). This is the batch form of is_solid(): the
+## value at index flat_index(cell) equals 1 iff is_solid(cell) is true.
+##
+## access_ids deliberately do NOT participate (TR-GS-016) — an access cell
+## with no footprint on it reads 0 (walkable), which is exactly the
+## AC-X.1 contract Navigation relies on when it consumes solidity but
+## ignores access_cells_changed.
+##
+## Intended consumer: Navigation's initial AStarGrid2D bake (full-grid
+## set_point_solid loop) — a single packed-array query is far cheaper than
+## N is_solid() calls through the function-call boundary, and it is a pure
+## read that never emits grid_changed (same read-only posture as
+## get_snapshot(), Story 006).
+##
+## Before-init safe default: empty PackedByteArray (loud via
+## _assert_initialized) — consistent with the file's safe-default contract.
+func get_solidity_snapshot() -> PackedByteArray:
+	var out := PackedByteArray()
+	if not _assert_initialized():
+		return out
+	out.resize(_width * _height)
+	for i in _width * _height:
+		out[i] = 1 if (_buildable[i] == 0 or _occupant_id[i] != -1) else 0
+	return out
+
+
 ## Returns the access cells registered for [instance_id] (transformed,
 ## anchor-offset), per the GridStateReader contract (TR-GS-024). Resolves
 ## via the reverse index — O(1), never a grid scan. Unknown instance_id
