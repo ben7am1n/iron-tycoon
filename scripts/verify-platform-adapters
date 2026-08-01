@@ -1,0 +1,139 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+repository_root="$(CDPATH= cd -- "$script_dir/.." && pwd -P)"
+cd "$repository_root"
+
+select_python() {
+  local candidate
+  local candidates=()
+  if [[ -n "${PLATFORM_ADAPTER_PYTHON:-}" ]]; then
+    candidates=("$PLATFORM_ADAPTER_PYTHON")
+  else
+    candidates=(python3.11 python3)
+  fi
+
+  for candidate in "${candidates[@]}"; do
+    if command -v "$candidate" >/dev/null 2>&1 \
+      && "$candidate" -c \
+        'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' \
+        >/dev/null 2>&1; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+
+  echo "error: Python 3.11 or newer is required for adapter verification" >&2
+  return 1
+}
+
+python_bin="$(select_python)"
+verify_tmp=""
+
+cleanup() {
+  if [[ -n "$verify_tmp" && -d "$verify_tmp" ]]; then
+    rm -rf -- "$verify_tmp"
+  fi
+}
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+verify_tmp="$(mktemp -d "${TMPDIR:-/tmp}/agentic-game-studio-verify.XXXXXX")"
+hermes_home="$verify_tmp/hermes"
+hermes_user_home="$verify_tmp/home"
+mkdir -p "$hermes_home" "$hermes_user_home"
+
+echo "[verify] platform tests"
+"$python_bin" -m unittest discover -s tests/platform_adapter -p 'test_*.py' -v
+
+echo "[verify] generator drift"
+"$python_bin" -m tools.platform_adapter.generate check --root .
+
+echo "[verify] JSON"
+"$python_bin" -m json.tool .agents/manifest.json >/dev/null
+"$python_bin" -m json.tool .codex/hooks.json >/dev/null
+
+echo "[verify] TOML"
+"$python_bin" -c \
+  'from pathlib import Path; import tomllib; [tomllib.load(path.open("rb")) for path in Path(".codex").rglob("*.toml")]'
+
+echo "[verify] Bash syntax"
+for file in \
+  .claude/hooks/*.sh \
+  tools/platform_adapter/hook_common.sh \
+  "$script_dir/verify-platform-adapters"; do
+  bash -n "$file"
+done
+
+echo "[verify] Codex prompt-input"
+codex debug prompt-input \
+  "Report loaded Agentic Game Studio project guidance." \
+  >"$verify_tmp/codex-prompt.json"
+"$python_bin" -c \
+  '# Codex prompt discovery
+import json
+import sys
+from pathlib import Path
+
+def strings(value):
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        return [text for item in value.values() for text in strings(item)]
+    if isinstance(value, list):
+        return [text for item in value for text in strings(item)]
+    return []
+
+payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+discovery = "\n".join(strings(payload))
+required = ("# Agentic Game Studio", ".agents/skills", "$skill-name")
+missing = [item for item in required if item not in discovery]
+if missing:
+    raise SystemExit("Codex project discovery is missing: " + ", ".join(missing))
+' "$verify_tmp/codex-prompt.json"
+
+echo "[verify] Hermes install"
+HOME="$hermes_user_home" HERMES_HOME="$hermes_home" HERMES_ACCEPT_HOOKS= \
+  scripts/hermes-setup install
+
+echo "[verify] Hermes check"
+HOME="$hermes_user_home" HERMES_HOME="$hermes_home" HERMES_ACCEPT_HOOKS= \
+  scripts/hermes-setup check
+
+echo "[verify] Hermes hooks doctor"
+HOME="$hermes_user_home" HERMES_HOME="$hermes_home" HERMES_ACCEPT_HOOKS= \
+  hermes hooks doctor >"$verify_tmp/hermes-doctor.txt"
+"$python_bin" -c \
+  '# Hermes doctor discovery
+import json
+import sys
+from pathlib import Path
+
+doctor = Path(sys.argv[1]).read_text(encoding="utf-8")
+manifest = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
+expected = sum(
+    hook["hermes"]["disposition"] == "script" for hook in manifest["hooks"]
+)
+checks = {
+    "configured hook count": f"Checking {expected} configured shell hook(s)" in doctor,
+    "executable scripts": doctor.count("script exists and is executable") == expected,
+    "pending consent": doctor.count("not allowlisted — hook will NOT fire") == expected,
+    "safe skipped smoke": doctor.count("skipped JSON smoke test — not allowlisted yet") == expected,
+    "no missing scripts": "script missing or not executable" not in doctor,
+}
+failed = [name for name, passed in checks.items() if not passed]
+if failed:
+    raise SystemExit("Hermes doctor validation failed: " + ", ".join(failed))
+' "$verify_tmp/hermes-doctor.txt" .agents/manifest.json
+
+echo "[verify] Hermes uninstall"
+HOME="$hermes_user_home" HERMES_HOME="$hermes_home" HERMES_ACCEPT_HOOKS= \
+  scripts/hermes-setup uninstall
+
+echo "[verify] whitespace"
+git diff --check
+
+echo "[verify] complete"

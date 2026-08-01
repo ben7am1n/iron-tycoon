@@ -1,0 +1,2719 @@
+#!/usr/bin/env python3
+"""Install, verify, remove, or print Agentic Game Studio Hermes settings."""
+
+from __future__ import annotations
+
+import argparse
+import copy
+from contextlib import contextmanager
+import ctypes
+from datetime import datetime, timezone
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import secrets
+import shlex
+import stat
+import subprocess
+import sys
+import tempfile
+from typing import List, Optional
+
+
+SCHEMA_VERSION = 2
+RECORD_NAME = "agentic-game-studio-install.json"
+LOCK_NAME = "agentic-game-studio.lock"
+HISTORY_NAME = "agentic-game-studio-cas-history"
+HISTORY_MANIFEST = "manifest.json"
+HISTORY_SCHEMA_VERSION = 2
+HERMES_PRIVATE_HOME_ARTIFACTS = {
+    "SOUL.md",
+    "audio_cache",
+    "cron",
+    "hooks",
+    "image_cache",
+    "logs",
+    "memories",
+    "pairing",
+    "sessions",
+    "skills",
+}
+MANAGED_LAYOUT = (
+    ("skills.external_dirs", (("skills", None, None),)),
+    (
+        "hooks.pre_llm_call",
+        (("session-start.sh", None, 10), ("detect-gaps.sh", None, 10)),
+    ),
+    (
+        "hooks.pre_tool_call",
+        (("validate-commit.sh", "terminal", 15), ("validate-push.sh", "terminal", 10)),
+    ),
+    (
+        "hooks.post_tool_call",
+        (
+            ("validate-assets.sh", "write_file|patch", 10),
+            ("validate-skill-change.sh", "write_file|patch", 5),
+        ),
+    ),
+    ("hooks.on_session_end", (("session-stop.sh", None, 10),)),
+    ("hooks.subagent_stop", (("log-agent-stop.sh", None, 5),)),
+)
+
+
+class SetupError(RuntimeError):
+    """A safe, actionable setup failure."""
+
+
+class ConcurrentConfigChange(SetupError):
+    """A config mutation window contained an outside file update."""
+
+
+class UnsafeConfigConflict(SetupError):
+    """A post-commit race retained every version for manual recovery."""
+
+
+class CommittedConfigChange(SetupError):
+    """The active config commit succeeded but its private cleanup did not."""
+
+
+class OwnedRecordPublishError(SetupError):
+    """An owned install record was published before a later write failure."""
+
+    def __init__(self, message: str, owned_snapshot: tuple):
+        super().__init__(message)
+        self.owned_snapshot = owned_snapshot
+
+
+class PrivateStageToken:
+    """Open descriptors and identity binding for one private stage directory."""
+
+    def __init__(
+        self,
+        path: Path,
+        parent_descriptor: int,
+        stage_descriptor: int,
+        identity: tuple,
+        subject: str,
+    ):
+        self.path = path
+        self.parent_descriptor = parent_descriptor
+        self.stage_descriptor = stage_descriptor
+        self.identity = identity
+        self.subject = subject
+
+    def close(self) -> None:
+        if self.stage_descriptor >= 0:
+            os.close(self.stage_descriptor)
+            self.stage_descriptor = -1
+        if self.parent_descriptor >= 0:
+            os.close(self.parent_descriptor)
+            self.parent_descriptor = -1
+
+
+_PRIVATE_STAGE_TOKENS = {}
+
+
+@contextmanager
+def _operation_lock(home: Path):
+    """Serialize operations with a persistent owner-only kernel lock."""
+    lock = home / LOCK_NAME
+    if os.path.lexists(lock) and lock.is_symlink():
+        raise SetupError("operation lock must not be a symlink")
+    flags = os.O_RDWR
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(str(lock), flags | os.O_CREAT | os.O_EXCL, 0o600)
+        created = True
+    except FileExistsError:
+        created = False
+        try:
+            descriptor = os.open(str(lock), flags)
+        except OSError as error:
+            if os.path.lexists(lock) and lock.is_symlink():
+                raise SetupError("operation lock must not be a symlink") from error
+            raise SetupError("operation lock could not be opened safely") from error
+    try:
+        acquired = os.fstat(descriptor)
+        if not stat.S_ISREG(acquired.st_mode):
+            raise SetupError("operation lock is not a regular file")
+        if acquired.st_nlink != 1:
+            raise SetupError("operation lock must not have hard links")
+        if hasattr(os, "getuid") and acquired.st_uid != os.getuid():
+            raise SetupError("operation lock is not owned by the current user")
+        if created:
+            os.fchmod(descriptor, 0o600)
+        elif stat.S_IMODE(acquired.st_mode) != 0o600:
+            raise SetupError("operation lock permissions must be 0600")
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise SetupError("another hermes-setup operation is already running") from error
+        current = os.lstat(str(lock))
+        locked = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(current.st_mode)
+            or current.st_dev != locked.st_dev
+            or current.st_ino != locked.st_ino
+            or current.st_uid != locked.st_uid
+            or stat.S_IMODE(current.st_mode) != stat.S_IMODE(locked.st_mode)
+            or locked.st_nlink != 1
+        ):
+            raise SetupError("operation lock pathname changed before acquisition")
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        os.ftruncate(descriptor, 0)
+        os.write(descriptor, (json.dumps({"pid": os.getpid()}) + "\n").encode("ascii"))
+        os.fsync(descriptor)
+        try:
+            yield
+        finally:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+    finally:
+        os.close(descriptor)
+
+
+def _config_bytes(config: Path) -> bytes:
+    return _config_snapshot(config)[1]
+
+
+def _stable_get(config: Path, key: str, expected: tuple):
+    """Read one key against a stable config snapshot, reporting outside changes."""
+    external_change = False
+    for _ in range(3):
+        before = _config_snapshot(config)
+        if before != expected:
+            external_change = True
+        value = _get(key)
+        after = _config_snapshot(config)
+        if after == before:
+            return value, after, external_change
+        external_change = True
+        expected = after
+    raise SetupError("active Hermes config changed repeatedly during a managed read")
+
+
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parent.parent
+
+
+def _managed_values(root: Path) -> dict:
+    values = {}
+    hooks = root / ".claude" / "hooks"
+    for key, layout in MANAGED_LAYOUT:
+        if key == "skills.external_dirs":
+            values[key] = [str((root / ".agents" / "skills").resolve())]
+            continue
+        entries = []
+        for name, matcher, timeout in layout:
+            entry = {
+                "command": "bash " + shlex.quote(str((hooks / name).resolve())),
+                "timeout": timeout,
+            }
+            if matcher is not None:
+                entry["matcher"] = matcher
+            entries.append(entry)
+        values[key] = entries
+    return values
+
+
+def _run_hermes(
+    arguments: List[str], *, hermes_home: Optional[Path] = None
+) -> subprocess.CompletedProcess:
+    environment = None
+    inherited_descriptors = ()
+    child_setup = None
+    if hermes_home is not None:
+        environment = os.environ.copy()
+        token = _PRIVATE_STAGE_TOKENS.get(str(hermes_home))
+        if token is None:
+            subprocess_home = str(hermes_home)
+        else:
+            subprocess_home = "."
+            inherited_descriptors = (token.stage_descriptor,)
+            child_setup = lambda: os.fchdir(token.stage_descriptor)
+        environment["HERMES_HOME"] = subprocess_home
+        environment["_AGENTIC_GAME_STUDIO_ACTIVE_HOME"] = str(
+            Path(os.environ.get("HERMES_HOME", str(hermes_home))).resolve()
+        )
+    try:
+        result = subprocess.run(
+            ["hermes", *arguments],
+            text=True,
+            capture_output=True,
+            check=False,
+            shell=False,
+            env=environment,
+            pass_fds=inherited_descriptors,
+            preexec_fn=child_setup,
+        )
+    except FileNotFoundError as error:
+        raise SetupError("Hermes CLI was not found on PATH") from error
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or "no diagnostic output"
+        raise SetupError("hermes %s failed: %s" % (" ".join(arguments), detail))
+    return result
+
+
+def _contained(path: Path, parent: Path) -> bool:
+    try:
+        path.relative_to(parent)
+    except ValueError:
+        return False
+    return True
+
+
+def _paths() -> tuple:
+    home_text = os.environ.get("HERMES_HOME")
+    home = Path(home_text).expanduser() if home_text else Path.home() / ".hermes"
+    home = home.resolve()
+    output = _run_hermes(["config", "path"]).stdout.strip()
+    if not output:
+        raise SetupError("hermes config path returned an empty path")
+    config_input = Path(output).expanduser()
+    if not config_input.is_absolute():
+        raise SetupError("hermes config path must return an absolute path")
+    if os.path.lexists(config_input) and config_input.is_symlink():
+        raise SetupError("active Hermes config must not be a symlink: %s" % config_input)
+    config = config_input.resolve()
+    if config == home or not _contained(config, home):
+        raise SetupError(
+            "active Hermes config must be contained in the resolved HERMES_HOME: %s" % home
+        )
+    record = home / RECORD_NAME
+    if os.path.lexists(record) and record.is_symlink():
+        raise SetupError("install record must not be a symlink: %s" % record)
+    return home, config, record
+
+
+def _get(key: str, *, hermes_home: Optional[Path] = None):
+    arguments = ["config", "get", key, "--json"]
+    inherited_descriptors = ()
+    environment = None
+    child_setup = None
+    if hermes_home is not None:
+        token = _PRIVATE_STAGE_TOKENS.get(str(hermes_home))
+        if token is None:
+            subprocess_home = str(hermes_home)
+        else:
+            subprocess_home = "."
+            inherited_descriptors = (token.stage_descriptor,)
+            child_setup = lambda: os.fchdir(token.stage_descriptor)
+        environment = {
+            **os.environ,
+            "HERMES_HOME": subprocess_home,
+            "_AGENTIC_GAME_STUDIO_ACTIVE_HOME": str(
+                Path(os.environ.get("HERMES_HOME", str(hermes_home))).resolve()
+            ),
+        }
+    try:
+        result = subprocess.run(
+            ["hermes", *arguments],
+            text=True,
+            capture_output=True,
+            check=False,
+            shell=False,
+            env=environment,
+            pass_fds=inherited_descriptors,
+            preexec_fn=child_setup,
+        )
+    except FileNotFoundError as error:
+        raise SetupError("Hermes CLI was not found on PATH") from error
+    missing = "Config key not set: %s" % key
+    if result.returncode != 0:
+        if result.stderr.strip() == missing and not result.stdout.strip():
+            return None
+        detail = result.stderr.strip() or result.stdout.strip() or "no diagnostic output"
+        raise SetupError("hermes %s failed: %s" % (" ".join(arguments), detail))
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        raise SetupError("hermes config get %s returned malformed JSON" % key) from error
+
+
+def _fsync_directory(path: Path) -> None:
+    token = _PRIVATE_STAGE_TOKENS.get(str(path))
+    if token is not None:
+        os.fsync(token.stage_descriptor)
+        return
+    descriptor = os.open(str(path), os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _regular_snapshot_at(
+    directory_descriptor: int, name: str, subject: str
+) -> tuple:
+    flags = os.O_RDONLY
+    if hasattr(os, "O_NONBLOCK"):
+        flags |= os.O_NONBLOCK
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(name, flags, dir_fd=directory_descriptor)
+    except FileNotFoundError:
+        return False, b"", 0o600, None
+    except OSError as error:
+        raise SetupError("%s must remain a regular file" % subject) from error
+    try:
+        current = os.fstat(descriptor)
+        if not stat.S_ISREG(current.st_mode):
+            raise SetupError("%s must remain a regular file" % subject)
+        chunks = []
+        while True:
+            chunk = os.read(descriptor, 65536)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        identity = (current.st_dev, current.st_ino, current.st_uid, current.st_nlink)
+        return True, b"".join(chunks), stat.S_IMODE(current.st_mode), identity
+    finally:
+        os.close(descriptor)
+
+
+def _atomic_write_private_stage(
+    token: PrivateStageToken, name: str, content: bytes, mode: int
+) -> None:
+    if Path(name).name != name:
+        raise SetupError("private stage atomic write name is unsafe")
+    expected = _regular_snapshot_at(
+        token.stage_descriptor, name, "private atomic write destination"
+    )
+    temporary_name = ".%s.%s" % (name, secrets.token_hex(8))
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    descriptor = os.open(
+        temporary_name,
+        flags,
+        mode,
+        dir_fd=token.stage_descriptor,
+    )
+    try:
+        os.fchmod(descriptor, mode)
+        offset = 0
+        while offset < len(content):
+            offset += os.write(descriptor, content[offset:])
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+    candidate = _regular_snapshot_at(
+        token.stage_descriptor, temporary_name, "private atomic write candidate"
+    )
+    if not expected[0]:
+        _atomic_rename_noreplace_at(
+            token.stage_descriptor,
+            temporary_name,
+            token.stage_descriptor,
+            name,
+        )
+        os.fsync(token.stage_descriptor)
+        return
+    _atomic_exchange_at(
+        token.stage_descriptor,
+        temporary_name,
+        token.stage_descriptor,
+        name,
+    )
+    displaced = _regular_snapshot_at(
+        token.stage_descriptor,
+        temporary_name,
+        "private atomic write displaced destination",
+    )
+    active = _regular_snapshot_at(
+        token.stage_descriptor, name, "private atomic write destination"
+    )
+    if _same_opened_version(displaced, expected) and _same_opened_version(
+        active, candidate
+    ):
+        _atomic_rename_noreplace_at(
+            token.stage_descriptor,
+            temporary_name,
+            token.stage_descriptor,
+            ".atomic-retired-" + secrets.token_hex(8),
+        )
+        os.fsync(token.stage_descriptor)
+        return
+    if _same_opened_version(active, candidate):
+        _atomic_exchange_at(
+            token.stage_descriptor,
+            temporary_name,
+            token.stage_descriptor,
+            name,
+        )
+        restored = _regular_snapshot_at(
+            token.stage_descriptor,
+            name,
+            "private atomic write restored destination",
+        )
+        if _same_opened_version(restored, displaced):
+            raise ConcurrentConfigChange(
+                "private atomic write destination changed before exchange"
+            )
+    raise UnsafeConfigConflict(
+        "private atomic write destination changed during exchange; versions retained"
+    )
+
+
+def _atomic_write(path: Path, content: bytes, mode: int = 0o600) -> None:
+    token = _PRIVATE_STAGE_TOKENS.get(str(path.parent))
+    if token is not None:
+        _atomic_write_private_stage(token, path.name, content, mode)
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    expected = _secure_regular_snapshot(path, "atomic write destination")
+    descriptor, temporary = tempfile.mkstemp(prefix=".%s." % path.name, dir=str(path.parent))
+    temporary_path = Path(temporary)
+    with os.fdopen(descriptor, "wb") as stream:
+        stream.write(content)
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.chmod(str(temporary_path), mode)
+    candidate = _secure_regular_snapshot(temporary_path, "atomic write candidate")
+    parent_descriptor = os.open(str(path.parent), os.O_RDONLY)
+    try:
+        if not expected[0]:
+            _atomic_rename_noreplace_at(
+                parent_descriptor,
+                temporary_path.name,
+                parent_descriptor,
+                path.name,
+            )
+            os.fsync(parent_descriptor)
+            return
+        _atomic_exchange_paths(temporary_path, path)
+        displaced = _secure_regular_snapshot(
+            temporary_path, "atomic write displaced destination"
+        )
+        active = _secure_regular_snapshot(path, "atomic write destination")
+        if _same_opened_version(displaced, expected) and _same_opened_version(
+            active, candidate
+        ):
+            retained_name = ".atomic-retired-" + secrets.token_hex(8)
+            _atomic_rename_noreplace_at(
+                parent_descriptor,
+                temporary_path.name,
+                parent_descriptor,
+                retained_name,
+            )
+            os.fsync(parent_descriptor)
+            return
+        if _same_opened_version(active, candidate):
+            _atomic_exchange_paths(temporary_path, path)
+            restored = _secure_regular_snapshot(path, "atomic write restored destination")
+            if _same_opened_version(restored, displaced):
+                raise ConcurrentConfigChange(
+                    "atomic write destination changed before exchange"
+                )
+        raise UnsafeConfigConflict(
+            "atomic write destination changed during exchange; versions retained"
+        )
+    finally:
+        os.close(parent_descriptor)
+
+
+def _secure_regular_snapshot(path: Path, subject: str) -> tuple:
+    token = _PRIVATE_STAGE_TOKENS.get(str(path.parent))
+    if token is not None:
+        return _regular_snapshot_at(token.stage_descriptor, path.name, subject)
+    flags = os.O_RDONLY
+    if hasattr(os, "O_NONBLOCK"):
+        flags |= os.O_NONBLOCK
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(str(path), flags)
+    except FileNotFoundError:
+        return False, b"", 0o600, None
+    except OSError as error:
+        raise SetupError("%s must remain a regular file: %s" % (subject, path)) from error
+    try:
+        current = os.fstat(descriptor)
+        if not stat.S_ISREG(current.st_mode):
+            raise SetupError("%s must remain a regular file: %s" % (subject, path))
+        chunks = []
+        while True:
+            chunk = os.read(descriptor, 65536)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        identity = (current.st_dev, current.st_ino, current.st_uid, current.st_nlink)
+        return True, b"".join(chunks), stat.S_IMODE(current.st_mode), identity
+    finally:
+        os.close(descriptor)
+
+
+def _config_snapshot(config: Path) -> tuple:
+    snapshot = _secure_regular_snapshot(config, "active Hermes config")
+    return snapshot[:3]
+
+
+def _path_identity(path: Path):
+    token = _PRIVATE_STAGE_TOKENS.get(str(path.parent))
+    if token is not None:
+        try:
+            current = os.stat(
+                path.name,
+                dir_fd=token.stage_descriptor,
+                follow_symlinks=False,
+            )
+        except FileNotFoundError:
+            return None
+        return (
+            current.st_dev,
+            current.st_ino,
+            stat.S_IFMT(current.st_mode),
+            current.st_uid,
+            stat.S_IMODE(current.st_mode),
+        )
+    try:
+        current = os.lstat(str(path))
+    except FileNotFoundError:
+        return None
+    return (
+        current.st_dev,
+        current.st_ino,
+        stat.S_IFMT(current.st_mode),
+        current.st_uid,
+        stat.S_IMODE(current.st_mode),
+    )
+
+
+def _history_directory(config: Path) -> Path:
+    return config.parent / HISTORY_NAME
+
+
+def _ensure_history_path(history: Path) -> Path:
+    if not os.path.lexists(history):
+        try:
+            os.mkdir(str(history), 0o700)
+        except FileExistsError:
+            pass
+    current = os.lstat(str(history))
+    if stat.S_ISLNK(current.st_mode) or not stat.S_ISDIR(current.st_mode):
+        raise SetupError("CAS history must be a real directory: %s" % history)
+    if hasattr(os, "getuid") and current.st_uid != os.getuid():
+        raise SetupError("CAS history must be owned by the current user")
+    if stat.S_IMODE(current.st_mode) != 0o700:
+        raise SetupError("CAS history permissions must be 0700")
+    _fsync_directory(history)
+    _fsync_directory(history.parent)
+    return history
+
+
+def _ensure_history_directory(config: Path) -> Path:
+    return _ensure_history_path(_history_directory(config))
+
+
+def _same_opened_version(left: tuple, right: tuple) -> bool:
+    if left[0] != right[0]:
+        return False
+    if not left[0]:
+        return True
+    return (
+        left[1] == right[1]
+        and left[2] == right[2]
+        and left[3][:3] == right[3][:3]
+    )
+
+
+def _history_manifest_snapshot(history: Path) -> tuple:
+    manifest = history / HISTORY_MANIFEST
+    if not os.path.lexists(manifest):
+        return (
+            {"schema_version": HISTORY_SCHEMA_VERSION, "entries": []},
+            (False, b"", 0o600, None),
+        )
+    snapshot = _secure_regular_snapshot(manifest, "CAS history manifest")
+    present, content, mode, identity = snapshot
+    if (
+        not present
+        or mode != 0o600
+        or identity is None
+        or (hasattr(os, "getuid") and identity[2] != os.getuid())
+        or identity[3] != 1
+    ):
+        raise SetupError("CAS history manifest must be a 0600 regular file")
+    try:
+        payload = json.loads(content.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise SetupError("CAS history manifest is malformed") from error
+    if (
+        not isinstance(payload, dict)
+        or set(payload) != {"schema_version", "entries"}
+        or payload.get("schema_version") != HISTORY_SCHEMA_VERSION
+        or not isinstance(payload.get("entries"), list)
+    ):
+        raise SetupError("CAS history manifest schema is invalid")
+    txids = set()
+    paths = set()
+    for entry in payload["entries"]:
+        entry_path = _validate_history_entry(entry, history)
+        if entry["txid"] in txids or str(entry_path) in paths:
+            raise SetupError("CAS history contains duplicate transactions or paths")
+        txids.add(entry["txid"])
+        paths.add(str(entry_path))
+    current_identity = _path_identity(manifest)
+    if current_identity is None or current_identity[:2] != identity[:2]:
+        raise ConcurrentConfigChange("CAS history manifest changed while it was read")
+    return payload, snapshot
+
+
+def _read_history_manifest(history: Path) -> dict:
+    return _history_manifest_snapshot(history)[0]
+
+
+def _write_private_file(directory: Path, prefix: str, content: bytes) -> Path:
+    descriptor, temporary = tempfile.mkstemp(prefix=prefix, dir=str(directory))
+    path = Path(temporary)
+    try:
+        os.fchmod(descriptor, 0o600)
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+    except BaseException:
+        raise
+    _fsync_directory(directory)
+    return path
+
+
+def _retire_history_candidate(history: Path, candidate: Path) -> None:
+    """Move a no-longer-active candidate to an unpredictable retained name."""
+    if not os.path.lexists(candidate):
+        return
+    descriptor = os.open(str(history), os.O_RDONLY)
+    try:
+        retained_name = ".manifest-retired-" + secrets.token_hex(8)
+        _atomic_rename_noreplace_at(
+            descriptor, candidate.name, descriptor, retained_name
+        )
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _write_history_manifest_cas(
+    history: Path, expected_snapshot: tuple, payload: dict
+) -> None:
+    manifest = history / HISTORY_MANIFEST
+    content = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    candidate = _write_private_file(history, ".manifest-candidate-", content)
+    keep_candidate = False
+    try:
+        candidate_snapshot = _secure_regular_snapshot(
+            candidate, "CAS history manifest candidate"
+        )
+        if not expected_snapshot[0]:
+            try:
+                descriptor = os.open(str(history), os.O_RDONLY)
+                try:
+                    _atomic_rename_noreplace_at(
+                        descriptor,
+                        candidate.name,
+                        descriptor,
+                        manifest.name,
+                    )
+                finally:
+                    os.close(descriptor)
+            except ConcurrentConfigChange as error:
+                raise ConcurrentConfigChange(
+                    "CAS history manifest appeared before publish"
+                ) from error
+            active = _secure_regular_snapshot(manifest, "CAS history manifest")
+            if not _same_opened_version(active, candidate_snapshot):
+                raise UnsafeConfigConflict(
+                    "CAS history manifest changed immediately after creation"
+                )
+            _fsync_directory(history)
+            if _history_manifest_snapshot(history)[1][1] != content:
+                raise ConcurrentConfigChange(
+                    "CAS history manifest changed after creation"
+                )
+            return
+
+        _exchange_manifest_paths(candidate, manifest)
+        keep_candidate = True
+        displaced = _secure_regular_snapshot(candidate, "displaced CAS history manifest")
+        active = _secure_regular_snapshot(manifest, "CAS history manifest")
+        if _same_opened_version(displaced, expected_snapshot) and active[1] == content:
+            _fsync_directory(history)
+            _retire_history_candidate(history, candidate)
+            keep_candidate = False
+            return
+        if active[1] == content:
+            try:
+                _exchange_manifest_paths(candidate, manifest)
+            except BaseException as error:
+                raise UnsafeConfigConflict(
+                    "CAS history manifest conflict retained at %s" % candidate
+                ) from error
+            restored = _secure_regular_snapshot(manifest, "CAS history manifest")
+            staged = _secure_regular_snapshot(candidate, "CAS history manifest candidate")
+            if _same_opened_version(restored, displaced) and staged[1] == content:
+                _retire_history_candidate(history, candidate)
+                keep_candidate = False
+                raise ConcurrentConfigChange(
+                    "CAS history manifest changed before atomic publish"
+                )
+        raise UnsafeConfigConflict(
+            "CAS history manifest identities changed; versions retained at %s" % candidate
+        )
+    finally:
+        if not keep_candidate and os.path.lexists(candidate):
+            _retire_history_candidate(history, candidate)
+
+
+def _update_history_manifest(history: Path, transform) -> dict:
+    for _ in range(3):
+        payload, snapshot = _history_manifest_snapshot(history)
+        updated = transform(copy.deepcopy(payload))
+        if updated == payload:
+            return payload
+        try:
+            _write_history_manifest_cas(history, snapshot, updated)
+            return updated
+        except ConcurrentConfigChange:
+            continue
+    raise SetupError("CAS history manifest changed repeatedly during update")
+
+
+def _validate_history_entry(entry: dict, history: Path) -> Path:
+    if not isinstance(entry, dict) or set(entry) != {
+        "txid",
+        "state",
+        "kind",
+        "source_path",
+        "path",
+        "device",
+        "inode",
+        "initial_sha256",
+        "created_at",
+    }:
+        raise SetupError("CAS history entry schema is invalid")
+    if not isinstance(entry.get("txid"), str) or re.fullmatch(
+        r"[0-9a-f]{24}", entry["txid"]
+    ) is None:
+        raise SetupError("CAS history entry transaction id is invalid")
+    if entry.get("state") not in ("pending", "committed"):
+        raise SetupError("CAS history entry state is invalid")
+    if entry.get("kind") not in ("config", "record"):
+        raise SetupError("CAS history entry kind is invalid")
+    source_text = entry.get("source_path")
+    if not isinstance(source_text, str):
+        raise SetupError("CAS history entry source path is invalid")
+    source = Path(source_text)
+    if (
+        not source.is_absolute()
+        or not _contained(source.resolve(), history.parent.resolve())
+    ):
+        raise SetupError("CAS history entry source escapes HERMES_HOME")
+    path_text = entry.get("path")
+    if not isinstance(path_text, str):
+        raise SetupError("CAS history entry path is invalid")
+    path = Path(path_text)
+    if path.parent.resolve() != history.resolve() or path.name == HISTORY_MANIFEST:
+        raise SetupError("CAS history entry escapes its owner directory")
+    if not isinstance(entry.get("device"), int) or not isinstance(entry.get("inode"), int):
+        raise SetupError("CAS history entry inode identity is invalid")
+    digest = entry.get("initial_sha256")
+    if not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None:
+        raise SetupError("CAS history entry hash is invalid")
+    created_at = entry.get("created_at")
+    if not isinstance(created_at, str) or re.fullmatch(
+        r"\d{8}T\d{6}\.\d{6}Z", created_at
+    ) is None:
+        raise SetupError("CAS history entry timestamp is invalid")
+    return path
+
+
+def _transition_history_entry(history: Path, txid: str, target: Optional[str]) -> None:
+    def transform(payload: dict) -> dict:
+        matches = [entry for entry in payload["entries"] if entry.get("txid") == txid]
+        if len(matches) != 1:
+            raise SetupError("CAS history pending transaction is ambiguous")
+        entry = matches[0]
+        if entry.get("state") != "pending":
+            if target == "committed" and entry.get("state") == "committed":
+                return payload
+            raise SetupError("CAS history transaction state changed unexpectedly")
+        if target is None:
+            payload["entries"].remove(entry)
+        else:
+            entry["state"] = target
+        return payload
+
+    _update_history_manifest(history, transform)
+
+
+def _recover_history(config: Path, history: Path) -> None:
+    while True:
+        payload = _read_history_manifest(history)
+        pending = [entry for entry in payload["entries"] if entry.get("state") == "pending"]
+        if not pending:
+            return
+        entry = pending[0]
+        retained = _validate_history_entry(entry, history)
+        try:
+            state = os.lstat(str(retained))
+        except FileNotFoundError:
+            source = Path(entry["source_path"])
+            active = _secure_regular_snapshot(source, "CAS history pending source")
+            identity = active[3]
+            if (
+                active[0]
+                and identity is not None
+                and identity[0] == entry["device"]
+                and identity[1] == entry["inode"]
+            ):
+                if "-retired-" in retained.name:
+                    source_descriptor = os.open(str(source.parent), os.O_RDONLY)
+                    history_descriptor = os.open(str(history), os.O_RDONLY)
+                    try:
+                        _atomic_rename_noreplace_at(
+                            source_descriptor,
+                            source.name,
+                            history_descriptor,
+                            retained.name,
+                        )
+                        os.fsync(source_descriptor)
+                        os.fsync(history_descriptor)
+                    finally:
+                        os.close(history_descriptor)
+                        os.close(source_descriptor)
+                else:
+                    if identity[3] != 1:
+                        raise SetupError(
+                            "pending CAS history source has unregistered hard links"
+                        )
+                    os.link(str(source), str(retained), follow_symlinks=False)
+                    _fsync_directory(history)
+            else:
+                _transition_history_entry(history, entry["txid"], None)
+                continue
+        state = os.lstat(str(retained))
+        if (
+            stat.S_ISLNK(state.st_mode)
+            or not stat.S_ISREG(state.st_mode)
+            or state.st_dev != entry["device"]
+            or state.st_ino != entry["inode"]
+        ):
+            raise UnsafeConfigConflict(
+                "pending CAS history retained path has conflicting identity: %s"
+                % retained
+            )
+        _fsync_directory(history)
+        _transition_history_entry(history, entry["txid"], "committed")
+
+
+def _retain_active_inode(
+    config: Path,
+    expected: tuple,
+    *,
+    kind: str = "config",
+    history_path: Optional[Path] = None
+) -> Path:
+    """Keep a permanent hard link so pre-opened writer FDs cannot lose data."""
+    if kind not in ("config", "record"):
+        raise SetupError("CAS history retention kind is invalid")
+    history = (
+        _ensure_history_directory(config)
+        if history_path is None
+        else _ensure_history_path(history_path)
+    )
+    _recover_history(config, history)
+    _validate_history_directory(history)
+    active_snapshot = _secure_regular_snapshot(config, "active Hermes config")
+    if active_snapshot[:3] != expected or active_snapshot[3] is None:
+        raise ConcurrentConfigChange("active Hermes config changed before inode retention")
+    active_identity = active_snapshot[3]
+    manifest = _read_history_manifest(history)
+    registered = []
+    for entry in manifest["entries"]:
+        path = _validate_history_entry(entry, history)
+        state = os.lstat(str(path))
+        if (
+            entry["state"] == "committed"
+            and stat.S_ISREG(state.st_mode)
+            and not stat.S_ISLNK(state.st_mode)
+            and state.st_dev == active_identity[0]
+            and state.st_ino == active_identity[1]
+        ):
+            registered.append(path)
+    if active_identity[3] != 1:
+        if not registered or active_identity[3] != len(registered) + 1:
+            raise SetupError(
+                "active Hermes config has unregistered hard links; refusing CAS mutation"
+            )
+        retained = registered[0]
+        if _config_snapshot(retained) != expected:
+            raise ConcurrentConfigChange("retained config inode changed before CAS")
+        return retained
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
+    retained = history / (
+        "%s-%s-%s.yaml" % (kind, stamp, secrets.token_hex(4))
+    )
+    txid = secrets.token_hex(12)
+    entry = {
+        "txid": txid,
+        "state": "pending",
+        "kind": kind,
+        "source_path": str(config),
+        "path": str(retained),
+        "device": active_identity[0],
+        "inode": active_identity[1],
+        "initial_sha256": hashlib.sha256(expected[1]).hexdigest(),
+        "created_at": stamp,
+    }
+
+    def add_pending(payload: dict) -> dict:
+        if any(item.get("txid") == txid for item in payload["entries"]):
+            raise SetupError("CAS history transaction id is duplicated")
+        payload["entries"].append(entry)
+        return payload
+
+    _update_history_manifest(history, add_pending)
+    try:
+        os.link(str(config), str(retained), follow_symlinks=False)
+    except OSError as error:
+        raise SetupError(
+            "could not link active config into pending CAS history: %s" % retained
+        ) from error
+    retained_snapshot = _secure_regular_snapshot(retained, "retained CAS history inode")
+    retained_identity = retained_snapshot[3]
+    if (
+        retained_identity is None
+        or retained_identity[0] != active_identity[0]
+        or retained_identity[1] != active_identity[1]
+        or retained_snapshot[:3] != expected
+    ):
+        raise UnsafeConfigConflict(
+            "active config changed while retaining its inode at %s" % retained
+        )
+    _fsync_directory(history)
+    _transition_history_entry(history, txid, "committed")
+    config_identity = _path_identity(config)
+    retained_path_identity = _path_identity(retained)
+    if (
+        config_identity is None
+        or retained_path_identity is None
+        or config_identity[:2] != retained_path_identity[:2]
+    ):
+        raise ConcurrentConfigChange(
+            "active Hermes config changed after inode retention"
+        )
+    return retained
+
+
+def _validate_history_directory(history: Path, allow_pending: bool = False) -> None:
+    try:
+        current = os.lstat(str(history))
+    except FileNotFoundError as error:
+        raise SetupError("CAS history directory is missing") from error
+    if (
+        stat.S_ISLNK(current.st_mode)
+        or not stat.S_ISDIR(current.st_mode)
+        or stat.S_IMODE(current.st_mode) != 0o700
+    ):
+        raise SetupError("CAS history must remain a 0700 real directory")
+    if hasattr(os, "getuid") and current.st_uid != os.getuid():
+        raise SetupError("CAS history owner changed")
+    payload = _read_history_manifest(history)
+    txids = set()
+    paths = set()
+    for entry in payload["entries"]:
+        path = _validate_history_entry(entry, history)
+        if entry["txid"] in txids or str(path) in paths:
+            raise SetupError("CAS history contains duplicate transactions or paths")
+        txids.add(entry["txid"])
+        paths.add(str(path))
+        if entry["state"] == "pending":
+            if allow_pending:
+                continue
+            raise SetupError("CAS history contains an unrecovered pending transaction")
+        try:
+            state = os.lstat(str(path))
+        except FileNotFoundError as error:
+            raise SetupError("CAS history retained entry is missing") from error
+        if stat.S_ISLNK(state.st_mode) or not stat.S_ISREG(state.st_mode):
+            raise SetupError("CAS history entry is not a retained regular inode")
+        if state.st_dev != entry.get("device") or state.st_ino != entry.get("inode"):
+            raise SetupError("CAS history entry inode identity changed")
+
+
+def _atomic_exchange_at(
+    first_descriptor: int,
+    first_name: str,
+    second_descriptor: int,
+    second_name: str,
+) -> None:
+    """Atomically exchange two dirfd-bound names or refuse safely."""
+    library = ctypes.CDLL(None, use_errno=True)
+    first_bytes = os.fsencode(first_name)
+    second_bytes = os.fsencode(second_name)
+    if sys.platform == "darwin" and hasattr(library, "renameatx_np"):
+        rename = library.renameatx_np
+        rename.argtypes = [
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_uint,
+        ]
+        rename.restype = ctypes.c_int
+        result = rename(
+            first_descriptor,
+            first_bytes,
+            second_descriptor,
+            second_bytes,
+            0x00000002,
+        )
+    elif sys.platform.startswith("linux") and hasattr(library, "renameat2"):
+        rename = library.renameat2
+        rename.argtypes = [
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_uint,
+        ]
+        rename.restype = ctypes.c_int
+        result = rename(
+            first_descriptor,
+            first_bytes,
+            second_descriptor,
+            second_bytes,
+            0x00000002,
+        )
+    else:
+        raise SetupError(
+            "safe Hermes config mutation requires atomic path exchange support"
+        )
+    if result != 0:
+        error_number = ctypes.get_errno()
+        if error_number in (2, 17):
+            raise ConcurrentConfigChange(
+                "active Hermes config changed before atomic commit"
+            )
+        raise SetupError(
+            "atomic Hermes config exchange failed: %s" % os.strerror(error_number)
+        )
+
+
+def _atomic_exchange_paths(first: Path, second: Path) -> None:
+    """Atomically exchange two paths, binding registered private stages by fd."""
+    first_token = _PRIVATE_STAGE_TOKENS.get(str(first.parent))
+    second_token = _PRIVATE_STAGE_TOKENS.get(str(second.parent))
+    first_descriptor = (
+        os.dup(first_token.stage_descriptor)
+        if first_token is not None
+        else os.open(str(first.parent), os.O_RDONLY)
+    )
+    try:
+        second_descriptor = (
+            os.dup(second_token.stage_descriptor)
+            if second_token is not None
+            else os.open(str(second.parent), os.O_RDONLY)
+        )
+        try:
+            _atomic_exchange_at(
+                first_descriptor,
+                first.name,
+                second_descriptor,
+                second.name,
+            )
+        finally:
+            os.close(second_descriptor)
+    finally:
+        os.close(first_descriptor)
+
+
+def _atomic_rename_noreplace_at(
+    source_descriptor: int,
+    source_name: str,
+    destination_descriptor: int,
+    destination_name: str,
+) -> None:
+    """Atomically move one directory entry without replacing a destination."""
+    library = ctypes.CDLL(None, use_errno=True)
+    source_bytes = os.fsencode(source_name)
+    destination_bytes = os.fsencode(destination_name)
+    if sys.platform == "darwin" and hasattr(library, "renameatx_np"):
+        rename = library.renameatx_np
+        rename.argtypes = [
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_uint,
+        ]
+        rename.restype = ctypes.c_int
+        result = rename(
+            source_descriptor,
+            source_bytes,
+            destination_descriptor,
+            destination_bytes,
+            0x00000004,
+        )
+    elif sys.platform.startswith("linux") and hasattr(library, "renameat2"):
+        rename = library.renameat2
+        rename.argtypes = [
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_uint,
+        ]
+        rename.restype = ctypes.c_int
+        result = rename(
+            source_descriptor,
+            source_bytes,
+            destination_descriptor,
+            destination_bytes,
+            0x00000001,
+        )
+    else:
+        raise SetupError("safe private stage retirement requires exclusive rename support")
+    if result != 0:
+        error_number = ctypes.get_errno()
+        if error_number in (2, 17):
+            raise ConcurrentConfigChange(
+                "private stage child changed before exclusive retirement"
+            )
+        raise SetupError(
+            "exclusive private stage retirement failed: %s"
+            % os.strerror(error_number)
+        )
+
+
+def _exchange_paths(first: Path, second: Path) -> None:
+    """Config-path exchange seam used by deterministic concurrency tests."""
+    _atomic_exchange_paths(first, second)
+
+
+def _exchange_manifest_paths(first: Path, second: Path) -> None:
+    """Manifest exchange seam isolated from active-config fault injection."""
+    _atomic_exchange_paths(first, second)
+
+
+def _commit_candidate(config: Path, candidate: Path, expected: tuple) -> None:
+    """CAS-commit one CLI-produced candidate without overwriting outsiders."""
+    candidate_snapshot = _config_snapshot(candidate)
+    candidate_identity = _path_identity(candidate)
+    if not candidate_snapshot[0] or candidate_identity is None:
+        raise SetupError("Hermes CLI did not produce a candidate config file")
+    if not expected[0]:
+        try:
+            candidate_token = _PRIVATE_STAGE_TOKENS.get(str(candidate.parent))
+            source_descriptor = (
+                os.dup(candidate_token.stage_descriptor)
+                if candidate_token is not None
+                else os.open(str(candidate.parent), os.O_RDONLY)
+            )
+            try:
+                parent_descriptor = os.open(str(config.parent), os.O_RDONLY)
+                try:
+                    _atomic_rename_noreplace_at(
+                        source_descriptor,
+                        candidate.name,
+                        parent_descriptor,
+                        config.name,
+                    )
+                finally:
+                    os.close(parent_descriptor)
+            finally:
+                os.close(source_descriptor)
+        except ConcurrentConfigChange as error:
+            raise ConcurrentConfigChange(
+                "active Hermes config appeared before atomic commit"
+            ) from error
+        active_snapshot = _config_snapshot(config)
+        active_identity = _path_identity(config)
+        if active_snapshot != candidate_snapshot or active_identity != candidate_identity:
+            raise ConcurrentConfigChange(
+                "active Hermes config changed immediately after atomic creation"
+            )
+        return
+
+    retained_inode = _retain_active_inode(config, expected)
+    stage_contains_external = True
+    try:
+        _exchange_paths(candidate, config)
+        displaced_snapshot = _config_snapshot(candidate)
+        displaced_identity = _path_identity(candidate)
+        active_snapshot = _config_snapshot(config)
+        active_identity = _path_identity(config)
+        if active_identity != candidate_identity or active_snapshot != candidate_snapshot:
+            raise UnsafeConfigConflict(
+                "active config changed after atomic exchange; active version was preserved"
+            )
+        if displaced_snapshot == expected:
+            if _config_snapshot(retained_inode) != expected:
+                raise UnsafeConfigConflict(
+                    "retained config inode changed through a pre-opened writer; active and history preserved"
+                )
+            stage_contains_external = False
+            try:
+                _fsync_directory(config.parent)
+            except OSError as error:
+                raise CommittedConfigChange(
+                    "config commit succeeded but its parent directory could not be synced"
+                ) from error
+            return
+
+        try:
+            _atomic_write(
+                candidate.parent / "outside-before-swapback.yaml",
+                displaced_snapshot[1],
+                mode=0o600,
+            )
+        except BaseException as error:
+            raise UnsafeConfigConflict(
+                "could not durably journal displaced config before CAS rollback"
+            ) from error
+
+        _exchange_paths(candidate, config)
+        restored_snapshot = _config_snapshot(config)
+        restored_identity = _path_identity(config)
+        staged_snapshot = _config_snapshot(candidate)
+        if (
+            restored_identity == displaced_identity
+            and restored_snapshot == displaced_snapshot
+            and staged_snapshot == candidate_snapshot
+        ):
+            stage_contains_external = False
+            raise ConcurrentConfigChange(
+                "active Hermes config changed before atomic commit; retrying"
+            )
+
+        # A writer replaced the active pathname during swap-back. Exchange once
+        # more only when the displaced outside version is still active, putting
+        # the newest outside pathname back in active position and retaining the
+        # older outside version in the recovery journal.
+        if (
+            restored_identity == displaced_identity
+            and restored_snapshot == displaced_snapshot
+        ):
+            newest_outside = staged_snapshot
+            try:
+                _atomic_write(
+                    candidate.parent / "outside-during-swapback.yaml",
+                    newest_outside[1],
+                    mode=0o600,
+                )
+            except BaseException as error:
+                raise UnsafeConfigConflict(
+                    "could not durably journal newest config before final exchange"
+                ) from error
+            _exchange_paths(candidate, config)
+            if _config_snapshot(config) == newest_outside:
+                raise UnsafeConfigConflict(
+                    "config changed during CAS rollback; newest active and prior recovery versions retained"
+                )
+        raise UnsafeConfigConflict(
+            "config identities changed during CAS rollback; all reachable versions retained"
+        )
+    except UnsafeConfigConflict:
+        raise
+    except BaseException as error:
+        if stage_contains_external:
+            raise UnsafeConfigConflict(
+                "CAS failed after staging acquired an outside config version"
+            ) from error
+        raise
+
+
+def _stage_path_matches(token: PrivateStageToken) -> bool:
+    try:
+        current = os.lstat(str(token.path))
+        opened = os.fstat(token.stage_descriptor)
+    except OSError:
+        return False
+    identity = (current.st_dev, current.st_ino, current.st_uid)
+    opened_identity = (opened.st_dev, opened.st_ino, opened.st_uid)
+    return bool(
+        stat.S_ISDIR(current.st_mode)
+        and not stat.S_ISLNK(current.st_mode)
+        and stat.S_IMODE(current.st_mode) == 0o700
+        and identity == token.identity
+        and opened_identity == token.identity
+    )
+
+
+def _require_private_stage_path(stage: Path, phase: str) -> PrivateStageToken:
+    """Require a registered stage pathname to still identify its bound directory."""
+    token = _PRIVATE_STAGE_TOKENS.get(str(stage))
+    if token is None:
+        raise UnsafeConfigConflict(
+            "private stage ownership token is missing during %s" % phase
+        )
+    if not _stage_path_matches(token):
+        raise UnsafeConfigConflict(
+            "private %s stage pathname changed during %s; replacement preserved at %s"
+            % (token.subject, phase, token.path)
+        )
+    return token
+
+
+def _secure_regular_snapshot_at(directory_descriptor: int, name: str) -> tuple:
+    try:
+        snapshot = _regular_snapshot_at(
+            directory_descriptor, name, "private stage child"
+        )
+    except SetupError as error:
+        raise UnsafeConfigConflict(
+            "private stage child is missing or not a regular file"
+        ) from error
+    if not snapshot[0]:
+        raise UnsafeConfigConflict(
+            "private stage child is missing or not a regular file"
+        )
+    return snapshot
+
+
+def _rename_stage_child_to_history(
+    token: PrivateStageToken,
+    name: str,
+    history_descriptor: int,
+    retained_name: str,
+) -> None:
+    """Test seam for an exclusive, dirfd-bound retirement rename."""
+    _atomic_rename_noreplace_at(
+        token.stage_descriptor, name, history_descriptor, retained_name
+    )
+
+
+def _retire_private_stage_child(token: PrivateStageToken, name: str) -> None:
+    """Move whichever inode occupies a known child name into durable history."""
+    source = _secure_regular_snapshot_at(token.stage_descriptor, name)
+    identity = source[3]
+    if identity is None or identity[2] != os.getuid():
+        raise UnsafeConfigConflict(
+            "private %s stage child is unsafe and was retained at %s"
+            % (token.subject, token.path)
+        )
+    history = _ensure_history_path(token.path.parent / HISTORY_NAME)
+    _validate_history_directory(history, allow_pending=True)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
+    kind = "record" if token.subject == "record" else "config"
+    suffix = "json" if kind == "record" else "yaml"
+    retained = history / (
+        "%s-retired-%s-%s.%s"
+        % (kind, stamp, secrets.token_hex(4), suffix)
+    )
+    txid = secrets.token_hex(12)
+    entry = {
+        "txid": txid,
+        "state": "pending",
+        "kind": kind,
+        "source_path": str(token.path / name),
+        "path": str(retained),
+        "device": identity[0],
+        "inode": identity[1],
+        "initial_sha256": hashlib.sha256(source[1]).hexdigest(),
+        "created_at": stamp,
+    }
+
+    def add_pending(payload: dict) -> dict:
+        payload["entries"].append(entry)
+        return payload
+
+    _update_history_manifest(history, add_pending)
+    history_flags = os.O_RDONLY
+    if hasattr(os, "O_DIRECTORY"):
+        history_flags |= os.O_DIRECTORY
+    history_descriptor = os.open(str(history), history_flags)
+    try:
+        _rename_stage_child_to_history(
+            token, name, history_descriptor, retained.name
+        )
+        os.fsync(token.stage_descriptor)
+        os.fsync(history_descriptor)
+        moved = _secure_regular_snapshot_at(history_descriptor, retained.name)
+    finally:
+        os.close(history_descriptor)
+    moved_identity = moved[3]
+    if (
+        moved_identity is None
+        or moved_identity[:2] != identity[:2]
+        or moved[:3] != source[:3]
+    ):
+        raise UnsafeConfigConflict(
+            "private %s stage child changed during retirement and was preserved at %s"
+            % (token.subject, retained)
+        )
+    _transition_history_entry(history, txid, "committed")
+
+
+def _retire_private_stage_directory(token: PrivateStageToken) -> None:
+    """Move a stage containing only Hermes home artifacts into durable history."""
+    if not _stage_path_matches(token):
+        raise UnsafeConfigConflict(
+            "private %s stage pathname changed before artifact retirement"
+            % token.subject
+        )
+    history = _ensure_history_path(token.path.parent / HISTORY_NAME)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
+    retained_name = ".stage-retired-%s-%s" % (stamp, secrets.token_hex(4))
+    history_flags = os.O_RDONLY
+    if hasattr(os, "O_DIRECTORY"):
+        history_flags |= os.O_DIRECTORY
+    history_descriptor = os.open(str(history), history_flags)
+    try:
+        try:
+            _atomic_rename_noreplace_at(
+                token.parent_descriptor,
+                token.path.name,
+                history_descriptor,
+                retained_name,
+            )
+        except BaseException as error:
+            raise UnsafeConfigConflict(
+                "private %s stage changed before directory retirement"
+                % token.subject
+            ) from error
+        try:
+            moved = os.stat(
+                retained_name,
+                dir_fd=history_descriptor,
+                follow_symlinks=False,
+            )
+            opened = os.fstat(token.stage_descriptor)
+            moved_conflicts = (
+                not stat.S_ISDIR(moved.st_mode)
+                or (moved.st_dev, moved.st_ino, moved.st_uid) != token.identity
+                or (opened.st_dev, opened.st_ino, opened.st_uid) != token.identity
+            )
+        except OSError:
+            moved_conflicts = True
+        if moved_conflicts:
+            try:
+                _atomic_rename_noreplace_at(
+                    history_descriptor,
+                    retained_name,
+                    token.parent_descriptor,
+                    token.path.name,
+                )
+            except BaseException as error:
+                raise UnsafeConfigConflict(
+                    "private %s stage replacement was retained at %s"
+                    % (token.subject, history / retained_name)
+                ) from error
+            try:
+                os.fsync(history_descriptor)
+                os.fsync(token.parent_descriptor)
+            except OSError as error:
+                raise UnsafeConfigConflict(
+                    "private %s stage replacement was restored but directory sync failed"
+                    % token.subject
+                ) from error
+            raise UnsafeConfigConflict(
+                "private %s stage replacement was restored after retirement conflict"
+                % token.subject
+            )
+        try:
+            os.fsync(token.parent_descriptor)
+            os.fsync(history_descriptor)
+        except OSError as error:
+            raise UnsafeConfigConflict(
+                "private %s stage retained at %s but directory sync failed"
+                % (token.subject, history / retained_name)
+            ) from error
+    finally:
+        os.close(history_descriptor)
+
+
+def _cleanup_private_stage_token(
+    token: PrivateStageToken, allowed_names: set
+) -> None:
+    """Retire known children and the bound stage directory into CAS history."""
+    try:
+        if not _stage_path_matches(token):
+            raise UnsafeConfigConflict(
+                "private %s stage pathname changed; replacement preserved at %s"
+                % (token.subject, token.path)
+            )
+        names = set(os.listdir(token.stage_descriptor))
+        unexpected = {
+            name
+            for name in names
+            if name not in allowed_names
+            and not name.startswith(".atomic-retired-")
+            and name not in HERMES_PRIVATE_HOME_ARTIFACTS
+        }
+        if unexpected:
+            raise UnsafeConfigConflict(
+                "private %s stage contains unexpected data and was retained at %s"
+                % (token.subject, token.path)
+            )
+        file_names = {
+            name
+            for name in names
+            if name in allowed_names or name.startswith(".atomic-retired-")
+        }
+        for name in sorted(file_names):
+            _retire_private_stage_child(token, name)
+        remaining = set(os.listdir(token.stage_descriptor))
+        if remaining and remaining.issubset(HERMES_PRIVATE_HOME_ARTIFACTS):
+            os.fsync(token.stage_descriptor)
+            _retire_private_stage_directory(token)
+            return
+        if remaining:
+            raise UnsafeConfigConflict(
+                "private %s stage changed during cleanup and was retained at %s"
+                % (token.subject, token.path)
+            )
+        os.fsync(token.stage_descriptor)
+        if not _stage_path_matches(token):
+            raise UnsafeConfigConflict(
+                "private %s stage pathname changed during cleanup; replacement preserved"
+                % token.subject
+            )
+        _retire_private_stage_directory(token)
+    finally:
+        token.close()
+
+
+def _cleanup_private_stage(stage: Path, allowed_names: set) -> None:
+    token = _PRIVATE_STAGE_TOKENS.pop(str(stage), None)
+    if token is None:
+        raise UnsafeConfigConflict(
+            "private stage ownership token is missing; refusing cleanup at %s" % stage
+        )
+    _cleanup_private_stage_token(token, allowed_names)
+
+
+def _preserve_private_stage(stage: Path) -> None:
+    """Durably retain a recovery stage while releasing its ownership fds."""
+    token = _PRIVATE_STAGE_TOKENS.pop(str(stage), None)
+    if token is None:
+        raise UnsafeConfigConflict(
+            "private stage ownership token is missing for retained stage %s" % stage
+        )
+    try:
+        os.fsync(token.stage_descriptor)
+        os.fsync(token.parent_descriptor)
+    finally:
+        token.close()
+
+
+def _move_active_to_private_stage(source: Path, stage: Path, name: str) -> None:
+    """Move an active entry into its bound stage without replacing a destination."""
+    token = _PRIVATE_STAGE_TOKENS.get(str(stage))
+    if token is None:
+        raise UnsafeConfigConflict("private stage ownership token is missing")
+    if not _stage_path_matches(token):
+        raise UnsafeConfigConflict(
+            "private %s stage pathname changed before quarantine; replacement preserved at %s"
+            % (token.subject, token.path)
+        )
+    _atomic_rename_noreplace_at(
+        token.parent_descriptor,
+        source.name,
+        token.stage_descriptor,
+        name,
+    )
+    if not _stage_path_matches(token):
+        try:
+            _atomic_rename_noreplace_at(
+                token.stage_descriptor,
+                name,
+                token.parent_descriptor,
+                source.name,
+            )
+            os.fsync(token.stage_descriptor)
+            os.fsync(token.parent_descriptor)
+        except BaseException as error:
+            try:
+                _retire_private_stage_child(token, name)
+            except BaseException as retirement_error:
+                raise UnsafeConfigConflict(
+                    "private %s stage pathname changed during quarantine; "
+                    "source remains in the identity-bound stage"
+                    % token.subject
+                ) from retirement_error
+            raise UnsafeConfigConflict(
+                "private %s stage pathname changed during quarantine; "
+                "source was retained in CAS history"
+                % token.subject
+            ) from error
+        raise UnsafeConfigConflict(
+            "private %s stage pathname changed during quarantine; "
+            "source was restored and replacement preserved at %s"
+            % (token.subject, token.path)
+        )
+
+
+def _initialize_private_stage(parent: Path, prefix: str, subject: str) -> Path:
+    """Create and durably initialize an identity-bound private stage."""
+    stage = Path(tempfile.mkdtemp(prefix=prefix, dir=str(parent)))
+    parent_descriptor = -1
+    stage_descriptor = -1
+    token = None
+    try:
+        parent_flags = os.O_RDONLY
+        stage_flags = os.O_RDONLY
+        if hasattr(os, "O_DIRECTORY"):
+            parent_flags |= os.O_DIRECTORY
+            stage_flags |= os.O_DIRECTORY
+        if hasattr(os, "O_NOFOLLOW"):
+            stage_flags |= os.O_NOFOLLOW
+        parent_descriptor = os.open(str(parent), parent_flags)
+        stage_descriptor = os.open(str(stage), stage_flags)
+        created = os.fstat(stage_descriptor)
+        if not stat.S_ISDIR(created.st_mode) or created.st_uid != os.getuid():
+            raise OSError("new private stage identity is unsafe")
+        identity = (created.st_dev, created.st_ino, created.st_uid)
+        token = PrivateStageToken(
+            stage, parent_descriptor, stage_descriptor, identity, subject
+        )
+        parent_descriptor = -1
+        stage_descriptor = -1
+        os.fchmod(token.stage_descriptor, 0o700)
+        _fsync_directory(stage)
+        _fsync_directory(parent)
+        if not _stage_path_matches(token):
+            raise OSError("private stage identity changed during initialization")
+    except OSError as initialization_error:
+        if token is None:
+            if stage_descriptor >= 0:
+                os.close(stage_descriptor)
+            if parent_descriptor >= 0:
+                os.close(parent_descriptor)
+            raise SetupError(
+                "private %s stage initialization failed; path retained at %s"
+                % (subject, stage)
+            ) from initialization_error
+        else:
+            try:
+                _cleanup_private_stage_token(token, set())
+            except BaseException as cleanup_error:
+                raise SetupError(
+                    "private %s stage initialization failed; cleanup failed at %s: %s"
+                    % (subject, stage, cleanup_error)
+                ) from initialization_error
+        raise SetupError("private %s stage initialization failed" % subject) from initialization_error
+    _PRIVATE_STAGE_TOKENS[str(stage)] = token
+    return stage
+
+
+def _run_config_transaction(config: Path, mutation, expected_snapshot=None) -> None:
+    """Run Hermes against a private copy, then atomically CAS the result."""
+    expected = _config_snapshot(config)
+    if expected_snapshot is not None and expected != expected_snapshot:
+        raise ConcurrentConfigChange("active Hermes config changed before staging")
+    stage_home = _initialize_private_stage(
+        config.parent, ".agentic-game-studio-cas-", "config"
+    )
+    stage_config = stage_home / "config.yaml"
+    keep_stage = False
+    committed = False
+    try:
+        _require_private_stage_path(stage_home, "transaction initialization")
+        if expected[0]:
+            _atomic_write(stage_config, expected[1], mode=expected[2])
+            _require_private_stage_path(stage_home, "config staging")
+        _require_private_stage_path(stage_home, "config mutation")
+        mutation(stage_home, stage_config)
+        _require_private_stage_path(stage_home, "candidate validation")
+        _commit_candidate(config, stage_config, expected)
+        committed = True
+    except CommittedConfigChange:
+        committed = True
+        raise
+    except UnsafeConfigConflict as error:
+        keep_stage = True
+        raise UnsafeConfigConflict(
+            "%s; recovery journal retained at %s" % (error, stage_home)
+        ) from error
+    finally:
+        if keep_stage:
+            try:
+                _preserve_private_stage(stage_home)
+            except BaseException as error:
+                raise UnsafeConfigConflict(
+                    "recovery journal retained at %s but directory fsync failed"
+                    % stage_home
+                ) from error
+        else:
+            try:
+                _cleanup_private_stage(
+                    stage_home,
+                    {
+                        "config.yaml",
+                        "outside-before-swapback.yaml",
+                        "outside-during-swapback.yaml",
+                    },
+                )
+            except BaseException as error:
+                if committed:
+                    raise CommittedConfigChange(
+                        "config commit succeeded but private stage cleanup failed "
+                        "at %s: %s" % (stage_home, error)
+                    ) from error
+                raise
+
+
+def _conditional_remove_config(config: Path, expected: tuple) -> None:
+    """Remove an unchanged known-empty config without unlinking a raced pathname."""
+    if _config_snapshot(config) != expected:
+        raise ConcurrentConfigChange("config changed before conditional empty removal")
+    _run_config_transaction(
+        config,
+        lambda _stage_home, stage_config: _atomic_write(
+            stage_config, b"", mode=0o600
+        ),
+        expected_snapshot=expected,
+    )
+    tombstone_snapshot = _config_snapshot(config)
+    if tombstone_snapshot != (True, b"", 0o600):
+        raise ConcurrentConfigChange("config changed before tombstone removal")
+    retained_tombstone = _retain_active_inode(config, tombstone_snapshot)
+    tombstone_identity = _path_identity(retained_tombstone)
+    if tombstone_identity is None:
+        raise UnsafeConfigConflict("config tombstone history identity disappeared")
+
+    stage = _initialize_private_stage(
+        config.parent, ".agentic-game-studio-remove-", "config removal"
+    )
+    quarantine = stage / "config.yaml"
+    keep_stage = False
+    try:
+        try:
+            _move_active_to_private_stage(config, stage, quarantine.name)
+            _fsync_quarantine_directories(config.parent, stage)
+        except OSError as error:
+            keep_stage = True
+            raise UnsafeConfigConflict(
+                "config retained at %s but removal quarantine durability sync failed"
+                % quarantine
+            ) from error
+        moved_identity = _path_identity(quarantine)
+        moved_is_tombstone = (
+            moved_identity is not None
+            and moved_identity[:2] == tombstone_identity[:2]
+            and stat.S_ISREG(moved_identity[2])
+        )
+        if moved_is_tombstone and _config_snapshot(quarantine) == tombstone_snapshot:
+            if os.path.lexists(config):
+                raise ConcurrentConfigChange(
+                    "config appeared during conditional empty removal"
+                )
+            _fsync_quarantine_directories(config.parent, stage)
+            return
+
+        try:
+            os.link(str(quarantine), str(config), follow_symlinks=False)
+            _fsync_quarantine_directories(config.parent, stage)
+            _fsync_quarantine_directories(config.parent, stage)
+        except BaseException as error:
+            keep_stage = True
+            raise UnsafeConfigConflict(
+                "config changed during empty removal; version retained at %s"
+                % quarantine
+            ) from error
+        raise ConcurrentConfigChange(
+            "config changed before identity-checked empty removal"
+        )
+    finally:
+        if not keep_stage:
+            _cleanup_private_stage(stage, {"config.yaml"})
+        else:
+            _preserve_private_stage(stage)
+
+
+def _conditional_restore_config(
+    config: Path, expected_current_snapshot: tuple, restore_bytes: bytes, mode: int
+) -> None:
+    """Restore exact bytes only while the known current config remains active."""
+    if not expected_current_snapshot[0]:
+        raise ConcurrentConfigChange(
+            "active Hermes config disappeared before conditional restore"
+        )
+    _run_config_transaction(
+        config,
+        lambda _stage_home, stage_config: _atomic_write(
+            stage_config, restore_bytes, mode=mode
+        ),
+        expected_snapshot=expected_current_snapshot,
+    )
+
+
+def _patch_structured_placeholder_unguarded(
+    config: Path, key: str, placeholder: str, value: list
+) -> None:
+    """Replace one CLI-written scalar with a native JSON/YAML flow sequence."""
+    try:
+        content = config.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as error:
+        raise SetupError("active Hermes config is unreadable after CLI update") from error
+    try:
+        document = json.loads(content)
+    except json.JSONDecodeError:
+        document = None
+    if isinstance(document, dict):
+        current = document
+        parts = key.split(".")
+        for part in parts[:-1]:
+            child = current.get(part)
+            if not isinstance(child, dict):
+                raise SetupError("Hermes CLI wrote an unexpected config structure: %s" % key)
+            current = child
+        if current.get(parts[-1]) != placeholder:
+            raise SetupError("Hermes CLI placeholder could not be verified: %s" % key)
+        current[parts[-1]] = value
+        rendered = json.dumps(document, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    else:
+        leaf = re.escape(key.rsplit(".", 1)[-1])
+        token = re.escape(placeholder)
+        pattern = re.compile(
+            r"(?m)^([ ]*"
+            + leaf
+            + r": )[\"']?"
+            + token
+            + r"[\"']?([ \t]*(?:#.*)?(?:\r?\n|\Z))"
+        )
+        matches = list(pattern.finditer(content))
+        if len(matches) != 1 or content.count(placeholder) != 1:
+            raise SetupError("Hermes CLI placeholder could not be isolated safely: %s" % key)
+        encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+        match = matches[0]
+        rendered = (
+            content[: match.start()]
+            + match.group(1)
+            + encoded
+            + match.group(2)
+            + content[match.end() :]
+        )
+    mode = stat.S_IMODE(config.stat().st_mode)
+    _atomic_write(config, rendered.encode("utf-8"), mode=mode)
+
+
+def _set_structured(config: Path, key: str, value: list) -> None:
+    """Set a list through Hermes, repairing releases that stringify JSON lists."""
+    def mutate(stage_home: Path, stage_config: Path) -> None:
+        encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+        _run_hermes(["config", "set", key, encoded], hermes_home=stage_home)
+        observed = _get(key, hermes_home=stage_home)
+        if observed == value:
+            return
+        if observed != encoded:
+            raise SetupError(
+                "Hermes CLI did not preserve the requested config value: %s" % key
+            )
+        placeholder = "agentic-game-studio-structured-%s" % secrets.token_hex(12)
+        _run_hermes(["config", "set", key, placeholder], hermes_home=stage_home)
+        if _get(key, hermes_home=stage_home) != placeholder:
+            raise SetupError(
+                "Hermes CLI could not stage a structured config value: %s" % key
+            )
+        _patch_structured_placeholder_unguarded(
+            stage_config, key, placeholder, value
+        )
+        if _get(key, hermes_home=stage_home) != value:
+            raise SetupError(
+                "Hermes structured config compatibility update failed: %s" % key
+            )
+
+    _run_config_transaction(config, mutate)
+
+
+def _unset_structured(config: Path, key: str) -> None:
+    _run_config_transaction(
+        config,
+        lambda stage_home, _stage_config: _run_hermes(
+            ["config", "unset", key], hermes_home=stage_home
+        ),
+    )
+
+
+def _restore_file(path: Path, existed: bool, content: bytes, mode: int = 0o600) -> None:
+    if existed:
+        raise SetupError("existing Hermes config restore requires conditional CAS")
+    elif os.path.lexists(path):
+        current = _config_snapshot(path)
+        if current[0]:
+            _conditional_remove_config(path, current)
+
+
+def _source_preconditions(root: Path) -> None:
+    for key, layout in MANAGED_LAYOUT:
+        if key == "skills.external_dirs":
+            skills = root / ".agents" / "skills"
+            if not skills.is_dir() or skills.is_symlink():
+                raise SetupError("managed skill directory is missing or unsafe: %s" % skills)
+            continue
+        for name, _, _ in layout:
+            script = root / ".claude" / "hooks" / name
+            if not script.is_file() or script.is_symlink():
+                raise SetupError("managed hook script is missing or unsafe: %s" % script)
+            if not os.access(str(script), os.X_OK):
+                raise SetupError("managed hook script is not executable: %s" % script)
+
+
+def _print_history_notice(config: Path) -> None:
+    history = _history_directory(config)
+    if os.path.lexists(history):
+        print(
+            "Open-writer-safe CAS recovery history is retained at %s; "
+            "hermes-setup never deletes it automatically." % history
+        )
+
+
+def _backup_path(home: Path, config_existed: bool) -> Path:
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
+    suffix = ".bak" if config_existed else ".absent"
+    return home / ("agentic-game-studio-config-%s-%s%s" % (stamp, secrets.token_hex(4), suffix))
+
+
+def _read_record_snapshot(record: Path) -> tuple:
+    snapshot = _secure_regular_snapshot(record, "install record")
+    present, content, mode, identity = snapshot
+    if not present or identity is None:
+        raise SetupError("install record is missing: %s" % record)
+    if mode & 0o077:
+        raise SetupError("install record permissions must not allow group or other access")
+    if hasattr(os, "getuid") and identity[2] != os.getuid():
+        raise SetupError("install record must be owned by the current user")
+    if identity[3] != 1:
+        history = _history_directory(record)
+        if not os.path.lexists(history):
+            raise SetupError("install record has unregistered hard links")
+        _validate_history_directory(history)
+        registered = [
+            entry
+            for entry in _read_history_manifest(history)["entries"]
+            if entry["kind"] == "record"
+            and entry["state"] == "committed"
+            and entry["device"] == identity[0]
+            and entry["inode"] == identity[1]
+        ]
+        if not registered or identity[3] != len(registered) + 1:
+            raise SetupError("install record has unregistered hard links")
+    try:
+        payload = json.loads(content.decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError, OSError) as error:
+        raise SetupError("install record is malformed: %s" % record) from error
+    expected_keys = {
+        "schema_version",
+        "repo_root",
+        "config_path",
+        "config_existed",
+        "backup_path",
+        "recovery_command",
+        "cas_history_path",
+        "installed_config_sha256",
+        "managed",
+        "added",
+        "original",
+    }
+    if not isinstance(payload, dict) or set(payload) != expected_keys:
+        raise SetupError("install record has an unexpected schema")
+    if payload.get("schema_version") != SCHEMA_VERSION:
+        raise SetupError("install record schema version is unsupported")
+    current_identity = _path_identity(record)
+    if current_identity is None or current_identity[:2] != identity[:2]:
+        raise ConcurrentConfigChange("install record changed while it was read")
+    return payload, snapshot
+
+
+def _read_record(record: Path) -> dict:
+    return _read_record_snapshot(record)[0]
+
+
+def _publish_owned_record(record: Path, content: bytes) -> tuple:
+    candidate = _write_private_file(record.parent, ".install-record-candidate-", content)
+    candidate_snapshot = _secure_regular_snapshot(candidate, "install record candidate")
+    _retain_active_inode(
+        candidate,
+        candidate_snapshot[:3],
+        kind="record",
+        history_path=_history_directory(record),
+    )
+    published = False
+    keep_candidate = False
+    try:
+        try:
+            parent_descriptor = os.open(str(record.parent), os.O_RDONLY)
+            try:
+                _atomic_rename_noreplace_at(
+                    parent_descriptor,
+                    candidate.name,
+                    parent_descriptor,
+                    record.name,
+                )
+            finally:
+                os.close(parent_descriptor)
+        except ConcurrentConfigChange as error:
+            raise ConcurrentConfigChange(
+                "install record appeared before identity-safe publish"
+            ) from error
+        published = True
+        active = _secure_regular_snapshot(record, "install record")
+        if not _same_opened_version(active, candidate_snapshot):
+            keep_candidate = True
+            raise UnsafeConfigConflict(
+                "install record changed after publish; owned candidate retained at %s"
+                % candidate
+            )
+        _fsync_directory(record.parent)
+        final_snapshot = _secure_regular_snapshot(record, "install record")
+        if not _same_opened_version(final_snapshot, active):
+            raise ConcurrentConfigChange("install record changed after durable publish")
+        return final_snapshot
+    except BaseException as error:
+        current_identity = _path_identity(record)
+        candidate_identity = _path_identity(candidate)
+        if published and current_identity is not None:
+            if candidate_identity is not None and current_identity[:2] == candidate_identity[:2]:
+                owned = _secure_regular_snapshot(record, "install record")
+                if _same_opened_version(owned, candidate_snapshot):
+                    raise OwnedRecordPublishError(
+                        "owned install record was published before a later failure",
+                        owned,
+                    ) from error
+            if candidate_identity is None and current_identity[:2] == candidate_snapshot[3][:2]:
+                owned = _secure_regular_snapshot(record, "install record")
+                if _same_opened_version(owned, candidate_snapshot):
+                    raise OwnedRecordPublishError(
+                        "owned install record was published before a later failure",
+                        owned,
+                    ) from error
+        raise
+    finally:
+        if not keep_candidate and os.path.lexists(candidate):
+            print(
+                "Warning: private install record candidate retained at %s" % candidate,
+                file=sys.stderr,
+            )
+
+
+def _restore_quarantined_path(path: Path, quarantine: Path) -> None:
+    if os.path.lexists(path):
+        active = _path_identity(path)
+        retained = _path_identity(quarantine)
+        if active is None or retained is None or active[:2] != retained[:2]:
+            raise UnsafeConfigConflict(
+                "record replacement preserved with original at %s" % quarantine
+            )
+        return
+    try:
+        os.link(str(quarantine), str(path), follow_symlinks=False)
+    except FileExistsError as error:
+        raise UnsafeConfigConflict(
+            "record appeared during recovery; original retained at %s" % quarantine
+        ) from error
+    _fsync_directory(path.parent)
+    _fsync_directory(quarantine.parent)
+
+
+def _fsync_quarantine_directories(source_parent: Path, stage: Path) -> None:
+    _fsync_directory(source_parent)
+    _fsync_directory(stage)
+
+
+def _quarantine_owned_record(record: Path, expected_snapshot: tuple) -> Path:
+    stage = _initialize_private_stage(
+        record.parent, ".agentic-game-studio-record-", "record"
+    )
+    quarantine = stage / RECORD_NAME
+    try:
+        _move_active_to_private_stage(record, stage, quarantine.name)
+    except ConcurrentConfigChange as error:
+        _cleanup_private_stage(stage, set())
+        raise ConcurrentConfigChange("install record disappeared before removal") from error
+    except BaseException:
+        _preserve_private_stage(stage)
+        raise
+    try:
+        _fsync_quarantine_directories(record.parent, stage)
+    except OSError as error:
+        raise UnsafeConfigConflict(
+            "install record retained at %s but quarantine durability sync failed"
+            % quarantine
+        ) from error
+    moved_identity = _path_identity(quarantine)
+    expected_identity = expected_snapshot[3]
+    matches_identity = (
+        moved_identity is not None
+        and expected_identity is not None
+        and moved_identity[:2] == expected_identity[:2]
+        and stat.S_ISREG(moved_identity[2])
+    )
+    matches_content = False
+    if matches_identity:
+        try:
+            moved_snapshot = _secure_regular_snapshot(quarantine, "quarantined install record")
+            matches_content = _same_opened_version(moved_snapshot, expected_snapshot)
+        except SetupError:
+            matches_content = False
+    if not matches_identity or not matches_content:
+        try:
+            _restore_quarantined_path(record, quarantine)
+            _fsync_quarantine_directories(record.parent, stage)
+        except BaseException as error:
+            _preserve_private_stage(stage)
+            raise UnsafeConfigConflict(
+                "conflicting install record retained at %s" % quarantine
+            ) from error
+        token = _PRIVATE_STAGE_TOKENS.get(str(stage))
+        if token is None:
+            raise UnsafeConfigConflict(
+                "private record stage ownership token disappeared during recovery"
+            )
+        try:
+            _secure_regular_snapshot_at(token.stage_descriptor, RECORD_NAME)
+        except UnsafeConfigConflict:
+            _preserve_private_stage(stage)
+        else:
+            _cleanup_private_stage(stage, {RECORD_NAME})
+        raise ConcurrentConfigChange(
+            "install record changed before identity-checked removal"
+        )
+    _retain_active_inode(
+        quarantine,
+        moved_snapshot[:3],
+        kind="record",
+        history_path=_history_directory(record),
+    )
+    try:
+        _fsync_quarantine_directories(record.parent, stage)
+    except OSError as error:
+        _restore_quarantined_path(record, quarantine)
+        raise UnsafeConfigConflict(
+            "install record retained at %s but validation durability sync failed"
+            % quarantine
+        ) from error
+    if os.path.lexists(record):
+        raise UnsafeConfigConflict(
+            "install record appeared during removal; original retained at %s"
+            % quarantine
+        )
+    return quarantine
+
+
+def _discard_quarantined_record(quarantine: Path) -> None:
+    stage = quarantine.parent
+    try:
+        _cleanup_private_stage(stage, {RECORD_NAME})
+    except BaseException as error:
+        print(
+            "Warning: removed install record cleanup remains at %s: %s"
+            % (stage, error),
+            file=sys.stderr,
+        )
+
+
+def _expected_recovery(backup: Path, config: Path, config_existed: bool):
+    if config_existed:
+        return "cp -- %s %s" % (shlex.quote(str(backup)), shlex.quote(str(config)))
+    return None
+
+
+def _validate_record_paths(payload: dict, home: Path, config: Path) -> None:
+    config_existed = payload.get("config_existed")
+    if not isinstance(config_existed, bool):
+        raise SetupError("install record config existence state is invalid")
+    backup_text = payload.get("backup_path")
+    if not isinstance(backup_text, str):
+        raise SetupError("install record backup path is invalid")
+    backup_input = Path(backup_text)
+    if not backup_input.is_absolute():
+        raise SetupError("install record backup path must be absolute")
+    if os.path.lexists(backup_input) and backup_input.is_symlink():
+        raise SetupError("install record backup must not be a symlink")
+    backup = backup_input.resolve()
+    if backup == home or not _contained(backup, home):
+        raise SetupError("install record backup must be contained in HERMES_HOME")
+    expected_suffix = "bak" if config_existed else "absent"
+    pattern = (
+        r"agentic-game-studio-config-\d{8}T\d{6}\.\d{6}Z-[0-9a-f]{8}\.%s"
+        % expected_suffix
+    )
+    if re.fullmatch(pattern, backup.name) is None:
+        raise SetupError("install record backup filename is invalid")
+    if not backup.is_file() or stat.S_IMODE(backup.stat().st_mode) & 0o077:
+        raise SetupError("install record backup is missing, unsafe, or too permissive")
+    recovery = payload.get("recovery_command")
+    if recovery != _expected_recovery(backup, config, config_existed):
+        raise SetupError("install record recovery command is invalid")
+    history_text = payload.get("cas_history_path")
+    expected_history = _history_directory(config)
+    if history_text != str(expected_history):
+        raise SetupError("install record CAS history path is invalid")
+    _validate_history_directory(expected_history, allow_pending=True)
+    _recover_history(config, expected_history)
+    _validate_history_directory(expected_history)
+    installed_digest = payload.get("installed_config_sha256")
+    if not isinstance(installed_digest, str) or re.fullmatch(
+        r"[0-9a-f]{64}", installed_digest
+    ) is None:
+        raise SetupError("install record installed-config hash is invalid")
+
+
+def _validate_existing_install(
+    payload: dict, root: Path, home: Path, config: Path, managed: dict
+) -> None:
+    if payload.get("repo_root") != str(root):
+        raise SetupError("install record belongs to a different checkout")
+    if payload.get("config_path") != str(config):
+        raise SetupError("install record belongs to a different active Hermes config")
+    _validate_record_paths(payload, home, config)
+    if payload.get("managed") != managed:
+        raise SetupError("install record managed entries are invalid or hostile")
+    if not isinstance(payload.get("added"), dict) or set(payload["added"]) != set(managed):
+        raise SetupError("install record added-entry state is invalid")
+    if not isinstance(payload.get("original"), dict) or set(payload["original"]) != set(managed):
+        raise SetupError("install record original state is invalid")
+    for key, expected in managed.items():
+        added = payload["added"].get(key)
+        state = payload["original"].get(key)
+        if not isinstance(added, list) or any(item not in expected for item in added):
+            raise SetupError("install record contains hostile added entries: %s" % key)
+        if len(added) != len({json.dumps(item, sort_keys=True) for item in added}):
+            raise SetupError("install record contains duplicate added entries: %s" % key)
+        if not isinstance(state, dict) or set(state) != {"present", "value"}:
+            raise SetupError("install record original state is invalid: %s" % key)
+        if not isinstance(state["present"], bool):
+            raise SetupError("install record original presence is invalid: %s" % key)
+        if state["present"]:
+            if not isinstance(state["value"], list):
+                raise SetupError("install record original value is invalid: %s" % key)
+            original_value = state["value"]
+        else:
+            if state["value"] is not None:
+                raise SetupError("install record absent value is invalid: %s" % key)
+            original_value = []
+        for entry in expected:
+            if (entry in original_value) == (entry in added):
+                raise SetupError("install record ownership is ambiguous: %s" % key)
+        value = _get(key)
+        if not isinstance(value, list):
+            raise SetupError("managed config key is missing or changed: %s" % key)
+        for entry in expected:
+            if value.count(entry) != 1:
+                raise SetupError("managed config entry is missing, changed, or duplicated: %s" % key)
+
+
+def _write_list_state(config: Path, key: str, value: list, present: bool) -> None:
+    if not value and not present:
+        _unset_structured(config, key)
+    else:
+        _set_structured(config, key, value)
+
+
+def _rollback_install_semantically(
+    config: Path,
+    mutated: list,
+    additions: dict,
+    original: dict,
+) -> None:
+    for key in reversed(mutated):
+        current = _get(key)
+        if current is None:
+            current = []
+        if not isinstance(current, list):
+            raise SetupError("cannot safely compensate changed config key: %s" % key)
+        remaining = list(current)
+        for entry in additions[key]:
+            count = remaining.count(entry)
+            if count > 1:
+                raise SetupError("cannot safely compensate duplicate config entry: %s" % key)
+            if count == 1:
+                remaining.remove(entry)
+        _write_list_state(config, key, remaining, original[key]["present"])
+
+
+def _rollback_uninstall_semantically(
+    config: Path,
+    mutated: list,
+    removed: dict,
+) -> None:
+    for key in reversed(mutated):
+        current = _get(key)
+        if current is None:
+            current = []
+        if not isinstance(current, list):
+            raise SetupError("cannot safely compensate changed config key: %s" % key)
+        restored = list(current)
+        for index, entry in sorted(removed[key], key=lambda item: item[0]):
+            count = restored.count(entry)
+            if count > 1:
+                raise SetupError("cannot safely compensate duplicate config entry: %s" % key)
+            if count == 0:
+                restored.insert(min(index, len(restored)), entry)
+        _set_structured(config, key, restored)
+
+
+def _install() -> int:
+    root = _repo_root().resolve()
+    _source_preconditions(root)
+    home, config, record = _paths()
+    home.mkdir(parents=True, exist_ok=True)
+    with _operation_lock(home):
+        return _install_locked(root, home, config, record)
+
+
+def _install_locked(root: Path, home: Path, config: Path, record: Path) -> int:
+    managed = _managed_values(root)
+    history = _history_directory(config)
+    if os.path.lexists(history):
+        _validate_history_directory(history, allow_pending=True)
+        _recover_history(config, history)
+        _validate_history_directory(history)
+    if os.path.lexists(record):
+        payload = _read_record(record)
+        _validate_existing_install(payload, root, home, config, managed)
+        print("Hermes project integration is already installed and unchanged.")
+        return 0
+    initial_state = _config_snapshot(config)
+    config_existed = initial_state[0]
+    config_before = initial_state[1]
+    config_mode = initial_state[2]
+    expected_state = initial_state
+    original = {}
+    added = {}
+    backup = _backup_path(home, config_existed)
+    _atomic_write(backup, config_before)
+    external_change = False
+    mutated = []
+    record_owned_snapshot = None
+    try:
+        for key, expected_entries in managed.items():
+            for attempt in range(3):
+                value, expected_state, changed = _stable_get(
+                    config, key, expected_state
+                )
+                external_change = external_change or changed
+                present = value is not None
+                if present and not isinstance(value, list):
+                    raise SetupError("%s must be a list before installation" % key)
+                existing = list(value) if present else []
+                if len(existing) != len(
+                    {json.dumps(item, sort_keys=True) for item in existing}
+                ):
+                    raise SetupError("%s contains ambiguous duplicate entries" % key)
+                additions = [item for item in expected_entries if item not in existing]
+                original[key] = {"present": present, "value": value}
+                added[key] = additions
+                if not additions:
+                    break
+                try:
+                    _set_structured(config, key, existing + additions)
+                except CommittedConfigChange:
+                    mutated.append(key)
+                    expected_state = _config_snapshot(config)
+                    raise
+                except UnsafeConfigConflict:
+                    external_change = True
+                    raise
+                except ConcurrentConfigChange as error:
+                    external_change = True
+                    expected_state = _config_snapshot(config)
+                    if attempt == 2:
+                        raise SetupError(
+                            "active Hermes config changed repeatedly during installation"
+                        ) from error
+                    continue
+                mutated.append(key)
+                expected_state = _config_snapshot(config)
+                break
+        history = _ensure_history_directory(config)
+        recovery = _expected_recovery(backup, config, config_existed)
+        payload = {
+            "schema_version": SCHEMA_VERSION,
+            "repo_root": str(root),
+            "config_path": str(config),
+            "config_existed": config_existed,
+            "backup_path": str(backup),
+            "recovery_command": recovery,
+            "cas_history_path": str(history),
+            "installed_config_sha256": hashlib.sha256(expected_state[1]).hexdigest(),
+            "managed": managed,
+            "added": added,
+            "original": original,
+        }
+        record_content = (
+            json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+        ).encode("utf-8")
+        try:
+            record_owned_snapshot = _publish_owned_record(record, record_content)
+        except OwnedRecordPublishError as error:
+            record_owned_snapshot = error.owned_snapshot
+            raise
+    except BaseException as operation_error:
+        try:
+            current_snapshot = _config_snapshot(config)
+            if external_change or current_snapshot != expected_state:
+                _rollback_install_semantically(
+                    config, mutated, added, original
+                )
+            elif config_existed:
+                try:
+                    _conditional_restore_config(
+                        config, current_snapshot, config_before, config_mode
+                    )
+                except ConcurrentConfigChange:
+                    _rollback_install_semantically(
+                        config, mutated, added, original
+                    )
+            else:
+                # No outside change was observed at the stable read boundaries.
+                _restore_file(config, config_existed, config_before, config_mode)
+        except BaseException as rollback_error:
+            raise SetupError(
+                "install failed and safe rollback also failed; backup retained at %s: %s"
+                % (backup, rollback_error)
+            ) from operation_error
+        record_cleanup_error = None
+        if record_owned_snapshot is not None:
+            try:
+                quarantine = _quarantine_owned_record(record, record_owned_snapshot)
+                _discard_quarantined_record(quarantine)
+            except BaseException as error:
+                record_cleanup_error = error
+        if record_cleanup_error is not None:
+            raise SetupError(
+                "install failed; preinstall backup retained at %s and record cleanup "
+                "was refused: %s" % (backup, record_cleanup_error)
+            ) from operation_error
+        print("Preinstall backup retained at %s" % backup, file=sys.stderr)
+        raise
+    print("Hermes project integration installed. Run `scripts/hermes-setup check`.")
+    print("Hermes hook execution still requires explicit first-use consent.")
+    _print_history_notice(config)
+    return 0
+
+
+def _check() -> int:
+    root = _repo_root().resolve()
+    _source_preconditions(root)
+    home, config, record = _paths()
+    with _operation_lock(home):
+        return _check_locked(root, home, config, record)
+
+
+def _check_locked(root: Path, home: Path, config: Path, record: Path) -> int:
+    history = _history_directory(config)
+    if os.path.lexists(history):
+        _validate_history_directory(history, allow_pending=True)
+        _recover_history(config, history)
+        _validate_history_directory(history)
+    payload = _read_record(record)
+    _validate_existing_install(payload, root, home, config, _managed_values(root))
+    try:
+        status = subprocess.run(
+            ["hermes", "hooks", "list"],
+            text=True,
+            capture_output=True,
+            check=False,
+            shell=False,
+        )
+    except FileNotFoundError as error:
+        raise SetupError("Hermes CLI was not found on PATH") from error
+    hooks_stdout = status.stdout.strip()
+    hooks_stderr = status.stderr.strip()
+    known_nonzero_consent = (
+        status.returncode == 6
+        and not hooks_stdout
+        and hooks_stderr == "hook execution consent required"
+    )
+    known_zero_consent = bool(
+        status.returncode == 0
+        and re.search(
+            r"(?m)^\s*-\s+bash\s+.+\s+\(timeout=\d+s,\s+✗ not allowlisted\)\s*$",
+            hooks_stdout,
+        )
+    )
+    consent_pending = known_nonzero_consent or known_zero_consent
+    if status.returncode != 0 and not known_nonzero_consent:
+        detail = hooks_stderr or hooks_stdout or "no diagnostic output"
+        raise SetupError("hermes hooks list failed: %s" % detail)
+    if consent_pending:
+        print(
+            "Hermes config is correct; hook consent is pending or may still be pending. "
+            "Review with `hermes hooks list` and diagnose with `hermes hooks doctor`."
+        )
+    else:
+        print(
+            "Hermes project integration is correct. Review hook consent with "
+            "`hermes hooks list`; diagnose with `hermes hooks doctor`."
+        )
+    _print_history_notice(config)
+    return 0
+
+
+def _uninstall() -> int:
+    root = _repo_root().resolve()
+    home, config, record = _paths()
+    with _operation_lock(home):
+        return _uninstall_locked(root, home, config, record)
+
+
+def _uninstall_locked(root: Path, home: Path, config: Path, record: Path) -> int:
+    history = _history_directory(config)
+    if os.path.lexists(history):
+        _validate_history_directory(history, allow_pending=True)
+        _recover_history(config, history)
+        _validate_history_directory(history)
+    payload, record_snapshot = _read_record_snapshot(record)
+    initial_state = _config_snapshot(config)
+    config_existed = initial_state[0]
+    config_before = initial_state[1]
+    config_mode = initial_state[2]
+    expected_state = initial_state
+    managed = _managed_values(root)
+    _validate_existing_install(payload, root, home, config, managed)
+    installed_config_unchanged = (
+        hashlib.sha256(config_before).hexdigest()
+        == payload["installed_config_sha256"]
+    )
+    external_change = False
+    mutated = []
+    removed = {}
+    record_quarantine = None
+    try:
+        for key in managed:
+            for attempt in range(3):
+                current, expected_state, changed = _stable_get(
+                    config, key, expected_state
+                )
+                external_change = external_change or changed
+                if not isinstance(current, list):
+                    raise SetupError("managed config key is missing or changed: %s" % key)
+                remaining = list(current)
+                owned = list(payload["added"][key])
+                for entry in managed[key]:
+                    if remaining.count(entry) != 1:
+                        raise SetupError("managed config ownership is ambiguous: %s" % key)
+                removed[key] = [(current.index(entry), entry) for entry in owned]
+                for entry in owned:
+                    remaining.remove(entry)
+                if not owned:
+                    break
+                original_state = payload["original"][key]
+                try:
+                    if not remaining and not original_state["present"]:
+                        _unset_structured(config, key)
+                    else:
+                        _set_structured(config, key, remaining)
+                except CommittedConfigChange:
+                    mutated.append(key)
+                    expected_state = _config_snapshot(config)
+                    raise
+                except UnsafeConfigConflict:
+                    external_change = True
+                    raise
+                except ConcurrentConfigChange as error:
+                    external_change = True
+                    expected_state = _config_snapshot(config)
+                    if attempt == 2:
+                        raise SetupError(
+                            "active Hermes config changed repeatedly during uninstallation"
+                        ) from error
+                    continue
+                mutated.append(key)
+                expected_state = _config_snapshot(config)
+                break
+        if not payload["config_existed"]:
+            history = _history_directory(config)
+            if os.path.lexists(history):
+                _validate_history_directory(history)
+            current_state = _config_snapshot(config)
+            if (
+                installed_config_unchanged
+                and not external_change
+                and current_state[0]
+                and current_state == expected_state
+            ):
+                _conditional_remove_config(config, current_state)
+                expected_state = _config_snapshot(config)
+        record_quarantine = _quarantine_owned_record(record, record_snapshot)
+    except BaseException as operation_error:
+        try:
+            current_snapshot = _config_snapshot(config)
+            if external_change or current_snapshot != expected_state:
+                _rollback_uninstall_semantically(
+                    config, mutated, removed
+                )
+            elif config_existed:
+                try:
+                    _conditional_restore_config(
+                        config, current_snapshot, config_before, config_mode
+                    )
+                except ConcurrentConfigChange:
+                    _rollback_uninstall_semantically(
+                        config, mutated, removed
+                    )
+            else:
+                # No outside change was observed at the stable read boundaries.
+                _restore_file(config, config_existed, config_before, config_mode)
+            if record_quarantine is not None:
+                _restore_quarantined_path(record, record_quarantine)
+                _discard_quarantined_record(record_quarantine)
+        except BaseException as rollback_error:
+            raise SetupError(
+                "uninstall failed and safe rollback also failed; install record retained: %s"
+                % rollback_error
+            ) from operation_error
+        raise
+    if record_quarantine is not None:
+        _discard_quarantined_record(record_quarantine)
+    print("Hermes project integration uninstalled.")
+    print("Original backup retained at %s" % payload["backup_path"])
+    if payload["recovery_command"] is None:
+        print(
+            "No automatic recovery command is available because no config existed before "
+            "installation. Do not delete config.yaml: it may contain settings added later."
+        )
+    else:
+        print(
+            "Exact-preinstall recovery (destructive: overwrites current config and discards "
+            "settings added later): %s" % payload["recovery_command"]
+        )
+    _print_history_notice(config)
+    return 0
+
+
+def _print_fragment() -> int:
+    print(
+        json.dumps(
+            _managed_values(_repo_root().resolve()),
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="scripts/hermes-setup",
+        description="Manage the reversible project-local Hermes integration.",
+    )
+    parser.add_argument("action", choices=("install", "check", "uninstall", "print"))
+    return parser
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    arguments = _parser().parse_args(argv)
+    try:
+        if arguments.action == "install":
+            return _install()
+        if arguments.action == "check":
+            return _check()
+        if arguments.action == "uninstall":
+            return _uninstall()
+        return _print_fragment()
+    except (SetupError, OSError, ValueError) as error:
+        print("error: %s" % error, file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

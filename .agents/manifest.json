@@ -1,0 +1,3210 @@
+{
+  "counts": {
+    "agents": 49,
+    "hooks": 12,
+    "rules": 11,
+    "skills": 73,
+    "templates": 40
+  },
+  "hooks": [
+    {
+      "claude": {
+        "disposition": "script",
+        "event": "SessionStart",
+        "matcher": ""
+      },
+      "codex": {
+        "disposition": "script",
+        "event": "SessionStart",
+        "matcher": ""
+      },
+      "hermes": {
+        "disposition": "script",
+        "event": "pre_llm_call",
+        "matcher": "first turn"
+      },
+      "name": "detect-gaps",
+      "source": ".claude/hooks/detect-gaps.sh"
+    },
+    {
+      "claude": {
+        "disposition": "script",
+        "event": "SubagentStop",
+        "matcher": ""
+      },
+      "codex": {
+        "disposition": "script",
+        "event": "SubagentStop",
+        "matcher": ""
+      },
+      "hermes": {
+        "disposition": "script",
+        "event": "subagent_stop"
+      },
+      "name": "log-agent-stop",
+      "source": ".claude/hooks/log-agent-stop.sh"
+    },
+    {
+      "claude": {
+        "disposition": "script",
+        "event": "SubagentStart",
+        "matcher": ""
+      },
+      "codex": {
+        "disposition": "script",
+        "event": "SubagentStart",
+        "matcher": ""
+      },
+      "hermes": {
+        "disposition": "not_applicable",
+        "rationale": "The Hermes shell hook protocol has no subagent start event; plugin-level observability is outside the managed shell setup."
+      },
+      "name": "log-agent",
+      "source": ".claude/hooks/log-agent.sh"
+    },
+    {
+      "claude": {
+        "disposition": "script",
+        "event": "Notification",
+        "matcher": ""
+      },
+      "codex": {
+        "disposition": "native",
+        "rationale": "Codex provides native notifications; notify.sh is intentionally unregistered."
+      },
+      "hermes": {
+        "disposition": "native",
+        "rationale": "Hermes provides this lifecycle behavior natively; no script registration is installed."
+      },
+      "name": "notify",
+      "source": ".claude/hooks/notify.sh"
+    },
+    {
+      "claude": {
+        "disposition": "script",
+        "event": "PostCompact",
+        "matcher": ""
+      },
+      "codex": {
+        "disposition": "script",
+        "event": "PostCompact",
+        "matcher": ""
+      },
+      "hermes": {
+        "disposition": "native",
+        "rationale": "Hermes provides this lifecycle behavior natively; no script registration is installed."
+      },
+      "name": "post-compact",
+      "source": ".claude/hooks/post-compact.sh"
+    },
+    {
+      "claude": {
+        "disposition": "script",
+        "event": "PreCompact",
+        "matcher": ""
+      },
+      "codex": {
+        "disposition": "script",
+        "event": "PreCompact",
+        "matcher": ""
+      },
+      "hermes": {
+        "disposition": "native",
+        "rationale": "Hermes provides this lifecycle behavior natively; no script registration is installed."
+      },
+      "name": "pre-compact",
+      "source": ".claude/hooks/pre-compact.sh"
+    },
+    {
+      "claude": {
+        "disposition": "script",
+        "event": "SessionStart",
+        "matcher": ""
+      },
+      "codex": {
+        "disposition": "script",
+        "event": "SessionStart",
+        "matcher": ""
+      },
+      "hermes": {
+        "disposition": "script",
+        "event": "pre_llm_call",
+        "matcher": "first turn"
+      },
+      "name": "session-start",
+      "source": ".claude/hooks/session-start.sh"
+    },
+    {
+      "claude": {
+        "disposition": "script",
+        "event": "Stop",
+        "matcher": ""
+      },
+      "codex": {
+        "disposition": "script",
+        "event": "Stop",
+        "matcher": ""
+      },
+      "hermes": {
+        "disposition": "script",
+        "event": "on_session_end"
+      },
+      "name": "session-stop",
+      "source": ".claude/hooks/session-stop.sh"
+    },
+    {
+      "claude": {
+        "disposition": "script",
+        "event": "PostToolUse",
+        "matcher": "Write|Edit"
+      },
+      "codex": {
+        "disposition": "script",
+        "event": "PostToolUse",
+        "matcher": "Edit|Write|apply_patch"
+      },
+      "hermes": {
+        "disposition": "script",
+        "event": "post_tool_call",
+        "matcher": "write_file|patch"
+      },
+      "name": "validate-assets",
+      "source": ".claude/hooks/validate-assets.sh"
+    },
+    {
+      "claude": {
+        "disposition": "script",
+        "event": "PreToolUse",
+        "matcher": "Bash"
+      },
+      "codex": {
+        "disposition": "script",
+        "event": "PreToolUse",
+        "matcher": "Bash"
+      },
+      "hermes": {
+        "disposition": "script",
+        "event": "pre_tool_call",
+        "matcher": "terminal"
+      },
+      "name": "validate-commit",
+      "source": ".claude/hooks/validate-commit.sh"
+    },
+    {
+      "claude": {
+        "disposition": "script",
+        "event": "PreToolUse",
+        "matcher": "Bash"
+      },
+      "codex": {
+        "disposition": "script",
+        "event": "PreToolUse",
+        "matcher": "Bash"
+      },
+      "hermes": {
+        "disposition": "script",
+        "event": "pre_tool_call",
+        "matcher": "terminal"
+      },
+      "name": "validate-push",
+      "source": ".claude/hooks/validate-push.sh"
+    },
+    {
+      "claude": {
+        "disposition": "script",
+        "event": "PostToolUse",
+        "matcher": "Write|Edit"
+      },
+      "codex": {
+        "disposition": "script",
+        "event": "PostToolUse",
+        "matcher": "Edit|Write|apply_patch"
+      },
+      "hermes": {
+        "disposition": "script",
+        "event": "post_tool_call",
+        "matcher": "write_file|patch"
+      },
+      "name": "validate-skill-change",
+      "source": ".claude/hooks/validate-skill-change.sh"
+    }
+  ],
+  "managed_paths": [
+    ".agents/manifest.json",
+    ".agents/roles/accessibility-specialist.md",
+    ".agents/roles/ai-programmer.md",
+    ".agents/roles/analytics-engineer.md",
+    ".agents/roles/art-director.md",
+    ".agents/roles/audio-director.md",
+    ".agents/roles/community-manager.md",
+    ".agents/roles/creative-director.md",
+    ".agents/roles/devops-engineer.md",
+    ".agents/roles/economy-designer.md",
+    ".agents/roles/engine-programmer.md",
+    ".agents/roles/game-designer.md",
+    ".agents/roles/gameplay-programmer.md",
+    ".agents/roles/godot-csharp-specialist.md",
+    ".agents/roles/godot-gdextension-specialist.md",
+    ".agents/roles/godot-gdscript-specialist.md",
+    ".agents/roles/godot-shader-specialist.md",
+    ".agents/roles/godot-specialist.md",
+    ".agents/roles/lead-programmer.md",
+    ".agents/roles/level-designer.md",
+    ".agents/roles/live-ops-designer.md",
+    ".agents/roles/localization-lead.md",
+    ".agents/roles/narrative-director.md",
+    ".agents/roles/network-programmer.md",
+    ".agents/roles/performance-analyst.md",
+    ".agents/roles/producer.md",
+    ".agents/roles/prototyper.md",
+    ".agents/roles/qa-lead.md",
+    ".agents/roles/qa-tester.md",
+    ".agents/roles/release-manager.md",
+    ".agents/roles/security-engineer.md",
+    ".agents/roles/sound-designer.md",
+    ".agents/roles/systems-designer.md",
+    ".agents/roles/technical-artist.md",
+    ".agents/roles/technical-director.md",
+    ".agents/roles/tools-programmer.md",
+    ".agents/roles/ue-blueprint-specialist.md",
+    ".agents/roles/ue-gas-specialist.md",
+    ".agents/roles/ue-replication-specialist.md",
+    ".agents/roles/ue-umg-specialist.md",
+    ".agents/roles/ui-programmer.md",
+    ".agents/roles/unity-addressables-specialist.md",
+    ".agents/roles/unity-dots-specialist.md",
+    ".agents/roles/unity-shader-specialist.md",
+    ".agents/roles/unity-specialist.md",
+    ".agents/roles/unity-ui-specialist.md",
+    ".agents/roles/unreal-specialist.md",
+    ".agents/roles/ux-designer.md",
+    ".agents/roles/world-builder.md",
+    ".agents/roles/writer.md",
+    ".agents/skills/adopt/SKILL.md",
+    ".agents/skills/architecture-decision/SKILL.md",
+    ".agents/skills/architecture-review/SKILL.md",
+    ".agents/skills/art-bible/SKILL.md",
+    ".agents/skills/asset-audit/SKILL.md",
+    ".agents/skills/asset-spec/SKILL.md",
+    ".agents/skills/balance-check/SKILL.md",
+    ".agents/skills/brainstorm/SKILL.md",
+    ".agents/skills/bug-report/SKILL.md",
+    ".agents/skills/bug-triage/SKILL.md",
+    ".agents/skills/changelog/SKILL.md",
+    ".agents/skills/code-review/SKILL.md",
+    ".agents/skills/consistency-check/SKILL.md",
+    ".agents/skills/content-audit/SKILL.md",
+    ".agents/skills/create-architecture/SKILL.md",
+    ".agents/skills/create-control-manifest/SKILL.md",
+    ".agents/skills/create-epics/SKILL.md",
+    ".agents/skills/create-stories/SKILL.md",
+    ".agents/skills/day-one-patch/SKILL.md",
+    ".agents/skills/design-review/SKILL.md",
+    ".agents/skills/design-system/SKILL.md",
+    ".agents/skills/dev-story/SKILL.md",
+    ".agents/skills/estimate/SKILL.md",
+    ".agents/skills/gate-check/SKILL.md",
+    ".agents/skills/help/SKILL.md",
+    ".agents/skills/hotfix/SKILL.md",
+    ".agents/skills/launch-checklist/SKILL.md",
+    ".agents/skills/localize/SKILL.md",
+    ".agents/skills/map-systems/SKILL.md",
+    ".agents/skills/milestone-review/SKILL.md",
+    ".agents/skills/onboard/SKILL.md",
+    ".agents/skills/patch-notes/SKILL.md",
+    ".agents/skills/perf-profile/SKILL.md",
+    ".agents/skills/playtest-report/SKILL.md",
+    ".agents/skills/project-stage-detect/SKILL.md",
+    ".agents/skills/propagate-design-change/SKILL.md",
+    ".agents/skills/prototype/SKILL.md",
+    ".agents/skills/qa-plan/SKILL.md",
+    ".agents/skills/quick-design/SKILL.md",
+    ".agents/skills/regression-suite/SKILL.md",
+    ".agents/skills/release-checklist/SKILL.md",
+    ".agents/skills/retrospective/SKILL.md",
+    ".agents/skills/reverse-document/SKILL.md",
+    ".agents/skills/review-all-gdds/SKILL.md",
+    ".agents/skills/scope-check/SKILL.md",
+    ".agents/skills/security-audit/SKILL.md",
+    ".agents/skills/setup-engine/SKILL.md",
+    ".agents/skills/skill-improve/SKILL.md",
+    ".agents/skills/skill-test/SKILL.md",
+    ".agents/skills/smoke-check/SKILL.md",
+    ".agents/skills/soak-test/SKILL.md",
+    ".agents/skills/sprint-plan/SKILL.md",
+    ".agents/skills/sprint-status/SKILL.md",
+    ".agents/skills/start/SKILL.md",
+    ".agents/skills/story-done/SKILL.md",
+    ".agents/skills/story-readiness/SKILL.md",
+    ".agents/skills/team-audio/SKILL.md",
+    ".agents/skills/team-combat/SKILL.md",
+    ".agents/skills/team-level/SKILL.md",
+    ".agents/skills/team-live-ops/SKILL.md",
+    ".agents/skills/team-narrative/SKILL.md",
+    ".agents/skills/team-polish/SKILL.md",
+    ".agents/skills/team-qa/SKILL.md",
+    ".agents/skills/team-release/SKILL.md",
+    ".agents/skills/team-ui/SKILL.md",
+    ".agents/skills/tech-debt/SKILL.md",
+    ".agents/skills/test-evidence-review/SKILL.md",
+    ".agents/skills/test-flakiness/SKILL.md",
+    ".agents/skills/test-helpers/SKILL.md",
+    ".agents/skills/test-setup/SKILL.md",
+    ".agents/skills/ux-design/SKILL.md",
+    ".agents/skills/ux-review/SKILL.md",
+    ".agents/skills/vertical-slice/SKILL.md",
+    ".codex/agents/accessibility-specialist.toml",
+    ".codex/agents/ai-programmer.toml",
+    ".codex/agents/analytics-engineer.toml",
+    ".codex/agents/art-director.toml",
+    ".codex/agents/audio-director.toml",
+    ".codex/agents/community-manager.toml",
+    ".codex/agents/creative-director.toml",
+    ".codex/agents/devops-engineer.toml",
+    ".codex/agents/economy-designer.toml",
+    ".codex/agents/engine-programmer.toml",
+    ".codex/agents/game-designer.toml",
+    ".codex/agents/gameplay-programmer.toml",
+    ".codex/agents/godot-csharp-specialist.toml",
+    ".codex/agents/godot-gdextension-specialist.toml",
+    ".codex/agents/godot-gdscript-specialist.toml",
+    ".codex/agents/godot-shader-specialist.toml",
+    ".codex/agents/godot-specialist.toml",
+    ".codex/agents/lead-programmer.toml",
+    ".codex/agents/level-designer.toml",
+    ".codex/agents/live-ops-designer.toml",
+    ".codex/agents/localization-lead.toml",
+    ".codex/agents/narrative-director.toml",
+    ".codex/agents/network-programmer.toml",
+    ".codex/agents/performance-analyst.toml",
+    ".codex/agents/producer.toml",
+    ".codex/agents/prototyper.toml",
+    ".codex/agents/qa-lead.toml",
+    ".codex/agents/qa-tester.toml",
+    ".codex/agents/release-manager.toml",
+    ".codex/agents/security-engineer.toml",
+    ".codex/agents/sound-designer.toml",
+    ".codex/agents/systems-designer.toml",
+    ".codex/agents/technical-artist.toml",
+    ".codex/agents/technical-director.toml",
+    ".codex/agents/tools-programmer.toml",
+    ".codex/agents/ue-blueprint-specialist.toml",
+    ".codex/agents/ue-gas-specialist.toml",
+    ".codex/agents/ue-replication-specialist.toml",
+    ".codex/agents/ue-umg-specialist.toml",
+    ".codex/agents/ui-programmer.toml",
+    ".codex/agents/unity-addressables-specialist.toml",
+    ".codex/agents/unity-dots-specialist.toml",
+    ".codex/agents/unity-shader-specialist.toml",
+    ".codex/agents/unity-specialist.toml",
+    ".codex/agents/unity-ui-specialist.toml",
+    ".codex/agents/unreal-specialist.toml",
+    ".codex/agents/ux-designer.toml",
+    ".codex/agents/world-builder.toml",
+    ".codex/agents/writer.toml",
+    ".codex/config.toml",
+    ".codex/hooks.json",
+    ".hermes.md",
+    "AGENTS.md",
+    "assets/data/AGENTS.md",
+    "assets/shaders/AGENTS.md",
+    "design/gdd/AGENTS.md",
+    "design/narrative/AGENTS.md",
+    "docs/PLATFORM-COMPATIBILITY.md",
+    "prototypes/AGENTS.md",
+    "src/ai/AGENTS.md",
+    "src/core/AGENTS.md",
+    "src/gameplay/AGENTS.md",
+    "src/networking/AGENTS.md",
+    "src/ui/AGENTS.md",
+    "tests/AGENTS.md"
+  ],
+  "roles": [
+    {
+      "body_sha256": "bbc63b6159b3a4163a679ab65b76ff8dc74a27c6ebd58d62accb0e0ca8943dc0",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands"
+      ],
+      "name": "accessibility-specialist",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/agents/accessibility-specialist.md",
+      "source_metadata": {
+        "description": "The Accessibility Specialist ensures the game is playable by the widest possible audience. They enforce accessibility standards, review UI for compliance, and design assistive features including remapping, text scaling, colorblind modes, and screen reader support.",
+        "maxTurns": 10,
+        "model": "sonnet",
+        "name": "accessibility-specialist",
+        "tools": "Read, Glob, Grep, Write, Edit, Bash"
+      }
+    },
+    {
+      "body_sha256": "0b2d3ab47921935ee423d8862da967cb8f531ddb289842063dd0598fbd6d201b",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands"
+      ],
+      "name": "ai-programmer",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/agents/ai-programmer.md",
+      "source_metadata": {
+        "description": "The AI Programmer implements game AI systems: behavior trees, state machines, pathfinding, perception systems, decision-making, and NPC behavior. Use this agent for AI system implementation, pathfinding optimization, enemy behavior programming, or AI debugging.",
+        "maxTurns": 20,
+        "model": "sonnet",
+        "name": "ai-programmer",
+        "tools": "Read, Glob, Grep, Write, Edit, Bash"
+      }
+    },
+    {
+      "body_sha256": "87207a5881e5af545c87a46e1ba1bbc645a543d3dad89c9cb669bb6825f58602",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands",
+        "search the web"
+      ],
+      "name": "analytics-engineer",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/agents/analytics-engineer.md",
+      "source_metadata": {
+        "description": "The Analytics Engineer designs telemetry systems, player behavior tracking, A/B test frameworks, and data analysis pipelines. Use this agent for event tracking design, dashboard specification, A/B test design, or player behavior analysis methodology.",
+        "maxTurns": 20,
+        "model": "sonnet",
+        "name": "analytics-engineer",
+        "tools": "Read, Glob, Grep, Write, Edit, Bash, WebSearch"
+      }
+    },
+    {
+      "body_sha256": "ca8facb4ffc05ee28ea4ece27f1d30f9eec658e7e71e50615f35b3f73324acb7",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "search the web"
+      ],
+      "name": "art-director",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/agents/art-director.md",
+      "source_metadata": {
+        "description": "The Art Director owns the visual identity of the game: style guides, art bible, asset standards, color palettes, UI/UX visual design, and the art production pipeline. Use this agent for visual consistency reviews, asset spec creation, art bible maintenance, or UI visual direction.",
+        "disallowedTools": "Bash",
+        "maxTurns": 20,
+        "memory": "project",
+        "model": "sonnet",
+        "name": "art-director",
+        "tools": "Read, Glob, Grep, Write, Edit, WebSearch"
+      }
+    },
+    {
+      "body_sha256": "33fbbda0e64af2a29d6199fff193afe1f22e700e38ed9c5637336153963226a1",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "search the web"
+      ],
+      "name": "audio-director",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/agents/audio-director.md",
+      "source_metadata": {
+        "description": "The Audio Director owns the sonic identity of the game: music direction, sound design philosophy, audio implementation strategy, and mix balance. Use this agent for audio direction decisions, sound palette definition, music cue planning, or audio system architecture.",
+        "disallowedTools": "Bash",
+        "maxTurns": 20,
+        "memory": "project",
+        "model": "sonnet",
+        "name": "audio-director",
+        "tools": "Read, Glob, Grep, Write, Edit, WebSearch"
+      }
+    },
+    {
+      "body_sha256": "300665feaab256c0ce953e3939b9164be0198c838dc87ff9fbee3a648bd4aa50",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "delegate work"
+      ],
+      "name": "community-manager",
+      "quality_tier": "fast",
+      "reasoning_effort": "low",
+      "source": ".claude/agents/community-manager.md",
+      "source_metadata": {
+        "description": "The community manager owns player-facing communication: patch notes, social media posts, community updates, player feedback collection, bug report triage from players, and crisis communication. They translate between development team and player community.",
+        "disallowedTools": "Bash",
+        "maxTurns": 10,
+        "model": "haiku",
+        "name": "community-manager",
+        "tools": "Read, Glob, Grep, Write, Edit, Task"
+      }
+    },
+    {
+      "body_sha256": "d206239390bbff0892861c394fbdebf78d5da6b459b07eb249f6441caa7ed26a",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "search the web"
+      ],
+      "name": "creative-director",
+      "quality_tier": "high",
+      "reasoning_effort": "high",
+      "source": ".claude/agents/creative-director.md",
+      "source_metadata": {
+        "description": "The Creative Director is the highest-level creative authority for the project. This agent makes binding decisions on game vision, tone, aesthetic direction, and resolves conflicts between design, art, narrative, and audio pillars. Use this agent when a decision affects the fundamental identity of the game or when department leads cannot reach consensus.",
+        "disallowedTools": "Bash",
+        "maxTurns": 30,
+        "memory": "user",
+        "model": "opus",
+        "name": "creative-director",
+        "skills": [
+          "brainstorm",
+          "design-review"
+        ],
+        "tools": "Read, Glob, Grep, Write, Edit, WebSearch"
+      }
+    },
+    {
+      "body_sha256": "fc6122de2072210eac9545706542b2f51770df499cb2b904e5c11d03a3e7e65e",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands"
+      ],
+      "name": "devops-engineer",
+      "quality_tier": "fast",
+      "reasoning_effort": "low",
+      "source": ".claude/agents/devops-engineer.md",
+      "source_metadata": {
+        "description": "The DevOps Engineer maintains build pipelines, CI/CD configuration, version control workflow, and deployment infrastructure. Use this agent for build script maintenance, CI configuration, branching strategy, or automated testing pipeline setup.",
+        "maxTurns": 10,
+        "model": "haiku",
+        "name": "devops-engineer",
+        "tools": "Read, Glob, Grep, Write, Edit, Bash"
+      }
+    },
+    {
+      "body_sha256": "271b83399c9597c3ef8fbbb56d271e066ac14b81d9460fe772f24ca33541d509",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files"
+      ],
+      "name": "economy-designer",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/agents/economy-designer.md",
+      "source_metadata": {
+        "description": "The Economy Designer specializes in resource economies, loot systems, progression curves, and in-game market design. Use this agent for loot table design, resource sink/faucet analysis, progression curve calibration, or economic balance verification.",
+        "disallowedTools": "Bash",
+        "maxTurns": 20,
+        "memory": "project",
+        "model": "sonnet",
+        "name": "economy-designer",
+        "tools": "Read, Glob, Grep, Write, Edit"
+      }
+    },
+    {
+      "body_sha256": "e9d8ba564b4cc3274de985d8b030efc2122b289244eeb6fb71695bff4d5b9eef",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands"
+      ],
+      "name": "engine-programmer",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/agents/engine-programmer.md",
+      "source_metadata": {
+        "description": "The Engine Programmer works on core engine systems: rendering pipeline, physics, memory management, resource loading, scene management, and core framework code. Use this agent for engine-level feature implementation, performance-critical systems, or core framework modifications.",
+        "maxTurns": 20,
+        "model": "sonnet",
+        "name": "engine-programmer",
+        "tools": "Read, Glob, Grep, Write, Edit, Bash"
+      }
+    },
+    {
+      "body_sha256": "8968457f710bbd7483794d9198f8e2608985f8224853233816e5d20ee49bb5ce",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "search the web"
+      ],
+      "name": "game-designer",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/agents/game-designer.md",
+      "source_metadata": {
+        "description": "The Game Designer owns the mechanical and systems design of the game. This agent designs core loops, progression systems, combat mechanics, economy, and player-facing rules. Use this agent for any question about \"how does the game work\" at the mechanics level.",
+        "disallowedTools": "Bash",
+        "maxTurns": 20,
+        "memory": "project",
+        "model": "sonnet",
+        "name": "game-designer",
+        "skills": [
+          "design-review",
+          "balance-check",
+          "brainstorm"
+        ],
+        "tools": "Read, Glob, Grep, Write, Edit, WebSearch"
+      }
+    },
+    {
+      "body_sha256": "ac1495ac4c88828abe53d24eb5b75769570e3704ba3005fc2f4dee0f90538cbb",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands"
+      ],
+      "name": "gameplay-programmer",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/agents/gameplay-programmer.md",
+      "source_metadata": {
+        "description": "The Gameplay Programmer implements game mechanics, player systems, combat, and interactive features as code. Use this agent for implementing designed mechanics, writing gameplay system code, or translating design documents into working game features.",
+        "maxTurns": 20,
+        "model": "sonnet",
+        "name": "gameplay-programmer",
+        "tools": "Read, Glob, Grep, Write, Edit, Bash"
+      }
+    },
+    {
+      "body_sha256": "7981f975d3a7c47b3abf7d6ca763fa083ea8b97c34a97f4be03cb878723ff44a",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands",
+        "delegate work"
+      ],
+      "name": "godot-csharp-specialist",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/agents/godot-csharp-specialist.md",
+      "source_metadata": {
+        "description": "The Godot C# specialist owns all C# code quality in Godot 4 projects: .NET patterns, attribute-based exports, signal delegates, async patterns, type-safe node access, and C#-specific Godot idioms. They ensure clean, performant, type-safe C# that follows .NET and Godot 4 idioms correctly.",
+        "maxTurns": 20,
+        "model": "sonnet",
+        "name": "godot-csharp-specialist",
+        "tools": "Read, Glob, Grep, Write, Edit, Bash, Task"
+      }
+    },
+    {
+      "body_sha256": "926fbd30021811e2093247945badc67f64c05b62c5d7231de28c1bc39ddbf077",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands",
+        "delegate work"
+      ],
+      "name": "godot-gdextension-specialist",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/agents/godot-gdextension-specialist.md",
+      "source_metadata": {
+        "description": "The GDExtension specialist owns all native code integration with Godot: GDExtension API, C/C++/Rust bindings (godot-cpp, godot-rust), native performance optimization, custom node types, and the GDScript/native boundary. They ensure native code integrates cleanly with Godot's node system.",
+        "maxTurns": 20,
+        "model": "sonnet",
+        "name": "godot-gdextension-specialist",
+        "tools": "Read, Glob, Grep, Write, Edit, Bash, Task"
+      }
+    },
+    {
+      "body_sha256": "a2843120e90eed774b1a9fd49b90fd5a92ed12e78e0c1d18a4ff1a1700365290",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands",
+        "delegate work"
+      ],
+      "name": "godot-gdscript-specialist",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/agents/godot-gdscript-specialist.md",
+      "source_metadata": {
+        "description": "The GDScript specialist owns all GDScript code quality: static typing enforcement, design patterns, signal architecture, coroutine patterns, performance optimization, and GDScript-specific idioms. They ensure clean, typed, and performant GDScript across the project.",
+        "maxTurns": 20,
+        "model": "sonnet",
+        "name": "godot-gdscript-specialist",
+        "tools": "Read, Glob, Grep, Write, Edit, Bash, Task"
+      }
+    },
+    {
+      "body_sha256": "cc4d1a812acf363d810561291a33e22d015132c153faf5b778af428c537f96f1",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands",
+        "delegate work"
+      ],
+      "name": "godot-shader-specialist",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/agents/godot-shader-specialist.md",
+      "source_metadata": {
+        "description": "The Godot Shader specialist owns all Godot rendering customization: Godot shading language, visual shaders, material setup, particle shaders, post-processing, and rendering performance. They ensure visual quality within Godot's rendering pipeline.",
+        "maxTurns": 20,
+        "model": "sonnet",
+        "name": "godot-shader-specialist",
+        "tools": "Read, Glob, Grep, Write, Edit, Bash, Task"
+      }
+    },
+    {
+      "body_sha256": "4a1fe9291bed64eef09ad2a12dab545a8931f4d5d5b64dcd88c9225798c6e95f",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands",
+        "delegate work"
+      ],
+      "name": "godot-specialist",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/agents/godot-specialist.md",
+      "source_metadata": {
+        "description": "The Godot Engine Specialist is the authority on all Godot-specific patterns, APIs, and optimization techniques. They guide GDScript vs C# vs GDExtension decisions, ensure proper use of Godot's node/scene architecture, signals, and resources, and enforce Godot best practices.",
+        "maxTurns": 20,
+        "model": "sonnet",
+        "name": "godot-specialist",
+        "tools": "Read, Glob, Grep, Write, Edit, Bash, Task"
+      }
+    },
+    {
+      "body_sha256": "b503d8b658b9437d4f13bd157dd2f5570c1c55beb3f1d28daebbd23cd637f1c3",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands"
+      ],
+      "name": "lead-programmer",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/agents/lead-programmer.md",
+      "source_metadata": {
+        "description": "The Lead Programmer owns code-level architecture, coding standards, code review, and the assignment of programming work to specialist programmers. Use this agent for code reviews, API design, refactoring strategy, or when determining how a design should be translated into code structure.",
+        "maxTurns": 20,
+        "memory": "project",
+        "model": "sonnet",
+        "name": "lead-programmer",
+        "skills": [
+          "code-review",
+          "architecture-decision",
+          "tech-debt"
+        ],
+        "tools": "Read, Glob, Grep, Write, Edit, Bash"
+      }
+    },
+    {
+      "body_sha256": "e43692f0fd8a1b79bc0fa26c681b89838edeae063e1dc99365d201d5ef227f13",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files"
+      ],
+      "name": "level-designer",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/agents/level-designer.md",
+      "source_metadata": {
+        "description": "The Level Designer creates spatial designs, encounter layouts, pacing plans, and environmental storytelling guides for game levels and areas. Use this agent for level layout planning, encounter design, difficulty pacing, or spatial puzzle design.",
+        "disallowedTools": "Bash",
+        "maxTurns": 20,
+        "memory": "project",
+        "model": "sonnet",
+        "name": "level-designer",
+        "tools": "Read, Glob, Grep, Write, Edit"
+      }
+    },
+    {
+      "body_sha256": "b3ea1235ee2535033bd6625ce8b87a8c914cad19440a840963108b6310a1e0c5",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "delegate work"
+      ],
+      "name": "live-ops-designer",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/agents/live-ops-designer.md",
+      "source_metadata": {
+        "description": "The live-ops designer owns post-launch content strategy: seasonal events, battle passes, content cadence, player retention mechanics, live service economy, and engagement analytics. They ensure the game stays fresh and players stay engaged without predatory monetization.",
+        "disallowedTools": "Bash",
+        "maxTurns": 20,
+        "model": "sonnet",
+        "name": "live-ops-designer",
+        "tools": "Read, Glob, Grep, Write, Edit, Task"
+      }
+    },
+    {
+      "body_sha256": "9042e6107e38c58a047f741af6667c06d6e8e13e295341a794f16eec9a6a3411",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands"
+      ],
+      "name": "localization-lead",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/agents/localization-lead.md",
+      "source_metadata": {
+        "description": "Owns internationalization architecture, string management, locale testing, and translation pipeline. Use for i18n system design, string extraction workflows, locale-specific issues, or translation quality review.",
+        "maxTurns": 20,
+        "memory": "project",
+        "model": "sonnet",
+        "name": "localization-lead",
+        "tools": "Read, Glob, Grep, Write, Edit, Bash"
+      }
+    },
+    {
+      "body_sha256": "b512fca94a3b27fd5dafd324b6ee28123d64ea44f17c069ab2c6eaac7070dde1",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "search the web"
+      ],
+      "name": "narrative-director",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/agents/narrative-director.md",
+      "source_metadata": {
+        "description": "The Narrative Director owns story architecture, world-building, character design, and dialogue strategy. Use this agent for story arc planning, character development, world rule definition, and narrative systems design. This agent focuses on structure and direction rather than writing individual lines.",
+        "disallowedTools": "Bash",
+        "maxTurns": 20,
+        "memory": "project",
+        "model": "sonnet",
+        "name": "narrative-director",
+        "tools": "Read, Glob, Grep, Write, Edit, WebSearch"
+      }
+    },
+    {
+      "body_sha256": "73790cf417d26725d9c1d0b8785af1bb8c51a4b4906f238892f93a3de722bc9d",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands"
+      ],
+      "name": "network-programmer",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/agents/network-programmer.md",
+      "source_metadata": {
+        "description": "The Network Programmer implements multiplayer networking: state replication, lag compensation, matchmaking, and network protocol design. Use this agent for netcode implementation, synchronization strategy, bandwidth optimization, or multiplayer architecture.",
+        "maxTurns": 20,
+        "model": "sonnet",
+        "name": "network-programmer",
+        "tools": "Read, Glob, Grep, Write, Edit, Bash"
+      }
+    },
+    {
+      "body_sha256": "903142e0937ad5674400db1b32f0d001cf3afc95aee8544cb68e4711533291a0",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands"
+      ],
+      "name": "performance-analyst",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/agents/performance-analyst.md",
+      "source_metadata": {
+        "description": "The Performance Analyst profiles game performance, identifies bottlenecks, recommends optimizations, and tracks performance metrics over time. Use this agent for performance profiling, memory analysis, frame time investigation, or optimization strategy.",
+        "maxTurns": 20,
+        "memory": "project",
+        "model": "sonnet",
+        "name": "performance-analyst",
+        "tools": "Read, Glob, Grep, Write, Edit, Bash"
+      }
+    },
+    {
+      "body_sha256": "490af354012cddabeb872ac111f942cb3adf6676c89184148591f98e1c15783d",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands",
+        "search the web"
+      ],
+      "name": "producer",
+      "quality_tier": "high",
+      "reasoning_effort": "high",
+      "source": ".claude/agents/producer.md",
+      "source_metadata": {
+        "description": "The Producer manages all production concerns: sprint planning, milestone tracking, risk management, scope negotiation, and cross-department coordination. This is the primary coordination agent. Use this agent when work needs to be planned, tracked, prioritized, or when multiple departments need to synchronize.",
+        "maxTurns": 30,
+        "memory": "user",
+        "model": "opus",
+        "name": "producer",
+        "skills": [
+          "sprint-plan",
+          "scope-check",
+          "estimate",
+          "milestone-review"
+        ],
+        "tools": "Read, Glob, Grep, Write, Edit, Bash, WebSearch"
+      }
+    },
+    {
+      "body_sha256": "af6b83862eba5fd711b702a340f312950f577085775658a87a24eb56a68fbb83",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands"
+      ],
+      "name": "prototyper",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/agents/prototyper.md",
+      "source_metadata": {
+        "description": "Prototyping specialist. Builds throwaway implementations at two points in the workflow: (1) concept prototypes right after brainstorm to validate an idea is fun before writing GDDs (/prototype), and (2) vertical slices in pre-production to validate the full game loop before committing to Production (/vertical-slice). Standards are intentionally relaxed for speed.",
+        "isolation": "worktree",
+        "maxTurns": 25,
+        "model": "sonnet",
+        "name": "prototyper",
+        "tools": "Read, Glob, Grep, Write, Edit, Bash"
+      }
+    },
+    {
+      "body_sha256": "9174d49d98ed881816eca371dc53ad306d4d7aba76facd383ade98369da19aa9",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands"
+      ],
+      "name": "qa-lead",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/agents/qa-lead.md",
+      "source_metadata": {
+        "description": "The QA Lead owns test strategy, bug triage, release quality gates, and testing process design. Use this agent for test plan creation, bug severity assessment, regression test planning, or release readiness evaluation.",
+        "maxTurns": 20,
+        "memory": "project",
+        "model": "sonnet",
+        "name": "qa-lead",
+        "skills": [
+          "bug-report",
+          "release-checklist"
+        ],
+        "tools": "Read, Glob, Grep, Write, Edit, Bash"
+      }
+    },
+    {
+      "body_sha256": "8b552a0941fbe6868bf8f500c1dc87b30979f61be5fb50879079c1cad3834223",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands"
+      ],
+      "name": "qa-tester",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/agents/qa-tester.md",
+      "source_metadata": {
+        "description": "The QA Tester writes detailed test cases, bug reports, and test checklists. Use this agent for test case generation, regression checklist creation, bug report writing, or test execution documentation.",
+        "maxTurns": 10,
+        "model": "sonnet",
+        "name": "qa-tester",
+        "tools": "Read, Glob, Grep, Write, Edit, Bash"
+      }
+    },
+    {
+      "body_sha256": "76fb0d40bdd79e58965b153cf50b47d49efd38534d4fe7568993d9fd758de350",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands"
+      ],
+      "name": "release-manager",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/agents/release-manager.md",
+      "source_metadata": {
+        "description": "Owns the release pipeline: certification checklists, store submissions, platform requirements, version numbering, and release-day coordination. Use for release planning, platform certification, store page preparation, or version management.",
+        "maxTurns": 20,
+        "model": "sonnet",
+        "name": "release-manager",
+        "skills": [
+          "release-checklist",
+          "changelog",
+          "patch-notes"
+        ],
+        "tools": "Read, Glob, Grep, Write, Edit, Bash"
+      }
+    },
+    {
+      "body_sha256": "491e63ceb556d7eb6853e263a6d555e6af971625e51e130608c17dac3beb7d75",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands",
+        "delegate work"
+      ],
+      "name": "security-engineer",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/agents/security-engineer.md",
+      "source_metadata": {
+        "description": "The Security Engineer protects the game from cheating, exploits, and data breaches. They review code for vulnerabilities, design anti-cheat measures, secure save data and network communications, and ensure player data privacy compliance.",
+        "maxTurns": 20,
+        "model": "sonnet",
+        "name": "security-engineer",
+        "tools": "Read, Glob, Grep, Write, Edit, Bash, Task"
+      }
+    },
+    {
+      "body_sha256": "381a3dab3688ead8a9b69a8aa7604d2fff5d0f437381f1d8f550789fecb06bfd",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files"
+      ],
+      "name": "sound-designer",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/agents/sound-designer.md",
+      "source_metadata": {
+        "description": "The Sound Designer creates detailed specifications for sound effects, documents audio events, and defines mixing parameters. Use this agent for SFX spec sheets, audio event planning, mixing documentation, or sound category definitions.",
+        "disallowedTools": "Bash",
+        "maxTurns": 10,
+        "model": "sonnet",
+        "name": "sound-designer",
+        "tools": "Read, Glob, Grep, Write, Edit"
+      }
+    },
+    {
+      "body_sha256": "1c80ec83355386bee2864414d4820a2ca8e3d1ff60d8856bf7e0f152e169f734",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files"
+      ],
+      "name": "systems-designer",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/agents/systems-designer.md",
+      "source_metadata": {
+        "description": "The Systems Designer creates detailed mechanical designs for specific game subsystems -- combat formulas, progression curves, crafting recipes, status effect interactions. Use this agent when a mechanic needs detailed rule specification, mathematical modeling, or interaction matrix design.",
+        "disallowedTools": "Bash",
+        "maxTurns": 20,
+        "memory": "project",
+        "model": "sonnet",
+        "name": "systems-designer",
+        "tools": "Read, Glob, Grep, Write, Edit"
+      }
+    },
+    {
+      "body_sha256": "d91cf796f8d322fd51ec8d8547cfdce162b5b2ef68ea5ffe7b579f44b464351a",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands"
+      ],
+      "name": "technical-artist",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/agents/technical-artist.md",
+      "source_metadata": {
+        "description": "The Technical Artist bridges art and engineering: shaders, VFX, rendering optimization, art pipeline tools, and performance profiling for visual systems. Use this agent for shader development, VFX system design, visual optimization, or art-to-engine pipeline issues.",
+        "maxTurns": 20,
+        "model": "sonnet",
+        "name": "technical-artist",
+        "tools": "Read, Glob, Grep, Write, Edit, Bash"
+      }
+    },
+    {
+      "body_sha256": "b41e885c2e57ec08ab15d18e5fd283b479a8df7350bfb9843c0f1d83fe1044d8",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands",
+        "search the web"
+      ],
+      "name": "technical-director",
+      "quality_tier": "high",
+      "reasoning_effort": "high",
+      "source": ".claude/agents/technical-director.md",
+      "source_metadata": {
+        "description": "The Technical Director owns all high-level technical decisions including engine architecture, technology choices, performance strategy, and technical risk management. Use this agent for architecture-level decisions, technology evaluations, cross-system technical conflicts, and when a technical choice will constrain or enable design possibilities.",
+        "maxTurns": 30,
+        "memory": "user",
+        "model": "opus",
+        "name": "technical-director",
+        "tools": "Read, Glob, Grep, Write, Edit, Bash, WebSearch"
+      }
+    },
+    {
+      "body_sha256": "37c2201456448f8b6bf7a29ab595f1b69a04c763625627a9afc34fde29860940",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands"
+      ],
+      "name": "tools-programmer",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/agents/tools-programmer.md",
+      "source_metadata": {
+        "description": "The Tools Programmer builds internal development tools: editor extensions, content authoring tools, debug utilities, and pipeline automation. Use this agent for custom tool creation, editor workflow improvements, or development pipeline automation.",
+        "maxTurns": 20,
+        "model": "sonnet",
+        "name": "tools-programmer",
+        "tools": "Read, Glob, Grep, Write, Edit, Bash"
+      }
+    },
+    {
+      "body_sha256": "b3790c8fb446f449140a03e52b8cba184a616b4556ab1416bb41438443c48343",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "delegate work"
+      ],
+      "name": "ue-blueprint-specialist",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/agents/ue-blueprint-specialist.md",
+      "source_metadata": {
+        "description": "The Blueprint specialist owns Blueprint architecture decisions, Blueprint/C++ boundary guidelines, Blueprint optimization, and ensures Blueprint graphs stay maintainable and performant. They prevent Blueprint spaghetti and enforce clean BP patterns.",
+        "disallowedTools": "Bash",
+        "maxTurns": 20,
+        "model": "sonnet",
+        "name": "ue-blueprint-specialist",
+        "tools": "Read, Glob, Grep, Write, Edit, Task"
+      }
+    },
+    {
+      "body_sha256": "85089fa55ec27c36398dc6eb1ca86cc611ed9e0665d37ddf689cbce0cdfb3137",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands",
+        "delegate work"
+      ],
+      "name": "ue-gas-specialist",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/agents/ue-gas-specialist.md",
+      "source_metadata": {
+        "description": "The Gameplay Ability System specialist owns all GAS implementation: abilities, gameplay effects, attribute sets, gameplay tags, ability tasks, and GAS prediction. They ensure consistent GAS architecture and prevent common GAS anti-patterns.",
+        "maxTurns": 20,
+        "model": "sonnet",
+        "name": "ue-gas-specialist",
+        "tools": "Read, Glob, Grep, Write, Edit, Bash, Task"
+      }
+    },
+    {
+      "body_sha256": "9372527529bab03f8491cbe4e5b5de3bc5505639d13571868b19311e11ca9cdd",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands",
+        "delegate work"
+      ],
+      "name": "ue-replication-specialist",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/agents/ue-replication-specialist.md",
+      "source_metadata": {
+        "description": "The UE Replication specialist owns all Unreal networking: property replication, RPCs, client prediction, relevancy, net serialization, and bandwidth optimization. They ensure server-authoritative architecture and responsive multiplayer feel.",
+        "maxTurns": 20,
+        "model": "sonnet",
+        "name": "ue-replication-specialist",
+        "tools": "Read, Glob, Grep, Write, Edit, Bash, Task"
+      }
+    },
+    {
+      "body_sha256": "859bd4ec2427e3ad2d34e01169b0663f51b5190e7a63fe75496a5d82ceb81886",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands",
+        "delegate work"
+      ],
+      "name": "ue-umg-specialist",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/agents/ue-umg-specialist.md",
+      "source_metadata": {
+        "description": "The UMG/CommonUI specialist owns all Unreal UI implementation: widget hierarchy, data binding, CommonUI input routing, widget styling, and UI optimization. They ensure UI follows Unreal best practices and performs well.",
+        "maxTurns": 20,
+        "model": "sonnet",
+        "name": "ue-umg-specialist",
+        "tools": "Read, Glob, Grep, Write, Edit, Bash, Task"
+      }
+    },
+    {
+      "body_sha256": "e767e72ceb9ff4028e28ce69942bb418d5c110fc6fa8e1099dd39ee454d9ffae",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands"
+      ],
+      "name": "ui-programmer",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/agents/ui-programmer.md",
+      "source_metadata": {
+        "description": "The UI Programmer implements user interface systems: menus, HUDs, inventory screens, dialogue boxes, and UI framework code. Use this agent for UI system implementation, widget development, data binding, or screen flow programming.",
+        "maxTurns": 20,
+        "model": "sonnet",
+        "name": "ui-programmer",
+        "tools": "Read, Glob, Grep, Write, Edit, Bash"
+      }
+    },
+    {
+      "body_sha256": "12a1d4bb70fa28df11a5572b844ccb179cb4cdff493d4f9be2763de33a6d8e7f",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands",
+        "delegate work"
+      ],
+      "name": "unity-addressables-specialist",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/agents/unity-addressables-specialist.md",
+      "source_metadata": {
+        "description": "The Addressables specialist owns all Unity asset management: Addressable groups, asset loading/unloading, memory management, content catalogs, remote content delivery, and asset bundle optimization. They ensure fast load times and controlled memory usage.",
+        "maxTurns": 20,
+        "model": "sonnet",
+        "name": "unity-addressables-specialist",
+        "tools": "Read, Glob, Grep, Write, Edit, Bash, Task"
+      }
+    },
+    {
+      "body_sha256": "a3a02f3a4f8acb680fd749c42244a73417d55397fccb79e3d3b03e26c62bb0b6",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands",
+        "delegate work"
+      ],
+      "name": "unity-dots-specialist",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/agents/unity-dots-specialist.md",
+      "source_metadata": {
+        "description": "The DOTS/ECS specialist owns all Unity Data-Oriented Technology Stack implementation: Entity Component System architecture, Jobs system, Burst compiler optimization, hybrid renderer, and DOTS-based gameplay systems. They ensure correct ECS patterns and maximum performance.",
+        "maxTurns": 20,
+        "model": "sonnet",
+        "name": "unity-dots-specialist",
+        "tools": "Read, Glob, Grep, Write, Edit, Bash, Task"
+      }
+    },
+    {
+      "body_sha256": "f2aeca4e2987d81df3c8298e56e5231c0d7bb3cd153c2f29ae37e57fb0fedd10",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands",
+        "delegate work"
+      ],
+      "name": "unity-shader-specialist",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/agents/unity-shader-specialist.md",
+      "source_metadata": {
+        "description": "The Unity Shader/VFX specialist owns all Unity rendering customization: Shader Graph, custom HLSL shaders, VFX Graph, render pipeline customization (URP/HDRP), post-processing, and visual effects optimization. They ensure visual quality within performance budgets.",
+        "maxTurns": 20,
+        "model": "sonnet",
+        "name": "unity-shader-specialist",
+        "tools": "Read, Glob, Grep, Write, Edit, Bash, Task"
+      }
+    },
+    {
+      "body_sha256": "187d8515618911c754ea6b260afb013ebb099e3e1620524f670c34787c707e86",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands",
+        "delegate work"
+      ],
+      "name": "unity-specialist",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/agents/unity-specialist.md",
+      "source_metadata": {
+        "description": "The Unity Engine Specialist is the authority on all Unity-specific patterns, APIs, and optimization techniques. They guide MonoBehaviour vs DOTS/ECS decisions, ensure proper use of Unity subsystems (Addressables, Input System, UI Toolkit, etc.), and enforce Unity best practices.",
+        "maxTurns": 20,
+        "model": "sonnet",
+        "name": "unity-specialist",
+        "tools": "Read, Glob, Grep, Write, Edit, Bash, Task"
+      }
+    },
+    {
+      "body_sha256": "6c492486d571c0e4e67fe9c64102e2e7b208c0874c662c377da78358877f5cf9",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands",
+        "delegate work"
+      ],
+      "name": "unity-ui-specialist",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/agents/unity-ui-specialist.md",
+      "source_metadata": {
+        "description": "The Unity UI specialist owns all Unity UI implementation: UI Toolkit (UXML/USS), UGUI (Canvas), data binding, runtime UI performance, input handling, and cross-platform UI adaptation. They ensure responsive, performant, and accessible UI.",
+        "maxTurns": 20,
+        "model": "sonnet",
+        "name": "unity-ui-specialist",
+        "tools": "Read, Glob, Grep, Write, Edit, Bash, Task"
+      }
+    },
+    {
+      "body_sha256": "c27b0266d9228482908ebf5d289a4824eebd4845595d92d36f7f052cd4a466cc",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands",
+        "delegate work"
+      ],
+      "name": "unreal-specialist",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/agents/unreal-specialist.md",
+      "source_metadata": {
+        "description": "The Unreal Engine Specialist is the authority on all Unreal-specific patterns, APIs, and optimization techniques. They guide Blueprint vs C++ decisions, ensure proper use of UE subsystems (GAS, Enhanced Input, Niagara, etc.), and enforce Unreal best practices across the codebase.",
+        "maxTurns": 20,
+        "model": "sonnet",
+        "name": "unreal-specialist",
+        "tools": "Read, Glob, Grep, Write, Edit, Bash, Task"
+      }
+    },
+    {
+      "body_sha256": "614f4c0340c21d407d8a6459f07e366ae185eb1a141387b21f4a5712313e3737",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "search the web"
+      ],
+      "name": "ux-designer",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/agents/ux-designer.md",
+      "source_metadata": {
+        "description": "The UX Designer owns user experience flows, interaction design, accessibility, information architecture, and input handling design. Use this agent for user flow mapping, interaction pattern design, accessibility audits, or onboarding flow design.",
+        "disallowedTools": "Bash",
+        "maxTurns": 20,
+        "memory": "project",
+        "model": "sonnet",
+        "name": "ux-designer",
+        "tools": "Read, Glob, Grep, Write, Edit, WebSearch"
+      }
+    },
+    {
+      "body_sha256": "363bc4cb77d354bfa8d2ab80483a94f592e335cf75cd6bdb3d94c9b528472406",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files"
+      ],
+      "name": "world-builder",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/agents/world-builder.md",
+      "source_metadata": {
+        "description": "The World Builder designs detailed world lore: factions, cultures, history, geography, ecology, and the rules that govern the game world. Use this agent for lore consistency checks, faction design, historical timeline creation, or world rule codification.",
+        "disallowedTools": "Bash",
+        "maxTurns": 20,
+        "memory": "project",
+        "model": "sonnet",
+        "name": "world-builder",
+        "tools": "Read, Glob, Grep, Write, Edit"
+      }
+    },
+    {
+      "body_sha256": "ced3f970746eca38581677e92d36c9dbccb4ef20493edc996b4697562a89b86a",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files"
+      ],
+      "name": "writer",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/agents/writer.md",
+      "source_metadata": {
+        "description": "The Writer creates dialogue, lore entries, item descriptions, environmental text, and all player-facing written content. Use this agent for dialogue writing, lore creation, item/ability descriptions, or in-game text of any kind.",
+        "disallowedTools": "Bash",
+        "maxTurns": 20,
+        "memory": "project",
+        "model": "sonnet",
+        "name": "writer",
+        "tools": "Read, Glob, Grep, Write, Edit"
+      }
+    }
+  ],
+  "schema_version": 1,
+  "skills": [
+    {
+      "body_sha256": "95bfc5980265d11648f7561d8988d410bb3ae25bec5fdd2b050ff2bb53d2f81d",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "ask structured questions"
+      ],
+      "name": "adopt",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/adopt/SKILL.md",
+      "source_metadata": {
+        "agent": "technical-director",
+        "allowed-tools": "Read, Glob, Grep, Write, AskUserQuestion",
+        "argument-hint": "[focus: full | gdds | adrs | stories | infra]",
+        "description": "Brownfield onboarding — audits existing project artifacts for template format compliance (not just existence), classifies gaps by impact, and produces a numbered migration plan. Run this when joining an in-progress project or upgrading from an older template version. Distinct from /project-stage-detect (which checks what exists) — this checks whether what exists will actually work with the template's skills.",
+        "model": "sonnet",
+        "name": "adopt",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "aae17569b0fc9436d42bb9728e8bf9ed63be7cc6e1b0befe032758928ffbf5f0",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "delegate work",
+        "ask structured questions"
+      ],
+      "name": "architecture-decision",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/architecture-decision/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep, Write, Edit, Task, AskUserQuestion",
+        "argument-hint": "[title] [--review full|lean|solo]",
+        "description": "Creates an Architecture Decision Record (ADR) documenting a significant technical decision, its context, alternatives considered, and consequences. Every major technical choice should have an ADR.",
+        "model": "sonnet",
+        "name": "architecture-decision",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "3b34d27090d6e64089c9c2e1333e1e31884feb9acba90428c8be7f3629b135eb",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "delegate work",
+        "ask structured questions"
+      ],
+      "name": "architecture-review",
+      "quality_tier": "high",
+      "reasoning_effort": "high",
+      "source": ".claude/skills/architecture-review/SKILL.md",
+      "source_metadata": {
+        "agent": "technical-director",
+        "allowed-tools": "Read, Glob, Grep, Write, Task, AskUserQuestion",
+        "argument-hint": "[focus: full | coverage | consistency | engine | single-gdd path/to/gdd.md]",
+        "description": "Validates completeness and consistency of the project architecture against all GDDs. Builds a traceability matrix mapping every GDD technical requirement to ADRs, identifies coverage gaps, detects cross-ADR conflicts, verifies engine compatibility consistency across all decisions, and produces a PASS/CONCERNS/FAIL verdict. The architecture equivalent of /design-review.",
+        "model": "opus",
+        "name": "architecture-review",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "2fa30858abac5148c381ae5374e8fa3b6ee7b997d21939c3776bed6ab826506c",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "delegate work",
+        "ask structured questions"
+      ],
+      "name": "art-bible",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/art-bible/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep, Write, Edit, Task, AskUserQuestion",
+        "argument-hint": "[--review full|lean|solo]",
+        "description": "Guided, section-by-section Art Bible authoring. Creates the visual identity specification that gates all asset production. Run after /brainstorm is approved and before /map-systems or any GDD authoring begins.",
+        "model": "sonnet",
+        "name": "art-bible",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "70714bdaddc8e96753deeae9b943557e6fcf3d2140e34fb685b96dea50925d7a",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text"
+      ],
+      "name": "asset-audit",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/asset-audit/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep",
+        "argument-hint": "[category|all]",
+        "description": "Audits game assets for compliance with naming conventions, file size budgets, format standards, and pipeline requirements. Identifies orphaned assets, missing references, and standard violations.",
+        "model": "sonnet",
+        "name": "asset-audit",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "4192949ae371d792c37c07c72140a707affe209dd0bc692e99b3941e1a61cf63",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "delegate work",
+        "ask structured questions"
+      ],
+      "name": "asset-spec",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/asset-spec/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep, Write, Edit, Task, AskUserQuestion",
+        "argument-hint": "[system:<name> | level:<name> | character:<name>] [--review full|lean|solo]",
+        "description": "Generate per-asset visual specifications and AI generation prompts from GDDs, level docs, or character profiles. Produces structured spec files and updates the master asset manifest. Run after art bible and GDD/level design are approved, before production begins.",
+        "model": "sonnet",
+        "name": "asset-spec",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "e4531a4c70faadfd49daf27c603546c5d0afce52598f4431e507ae479a567c87",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "ask structured questions"
+      ],
+      "name": "balance-check",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/balance-check/SKILL.md",
+      "source_metadata": {
+        "agent": "economy-designer",
+        "allowed-tools": "Read, Glob, Grep, Write, AskUserQuestion",
+        "argument-hint": "[system-name|path-to-data-file]",
+        "description": "Analyzes game balance data files, formulas, and configuration to identify outliers, broken progressions, degenerate strategies, and economy imbalances. Use after modifying any balance-related data or design. Use when user says 'balance report', 'check game balance', 'run a balance check'.",
+        "model": "sonnet",
+        "name": "balance-check",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "c71b847c183dcc28e86fa35b8371ef39da943d690c61c384c39dccd5e2bf1637",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "search the web",
+        "delegate work",
+        "ask structured questions"
+      ],
+      "name": "brainstorm",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/brainstorm/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep, Write, WebSearch, Task, AskUserQuestion",
+        "argument-hint": "[genre or theme hint, or 'open'] [--review full|lean|solo]",
+        "description": "Guided game concept ideation — from zero idea to a structured game concept document. Uses professional studio ideation techniques, player psychology frameworks, and structured creative exploration.",
+        "model": "sonnet",
+        "name": "brainstorm",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "86afd6c2de8ee83b82ff070a49d91cd66f3e800908491c536497d31c5fc14b35",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files"
+      ],
+      "name": "bug-report",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/bug-report/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep, Write",
+        "argument-hint": "[description] | analyze [path-to-file]",
+        "description": "Creates a structured bug report from a description, or analyzes code to identify potential bugs. Ensures every bug report has full reproduction steps, severity assessment, and context.",
+        "model": "sonnet",
+        "name": "bug-report",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "e35c2d9c43bcb5362fedb7111fa370c14240c20c5861726c0f9a9785400b5467",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files"
+      ],
+      "name": "bug-triage",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/bug-triage/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep, Write, Edit",
+        "argument-hint": "[sprint | full | trend]",
+        "description": "Read all open bugs in production/qa/bugs/, re-evaluate priority vs. severity, assign to sprints, surface systemic trends, and produce a triage report. Run at sprint start or when the bug count grows enough to need re-prioritization.",
+        "model": "sonnet",
+        "name": "bug-triage",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "e256181ae7763654a7394ebf46f7bc2b950c9812db0a2aeec255ad0e5aa0bcc4",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "run shell commands",
+        "modify files"
+      ],
+      "name": "changelog",
+      "quality_tier": "fast",
+      "reasoning_effort": "low",
+      "source": ".claude/skills/changelog/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep, Bash, Write",
+        "argument-hint": "[version|sprint-number]",
+        "context": "!git log --oneline -30 2>/dev/null\n!git tag --list --sort=-v:refname 2>/dev/null | head -5",
+        "description": "Auto-generates a changelog from git commits, sprint data, and design documents. Produces both internal and player-facing versions.",
+        "model": "haiku",
+        "name": "changelog",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "5664ce910f2ffc540fffbb8acb948ea01fbd35c88290e9388e9b879ac03f3c73",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "run shell commands",
+        "delegate work",
+        "ask structured questions"
+      ],
+      "name": "code-review",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/code-review/SKILL.md",
+      "source_metadata": {
+        "agent": "lead-programmer",
+        "allowed-tools": "Read, Glob, Grep, Bash, Task, AskUserQuestion",
+        "argument-hint": "[path-to-file-or-directory]",
+        "description": "Performs an architectural and quality code review on a specified file or set of files. Checks for coding standard compliance, architectural pattern adherence, SOLID principles, testability, and performance concerns.",
+        "model": "sonnet",
+        "name": "code-review",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "af11efa9d8e2aa921a23080cd112af23955325482267590bc460eafdb9a24bc9",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands",
+        "ask structured questions"
+      ],
+      "name": "consistency-check",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/consistency-check/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep, Write, Edit, Bash, AskUserQuestion",
+        "argument-hint": "[full | since-last-review | entity:<name> | item:<name>]",
+        "description": "Scan all GDDs against the entity registry to detect cross-document inconsistencies: same entity with different stats, same item with different values, same formula with different variables. Grep-first approach — reads registry then targets only conflicting GDD sections rather than full document reads.",
+        "model": "sonnet",
+        "name": "consistency-check",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "b7452fc59f7b4ddb3b367e79500bf498066c629470c7700ff4f8508a10422628",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files"
+      ],
+      "name": "content-audit",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/content-audit/SKILL.md",
+      "source_metadata": {
+        "agent": "producer",
+        "allowed-tools": "Read, Glob, Grep, Write",
+        "argument-hint": "[system-name | --summary | (no arg = full audit)]",
+        "description": "Audit GDD-specified content counts against implemented content. Identifies what's planned vs built.",
+        "model": "sonnet",
+        "name": "content-audit",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "3550a85f910808478c000868861ed3a407e38234e2e475640c8ddfb4b915d0dc",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands",
+        "ask structured questions",
+        "delegate work"
+      ],
+      "name": "create-architecture",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/create-architecture/SKILL.md",
+      "source_metadata": {
+        "agent": "technical-director",
+        "allowed-tools": "Read, Glob, Grep, Write, Bash, AskUserQuestion, Task",
+        "argument-hint": "[focus-area: full | layers | data-flow | api-boundaries | adr-audit] [--review full|lean|solo]",
+        "description": "Guided, section-by-section authoring of the master architecture document for the game. Reads all GDDs, the systems index, existing ADRs, and the engine reference library to produce a complete architecture blueprint before any code is written. Engine-version-aware: flags knowledge gaps and validates decisions against the pinned engine version.",
+        "model": "sonnet",
+        "name": "create-architecture",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "bbc31b58d3ff8d3bcbcf00bfe9ed295078545e59e083af79612b5c6262a8ada0",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "delegate work"
+      ],
+      "name": "create-control-manifest",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/create-control-manifest/SKILL.md",
+      "source_metadata": {
+        "agent": "technical-director",
+        "allowed-tools": "Read, Glob, Grep, Write, Task",
+        "argument-hint": "[update — regenerate from current ADRs]",
+        "description": "After architecture is complete, produces a flat actionable rules sheet for programmers — what you must do, what you must never do, per system and per layer. Extracted from all Accepted ADRs, technical preferences, and engine reference docs. More immediately actionable than ADRs (which explain why).",
+        "model": "sonnet",
+        "name": "create-control-manifest",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "afb871c0cd002e82aae87bb7843ace9daa0db1884fc6e5f3191a393e313f2a10",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "delegate work",
+        "ask structured questions"
+      ],
+      "name": "create-epics",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/create-epics/SKILL.md",
+      "source_metadata": {
+        "agent": "technical-director",
+        "allowed-tools": "Read, Glob, Grep, Write, Task, AskUserQuestion",
+        "argument-hint": "[system-name | layer: foundation|core|feature|presentation | all] [--review full|lean|solo]",
+        "description": "Translate approved GDDs + architecture into epics — one epic per architectural module. Defines scope, governing ADRs, engine risk, and untraced requirements. Does NOT break into stories — run /create-stories [epic-slug] after each epic is created.",
+        "model": "sonnet",
+        "name": "create-epics",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "d45c1d961d9c50f68330d88d69349d664fb72796cf8dedc381dde977333d84b0",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "delegate work",
+        "ask structured questions"
+      ],
+      "name": "create-stories",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/create-stories/SKILL.md",
+      "source_metadata": {
+        "agent": "lead-programmer",
+        "allowed-tools": "Read, Glob, Grep, Write, Task, AskUserQuestion",
+        "argument-hint": "[epic-slug | epic-path] [--review full|lean|solo]",
+        "description": "Break a single epic into implementable story files. Reads the epic, its GDD, governing ADRs, and control manifest. Each story embeds its GDD requirement TR-ID, ADR guidance, acceptance criteria, story type, and test evidence path. Run after /create-epics for each epic.",
+        "model": "sonnet",
+        "name": "create-stories",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "e526349c39be73a04e31355a913fc130eef917d1a23e6ead3dd0e7cde69d9883",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands",
+        "delegate work",
+        "ask structured questions"
+      ],
+      "name": "day-one-patch",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/day-one-patch/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep, Write, Edit, Bash, Task, AskUserQuestion",
+        "argument-hint": "[scope: known-bugs | cert-feedback | all]",
+        "description": "Prepare a day-one patch for a game launch. Scopes, prioritises, implements, and QA-gates a focused patch addressing known issues discovered after gold master but before or immediately after public launch. Treats the patch as a mini-sprint with its own QA gate and rollback plan.",
+        "model": "sonnet",
+        "name": "day-one-patch",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "f3794d5c39298d03b6a956a82dc28a0f15bc35bf0ded9aeca5852d6b61c99ef0",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "delegate work",
+        "ask structured questions"
+      ],
+      "name": "design-review",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/design-review/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep, Write, Edit, Task, AskUserQuestion",
+        "argument-hint": "[path-to-design-doc] [--depth full|lean|solo]",
+        "description": "Reviews a game design document for completeness, internal consistency, implementability, and adherence to project design standards. Run this before handing a design document to programmers.",
+        "model": "sonnet",
+        "name": "design-review",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "b83952d4dd5abe33f2b064fddd68cb267b92ffdc917d2ffc72db41e472dac1a8",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "delegate work",
+        "ask structured questions",
+        "track plans"
+      ],
+      "name": "design-system",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/design-system/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep, Write, Edit, Task, AskUserQuestion, TodoWrite",
+        "argument-hint": "<system-name> [--review full|lean|solo]",
+        "description": "Guided, section-by-section GDD authoring for a single game system. Gathers context from existing docs, walks through each required section collaboratively, cross-references dependencies, and writes incrementally to file.",
+        "model": "sonnet",
+        "name": "design-system",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "c0195a3f94e492d18dd2f759bcb3459ef00e26e6c6e98847b287029ccdfcbfb1",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands",
+        "delegate work",
+        "ask structured questions"
+      ],
+      "name": "dev-story",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/dev-story/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep, Write, Bash, Task, AskUserQuestion",
+        "argument-hint": "[story-path]",
+        "description": "Read a story file and implement it. Loads the full context (story, GDD requirement, ADR guidelines, control manifest), routes to the right programmer agent for the system and engine, implements the code and test, and confirms each acceptance criterion. The core implementation skill — run after /story-readiness, before /code-review and /story-done.",
+        "model": "sonnet",
+        "name": "dev-story",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "35d0baf7b53c2f8eb90e8f6e1d578feb77bedb0b6b40f5c4d89bdd498db7cde1",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text"
+      ],
+      "name": "estimate",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/estimate/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep",
+        "argument-hint": "[task-description]",
+        "description": "Estimates task effort by analyzing complexity, dependencies, historical velocity, and risk factors. Produces a structured estimate with confidence levels.",
+        "model": "sonnet",
+        "name": "estimate",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "2820896a14a2a54a205354d39abebf197a5bdd08f720465dcde29807fd5ed5f7",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "run shell commands",
+        "modify files",
+        "delegate work",
+        "ask structured questions"
+      ],
+      "name": "gate-check",
+      "quality_tier": "high",
+      "reasoning_effort": "high",
+      "source": ".claude/skills/gate-check/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep, Bash, Write, Task, AskUserQuestion",
+        "argument-hint": "[target-phase: systems-design | technical-setup | pre-production | production | polish | release] [--review full|lean|solo]",
+        "description": "Validate readiness to advance between development phases. Produces a PASS/CONCERNS/FAIL verdict with specific blockers and required artifacts. Use when user says 'are we ready to move to X', 'can we advance to production', 'check if we can start the next phase', 'pass the gate'.",
+        "model": "opus",
+        "name": "gate-check",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "6d20240edd505fd6d694dd9f1e7f5661540110bef14c71af8340263007f30dbb",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text"
+      ],
+      "name": "help",
+      "quality_tier": "fast",
+      "reasoning_effort": "low",
+      "source": ".claude/skills/help/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep",
+        "argument-hint": "[optional: what you just finished, e.g. 'finished design-review' or 'stuck on ADRs']",
+        "context": "!echo \"=== Live Project State ===\" && echo \"Stage: $(cat production/stage.txt 2>/dev/null | tr -d '[:space:]' || echo 'not set')\" && echo \"Latest sprint: $(ls -t production/sprints/*.md 2>/dev/null | head -1 || echo 'none')\" && echo \"Session state: $(head -5 production/session-state/active.md 2>/dev/null || echo 'none')\"",
+        "description": "Analyzes what is done and the users query and offers advice on what to do next. Use if user says what should I do next or what do I do now or I'm stuck or I don't know what to do",
+        "model": "haiku",
+        "name": "help",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "4a63a93cd00ed03d6c6b45e7c5d6521cc95d4e1fc4ac2f8989226b9125107e8d",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands",
+        "delegate work",
+        "ask structured questions"
+      ],
+      "name": "hotfix",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/hotfix/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep, Write, Edit, Bash, Task, AskUserQuestion",
+        "argument-hint": "[bug-id or description]",
+        "description": "Emergency fix workflow that bypasses normal sprint processes with a full audit trail. Creates hotfix branch, tracks approvals, and ensures the fix is backported correctly.",
+        "model": "sonnet",
+        "name": "hotfix",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "4dd8b12c5551fcc937fedeb918d72b46b844eeef4045745639edd51118f6821b",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files"
+      ],
+      "name": "launch-checklist",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/launch-checklist/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep, Write",
+        "argument-hint": "[launch-date or 'dry-run']",
+        "description": "Complete launch readiness validation covering every department: code, content, store, marketing, community, infrastructure, legal, and go/no-go sign-offs.",
+        "model": "sonnet",
+        "name": "launch-checklist",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "b9fa9b944d4e11b1b743439d262403de0dfd28a068fd26dd6536a3cd67e87b7c",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands",
+        "delegate work",
+        "ask structured questions"
+      ],
+      "name": "localize",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/localize/SKILL.md",
+      "source_metadata": {
+        "agent": "localization-lead",
+        "allowed-tools": "Read, Glob, Grep, Write, Bash, Task, AskUserQuestion",
+        "argument-hint": "[scan|extract|validate|status|brief|cultural-review|vo-pipeline|rtl-check|freeze|qa]",
+        "description": "Full localization pipeline: scan for hardcoded strings, extract and manage string tables, validate translations, generate translator briefings, run cultural/sensitivity review, manage VO localization, test RTL/platform requirements, enforce string freeze, and report coverage.",
+        "model": "sonnet",
+        "name": "localize",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "724fe0de40ddf2e4fb4455ac595e5d496c22ff1ca8e32a183005ec032a7964ab",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "ask structured questions",
+        "track plans",
+        "delegate work"
+      ],
+      "name": "map-systems",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/map-systems/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep, Write, Edit, AskUserQuestion, TodoWrite, Task",
+        "argument-hint": "[next | system-name] [--review full|lean|solo]",
+        "description": "Decompose a game concept into individual systems, map dependencies, prioritize design order, and create the systems index.",
+        "model": "sonnet",
+        "name": "map-systems",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "f5267b27a61011fe1105b589a65fadf81e660dfbbe3dca1418eaab767ce1e681",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "delegate work",
+        "ask structured questions"
+      ],
+      "name": "milestone-review",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/milestone-review/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep, Write, Task, AskUserQuestion",
+        "argument-hint": "[milestone-name|current] [--review full|lean|solo]",
+        "description": "Generates a comprehensive milestone progress review including feature completeness, quality metrics, risk assessment, and go/no-go recommendation. Use at milestone checkpoints or when evaluating readiness for a milestone deadline.",
+        "model": "sonnet",
+        "name": "milestone-review",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "25765960e12c08677f81cd4c667a38aee9059e67c055dd87f2df7ab27f9e89f9",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files"
+      ],
+      "name": "onboard",
+      "quality_tier": "fast",
+      "reasoning_effort": "low",
+      "source": ".claude/skills/onboard/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep, Write",
+        "argument-hint": "[role|area]",
+        "description": "Generates a contextual onboarding document for a new contributor or agent joining the project. Summarizes project state, architecture, conventions, and current priorities relevant to the specified role or area.",
+        "model": "haiku",
+        "name": "onboard",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "492814f01050e97517ac077b76a9fef17cd4db2a2cbccd1a32cfac2b9015c221",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands"
+      ],
+      "name": "patch-notes",
+      "quality_tier": "fast",
+      "reasoning_effort": "low",
+      "source": ".claude/skills/patch-notes/SKILL.md",
+      "source_metadata": {
+        "agent": "community-manager",
+        "allowed-tools": "Read, Glob, Grep, Write, Bash",
+        "argument-hint": "[version] [--style brief|detailed|full]",
+        "description": "Generate player-facing patch notes from git history, sprint data, and internal changelogs. Translates developer language into clear, engaging player communication.",
+        "model": "haiku",
+        "name": "patch-notes",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "843804e87669f0bdc738581a3f37e9d2fb4b1f1154a8d9f0c2d855a1c2c96dc1",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "run shell commands"
+      ],
+      "name": "perf-profile",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/perf-profile/SKILL.md",
+      "source_metadata": {
+        "agent": "performance-analyst",
+        "allowed-tools": "Read, Glob, Grep, Bash",
+        "argument-hint": "[system-name or 'full']",
+        "description": "Structured performance profiling workflow. Identifies bottlenecks, measures against budgets, and generates optimization recommendations with priority rankings.",
+        "model": "sonnet",
+        "name": "perf-profile",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "ebd9a25ed0755ee78010f128a9ac9c6f1371674fc37e05ecf4d58eb9f30ba890",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "delegate work",
+        "ask structured questions"
+      ],
+      "name": "playtest-report",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/playtest-report/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep, Write, Task, AskUserQuestion",
+        "argument-hint": "[new|analyze path-to-notes] [--review full|lean|solo]",
+        "description": "Generates a structured playtest report template or analyzes existing playtest notes into a structured format. Use this to standardize playtest feedback collection and analysis.",
+        "model": "sonnet",
+        "name": "playtest-report",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "edd2a89a41a76608f683ae6a45680cc9d4502a4e1b00343e50888cab377818a6",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "run shell commands",
+        "modify files"
+      ],
+      "name": "project-stage-detect",
+      "quality_tier": "fast",
+      "reasoning_effort": "low",
+      "source": ".claude/skills/project-stage-detect/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep, Bash, Write",
+        "argument-hint": "[optional: role filter like 'programmer' or 'designer']",
+        "description": "Automatically analyze project state, detect stage, identify gaps, and recommend next steps based on existing artifacts. Use when user asks 'where are we in development', 'what stage are we in', 'full project audit'.",
+        "model": "haiku",
+        "name": "project-stage-detect",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "7fe2e9adb00ead16c36a04560d7c509679d24dcbc2bd92507c84bad28bcdf798",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands",
+        "delegate work"
+      ],
+      "name": "propagate-design-change",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/propagate-design-change/SKILL.md",
+      "source_metadata": {
+        "agent": "technical-director",
+        "allowed-tools": "Read, Glob, Grep, Write, Bash, Task",
+        "argument-hint": "[path/to/changed-gdd.md]",
+        "description": "When a GDD is revised, scans all ADRs and the traceability index to identify which architectural decisions are now potentially stale. Produces a change impact report and guides the user through resolution.",
+        "model": "sonnet",
+        "name": "propagate-design-change",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "398aecd2aa8c2314095d27bb3d50cc7ab45cbb669f62b7f0b1fc482708f389d7",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands",
+        "delegate work",
+        "ask structured questions"
+      ],
+      "name": "prototype",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/prototype/SKILL.md",
+      "source_metadata": {
+        "agent": "prototyper",
+        "allowed-tools": "Read, Glob, Grep, Write, Edit, Bash, Task, AskUserQuestion",
+        "argument-hint": "[concept-description] [--path html|engine|paper] [--review full|lean|solo] [--spike]",
+        "description": "Concept prototype — validate the core idea is worth designing before writing GDDs. Run right after /brainstorm and /setup-engine. Routes to HTML, Engine, or Paper path based on game type. Produces a throwaway build and a PROCEED/PIVOT/KILL verdict.",
+        "isolation": "worktree",
+        "model": "sonnet",
+        "name": "prototype",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "d274adb0b272deafe196f0c0783ea3d63d991c18aac93d190de6750d15a4e5d1",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "ask structured questions"
+      ],
+      "name": "qa-plan",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/qa-plan/SKILL.md",
+      "source_metadata": {
+        "agent": "qa-lead",
+        "allowed-tools": "Read, Glob, Grep, Write, AskUserQuestion",
+        "argument-hint": "[sprint | feature: system-name | story: path]",
+        "description": "Generate a QA test plan for a sprint or feature. Reads GDDs and story files, classifies stories by test type (Logic/Integration/Visual/UI), and produces a structured test plan covering automated tests required, manual test cases, smoke test scope, and playtest sign-off requirements. Run before sprint begins or when starting a major feature.",
+        "model": "sonnet",
+        "name": "qa-plan",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "824d2d4d9247e032e1572bdd2de6ccc9f44e30e6d0862719f273f3422d0648c0",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "ask structured questions"
+      ],
+      "name": "quick-design",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/quick-design/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep, Write, Edit, AskUserQuestion",
+        "argument-hint": "[brief description of the change]",
+        "description": "Lightweight design spec for small changes — tuning adjustments, minor mechanics, balance tweaks. Skips full GDD authoring when a system GDD already exists or the change is too small to warrant one. Produces a Quick Design Spec that embeds directly into story files.",
+        "model": "sonnet",
+        "name": "quick-design",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "b647e6433e31b50cce48d12b52f400752a2660ac46dbd0ec8de2a73a43309979",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "ask structured questions"
+      ],
+      "name": "regression-suite",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/regression-suite/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep, Write, Edit, AskUserQuestion",
+        "argument-hint": "[update | audit | report]",
+        "description": "Map test coverage to GDD critical paths, identify fixed bugs without regression tests, flag coverage drift from new features, and maintain tests/regression-suite.md. Run after implementing a bug fix or before a release gate.",
+        "model": "sonnet",
+        "name": "regression-suite",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "697f152ca48582590bc6b1c74fc25a63161a852991ece2b537b735739524aa53",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files"
+      ],
+      "name": "release-checklist",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/release-checklist/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep, Write",
+        "argument-hint": "[platform: pc|console|mobile|all]",
+        "description": "Generates a comprehensive pre-release validation checklist covering build verification, certification requirements, store metadata, and launch readiness.",
+        "model": "sonnet",
+        "name": "release-checklist",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "deaa1939af896946c9899119a15c9d561b7eef3eb2dbcc5d4238b32cc004046c",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands",
+        "ask structured questions"
+      ],
+      "name": "retrospective",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/retrospective/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep, Write, Bash, AskUserQuestion",
+        "argument-hint": "[sprint-N|milestone-name]",
+        "description": "Generates a sprint or milestone retrospective by analyzing completed work, velocity, blockers, and patterns. Produces actionable insights for the next iteration.",
+        "model": "sonnet",
+        "name": "retrospective",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "5b9b78d924eeb7ca1e0e8a67f36c792ad71fbc74850648e5c2afe3f568e58be2",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands"
+      ],
+      "name": "reverse-document",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/reverse-document/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep, Write, Edit, Bash",
+        "argument-hint": "<type> <path> (e.g., 'design src/gameplay/combat' or 'architecture src/core')",
+        "description": "Generate design or architecture documents from existing implementation. Works backwards from code/prototypes to create missing planning docs.",
+        "model": "sonnet",
+        "name": "reverse-document",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "41af97e4c8b76522ef83323223a2f9e4d4a3fd68170c7d22528a272db3c7cd24",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands",
+        "ask structured questions",
+        "delegate work"
+      ],
+      "name": "review-all-gdds",
+      "quality_tier": "high",
+      "reasoning_effort": "high",
+      "source": ".claude/skills/review-all-gdds/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep, Write, Bash, AskUserQuestion, Task",
+        "argument-hint": "[focus: full | consistency | design-theory | since-last-review]",
+        "description": "Holistic cross-GDD consistency and game design review. Reads all system GDDs simultaneously and checks for contradictions between them, stale references, ownership conflicts, formula incompatibilities, and game design theory violations (dominant strategies, economic imbalance, cognitive overload, pillar drift). Run after all MVP GDDs are written, before architecture begins.",
+        "model": "opus",
+        "name": "review-all-gdds",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "162ba75c5f74a1dfc1f356f6a8b6e10c8b1ca4c029365d2521262eb8ab66288f",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "run shell commands"
+      ],
+      "name": "scope-check",
+      "quality_tier": "fast",
+      "reasoning_effort": "low",
+      "source": ".claude/skills/scope-check/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep, Bash",
+        "argument-hint": "[feature-name or sprint-N]",
+        "description": "Analyze a feature or sprint for scope creep by comparing current scope against the original plan. Flags additions, quantifies bloat, and recommends cuts. Use when user says 'any scope creep', 'scope review', 'are we staying in scope'.",
+        "model": "haiku",
+        "name": "scope-check",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "eab7b5f33344c772afbc71b75fa6cd4b15bca0dab3bd423e733b9cc9d88d7f02",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "run shell commands",
+        "modify files",
+        "delegate work"
+      ],
+      "name": "security-audit",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/security-audit/SKILL.md",
+      "source_metadata": {
+        "agent": "security-engineer",
+        "allowed-tools": "Read, Glob, Grep, Bash, Write, Task",
+        "argument-hint": "[full | network | save | input | quick]",
+        "description": "Audit the game for security vulnerabilities: save tampering, cheat vectors, network exploits, data exposure, and input validation gaps. Produces a prioritised security report with remediation guidance. Run before any public release or multiplayer launch.",
+        "model": "sonnet",
+        "name": "security-audit",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "a7384d122ff6a944d9af0bd18e3d905903b5e210e9ab5457e8cca99ecf64b98c",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "search the web",
+        "read web pages",
+        "delegate work",
+        "ask structured questions"
+      ],
+      "name": "setup-engine",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/setup-engine/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep, Write, Edit, WebSearch, WebFetch, Task, AskUserQuestion",
+        "argument-hint": "[engine] | [engine version] | refresh | upgrade [old-version] [new-version] | no args for guided selection",
+        "description": "Configure the project's game engine and version. Pins the engine in CLAUDE.md, detects knowledge gaps, and populates engine reference docs via WebSearch when the version is beyond the LLM's training data.",
+        "model": "sonnet",
+        "name": "setup-engine",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "5ade3edf20e061e9ab5bf1c1b3d0f74968c41dfddc6a020835f204a9428cc640",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands"
+      ],
+      "name": "skill-improve",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/skill-improve/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep, Write, Bash",
+        "argument-hint": "[skill-name]",
+        "description": "Improve a skill using a test-fix-retest loop. Runs static checks, proposes targeted fixes, rewrites the skill, re-tests, and keeps or reverts based on score change.",
+        "model": "sonnet",
+        "name": "skill-improve",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "d0e25a5835be972d196d33f4cd5e7c73f31396200d00325fa0ea399aaa11d8f9",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files"
+      ],
+      "name": "skill-test",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/skill-test/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep, Write",
+        "argument-hint": "static [skill-name | all] | spec [skill-name] | category [skill-name | all] | audit",
+        "description": "Validate skill files for structural compliance and behavioral correctness. Three modes: static (linter), spec (behavioral), audit (coverage report).",
+        "model": "sonnet",
+        "name": "skill-test",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "c4c8efe11193935ab08ace9f905c4ee4bfb4d544f311ecd299e8b4365667af64",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "run shell commands",
+        "modify files",
+        "ask structured questions"
+      ],
+      "name": "smoke-check",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/smoke-check/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep, Bash, Write, AskUserQuestion",
+        "argument-hint": "[sprint | quick | --platform pc|console|mobile|all]",
+        "description": "Run the critical path smoke test gate before QA hand-off. Executes the automated test suite, verifies core functionality, and produces a PASS/FAIL report. Run after a sprint's stories are implemented and before manual QA begins. A failed smoke check means the build is not ready for QA.",
+        "model": "sonnet",
+        "name": "smoke-check",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "208f9b33531a832f0fbea3abec0a8b02f51c266fe597db61ae2d4c805720ee7f",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files"
+      ],
+      "name": "soak-test",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/soak-test/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep, Write",
+        "argument-hint": "[duration: 30m | 1h | 2h | 4h] [focus: memory | stability | balance | all]",
+        "description": "Generate a soak test protocol for extended play sessions. Defines what to observe, measure, and log during long play sessions to surface slow leaks, fatigue effects, and edge cases that only appear after sustained play. Primarily used in Polish and Release phases.",
+        "model": "sonnet",
+        "name": "soak-test",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "c50c3379f28142f10bd156541887876251e6a5ec881c5680dd1522377b94c0ee",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "delegate work",
+        "ask structured questions"
+      ],
+      "name": "sprint-plan",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/sprint-plan/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep, Write, Edit, Task, AskUserQuestion",
+        "argument-hint": "[new|update|status] [--review full|lean|solo]",
+        "context": "!ls production/sprints/ 2>/dev/null",
+        "description": "Generates a new sprint plan or updates an existing one based on the current milestone, completed work, and available capacity. Pulls context from production documents and design backlogs.",
+        "model": "sonnet",
+        "name": "sprint-plan",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "7b5ee48e3cfea55132d5cd63da454d14efd7e76346bb20b738fe47cab2f21427",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text"
+      ],
+      "name": "sprint-status",
+      "quality_tier": "fast",
+      "reasoning_effort": "low",
+      "source": ".claude/skills/sprint-status/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep",
+        "argument-hint": "[sprint-number or blank for current]",
+        "description": "Fast sprint status check. Reads the current sprint plan, scans story files for status, and produces a concise progress snapshot with burndown assessment and emerging risks. Run at any time during a sprint for quick situational awareness. Use when user asks 'how is the sprint going', 'sprint update', 'show sprint progress'.",
+        "model": "haiku",
+        "name": "sprint-status",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "b52067e07e09a766c44b26ab48db91cc83d72f698f13e8df8a993bb539e8b82f",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "ask structured questions"
+      ],
+      "name": "start",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/start/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep, Write, AskUserQuestion",
+        "argument-hint": "[no arguments]",
+        "description": "First-time onboarding — asks where you are, then guides you to the right workflow. No assumptions.",
+        "model": "sonnet",
+        "name": "start",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "54466fe8eb70befe9e7b80130d57a18c95e7dcf77d3974ae40f202f86e8d502f",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "run shell commands",
+        "modify files",
+        "ask structured questions",
+        "delegate work"
+      ],
+      "name": "story-done",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/story-done/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep, Bash, Write, Edit, AskUserQuestion, Task",
+        "argument-hint": "[story-file-path] [--review full|lean|solo]",
+        "description": "End-of-story completion review. Reads the story file, verifies each acceptance criterion against the implementation, checks for GDD/ADR deviations, prompts code review, updates story status to Complete, and surfaces the next ready story from the sprint.",
+        "model": "sonnet",
+        "name": "story-done",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "997c9481b239777671ea93ec1723425f90f1c218b75a9d5f763327a1a6e595da",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "ask structured questions",
+        "delegate work"
+      ],
+      "name": "story-readiness",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/story-readiness/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep, AskUserQuestion, Task",
+        "argument-hint": "[story-file-path or 'all' or 'sprint']",
+        "description": "Validate that a story file is implementation-ready. Checks for embedded GDD requirements, ADR references, engine notes, clear acceptance criteria, and no open design questions. Produces READY / NEEDS WORK / BLOCKED verdict with specific gaps. Use when user says 'is this story ready', 'can I start on this story', 'is story X ready to implement'.",
+        "model": "sonnet",
+        "name": "story-readiness",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "428b8faca7484f850feffceb7b721633b264c13b08e2fc4df9c3570fc7f302de",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands",
+        "delegate work",
+        "ask structured questions",
+        "track plans"
+      ],
+      "name": "team-audio",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/team-audio/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep, Write, Edit, Bash, Task, AskUserQuestion, TodoWrite",
+        "argument-hint": "[feature or area to design audio for] [--review full|lean|solo]",
+        "description": "Orchestrate audio team: audio-director + sound-designer + technical-artist + gameplay-programmer for full audio pipeline from direction to implementation.",
+        "model": "sonnet",
+        "name": "team-audio",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "2635802aa4eaf51e11810baaaf42006bfcae51b542e7cfb9e1bd2a10fe847ddb",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands",
+        "delegate work",
+        "ask structured questions",
+        "track plans"
+      ],
+      "name": "team-combat",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/team-combat/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep, Write, Edit, Bash, Task, AskUserQuestion, TodoWrite",
+        "argument-hint": "[combat feature description] [--review full|lean|solo]",
+        "description": "Orchestrate the combat team: coordinates game-designer, gameplay-programmer, ai-programmer, technical-artist, sound-designer, and qa-tester to design, implement, and validate a combat feature end-to-end.",
+        "model": "sonnet",
+        "name": "team-combat",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "1f2c9049725db2ffe11e7dfc14ff6e3d5503a513c0dd50e2d80dd15a792f8b67",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands",
+        "delegate work",
+        "ask structured questions",
+        "track plans"
+      ],
+      "name": "team-level",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/team-level/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep, Write, Edit, Bash, Task, AskUserQuestion, TodoWrite",
+        "argument-hint": "[level name or area to design] [--review full|lean|solo]",
+        "description": "Orchestrate level design team: level-designer + narrative-director + world-builder + art-director + systems-designer + qa-tester for complete area/level creation.",
+        "model": "sonnet",
+        "name": "team-level",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "6bae97dcf67f2a8182e3152a12a280c179bda3a4d5c796ddc6e350d3e24d10fc",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands",
+        "delegate work",
+        "ask structured questions",
+        "track plans"
+      ],
+      "name": "team-live-ops",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/team-live-ops/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep, Write, Edit, Bash, Task, AskUserQuestion, TodoWrite",
+        "argument-hint": "[season name or event description] [--review full|lean|solo]",
+        "description": "Orchestrate the live-ops team for post-launch content planning: coordinates live-ops-designer, economy-designer, analytics-engineer, community-manager, writer, and narrative-director to design and plan a season, event, or live content update.",
+        "model": "sonnet",
+        "name": "team-live-ops",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "13d6153ecd0752bfa458473ca52dd55dbff8bd33d7a27d7c6053a5f34231f99b",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "delegate work",
+        "ask structured questions",
+        "track plans"
+      ],
+      "name": "team-narrative",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/team-narrative/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep, Write, Edit, Task, AskUserQuestion, TodoWrite",
+        "argument-hint": "[narrative content description] [--review full|lean|solo]",
+        "description": "Orchestrate the narrative team: coordinates narrative-director, writer, world-builder, and level-designer to create cohesive story content, world lore, and narrative-driven level design.",
+        "model": "sonnet",
+        "name": "team-narrative",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "b893c6ff1fbd4c854ccb7eb423b0e4ac7bd0cd451d9a42517556e800d39124e7",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands",
+        "delegate work",
+        "ask structured questions",
+        "track plans"
+      ],
+      "name": "team-polish",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/team-polish/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep, Write, Edit, Bash, Task, AskUserQuestion, TodoWrite",
+        "argument-hint": "[feature or area to polish] [--review full|lean|solo]",
+        "description": "Orchestrate the polish team: coordinates performance-analyst, technical-artist, sound-designer, and qa-tester to optimize, polish, and harden a feature or area for release quality.",
+        "model": "sonnet",
+        "name": "team-polish",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "0cce35dd11217f28da1d2de4f8908062091ac415499abdc9a0db65ff7c0406ac",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "delegate work",
+        "ask structured questions"
+      ],
+      "name": "team-qa",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/team-qa/SKILL.md",
+      "source_metadata": {
+        "agent": "qa-lead",
+        "allowed-tools": "Read, Glob, Grep, Write, Task, AskUserQuestion",
+        "argument-hint": "[sprint | feature: system-name] [--review full|lean|solo]",
+        "description": "Orchestrate the QA team through a full testing cycle. Coordinates qa-lead (strategy + test plan) and qa-tester (test case writing + bug reporting) to produce a complete QA package for a sprint or feature. Covers: test plan generation, test case writing, smoke check gate, manual QA execution, and sign-off report.",
+        "model": "sonnet",
+        "name": "team-qa",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "dadc90e8851c0fc685e9e7fdf5d61f211c745e17d3ceef9bdc2ddba5d50a72e8",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands",
+        "delegate work",
+        "ask structured questions",
+        "track plans"
+      ],
+      "name": "team-release",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/team-release/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep, Write, Edit, Bash, Task, AskUserQuestion, TodoWrite",
+        "argument-hint": "[version number or 'next'] [--review full|lean|solo]",
+        "description": "Orchestrate the release team: coordinates release-manager, qa-lead, devops-engineer, and producer to execute a release from candidate to deployment.",
+        "model": "sonnet",
+        "name": "team-release",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "93bb1dda7ab2b47bff9aac1a73218494818802ad9ec601f1c4676da0b2ad51dd",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands",
+        "delegate work",
+        "ask structured questions",
+        "track plans"
+      ],
+      "name": "team-ui",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/team-ui/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep, Write, Edit, Bash, Task, AskUserQuestion, TodoWrite",
+        "argument-hint": "[UI feature description] [--review full|lean|solo]",
+        "description": "Orchestrate the UI team through the full UX pipeline: from UX spec authoring through visual design, implementation, review, and polish. Integrates with /ux-design, /ux-review, and studio UX templates.",
+        "model": "sonnet",
+        "name": "team-ui",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "fcede527af1676e898e87149909cd47eb0bd883af9bb42d5065d0be3038ae512",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "ask structured questions"
+      ],
+      "name": "tech-debt",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/tech-debt/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep, Write, AskUserQuestion",
+        "argument-hint": "[scan|add|prioritize|report]",
+        "description": "Track, categorize, and prioritize technical debt across the codebase. Scans for debt indicators, maintains a debt register, and recommends repayment scheduling.",
+        "model": "sonnet",
+        "name": "tech-debt",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "4c9db2c11d1fbda31f815cb920dc8a8bf167c32fec52e81274d3f3db544cf24b",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files"
+      ],
+      "name": "test-evidence-review",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/test-evidence-review/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep, Write",
+        "argument-hint": "[story-path | sprint | system-name]",
+        "description": "Quality review of test files and manual evidence documents. Goes beyond existence checks — evaluates assertion coverage, edge case handling, naming conventions, and evidence completeness. Produces ADEQUATE/INCOMPLETE/MISSING verdict per story. Run before QA sign-off or on demand.",
+        "model": "sonnet",
+        "name": "test-evidence-review",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "b906520ed047cdc0ac76e0de0b4f49b231fb73478867f9f9493cf2fee673c246",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands"
+      ],
+      "name": "test-flakiness",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/test-flakiness/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep, Write, Edit, Bash",
+        "argument-hint": "[ci-log-path | scan | registry]",
+        "description": "Detect non-deterministic (flaky) tests by reading CI run logs or test result history. Aggregates pass rates per test, identifies intermittent failures, recommends quarantine or fix, and maintains a flaky test registry. Best run during Polish phase or after multiple CI runs.",
+        "model": "sonnet",
+        "name": "test-flakiness",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "ce3ff89a8b2212fa26c7e28267996dab326137fb68d1aafc15e50e5be694bc4a",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files"
+      ],
+      "name": "test-helpers",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/test-helpers/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep, Write",
+        "argument-hint": "[system-name | all | scaffold]",
+        "description": "Generate engine-specific test helper libraries for the project's test suite. Reads existing test patterns and produces tests/helpers/ with assertion utilities, factory functions, and mock objects tailored to the project's systems. Reduces boilerplate in new test files.",
+        "model": "sonnet",
+        "name": "test-helpers",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "b64242b4bd22e1d1a0dbf510512e0810c257a48029ec29e88a3f722670eaf030",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "run shell commands",
+        "modify files"
+      ],
+      "name": "test-setup",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/test-setup/SKILL.md",
+      "source_metadata": {
+        "allowed-tools": "Read, Glob, Grep, Bash, Write",
+        "argument-hint": "[force]",
+        "description": "Scaffold the test framework and CI/CD pipeline for the project's engine. Creates the tests/ directory structure, engine-specific test runner configuration, and GitHub Actions workflow. Run once during Technical Setup phase before the first sprint begins.",
+        "model": "sonnet",
+        "name": "test-setup",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "d2176cfd3ce63c914b43be26f6404fcc0431289c952fced9186985f7666c696e",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "ask structured questions",
+        "delegate work"
+      ],
+      "name": "ux-design",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/ux-design/SKILL.md",
+      "source_metadata": {
+        "agent": "ux-designer",
+        "allowed-tools": "Read, Glob, Grep, Write, Edit, AskUserQuestion, Task",
+        "argument-hint": "[screen/flow name] or 'hud' or 'patterns'",
+        "description": "Guided, section-by-section UX spec authoring for a screen, flow, or HUD. Reads game concept, player journey, and relevant GDDs to provide context-aware design guidance. Produces ux-spec.md (per screen/flow) or hud-design.md using the studio templates.",
+        "model": "sonnet",
+        "name": "ux-design",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "0beddd4a00398f6e13c9bbfabe164a32a4abec914482007fe106d7a5b80f1809",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text"
+      ],
+      "name": "ux-review",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/ux-review/SKILL.md",
+      "source_metadata": {
+        "agent": "ux-designer",
+        "allowed-tools": "Read, Glob, Grep",
+        "argument-hint": "[file-path or 'all' or 'hud' or 'patterns']",
+        "description": "Validates a UX spec, HUD design, or interaction pattern library for completeness, accessibility compliance, GDD alignment, and implementation readiness. Produces APPROVED / NEEDS REVISION / MAJOR REVISION NEEDED verdict with specific gaps.",
+        "model": "sonnet",
+        "name": "ux-review",
+        "user-invocable": true
+      }
+    },
+    {
+      "body_sha256": "af6255c3ce4c1c7305b8d26f344b201b8904814ca86215b60ae09acc19a3d721",
+      "capabilities": [
+        "read files",
+        "discover files",
+        "search text",
+        "modify files",
+        "run shell commands",
+        "delegate work",
+        "ask structured questions"
+      ],
+      "name": "vertical-slice",
+      "quality_tier": "balanced",
+      "reasoning_effort": "medium",
+      "source": ".claude/skills/vertical-slice/SKILL.md",
+      "source_metadata": {
+        "agent": "prototyper",
+        "allowed-tools": "Read, Glob, Grep, Write, Edit, Bash, Task, AskUserQuestion",
+        "argument-hint": "[--review full|lean|solo]",
+        "description": "Pre-Production validation — build a production-quality end-to-end build to confirm the full game loop is achievable before committing to Production. Run after GDDs, architecture, and UX specs are complete. Produces a PROCEED/PIVOT/KILL verdict that gates the Pre-Production → Production transition.",
+        "isolation": "worktree",
+        "model": "sonnet",
+        "name": "vertical-slice",
+        "user-invocable": true
+      }
+    }
+  ],
+  "source_revision": "working-tree"
+}
