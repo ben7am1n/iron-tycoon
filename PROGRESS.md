@@ -31,15 +31,41 @@
 - **`Congestion(t-1) → 路由(t)`** 一帧延迟反馈——让"调布局改善人流"成为真机制。
 - 渲染用 **`TileMapLayer`**（⛔ 4.7 已弃用 `TileMap`）。
 
-## 下一步
-设计债已清：#1–#8 全部 Approved（2026-07-19）。仅剩一个跨文档实现门禁——EquipmentCatalog (#2) 须落实 MemberSim 的 4 个 `use_duration_*` 字段（OQ2）+ GridSystem OQ#13 三道加载期校验。
+## 当前阶段：Production —— 实现中
 
-按 CCGS 流程，下一步是 **order-8 fun-validation 里程碑**：先 `/prototype` + `/playtest-report` 验证"调布局让人流顺畅本身就好玩"，再继续 #9 起的经济/元系统。
+设计与架构阶段已全部完成（16 个 MVP GDD、7 个 ADR、控制清单、两个原型均 PROCEED）。
+2026-07-30 起进入编码实现，走 **story 驱动**流程：
+`/dev-story` → `/code-review` → `/story-done`，每个 story 必须有通过的自动化测试。
 
-- `/prototype 网格拖放布局+会员寻路+拥挤热力` — 验证核心循环（建议先用 concept 原型已验证的 PROCEED 结论，补完整 #1–#8 端到端）
-- `/design-review design/gdd/equipment-catalog.md` — 清 #2 跨文档门禁（OQ2 + OQ#13）
-- `/design-review design/gdd/zone-rules.md` — #9，设计时需回读 GridSystem OQ#13 与 Navigation OQ4（对角缝不可通行）
-- `/gate-check pre-production` — MVP 设计就绪度门禁
+### Sprint 1（2026-07-31 → 2026-08-13）
+目标：吃完 GridSystem 剩余 7 个 story，让"空间真相的唯一所有者"完整收尾。
+
+| Story | 内容 | 状态 |
+|---|---|---|
+| GRID-001 | 单元格数据模型（occupant_id / buildable / access_ids） | ✅ Complete |
+| GRID-002 | 实体性公式 `is_solid` + 坐标换算 | ✅ Complete |
+| GRID-003 | 旋转变换 + 声明包围盒 | ✅ Complete |
+| GRID-004 | `can_place` 放置校验 | ⬜ Ready（下一个） |
+| GRID-005 | commit / clear + 反向索引 | ⬜ Ready |
+| GRID-006 | GridStateReader + GridSnapshot | ⬜ Ready |
+| GRID-007 | 序列化 / 反序列化 | ⬜ Ready |
+| GRID-008 | 信号 + 集成 + 性能冒烟 | ⬜ Ready |
+
+**测试**：192 个断言全绿，CI 已在 GitHub Actions 实测通过。
+**其余 Foundation epic**：equipment-catalog(7) / time-system(4) / save-load(4) 共 15 个 story 已就绪，未开工。
+**Core 层及以上**：epic 尚未创建（`/create-epics layer: core`）。
+
+### 下一步
+1. `/dev-story production/epics/grid-system/story-004-grid-can-place.md`
+2. GridSystem 收尾后 → `/smoke-check sprint` → `/team-qa sprint`
+3. `/gate-check production` —— 顺便修正 `production/stage.txt`（仍写着过期的 `Concept`）
+
+## 实现中确认的引擎事实（Godot 4.7.1，代价换来的）
+- **`assert(false)` 会中止当前函数栈帧的剩余部分**，但不终止进程。值类型返回会静默变成零值，**对象类型返回会变成 `null` 并让调用方崩溃** —— 因此公开 API 的守卫用 `push_error()`，不用 `assert()`。
+- `@abstract` 在 `RefCounted` 上无效，改用手写 `_init()` 守卫。
+- 子类覆写父类同名方法时参数列表不同会**解析期硬报错**，因此 `SimSystem` 不声明公共 `init()`。
+
+详见 [docs/tech-debt-register.md](docs/tech-debt-register.md)。
 
 ## 评审模式
 `lean`（见 `production/review-mode.txt`）——门禁只在阶段转换时评审。
