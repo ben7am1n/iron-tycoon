@@ -31,7 +31,7 @@ func run_all() -> Dictionary:
 	_test_occupant_id_zero_is_legal_first_piece()
 	_test_access_ids_non_exclusive_multiple_per_cell()
 	_test_get_transformed_cells_zero_rotation()
-	_test_get_transformed_cells_nonzero_rotation_errors()
+	_test_get_transformed_cells_nonzero_rotation_computes_real_cells()
 	_test_flat_index_no_cross_row_leak()
 	_test_double_init_rejected()
 	_test_method_before_init_rejected()
@@ -285,9 +285,11 @@ func _test_get_transformed_cells_zero_rotation() -> void:
 	]
 	var anchor := Vector2i(5, 5)
 
-	var result: Dictionary = gs.call("get_transformed_cells", fp, ac, anchor, 0)
-	var fp_world: Array = result["footprint"] as Array
-	var ac_world: Array = result["access"] as Array
+	# Story 003 changed the return type from Dictionary to TransformedFootprint
+	# (TR-GS-014) — fields accessed directly, not via string keys.
+	var result = gs.call("get_transformed_cells", fp, ac, anchor, 0)
+	var fp_world: Array = result.footprint_cells
+	var ac_world: Array = result.access_cells
 
 	_check(
 		fp_world.has(Vector2i(5, 5)) and
@@ -315,10 +317,18 @@ func _test_get_transformed_cells_zero_rotation() -> void:
 	)
 
 
-# === get_transformed_cells non-zero rotation error path ===
+# === get_transformed_cells non-zero rotation — Story 003 supersedes Story 001 ===
+# Story 001 only implemented the 0° case and this test used to assert that
+# non-zero rotations returned EMPTY arrays (a "not implemented yet" guard).
+# Story 003 (production/epics/grid-system/story-003-grid-rotation-transform.md)
+# implements the full 4-branch rotation, so non-zero rotations now compute
+# real, non-empty, non-anchor cells. Renamed so the test name doesn't lie
+# about what it checks. Exact per-rotation values are covered exhaustively
+# by tests/unit/grid_system/grid_rotation_test.gd (AC-C4.1/C4.2/C4.3) — this
+# test only guards the basic "no longer empty" contract at this call site.
 
-func _test_get_transformed_cells_nonzero_rotation_errors() -> void:
-	print("\n[GUARD] get_transformed_cells rejects non-zero rotation in Story 001")
+func _test_get_transformed_cells_nonzero_rotation_computes_real_cells() -> void:
+	print("\n[Story 003] get_transformed_cells computes real cells for non-zero rotation")
 
 	var gs := _make_grid(5, 5)
 
@@ -326,12 +336,14 @@ func _test_get_transformed_cells_nonzero_rotation_errors() -> void:
 	var ac: Array[Vector2i] = [Vector2i(0, 1)]
 
 	for rot in [90, 180, 270]:
-		var result: Dictionary = gs.call("get_transformed_cells", fp, ac, Vector2i(0, 0), rot)
-		var fp_world: Array = result["footprint"] as Array
-		var ac_world: Array = result["access"] as Array
+		var result = gs.call("get_transformed_cells", fp, ac, Vector2i(0, 0), rot)
 		_check(
-			fp_world.is_empty() and ac_world.is_empty(),
-			"rotation=%d: returns empty footprint and access arrays" % rot
+			not result.footprint_cells.is_empty() and not result.access_cells.is_empty(),
+			"rotation=%d: returns non-empty footprint and access arrays (Story 003 full rotation)" % rot
+		)
+		_check(
+			result.footprint_cells.size() == 1 and result.access_cells.size() == 1,
+			"rotation=%d: exactly 1 footprint cell and 1 access cell (fixture is 1x1 + 1 access)" % rot
 		)
 
 
@@ -507,13 +519,18 @@ func _test_get_transformed_cells_before_init_returns_empty() -> void:
 
 	var fp: Array[Vector2i] = [Vector2i(0, 0), Vector2i(1, 0)]
 	var ac: Array[Vector2i] = [Vector2i(0, 1)]
-	var result: Dictionary = gs.call("get_transformed_cells", fp, ac, Vector2i(5, 5), 0)
-	var fp_world: Array = result["footprint"] as Array
-	var ac_world: Array = result["access"] as Array
+	# Story 003 changed the return type from Dictionary to TransformedFootprint
+	# (TR-GS-014) — the before-init early return is a fresh TransformedFootprint
+	# with default-empty fields, not a Dictionary with empty array values.
+	var result = gs.call("get_transformed_cells", fp, ac, Vector2i(5, 5), 0)
 
 	_check(
-		fp_world.is_empty() and ac_world.is_empty(),
+		result.footprint_cells.is_empty() and result.access_cells.is_empty(),
 		"get_transformed_cells before init returns empty footprint/access, not a computed transform"
+	)
+	_check(
+		result.new_size == Vector2i.ZERO,
+		"get_transformed_cells before init returns new_size == Vector2i.ZERO (default, uncomputed)"
 	)
 
 

@@ -20,6 +20,23 @@
 class_name GridSystem extends SimSystem
 
 
+## Rotation values usable when placing equipment (GDD D.1, TR-GS-029).
+## Degree-valued (0/90/180/270) to match the D.1 rotation formula directly.
+##
+## NOTE -- deliberate discrepancy, not yet reconciled (see tech-debt register):
+## ADR-0003's illustrative PlacedInstance.rotation sketch uses quarter-turn
+## count (0,1,2,3) instead of degrees. PlacedInstance does not exist yet
+## (Story 006) and neither does the commit-time caller that would set
+## rotation (Story 005) -- whoever builds those must explicitly decide how
+## this enum's degree values map to that convention. Do not silently assume.
+##
+## GDScript does NOT enforce that a Rotation-typed value is actually one of
+## these four members at runtime -- illegal values (45, -90, 360) can still
+## reach _transform_cell() and MUST hit its assert(false) fallback branch
+## (AC-D1.1), never a silent fallthrough to R0.
+enum Rotation { R0 = 0, R90 = 90, R180 = 180, R270 = 270 }
+
+
 ## Marks the system as initialized. Must be called exactly once.
 ## Parameterized by width and height so that callers get a compile
 ## error if they forget to initialize the grid. Rejects non-positive
@@ -62,20 +79,28 @@ var _buildable_frozen: bool = false
 ## Returns the occupant_id at [cell], or -1 if the cell is empty.
 ## This read is completely independent of buildable state —
 ## setting buildable=false on a cell does not affect get_occupant_id().
+##
+## Out-of-bounds cells push_error() and return -1 (GDD D.2) — never the
+## real value of an adjacent row/column cell.
 func get_occupant_id(cell: Vector2i) -> int:
 	if not _assert_initialized():
 		return -1
 	if not is_in_bounds(cell):
+		push_error("GridSystem: get_occupant_id() on out-of-bounds cell %s." % cell)
 		return -1
 	return _occupant_id[flat_index(cell)]
 
 
 ## Returns whether [cell] is flagged as buildable.
 ## buildable is static after level load — set once, then frozen.
+##
+## Out-of-bounds cells push_error() and return false (GDD D.2) — never the
+## real value of an adjacent row/column cell.
 func get_buildable(cell: Vector2i) -> bool:
 	if not _assert_initialized():
 		return false
 	if not is_in_bounds(cell):
+		push_error("GridSystem: get_buildable() on out-of-bounds cell %s." % cell)
 		return false
 	return _buildable[flat_index(cell)] != 0
 
@@ -83,12 +108,41 @@ func get_buildable(cell: Vector2i) -> bool:
 ## Returns the list of occupant_ids that have [cell] registered as
 ## their access cell. Returns an empty array if this cell is not
 ## anyone's access cell.
+##
+## Out-of-bounds cells push_error() and return [] (GDD D.2) — never the
+## real value of an adjacent row/column cell.
 func get_access_ids(cell: Vector2i) -> Array:  # Array[int]
 	if not _assert_initialized():
+		return []
+	if not is_in_bounds(cell):
+		push_error("GridSystem: get_access_ids() on out-of-bounds cell %s." % cell)
 		return []
 	if _access_ids.has(cell):
 		return (_access_ids[cell] as Array).duplicate()
 	return []
+
+
+## Returns whether [cell] is solid — impassable for pathfinding purposes.
+##
+## Formula (GDD D.3 / TR-GS-022):
+##   is_solid(cell) = NOT buildable(cell) OR occupant_id(cell) != -1
+##
+## access_ids deliberately do NOT participate in this formula (TR-GS-016) —
+## access cells must stay walkable so members can reach and use equipment.
+## The occupant_id check uses explicit `!= -1`, never a truthy check —
+## occupant_id = 0 (the first piece ever placed) is a legal, solid occupant.
+##
+## Out-of-bounds cells push_error() and return true — "outside the room is
+## solid" is the safety default that keeps AStarGrid2D from pathing outside
+## the room bounds (GDD D.2/D.3).
+func is_solid(cell: Vector2i) -> bool:
+	if not _assert_initialized():
+		return true
+	if not is_in_bounds(cell):
+		push_error("GridSystem: is_solid() on out-of-bounds cell %s." % cell)
+		return true
+	var idx := flat_index(cell)
+	return _buildable[idx] == 0 or _occupant_id[idx] != -1
 
 
 # === Buildable Setup (level load only) ===
@@ -232,38 +286,268 @@ func flat_index(cell: Vector2i) -> int:
 	return cell.y * _width + cell.x
 
 
+# === Coordinate Conversion ===
+#
+# [cell_size] is a required parameter on every method below — NEVER a
+# hardcoded constant. The project's final cell_size value is not yet
+# decided (GDD D.4 handoff note: 16 or 32px, finalized at architecture
+# stage). GridSystem's occupancy/solidity/rotation logic never depends on
+# this value; it exists purely for presentation-layer grid<->world math.
+
+## Converts a grid cell to the world-space position of its top-left corner.
+## Formula (GDD D.4): grid_to_world_corner(cell) = cell * cell_size.
+## Example: grid_to_world_corner(Vector2i(5, 3), 32) == Vector2(160, 96)
+func grid_to_world_corner(cell: Vector2i, cell_size: int) -> Vector2:
+	if not _assert_initialized():
+		return Vector2.ZERO
+	return Vector2(cell.x * cell_size, cell.y * cell_size)
+
+
+## Converts a grid cell to the world-space position of its center point.
+## Formula (GDD D.4): grid_to_world_center(cell) = cell * cell_size + cell_size/2.
+## Example: grid_to_world_center(Vector2i(5, 3), 32) == Vector2(176, 112)
+func grid_to_world_center(cell: Vector2i, cell_size: int) -> Vector2:
+	if not _assert_initialized():
+		return Vector2.ZERO
+	var half := cell_size / 2.0
+	return Vector2(cell.x * cell_size + half, cell.y * cell_size + half)
+
+
+## Converts a world-space position to a grid cell coordinate.
+## Formula (GDD D.4): world_to_grid(world_pos) = floor(world_pos / cell_size).
+##
+## DELIBERATELY DIFFERENT out-of-bounds contract than the query methods
+## above (get_occupant_id, get_buildable, is_solid, etc.): this returns the
+## raw floor-division result with NO clamping, NO push_error(), and NO
+## sentinel. An out-of-bounds result (e.g. (-1,-1)) is normal and expected —
+## the mouse leaving the room during a drag produces one every frame.
+## Callers MUST bounds-check the result themselves (e.g. via is_in_bounds())
+## before feeding it to flat_index(), is_solid(), or can_place(). See GDD
+## D.4 for the full rationale for this asymmetry with the D.2 query contract.
+## Example: world_to_grid(Vector2(170, 100), 32) == Vector2i(5, 3)
+func world_to_grid(world_pos: Vector2, cell_size: int) -> Vector2i:
+	if not _assert_initialized():
+		return Vector2i.ZERO
+	return Vector2i(floori(world_pos.x / cell_size), floori(world_pos.y / cell_size))
+
+
 # === Footprint Transform ===
 
-## Transforms canonical footprint and access cells to world coordinates
-## given an anchor cell and rotation.
+## Rotates a single canonical-space cell offset (x, y) into its post-rotation
+## offset, per GDD D.1's 4-branch formula:
+##   R0:   (x, y)
+##   R90:  (H-1-y, x)
+##   R180: (W-1-x, H-1-y)
+##   R270: (y, W-1-x)
 ##
-## Returns a Dictionary with "footprint" (Array[Vector2i]) and "access"
-## (Array[Vector2i]) keys.
+## (W, H) MUST be the declared_bounds() of the FULL footprint+access UNION
+## (TR-GS-012/013) — never a per-shape local bounding box computed
+## independently for footprint vs. access. Passing mismatched (W, H) values
+## for the footprint and access transforms is exactly the bug this system's
+## highest-risk rule exists to prevent (AC-C4.3): it produces negative
+## coordinates at 90/270 degrees, invisible at 0/180 degrees (symmetry masks
+## it there).
 ##
-## At rotation=0°, world_cell = anchor + canonical_cell.
-## Full 4-branch rotation transform is Story 003 — this implements the
-## 0° case only, sufficient for AC-C3.1.
+## Illegal rotation values fall through to the `_:` branch and assert(false)
+## (AC-D1.1, TR-GS-029) — NEVER a silent fallthrough to the R0 case.
+func _transform_cell(x: int, y: int, rot: Rotation, W: int, H: int) -> Vector2i:
+	match rot:
+		Rotation.R0:
+			return Vector2i(x, y)
+		Rotation.R90:
+			return Vector2i(H - 1 - y, x)
+		Rotation.R180:
+			return Vector2i(W - 1 - x, H - 1 - y)
+		Rotation.R270:
+			return Vector2i(y, W - 1 - x)
+		_:
+			# assert(false) aborts the REST OF THIS FUNCTION FRAME when it
+			# fires (verified empirically — see get_transformed_cells()'s
+			# guard comment for the full finding). The `return Vector2i.ZERO`
+			# below never executes in that case; the frame's own abort yields
+			# Vector2i's zero-value default instead, which is harmless here
+			# only because Vector2i is a value type, not an Object (an
+			# Object-typed return would yield null and crash the caller —
+			# see get_transformed_cells(), which is why that method does NOT
+			# use assert() in its guard).
+			#
+			# Unreachable via the only current call site: get_transformed_cells()
+			# rejects illegal rotations via _is_legal_rotation() before calling
+			# this method at all. This branch is defense-in-depth against a
+			# future direct/private caller, and is what literally satisfies
+			# TR-GS-029's "exhaust 4 branches + assert(false) fallback" wording.
+			assert(false, "GridSystem: illegal rotation value: %s" % rot)
+			return Vector2i.ZERO
+
+
+## Returns true if [rot] is one of the four legal Rotation enum values.
+##
+## GDScript does not enforce enum membership at runtime — an int outside the
+## enum passes straight through a `rotation: Rotation` parameter. This is the
+## real gate for TR-GS-029 ("never a silent fallthrough"), because assert()
+## alone cannot stop execution in Godot 4.7.1.
+func _is_legal_rotation(rot: int) -> bool:
+	return rot == Rotation.R0 or rot == Rotation.R90 or rot == Rotation.R180 or rot == Rotation.R270
+
+
+## Returns the minimum (x, y) offset across [cells], or Vector2i.ZERO for an
+## empty array. Used only to check the anchor convention in declared_bounds().
+func _min_offset(cells: Array[Vector2i]) -> Vector2i:
+	if cells.is_empty():
+		return Vector2i.ZERO
+	var min_x := cells[0].x
+	var min_y := cells[0].y
+	for c in cells:
+		min_x = min(min_x, c.x)
+		min_y = min(min_y, c.y)
+	return Vector2i(min_x, min_y)
+
+
+## Computes the declared bounding box (W, H) of the UNION of [footprint_cells]
+## and [access_cells], per GDD D.5:
+##   W = max_x + 1, H = max_y + 1  (over footprint_cells UNION access_cells)
+##
+## This union — not footprint_cells alone — is the (W, H) that
+## get_transformed_cells() must pass to BOTH the footprint AND access
+## rotation transforms (TR-GS-013). See _transform_cell()'s doc comment for
+## why mixing this up is this system's highest-risk bug.
+##
+## Deviation from ADR-0003's illustrative sketch (documented, not silent):
+## the ADR's declared_bounds(equipment_def: EquipmentDef) takes a catalog
+## object. EquipmentDef does not exist in src/ yet (equipment-catalog epic is
+## out of this sprint's scope) — this signature takes raw typed cell arrays
+## instead, matching the existing get_transformed_cells() style. See the
+## tech-debt register for the consequence: this signature can no longer
+## structurally prevent an external caller from requesting a footprint-only
+## bbox (e.g. by passing an empty access_cells) the way the ADR's
+## equipment_def-only signature could.
+##
+## Debug-only asserts (compiled out of release builds — GDD D.5):
+##   - the combined cell set must not be empty (AC-D5.3)
+##   - the minimum (x, y) across the combined set must be (0, 0) — the
+##     anchor convention (AC-D5.2, TR-GS-011). Violated only by un-normalized
+##     equipment data; EquipmentCatalog's load-time validation is the real
+##     gate in production (this assert is a debug-only backstop for hand-
+##     crafted test fixtures).
+##
+## If either assert fires, it aborts the rest of THIS function frame (see
+## get_transformed_cells()'s guard comment for why that matters) and the
+## caller receives Vector2i.ZERO instead of a real bounding box — safe here
+## specifically because Vector2i is a value type (no null-dereference risk),
+## consistent with this file's other value-typed safe defaults
+## (get_dimensions(), grid_to_world_corner(), etc. before init()).
+## Usage example:
+##   var wh := grid_system.declared_bounds(
+##       [Vector2i(0, 0), Vector2i(0, 1)], [Vector2i(0, 2)]
+##   )
+##   # wh == Vector2i(1, 3)
+func declared_bounds(footprint_cells: Array[Vector2i], access_cells: Array[Vector2i]) -> Vector2i:
+	if not _assert_initialized():
+		return Vector2i.ZERO
+
+	var all_cells: Array[Vector2i] = footprint_cells + access_cells
+	# Checks footprint_cells specifically, NOT the union: equipment with zero
+	# access cells is legal (decorative/storage pieces — see Story 004's
+	# AC-C5.5), but equipment with no footprint is not. Asserting on the union
+	# would let an empty footprint slip through whenever access_cells happened
+	# to be non-empty (AC-D5.3).
+	assert(not footprint_cells.is_empty(), "GridSystem: declared_bounds() footprint_cells must not be empty.")
+	assert(
+		_min_offset(all_cells) == Vector2i.ZERO,
+		"GridSystem: declared_bounds() cells violate the anchor convention — union bounding box must start at (0,0)."
+	)
+
+	var max_x := 0
+	var max_y := 0
+	for c in all_cells:
+		max_x = max(max_x, c.x)
+		max_y = max(max_y, c.y)
+	return Vector2i(max_x + 1, max_y + 1)
+
+
+## Transforms canonical (0 degree) footprint and access cells into
+## world-space cells for the given anchor and rotation, returning a
+## TransformedFootprint (TR-GS-014).
+##
+## THE CRITICAL RULE (TR-GS-012/013, AC-C4.3 — this system's single
+## highest-risk rule): (W, H) is computed ONCE via declared_bounds() over
+## footprint_cells UNION access_cells, and that SAME (W, H) is passed to
+## BOTH the footprint transform and the access transform below. Never let
+## each transform derive its own local bounding box — that produces negative
+## coordinates at 90/270 degrees, and 0/180-degree tests alone cannot catch
+## the bug because symmetry masks it there.
+##
+## Debug-only asserts (compiled out of release, GDD D.5) surface via the
+## declared_bounds() call: empty footprint_cells (AC-D5.3) and
+## anchor-convention violations (AC-D5.2). Illegal rotation values
+## assert(false) inside _transform_cell() (AC-D1.1).
+##
+## Usage example:
+##   var result := grid_system.get_transformed_cells(
+##       [Vector2i(0, 0), Vector2i(0, 1)], [Vector2i(0, 2)],
+##       Vector2i(3, 3), GridSystem.Rotation.R90
+##   )
+##   # result.footprint_cells == [Vector2i(5, 3), Vector2i(4, 3)]
+##   # result.access_cells == [Vector2i(3, 3)]
+##   # result.new_size == Vector2i(3, 1)
 func get_transformed_cells(
-	footprint: Array,   # Array[Vector2i] — canonical (0°) footprint cells
-	access: Array,      # Array[Vector2i] — canonical (0°) access cells
+	footprint_cells: Array[Vector2i],
+	access_cells: Array[Vector2i],
 	anchor: Vector2i,
-	rotation: int       # 0, 90, 180, 270
-) -> Dictionary:
-	var transformed_footprint: Array[Vector2i] = []
-	var transformed_access: Array[Vector2i] = []
+	rotation: Rotation
+) -> TransformedFootprint:
+	var result := TransformedFootprint.new()
 
 	if not _assert_initialized():
-		return {"footprint": transformed_footprint, "access": transformed_access}
+		return result
 
-	if rotation == 0:
-		for cell in footprint:
-			transformed_footprint.append(anchor + (cell as Vector2i))
-		for cell in access:
-			transformed_access.append(anchor + (cell as Vector2i))
-	else:
-		push_error("GridSystem: get_transformed_cells() only supports rotation=0° in Story 001. Full rotation is Story 003.")
+	# Illegal rotation is rejected UP FRONT, before any cell is transformed
+	# (TR-GS-029, AC-D1.1).
+	#
+	# CORRECTED UNDERSTANDING of Godot 4.7.1's assert() (the first version of
+	# this guard got this wrong): assert(false, msg) aborts the REMAINDER OF
+	# THE CURRENT FUNCTION FRAME when it fires — no statement textually after
+	# it in the same function runs, including a `return`. It does NOT
+	# terminate the process (the caller's caller keeps running), but within
+	# THIS frame, an assert(false) immediately followed by `return result`
+	# would make `return result` unreachable dead code. Verified empirically
+	# with an isolated repro: a function with an Object-typed return calling
+	# assert(false) then attempting to return a constructed value instead
+	# returns null to its caller. That is worse than a silent fallthrough —
+	# it is a crash waiting to happen the moment the caller dereferences the
+	# result, exactly what happened here on the first pass (caught by
+	# /code-review, not by the author).
+	#
+	# Therefore: NO assert() call in this reachable, public-API guard. Only
+	# push_error() (which logs without aborting the frame, in both debug AND
+	# release builds — unlike assert(), it isn't compiled out) followed by a
+	# guaranteed `return result` with the empty, valid, non-null
+	# TransformedFootprint constructed at the top of this function. This
+	# matches the file's established "loud failure + unusable safe default"
+	# contract (cf. is_solid() returning true out of bounds, get_occupant_id()
+	# returning -1) using a mechanism that actually delivers on it.
+	#
+	# _transform_cell()'s own assert(false) fallback branch (TR-GS-029's
+	# literal "assert(false) fallback" requirement) is preserved below as
+	# defense-in-depth — but this guard makes that branch UNREACHABLE via the
+	# only current call path (this method). It exists for any future direct
+	# caller of the private _transform_cell(), not for this method's contract.
+	if not _is_legal_rotation(rotation):
+		push_error("GridSystem: get_transformed_cells() rejected illegal rotation value: %s" % rotation)
+		return result
 
-	return {
-		"footprint": transformed_footprint,
-		"access": transformed_access,
-	}
+	# THE CRITICAL RULE: (W,H) computed ONCE here, then passed to BOTH loops
+	# below. See this method's doc comment and _transform_cell()'s doc
+	# comment — never let footprint and access each derive their own bbox.
+	var wh := declared_bounds(footprint_cells, access_cells)
+	var w := wh.x
+	var h := wh.y
+
+	for cell in footprint_cells:
+		result.footprint_cells.append(anchor + _transform_cell(cell.x, cell.y, rotation, w, h))
+	for cell in access_cells:
+		result.access_cells.append(anchor + _transform_cell(cell.x, cell.y, rotation, w, h))
+
+	result.new_size = Vector2i(h, w) if (rotation == Rotation.R90 or rotation == Rotation.R270) else Vector2i(w, h)
+
+	return result

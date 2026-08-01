@@ -1,12 +1,12 @@
 # Story 002: Solidity Formula and Coordinate Conversion
 
 > **Epic**: grid-system
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Foundation
 > **Type**: Logic
-> **Estimate**: [hours or t-shirt size — fill before sprint planning]
+> **Estimate**: S — 0.5 day (Sprint 1)
 > **Manifest Version**: 2026-07-23
-> **Last Updated**: [set by /dev-story when implementation begins]
+> **Last Updated**: 2026-07-31
 
 ## Context
 
@@ -31,14 +31,14 @@
 
 *From GDD `design/gdd/grid-system.md`, scoped to this story:*
 
-- [ ] AC-D3.1 [BLOCKING][Logic] GIVEN buildable=true, occupant_id=-1, access_ids=[7], WHEN querying is_solid, THEN returns false — the second-highest-risk assertion (access_ids must not affect solidity)
-- [ ] AC-D3.2 [BLOCKING][Logic] GIVEN buildable=true, occupant_id=7, WHEN querying is_solid (regardless of access_ids), THEN always returns true
-- [ ] AC-D3.3 [BLOCKING][Logic] GIVEN buildable=false, WHEN querying is_solid (regardless of occupant_id), THEN always returns true
-- [ ] AC-D3.4 [BLOCKING][Logic] GIVEN buildable=true, cell (2,2) occupied by instance_id=0 footprint, WHEN querying is_solid((2,2)), THEN returns true; AND get_occupant_id((2,2)) returns 0 (not -1) — occupant_id=0 is the first piece placed, GDScript truthy check is a BUG
-- [ ] AC-D2.2 [BLOCKING][Logic] GIVEN width=13,height=10, WHEN any public query function receives col=-1, col=13, row=-1, or row=10, THEN each case push_error() and returns documented safe default, and must NOT return real data from adjacent row/column
-- [ ] AC-D2.3 [BLOCKING][Logic] GIVEN an out-of-bounds coordinate, WHEN calling is_solid(cell), THEN returns true — "outside the room is solid" prevents AStarGrid2D pathing outside bounds
-- [ ] AC-D4.1 [BLOCKING][Logic] GIVEN cell_size=32 (test placeholder, unrelated to final architecture decision), cell=(5,3), WHEN calling grid_to_world_corner / grid_to_world_center / world_to_grid, THEN respectively returns (160,96), (176,112), and world_to_grid((170,100)) == (5,3) — all three round-trip consistency covered in one pass
-- [ ] AC-C5.1 [BLOCKING][Logic] GIVEN access cell with occupant_id=-1, WHEN querying is_solid on that cell, THEN returns false — access cells are walkable (same assertion as AC-D3.1 but verifies the access-cell scenario specifically)
+- [x] AC-D3.1 [BLOCKING][Logic] GIVEN buildable=true, occupant_id=-1, access_ids=[7], WHEN querying is_solid, THEN returns false — the second-highest-risk assertion (access_ids must not affect solidity)
+- [x] AC-D3.2 [BLOCKING][Logic] GIVEN buildable=true, occupant_id=7, WHEN querying is_solid (regardless of access_ids), THEN always returns true
+- [x] AC-D3.3 [BLOCKING][Logic] GIVEN buildable=false, WHEN querying is_solid (regardless of occupant_id), THEN always returns true
+- [x] AC-D3.4 [BLOCKING][Logic] GIVEN buildable=true, cell (2,2) occupied by instance_id=0 footprint, WHEN querying is_solid((2,2)), THEN returns true; AND get_occupant_id((2,2)) returns 0 (not -1) — occupant_id=0 is the first piece placed, GDScript truthy check is a BUG
+- [x] AC-D2.2 [BLOCKING][Logic] GIVEN width=13,height=10, WHEN any public query function receives col=-1, col=13, row=-1, or row=10, THEN each case push_error() and returns documented safe default, and must NOT return real data from adjacent row/column
+- [x] AC-D2.3 [BLOCKING][Logic] GIVEN an out-of-bounds coordinate, WHEN calling is_solid(cell), THEN returns true — "outside the room is solid" prevents AStarGrid2D pathing outside bounds
+- [x] AC-D4.1 [BLOCKING][Logic] GIVEN cell_size=32 (test placeholder, unrelated to final architecture decision), cell=(5,3), WHEN calling grid_to_world_corner / grid_to_world_center / world_to_grid, THEN respectively returns (160,96), (176,112), and world_to_grid((170,100)) == (5,3) — all three round-trip consistency covered in one pass
+- [x] AC-C5.1 [BLOCKING][Logic] GIVEN access cell with occupant_id=-1, WHEN querying is_solid on that cell, THEN returns false — access cells are walkable (same assertion as AC-D3.1 but verifies the access-cell scenario specifically)
 
 ---
 
@@ -158,7 +158,7 @@ if occupant_id[idx] != -1:
 **Required evidence**:
 - `tests/unit/grid_system/grid_solidity_coords_test.gd` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing — 80 assertions, 0 failures (2026-07-31)
 
 ---
 
@@ -166,3 +166,14 @@ if occupant_id[idx] != -1:
 
 - Depends on: Story 001 (cell data model must be implemented first)
 - Unlocks: Story 004 (can_place needs is_solid + bounds checking), Story 005 (commit/clear needs occupant_id read), Story 008 (Navigation integration reads is_solid)
+
+---
+
+## Completion Notes
+**Completed**: 2026-07-31
+**Criteria**: 8/8 passing
+**Deviations**:
+- Retrofitted `push_error()` into 3 pre-existing Story 001 methods (`get_occupant_id`, `get_buildable`, `get_access_ids`) to satisfy this story's own AC-D2.2 — justified, not scope creep (confirmed COMPLIANT by ADR review; Stories 003–008 untouched).
+- AC-D2.2's literal "push_error() fires" clause is verified only indirectly (safe-default return value + no data leak), not via a direct push_error-capture assertion — this project's custom SceneTree runner has no GUT-style error-capture harness. Logged as tech debt.
+**Test Evidence**: Logic — `tests/unit/grid_system/grid_solidity_coords_test.gd` (80 assertions, 0 failures; full suite 145/145, exit 0)
+**Code Review**: Complete — 3 independent specialist reviews (godot-gdscript-specialist, godot-specialist, qa-tester), verdict APPROVED WITH SUGGESTIONS, no BLOCKING items

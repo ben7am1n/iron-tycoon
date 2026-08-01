@@ -1,12 +1,12 @@
 # Story 003: Rotation Transform and Declared Bounds
 
 > **Epic**: grid-system
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Foundation
 > **Type**: Logic
-> **Estimate**: [hours or t-shirt size — fill before sprint planning]
+> **Estimate**: M — 1 day (Sprint 1)
 > **Manifest Version**: 2026-07-23
-> **Last Updated**: [set by /dev-story when implementation begins]
+> **Last Updated**: 2026-08-01
 
 ## Context
 
@@ -31,13 +31,13 @@
 
 *From GDD `design/gdd/grid-system.md`, scoped to this story:*
 
-- [ ] AC-C4.1 [BLOCKING][Logic] (1×2 treadmill, non-square footprint, exhaust all 4 orientations) GIVEN footprint=[(0,0),(0,1)], access=[(0,2)], declared_bounds (W=1,H=3), anchor=(0,0), WHEN get_transformed_cells for each of {0°,90°,180°,270°}, THEN results exactly match the GDD D.1 table (0°: fp {(0,0),(0,1)} access {(0,2)}; 90°: fp {(2,0),(1,0)} access {(0,0)}; 180°: fp {(0,2),(0,1)} access {(0,0)}; 270°: fp {(0,0),(1,0)} access {(2,0)})
-- [ ] AC-C4.2 [BLOCKING][Logic] (1×1 squat rack, cross-validation fixture) GIVEN footprint=[(0,0)], access=[(0,1)], declared_bounds (W=1,H=2), WHEN testing all 4 orientations, THEN results exactly match D.1 table (0°: access (0,1); 90°: access (0,0); 180°: access (0,0); 270°: access (1,0))
-- [ ] AC-C4.3 [BLOCKING][Logic] (NEGATIVE — catch "local bbox vs union bbox" bug) GIVEN AC-C4.1 treadmill fixture, WHEN 90° or 270° rotation, THEN access cell BOTH components must be >= 0
-- [ ] AC-D1.1 [BLOCKING][Logic] (illegal rotation must NOT silently fallback) GIVEN an illegal rotation value (e.g. 45, -90, 360), WHEN in debug build calling get_transformed_cells, THEN the default branch assert(false, "illegal rotation") triggers
-- [ ] AC-D5.1 [BLOCKING][Logic] GIVEN footprint=[(0,0),(1,0),(0,1),(1,1)], access=[(0,2)], WHEN calling declared_bounds, THEN returns (W=2,H=3)
-- [ ] AC-D5.2 [BLOCKING][Logic] (debug assert — anchor convention) GIVEN a hand-crafted equipment_def violating anchor convention (min_offset != (0,0)), WHEN in debug/editor build calling get_transformed_cells or declared_bounds, THEN assert() triggers and aborts execution
-- [ ] AC-D5.3 [BLOCKING][Logic] (debug assert — empty footprint) GIVEN footprint_cells=[], WHEN in debug build calling get_transformed_cells, THEN assert() triggers
+- [x] AC-C4.1 [BLOCKING][Logic] (1×2 treadmill, non-square footprint, exhaust all 4 orientations) GIVEN footprint=[(0,0),(0,1)], access=[(0,2)], declared_bounds (W=1,H=3), anchor=(0,0), WHEN get_transformed_cells for each of {0°,90°,180°,270°}, THEN results exactly match the GDD D.1 table (0°: fp {(0,0),(0,1)} access {(0,2)}; 90°: fp {(2,0),(1,0)} access {(0,0)}; 180°: fp {(0,2),(0,1)} access {(0,0)}; 270°: fp {(0,0),(1,0)} access {(2,0)})
+- [x] AC-C4.2 [BLOCKING][Logic] (1×1 squat rack, cross-validation fixture) GIVEN footprint=[(0,0)], access=[(0,1)], declared_bounds (W=1,H=2), WHEN testing all 4 orientations, THEN results exactly match D.1 table (0°: access (0,1); 90°: access (0,0); 180°: access (0,0); 270°: access (1,0))
+- [x] AC-C4.3 [BLOCKING][Logic] (NEGATIVE — catch "local bbox vs union bbox" bug) GIVEN AC-C4.1 treadmill fixture, WHEN 90° or 270° rotation, THEN access cell BOTH components must be >= 0
+- [x] AC-D1.1 [BLOCKING][Logic] (illegal rotation must NOT silently fallback) GIVEN an illegal rotation value (e.g. 45, -90, 360), WHEN in debug build calling get_transformed_cells, THEN the default branch assert(false, "illegal rotation") triggers
+- [x] AC-D5.1 [BLOCKING][Logic] GIVEN footprint=[(0,0),(1,0),(0,1),(1,1)], access=[(0,2)], WHEN calling declared_bounds, THEN returns (W=2,H=3)
+- [x] AC-D5.2 [BLOCKING][Logic] (debug assert — anchor convention) GIVEN a hand-crafted equipment_def violating anchor convention (min_offset != (0,0)), WHEN in debug/editor build calling get_transformed_cells or declared_bounds, THEN assert() triggers and aborts execution
+- [x] AC-D5.3 [BLOCKING][Logic] (debug assert — empty footprint) GIVEN footprint_cells=[], WHEN in debug build calling get_transformed_cells, THEN assert() triggers
 
 ---
 
@@ -163,7 +163,7 @@ func declared_bounds(equipment_def: EquipmentDef) -> Vector2i:
 **Required evidence**:
 - `tests/unit/grid_system/grid_rotation_test.gd` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing — 43 assertions, 0 failures (2026-08-01)
 
 ---
 
@@ -171,3 +171,14 @@ func declared_bounds(equipment_def: EquipmentDef) -> Vector2i:
 
 - Depends on: Story 001 (cell data model, origin convention, equipment_def shape)
 - Unlocks: Story 004 (can_place needs rotation output), Story 005 (commit writes rotated cells), Story 007 (serialize stores rotation value)
+
+---
+
+## Completion Notes
+**Completed**: 2026-08-01
+**Criteria**: 7/7 passing
+**Deviations**:
+- AC-D1.1's literal wording ("calling get_transformed_cells... THEN the default branch assert(false) triggers") is satisfied structurally rather than observably: after a /code-review fix, illegal rotations are rejected by push_error() before `_transform_cell()`'s assert branch is ever reached — a stronger guarantee (structurally unreachable, not "fires but continues"), but the assert itself is no longer observed firing through the public API. Root cause: assert(false) immediately followed by `return result` in the same function frame made the return unreachable dead code, returning null instead of the documented empty safe default — a real crash, caught by /code-review's independent specialists, not by the original implementation. Logged to tech-debt-register.md.
+- Two pre-existing ADR-0003 deviations (EquipmentDef signature gap, Rotation enum degree-vs-quarter-turn convention) re-confirmed present and not worsened — already logged 2026-08-01.
+**Test Evidence**: Logic — `tests/unit/grid_system/grid_rotation_test.gd` (43 assertions, 0 failures; full suite 192/192, verified line-by-line with zero SCRIPT ERROR occurrences)
+**Code Review**: Complete — 3 independent specialist reviews (godot-gdscript-specialist, godot-specialist, qa-tester), verdict APPROVED WITH SUGGESTIONS. Two specialists independently caught the same real crash during review; fix verified with a controlled isolated repro before re-closing.
