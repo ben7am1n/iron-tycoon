@@ -2,20 +2,31 @@
 ## relocating gym equipment; sole allocator of `instance_id`.
 ##
 ## Stories (Sprint 3, placement-system epic):
-##   PL-001 (THIS STORY): drag lifecycle — start / live preview / rotation.
+##   PL-001 (merged base): drag lifecycle — start / live preview / rotation.
 ##     Drag initiation, per-cell `can_place` preview with zero writes, and
 ##     rotation normalization via `((rotation + 90) % 360) as Rotation`.
+##   PL-002 (THIS STORY): commit-on-drop success path — on_drop() runs
+##     can_place, allocates the next instance_id, calls GridSystem.commit(),
+##     and emits placement_committed exactly once AFTER commit() returns
+##     (Core Rule 5, TR-PS-003, ADR-0005 S3). The rejected-drop emission
+##     (placement_rejected, S4) is Story 003's domain — this story's fail
+##     branch only guarantees the no-write outcome (no id, no commit, no
+##     grid_changed, counter unchanged).
 ##   PL-004 (sibling story, merged base): the `instance_id` monotonic
 ##     counter and its resume-after-load recomputation. Included here as
 ##     the shared file base so the sprint's parallel branches compose.
 ## Req:   TR-PS-001 (single interactive surface), TR-PS-002 (live preview
 ##        via GridSystem.can_place against REAL grid state, no mutation),
-##        TR-PS-006/007 (instance_id counter, no save-blob contribution)
+##        TR-PS-003 (commit-on-drop: can_place check, allocate instance_id,
+##        GridSystem.commit, emit placement_committed), TR-PS-006/007
+##        (instance_id counter, no save-blob contribution)
 ## ADR:   ADR-0001 (DI Container & Scene Bootstrap — init(grid, catalog),
 ##        SimSystem two-phase init), ADR-0003 (GridStateReader Contract —
 ##        can_place / get_transformed_cells are GridSystem write/query
 ##        surfaces consumed here; the resume scan uses the granted read
-##        surface get_occupant_id()/get_dimensions())
+##        surface get_occupant_id()/get_dimensions()), ADR-0005 (Signal Bus
+##        & Event Routing — S3 placement_committed: 3 args, emitted once per
+##        successful commit AFTER commit() returns)
 ##
 ## CORE RULE 2 (drag start): a drag begins on mouse-down over a shop
 ## palette entry. PlacementSystem receives an `equipment_id`, calls
@@ -103,6 +114,22 @@ enum DragState { IDLE, DRAGGING }
 ## preview-validity signal; none existed in the GDD's Emitted Signals list,
 ## so this is added here as the minimal contract satisfying AC2.
 signal preview_validity_changed(valid: bool)
+
+
+## S3 in the ADR-0005 Signal Catalog (PL-002). Emitted exactly once per
+## successful NEW-placement commit, immediately after GridSystem.commit()
+## returns (Core Rule 5, AC21). footprint_cells is the TRANSFORMED
+## (anchor-offset) footprint exactly as passed to commit() — AC21 asserts
+## payload == commit's footprint. Arity: exactly 3 arguments — never
+## emit(id, eq_id, fp_cells + extra).
+signal placement_committed(instance_id: int, equipment_id: String, footprint_cells: Array[Vector2i])
+
+
+## S4 in the ADR-0005 Signal Catalog. DECLARED here for catalog completeness;
+## the rejected-drop EMISSION path is Story 003's domain. This story never
+## emits it — AC21 asserts placement_rejected does NOT fire on a successful
+## commit. Arity: exactly 4 arguments.
+signal placement_rejected(equipment_id: String, anchor: Vector2i, rotation: int, fail_code: int)
 
 
 ## Injected grid — the spatial truth source (ADR-0001 Tier 1:
@@ -254,6 +281,86 @@ func on_rotate_pressed() -> void:
 	_preview = _grid.get_transformed_cells(
 		_drag_def.footprint_cells, _drag_def.access_cells, _anchor, _rotation
 	)
+
+
+## THE COMMIT PATH — success branch (Core Rule 5, TR-PS-003, PL-002).
+##
+## Sequence:
+##   1. can_place(def, anchor, rotation) — a FRESH check at drop time against
+##      real grid state (never trusts a stale preview). On FAIL, this branch
+##      delegates to Story 003's reject/cancel semantics: clear drag state,
+##      no id, no commit, no signal, counter unchanged. (placement_rejected
+##      emission is Story 003's domain — deliberately not emitted here.)
+##   2. Allocate instance_id = _next_instance_id (consume the current value;
+##      Core Rule 7 — the counter is touched ONLY here, never at drag-start,
+##      never for cancelled/failed drags).
+##   3. Call GridSystem.commit(id, transformed_fp, transformed_ac, rotation)
+##      — GridSystem ITSELF fires grid_changed exactly once; PlacementSystem
+##      does NOT own or emit that signal (Core Rule 5).
+##   4. Advance _next_instance_id to N+1 — ONLY after commit() returned (the
+##      commit is guaranteed to succeed post-can_place: fresh monotonic id >= 0
+##      and not already in GridSystem's reverse index).
+##   5. Emit placement_committed(N, equipment_id, footprint_cells) — exactly
+##      once, exactly 3 args, AFTER commit() returns (AC21). footprint_cells
+##      is the SAME transformed array passed to commit().
+##   6. Clear drag state; the new instance belongs to SelectionSystem.
+func on_drop() -> void:
+	if not _assert_initialized():
+		return
+	if _state != DragState.DRAGGING:
+		return
+	# QA edge (AC6): drop with zero mouse moves since drag start — no cell was
+	# ever entered (_has_previewed stays false), so there is nothing to
+	# commit; treat as a silent cancel: no id, no commit, no signal.
+	if not _has_previewed:
+		_clear_drag()
+		return
+	var check: PlacementCheckResult = _grid.can_place(
+		_drag_def.footprint_cells, _drag_def.access_cells, _anchor, _rotation
+	)
+	if not check.valid:
+		# FAIL branch — Story 003 owns placement_rejected + fail_code. This
+		# story guarantees the no-write outcome: no id allocated, no commit(),
+		# no grid_changed, counter unchanged (AC10: failed drags never consume).
+		_clear_drag()
+		return
+	var instance_id := _next_instance_id
+	var transformed: TransformedFootprint = _grid.get_transformed_cells(
+		_drag_def.footprint_cells, _drag_def.access_cells, _anchor, _rotation
+	)
+	_grid.commit(instance_id, transformed.footprint_cells, transformed.access_cells, _rotation)
+	_next_instance_id += 1  # consumed ONLY on a successful commit (Core Rule 7)
+	# Exactly 3 args — arity must match the signal declaration (AC21).
+	# equipment_id comes from the held def (catalog data is immutable, AC1);
+	# the def is non-null here because DRAGGING state implies begin_drag passed.
+	placement_committed.emit(instance_id, _drag_def.id, transformed.footprint_cells)
+	_clear_drag()
+
+
+## Silent cancel (Escape / focus-loss routed by the bridge — Story 003 owns
+## the full silent-cancel semantics; this is the drag-clearing primitive that
+## AC10's cancellation path needs). Ends the drag with no id, no commit, no
+## signal of any kind (AC10: cancellations never consume an id). Counter
+## untouched.
+func on_cancel() -> void:
+	if not _assert_initialized():
+		return
+	if _state != DragState.DRAGGING:
+		return
+	_clear_drag()
+
+
+## Resets all drag-scoped state to IDLE. Never touches the instance_id
+## counter and never emits any signal — called from every drag-ending path
+## (commit, reject, silent cancel).
+func _clear_drag() -> void:
+	_state = DragState.IDLE
+	_drag_def = null
+	_anchor = Vector2i.ZERO
+	_rotation = GridSystem.Rotation.R0
+	_preview = TransformedFootprint.new()
+	_has_previewed = false
+	_last_preview_cell = Vector2i.ZERO
 
 
 ## WHITE-BOX TEST SEAM (Story 001 / AC4 precondition) — test-only.

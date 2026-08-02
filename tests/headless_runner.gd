@@ -36,6 +36,7 @@ const TEST_FILES := [
 	"tests/unit/equipment_catalog/catalog_use_duration_validation_test.gd",
 	"tests/unit/equipment_catalog/catalog_cost_formula_test.gd",
 	"tests/unit/placement_system/drag_lifecycle_test.gd",
+	"tests/unit/placement_system/commit_success_test.gd",
 	"tests/integration/equipment_catalog/catalog_edge_cases_test.gd",
 	"tests/integration/grid_system/grid_serialization_test.gd",
 	"tests/integration/grid_system/grid_navigation_solidity_test.gd",
