@@ -54,10 +54,22 @@
 ## Knobs (data-driven via the init [config] Dictionary): w_occ=0.7,
 ## w_dense=0.3, alpha=0.3, R=2, D_max=3.
 ##
+## PER-CELL DENSITY FIELD (TR-CONG-004 / GDD Core Rule 4):
+##   raw_cell(c,t)     = Σ_m kernel(c, cell_m(t))   # self 1.0, 4-neighbors w_n
+##   smoothed(c,t)     = β · raw_cell(c,t) + (1 − β) · smoothed(c,t−1)
+##   density_cell(c,t) = clamp(smoothed(c,t) / D_cell_max, 0, 1)
+## Each member splats itself + in-bounds 4-neighbors (out-of-bounds dropped,
+## not wrapped — AC15); per-cell EMA is O(1) memory per cell. The [0,1]
+## field is exposed via per_cell_density(cell) for the overlay heatmap,
+## rebuilt every tick BEFORE the S8 emit. Knobs: beta=0.4, w_n=0.25,
+## D_cell_max=3. Keyed by flat row-major cell index (GridSystem.flat_index
+## convention) so ascending flat index == ascending cell order.
+##
 ## DETERMINISM (TR-CONG-007 / OQ2): equipment iteration runs in ASCENDING
 ## equipment_instance_id order (sorted ids from grid.get_placed_instances()),
-## never Dictionary/hash order. The reservations map is read by KEYED access
-## only — never iterated (TR-MS-006 convention).
+## members splat in ASCENDING member_id order, cells EMA in ASCENDING flat
+## index order — never Dictionary/hash order. The reservations map is read by
+## KEYED access only — never iterated (TR-MS-006 convention).
 ##
 ## AC10 (queue cap): occupancy_state derives from MemberSim's reservation
 ## map (occupant + next_claimant, queue depth 1 MVP) -> max tier 2,
@@ -71,12 +83,18 @@ class_name Congestion extends SimSystem
 ## recompute+swap. Arity 0 (verified by unit test).
 signal congestion_updated
 
+## Von-Neumann 4-neighbor offsets for the density kernel splat (AC15).
+const NEIGHBOR_DIRS: Array = [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]
+
 ## Config keys (data-driven per Control Manifest — defaults = GDD anchors).
 const CONFIG_W_OCC := "w_occ"
 const CONFIG_W_DENSE := "w_dense"
 const CONFIG_ALPHA := "alpha"
 const CONFIG_RADIUS := "R"
 const CONFIG_D_MAX := "D_max"
+const CONFIG_BETA := "beta"
+const CONFIG_W_N := "w_n"
+const CONFIG_D_CELL_MAX := "D_cell_max"
 
 ## Injected composition root (unused by this system; kept for signature
 ## symmetry with TimeSystem/MemberSim).
@@ -104,6 +122,9 @@ var _w_dense: float = 0.3
 var _alpha: float = 0.3
 var _radius: int = 2
 var _d_max: float = 3.0
+var _beta: float = 0.4
+var _w_n: float = 0.25
+var _d_cell_max: float = 3.0
 
 ## Double-buffer: prev = authoritative Congestion(t-1) (read-only during a
 ## tick; what per_equipment_congestion serves); next = write target for the
@@ -113,6 +134,21 @@ var _d_max: float = 3.0
 ## observable-state convention (MemberSim exposes members/reservations).
 var prev: Dictionary = {}
 var next: Dictionary = {}
+
+## Per-cell density field (Core Rule 4) — keyed by flat cell index
+## (y * width + x, matching GridSystem.flat_index) so iteration in ascending
+## flat index == ascending cell order, the fixed float-summation order.
+##   raw_cells      — raw_cell(c,t) = Σ_m kernel(c, cell_m) for the CURRENT
+##                    tick; transient (rebuilt every tick), exposed for the
+##                    white-box AC15 kernel assertions.
+##   smoothed_cells — smoothed(c,t) = β·raw + (1−β)·smoothed(c,t−1); the
+##                    persistent EMA state story-004 serializes. Cells with
+##                    no prior value start at 0.
+##   density_cells  — density_cell(c,t) = clamp(smoothed/D_cell_max, 0, 1);
+##                    the [0,1] output field the overlay reads.
+var raw_cells: Dictionary = {}
+var smoothed_cells: Dictionary = {}
+var density_cells: Dictionary = {}
 
 ## Per-tick counter. Kept from the SL-002 stub as an observable stand-in;
 ## the pre-wiring compatibility path increments it every tick (integration
@@ -163,6 +199,9 @@ func _apply_config(config: Dictionary) -> void:
 	_alpha = clampf(float(config.get(CONFIG_ALPHA, _alpha)), 0.0, 1.0)
 	_radius = maxi(int(config.get(CONFIG_RADIUS, _radius)), 0)
 	_d_max = maxf(float(config.get(CONFIG_D_MAX, _d_max)), 0.001)
+	_beta = clampf(float(config.get(CONFIG_BETA, _beta)), 0.0, 1.0)
+	_w_n = clampf(float(config.get(CONFIG_W_N, _w_n)), 0.0, 1.0)
+	_d_cell_max = maxf(float(config.get(CONFIG_D_CELL_MAX, _d_cell_max)), 0.001)
 
 
 func system_name() -> String:
@@ -204,6 +243,9 @@ func on_tick(tick_count: int) -> void:
 	# Single swap AFTER all entities processed (TR-CONG-002 / AC6).
 	prev = next
 	next = {}
+	# Per-cell density field (Core Rule 4) — recompute completes BEFORE the
+	# S8 emit so the overlay's signal handler reads the fresh field.
+	_recompute_cell_density()
 	congestion_updated.emit()
 
 
@@ -217,6 +259,22 @@ func per_equipment_congestion(instance_id: int) -> float:
 	if not _assert_initialized():
 		return 0.0
 	return clampf(float(prev.get(instance_id, 0.0)), 0.0, 1.0)
+
+
+## The overlay-facing read surface (Core Rule 4 / TR-CONG-004): returns the
+## per-cell density in [0,1] for [cell] from the CURRENT tick's field (the
+## state emitted via S8). Out-of-bounds cells and cells never touched read
+## as 0.0. Defensively clamped.
+func per_cell_density(cell: Vector2i) -> float:
+	if not _assert_initialized():
+		return 0.0
+	if _grid == null:
+		return 0.0
+	var dims: Vector2i = _grid.get_dimensions()
+	if cell.x < 0 or cell.x >= dims.x or cell.y < 0 or cell.y >= dims.y:
+		return 0.0
+	var idx := _cell_index(cell, dims.x)
+	return clampf(float(density_cells.get(idx, 0.0)), 0.0, 1.0)
 
 
 ## Returns the placed equipment ids in ASCENDING order — the fixed
@@ -311,6 +369,87 @@ func _nearby_count(instance_id: int) -> int:
 ## density radius (_dist_cells) and the flow-hypothesis double.
 static func _chebyshev(a: Vector2i, b: Vector2i) -> int:
 	return maxi(absi(a.x - b.x), absi(a.y - b.y))
+
+
+## Flat row-major cell index — MUST match GridSystem.flat_index (used by
+## story-004 serialization); ascending flat index == ascending cell order.
+static func _cell_index(cell: Vector2i, width: int) -> int:
+	return cell.y * width + cell.x
+
+
+## Per-cell density field recompute (Core Rule 4 / TR-CONG-004):
+##   raw_cell(c,t)     = Σ_m kernel(c, cell_m(t))
+##   kernel(c, c_m)    = 1 if c == c_m; w_n if c is a 4-neighbor; else 0
+##   smoothed(c,t)     = β · raw_cell(c,t) + (1 − β) · smoothed(c,t−1)
+##   density_cell(c,t) = clamp(smoothed(c,t) / D_cell_max, 0, 1)
+##
+## DETERMINISM (TR-CONG-007 / OQ2): members are splatted in ASCENDING
+## member_id order (never the live array order), and the EMA pass iterates
+## cells in ASCENDING flat index order — fixed float-summation order.
+## A cell that receives no splat this tick still decays via the EMA term
+## (smoothed = (1−β)·prev), so the field eases toward 0 instead of snapping
+## (GDD Edge Case: zero members).
+func _recompute_cell_density() -> void:
+	var dims: Vector2i = _grid.get_dimensions()
+	var width: int = dims.x
+	var height: int = dims.y
+	if width <= 0 or height <= 0:
+		return
+
+	# 1) Splat members (self + in-bounds 4-neighbors) in ascending id order.
+	raw_cells = {}
+	var members := _members_ascending()
+	for m in members:
+		_splat_member(m, width, height)
+
+	# 2) EMA blend + normalize per cell, ascending flat index.
+	for y in height:
+		for x in width:
+			var idx := y * width + x
+			var raw := float(raw_cells.get(idx, 0.0))
+			var prev_smoothed := float(smoothed_cells.get(idx, 0.0))
+			var smoothed := _beta * raw + (1.0 - _beta) * prev_smoothed
+			smoothed_cells[idx] = smoothed
+			density_cells[idx] = clampf(smoothed / _d_cell_max, 0.0, 1.0)
+
+
+## Returns the member records eligible for the density field, sorted by
+## ASCENDING member_id (the fixed float-summation order). Records without a
+## state/cell/member_id (legacy roster entries) and GONE members (removed at
+## end of tick) are excluded — consistent with _nearby_count. The live
+## MemberSim array is never mutated — a sorted COPY is returned.
+func _members_ascending() -> Array:
+	var members: Variant = _member_sim.get("members") if _member_sim != null else []
+	if not (members is Array):
+		return []
+	var valid: Array = []
+	for m in members:
+		if not (m is Dictionary) or not m.has("state") or not m.has("cell") \
+				or not m.has("member_id"):
+			continue
+		if str(m["state"]) == "GONE":
+			continue
+		valid.append(m)
+	valid.sort_custom(func(a, b): return int(a["member_id"]) < int(b["member_id"]))
+	return valid
+
+
+## Splats ONE member's kernel into raw_cells (Core Rule 4): self gets 1.0,
+## each IN-BOUNDS von-Neumann 4-neighbor gets w_n. Out-of-bounds neighbors
+## are DROPPED — not wrapped, not clamped to the edge cell (AC15 / GDD Edge
+## Case). The member's own cell is always on-grid (defensive skip otherwise).
+func _splat_member(m: Dictionary, width: int, height: int) -> void:
+	var cell: Vector2i = m["cell"] as Vector2i
+	if cell.x < 0 or cell.x >= width or cell.y < 0 or cell.y >= height:
+		return
+	var idx := _cell_index(cell, width)
+	raw_cells[idx] = float(raw_cells.get(idx, 0.0)) + 1.0
+	for dir in NEIGHBOR_DIRS:
+		var neighbor: Vector2i = cell + dir
+		if neighbor.x < 0 or neighbor.x >= width or neighbor.y < 0 or neighbor.y >= height:
+			continue
+		var nidx := _cell_index(neighbor, width)
+		raw_cells[nidx] = float(raw_cells.get(nidx, 0.0)) + _w_n
 
 
 ## Returns the full observable state as a JSON-safe Dictionary:
