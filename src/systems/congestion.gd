@@ -63,6 +63,14 @@
 ## map (occupant + next_claimant, queue depth 1 MVP) -> max tier 2,
 ## defensively clamped.
 ##
+## ACCESS_REACHABLE (story-003, TR-CONG-005 / GDD Core Rules 5-6):
+##   access_reachable[E] = whether ANY path exists from the level's single
+##   entrance_cell to E's first access cell (Navigation.get_path non-empty).
+##   Recomputed ONLY when grid_changed fires — batch-flushed once per tick
+##   (never once per event, never per tick), cached otherwise (AC12).
+##   Removed equipment's prev/next/access_reachable entries are deleted the
+##   same tick — never decayed (Core Rule 6 / AC9).
+##
 ## S8 SIGNAL: congestion_updated — zero payload, emitted once per tick
 ## AFTER the swap completes (the moment prev is freshly finalized).
 class_name Congestion extends SimSystem
@@ -98,6 +106,27 @@ var _grid: GridStateReader = null
 ##                              "cell" (Vector2i) — post-move this tick
 var _member_sim: Variant = null
 
+## Story-003: injected Navigation for the event-driven access_reachable
+## recompute (TR-CONG-005). Null in the pre-wiring / story-001 rigs —
+## reachability simply does not engage (access_reachable stays empty).
+var _navigation: Navigation = null
+
+## Story-003: the level's single entrance cell — the path source for
+## access_reachable (GDD Core Rule 5 / OQ4 single-entrance assumption,
+## matching MemberSim). Vector2i(-1,-1) = not supplied (reachability off).
+var _entrance_cell: Vector2i = Vector2i(-1, -1)
+
+## Story-003: true when a grid_changed has arrived since the last batch
+## flush. Consumed by _flush_grid_changes() at the start of the next
+## on_tick — the batch boundary (AC16: never once per event).
+var _grid_changed_pending: bool = false
+
+## Story-003: the equipment ids present at the last observation (init or
+## last grid_changed event). Diffed against the current placed set on each
+## grid_changed to detect removals even when the payload says nothing about
+## direction (S1 payload is cells, not ids).
+var _last_known_ids: Dictionary = {}
+
 # === Tuning values (GDD Tuning Knobs anchors; see class header) ===
 var _w_occ: float = 0.7
 var _w_dense: float = 0.3
@@ -113,6 +142,14 @@ var _d_max: float = 3.0
 ## observable-state convention (MemberSim exposes members/reservations).
 var prev: Dictionary = {}
 var next: Dictionary = {}
+
+## Story-003: per-equipment access_reachable flag (TR-CONG-005) — keyed by
+## equipment_instance_id -> bool. Event-driven: recomputed ONLY when
+## grid_changed fires (batch-flushed once per tick), cached otherwise
+## (AC12 zero path queries on a quiet tick). Removed equipment's entry is
+## deleted the same tick (Core Rule 6). Exposed (not underscore) for the
+## white-box AC13/AC16 tests, matching prev/next's convention.
+var access_reachable: Dictionary = {}
 
 ## Per-tick counter. Kept from the SL-002 stub as an observable stand-in;
 ## the pre-wiring compatibility path increments it every tick (integration
@@ -133,12 +170,19 @@ var counter: int = 0
 ##
 ## [config] carries the data-driven tuning values (CONFIG_* keys); missing
 ## keys fall back to the GDD anchors.
+##
+## [navigation] / [entrance_cell] are story-003's reachability deps
+## (TR-CONG-005). Both optional with null / (-1,-1) defaults so story-001
+## rigs and the SL-002-era call sites keep working — reachability engages
+## only when navigation + entrance_cell are supplied (plus grid).
 func init(
 	orchestrator: SimulationOrchestrator,
 	seeded_rng: SeededRNG,
 	grid: GridStateReader = null,
 	member_sim: Variant = null,
-	config: Dictionary = {}
+	config: Dictionary = {},
+	navigation: Navigation = null,
+	entrance_cell: Vector2i = Vector2i(-1, -1)
 ) -> void:
 	if not _mark_initialized():
 		return
@@ -146,8 +190,17 @@ func init(
 	_seeded_rng = seeded_rng
 	_grid = grid
 	_member_sim = member_sim
+	_navigation = navigation
+	_entrance_cell = entrance_cell
 	_apply_config(config)
 	_seeded_rng.register_system(system_name())
+	_last_known_ids = _current_equipment_id_set() if _grid != null else {}
+	# One-shot initial population (GDD Core Rule 7: "one-shot recompute on
+	# load" allowance). Without it, equipment placed BEFORE init would read
+	# access_reachable=false (flag absent) until the first grid_changed —
+	# the overlay would misreport every machine as walled off at boot.
+	if _can_compute_reachability():
+		_recompute_access_reachable()
 
 
 ## Reads the [config] Dictionary into the tuning fields. Missing keys keep
@@ -167,6 +220,52 @@ func _apply_config(config: Dictionary) -> void:
 
 func system_name() -> String:
 	return "Congestion"
+
+
+## Cross-system wiring phase (ADR-0001 two-phase init, Phase 2). Called by
+## the orchestrator AFTER every system exists — subscribes to GridSystem's
+## grid_changed (S1 in the ADR-0005 Signal Catalog) so access_reachable
+## recomputes on layout change (story-003 / TR-CONG-005). Same pattern as
+## Navigation._post_init(): the is_connected guard makes it idempotent.
+##
+## Subscription lifecycle: systems live for the session lifetime
+## (orchestrator owns them), so no disconnect is needed (ADR-0005 negative
+## consequence mitigation). Pre-wiring / story-001 rigs never call
+## _post_init — reachability stays inert there (no subscription, no
+## grid_changed handling).
+func _post_init() -> void:
+	assert(_initialized, "Congestion._post_init() called before init()")
+	if _grid != null and not _grid.grid_changed.is_connected(_on_grid_changed):
+		_grid.grid_changed.connect(_on_grid_changed)
+
+
+## Story-003 S1 handler (grid_changed). The payload is CELLS, not ids, and
+## says nothing about direction — so removals are detected by diffing the
+## last-known id set against the current placed set (Core Rule 6 / AC9).
+##
+## CORE RULE 6 (AC9) — same-tick deletion: removed equipment's
+## prev/next/access_reachable entries are erased HERE, immediately — not
+## decayed, not deferred. The batch boundary only governs the (expensive)
+## access_reachable RECOMPUTE, never the deletion: a removed-and-re-added id
+## within one tick still gets a fresh entry (AC9 edge case), because the
+## stale entry was already dropped by this handler.
+##
+## BATCHING (AC16): recompute happens in _flush_grid_changes() at the start
+## of the next on_tick. Two grid_changed events in one tick therefore
+## recompute access_reachable exactly once, against the final post-batch
+## grid state — never once per event, never an intermediate state.
+func _on_grid_changed(_footprint_cells_changed: Array, _access_cells_changed: Array) -> void:
+	if not _assert_initialized():
+		return
+	_grid_changed_pending = true
+	var current := _current_equipment_id_set()
+	for instance_id in _last_known_ids:
+		if not current.has(instance_id):
+			# Core Rule 6: dropped the same tick — never decayed.
+			prev.erase(instance_id)
+			next.erase(instance_id)
+			access_reachable.erase(instance_id)
+	_last_known_ids = current
 
 
 ## True when every hard upstream dependency has been supplied, i.e. the
@@ -191,10 +290,17 @@ func _is_configured() -> bool:
 ## tick t, computes each equipment's raw_i(t), EMA-blends it against
 ## prev[i], writes into next[i]; after ALL entities are processed, a single
 ## swap prev <- next; then emits congestion_updated (S8) exactly once.
+##
+## STORY-003 (TR-CONG-005): the tick start is the batch boundary for
+## pending grid_changed events — _flush_grid_changes() drops removed
+## equipment's entries and recomputes access_reachable once against the
+## final grid state (AC9/AC13/AC16). A quiet tick (no grid_changed) makes
+## flush a no-op and performs ZERO Navigation.get_path queries (AC12).
 func on_tick(tick_count: int) -> void:
 	if not _assert_initialized():
 		return
 	counter += 1
+	_flush_grid_changes()
 	if not _is_configured():
 		return  # pre-wiring compatibility — no state to measure, no draw
 
@@ -217,6 +323,79 @@ func per_equipment_congestion(instance_id: int) -> float:
 	if not _assert_initialized():
 		return 0.0
 	return clampf(float(prev.get(instance_id, 0.0)), 0.0, 1.0)
+
+
+## Story-003 public read (TR-CONG-005): whether equipment [instance_id] has
+## ANY path from the level entrance_cell to its first access cell
+## (Navigation.get_path non-empty). Cached — recomputed only on grid_changed
+## (see _flush_grid_changes). Unknown ids (removed equipment, never-seen)
+## read as false — "not found" is a flag absence, not a stale value.
+## This is the flag the Congestion/Flow Overlay (#8) surfaces
+## default-visible when false.
+func is_access_reachable(instance_id: int) -> bool:
+	if not _assert_initialized():
+		return false
+	return bool(access_reachable.get(instance_id, false))
+
+
+## Story-003 batch flush (AC9/AC13/AC16): processes the pending grid_changed
+## batch at the tick boundary. Called at the start of on_tick — the one
+## place grid-driven state converges, exactly once per tick.
+##
+## AC13/AC16: recompute access_reachable for the CURRENT equipment set
+## exactly once per equipment, against the final post-batch grid state —
+## never once per event, never an intermediate state. (Removal deletion
+## already happened in the handler — Core Rule 6 same-tick.)
+##
+## Zero get_path calls when nothing is pending (AC12 — a quiet tick never
+## touches Navigation). Reachability also requires navigation + entrance
+## (story-001 rigs have neither); without them nothing happens here.
+func _flush_grid_changes() -> void:
+	if not _grid_changed_pending:
+		return
+	_grid_changed_pending = false
+	if _can_compute_reachability():
+		_recompute_access_reachable()
+
+
+## Whether the reachability machinery is live: a grid read surface, a
+## Navigation, and a real entrance cell all supplied. Story-001 rigs and
+## pre-wiring instances fail this check — access_reachable stays empty.
+func _can_compute_reachability() -> bool:
+	return _grid != null and _navigation != null and _entrance_cell != Vector2i(-1, -1)
+
+
+## Recomputed access_reachable for EVERY currently placed equipment — the
+## affected set is the whole grid because any layout change can sever any
+## path (a new wall anywhere can wall off a distant machine, AC13). One
+## get_path per equipment, ascending-id order (fixed summation order, OQ2).
+func _recompute_access_reachable() -> void:
+	access_reachable = {}
+	for instance_id in _ascending_equipment_ids():
+		access_reachable[instance_id] = _equipment_reachable(instance_id)
+
+
+## Single-equipment reachability: a non-empty Navigation.get_path from the
+## level's single entrance_cell to the equipment's FIRST access cell
+## (matching MemberSim's arrival semantics — access_cells[0]). Equipment
+## with no access cell is never reachable.
+func _equipment_reachable(instance_id: int) -> bool:
+	var access_cells: Array[Vector2i] = _grid.get_access_cells(instance_id)
+	if access_cells.is_empty():
+		return false
+	var path: Array[Vector2i] = _navigation.get_path(_entrance_cell, access_cells[0])
+	return not path.is_empty()
+
+
+## The current placed equipment id set (for removal diffing). Dictionary
+## membership, never iteration order — determinism-safe.
+func _current_equipment_id_set() -> Dictionary:
+	var ids: Dictionary = {}
+	if _grid == null:
+		return ids
+	for inst in _grid.get_placed_instances():
+		ids[int(inst.instance_id)] = true
+	return ids
 
 
 ## Returns the placed equipment ids in ASCENDING order — the fixed

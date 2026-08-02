@@ -10,9 +10,9 @@
 
 | # | Story | Type | Status | ADR |
 |---|-------|------|--------|-----|
-| 001 | Per-Equipment Congestion Scalar + EMA | Logic | Ready | ADR-0005 |
+| 001 | Per-Equipment Congestion Scalar + EMA | Logic | Complete — 2026-08-02 | ADR-0005 |
 | 002 | Per-Cell Density Field | Logic | Ready | ADR-0005 |
-| 003 | access_reachable and grid_changed Handling | Logic | Ready | ADR-0003, ADR-0005 |
+| 003 | access_reachable and grid_changed Handling | Logic | Complete — 2026-08-02 | ADR-0003, ADR-0005 |
 | 004 | Determinism and Serialization | Integration | Ready | ADR-0002, ADR-0005 |
 
 ## Overview
