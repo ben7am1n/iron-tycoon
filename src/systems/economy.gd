@@ -151,17 +151,33 @@ func on_member_completed_visit(member_id: int) -> void:
 	balance_changed.emit(balance, _r_visit)
 
 
-## Spend interface (GDD Core Rule 5 / AC1) — the deduction counterpart to
+## Affordability query (GDD Core Rule 5 / AC5) — the Shop pre-check gate in
+## spend()'s triple-gating chain (defense in depth). Pure read: returns
+## whether [amount] could be spent right now. NEVER mutates balance and never
+## emits balance_changed (no signal — it is a query, not a transaction).
+## Rejects amount <= 0 (returns false) — mirrors spend()'s gate (a), so
+## can_afford(-100) can never be misread as "the balance could absorb a
+## negative spend".
+func can_afford(amount: int) -> bool:
+	if not _assert_initialized():
+		return false
+	if amount <= 0:
+		return false
+	return balance >= amount
+
+
+## Spend interface (GDD Core Rule 5 / AC2–AC5) — the deduction counterpart to
 ## ADR-0006's credit() (which lands in Story 003). Economy-side gates:
 ##   (a) amount > 0          — rejects zero/negative (prevents the
 ##                             negative-amount exploit where spend(-100) would
-##                             pass amount ≤ balance and INCREASE the balance)
-##   (b) amount ≤ balance    — the affordability gate (AC1: overspend returns
+##                             pass amount <= balance and INCREASE the balance)
+##   (b) amount <= balance    — the affordability gate (AC2: overspend returns
 ##                             false, balance unchanged)
+##   (c) Shop pre-checks can_afford() before calling — the third gate in the
+##                             chain, owned by the caller (defense in depth;
+##                             AC5 pins the can_afford/spend consistency)
 ## On success: balance -= amount, emit balance_changed(new, -amount). On any
-## rejection: returns false with ZERO mutation and NO signal. (can_afford() +
-## the Shop pre-check chain + AC2–AC5 test file are Story 002's scope — the
-## task card scopes AC1's spend rejection to this story.)
+## rejection: returns false with ZERO mutation and NO signal.
 func spend(amount: int) -> bool:
 	if not _assert_initialized():
 		return false

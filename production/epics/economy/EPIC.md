@@ -11,7 +11,7 @@
 | # | Story | Type | Status | ADR |
 |---|-------|------|--------|-----|
 | 001 | Balance and Flat-Fee Revenue | Logic | Complete — 2026-08-02 | ADR-0005, ADR-0006 |
-| 002 | spend() and can_afford Triple-Gating | Logic | Ready | ADR-0006 |
+| 002 | spend() and can_afford Triple-Gating | Logic | Complete — 2026-08-03 | ADR-0006 |
 | 003 | credit() Interface and No-Satisfaction Structure | Logic | Ready | ADR-0006 |
 | 004 | Serialization, Determinism and No-Decay | Integration | Ready | ADR-0002, ADR-0005, ADR-0006 |
 
