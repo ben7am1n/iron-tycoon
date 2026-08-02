@@ -24,6 +24,7 @@ const TEST_FILES := [
 	"tests/unit/grid_system/grid_state_reader_snapshot_test.gd",
 	"tests/unit/grid_system/grid_system_signals_test.gd",
 	"tests/unit/grid_system/grid_system_guardrail_test.gd",
+	"tests/unit/placement_system/is_dragging_cost_scope_test.gd",
 	"tests/unit/time_system/orchestrator_tick_dispatch_test.gd",
 	"tests/unit/time_system/tick_accumulator_test.gd",
 	"tests/unit/time_system/lsr_helper_test.gd",
