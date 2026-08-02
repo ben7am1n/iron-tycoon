@@ -142,7 +142,7 @@ func _test_ac11_constants() -> void:
 	_check(float(consts["TICK_DURATION_SECONDS"]) == 0.1, "TICK_DURATION_SECONDS == exactly 0.1 (got %s)" % consts["TICK_DURATION_SECONDS"])
 	_check(float(consts["TICK_DURATION_SECONDS"]) == 1.0 / float(consts["TICKS_PER_SECOND"]), "formula 1.0/TICKS_PER_SECOND holds in const map")
 	_check(int(consts["MAX_TICKS_PER_FRAME"]) == 8, "MAX_TICKS_PER_FRAME == 8 (got %s)" % consts["MAX_TICKS_PER_FRAME"])
-	_check(consts["SPEED_OPTIONS"] == [0, 1, 2, 3], "SPEED_OPTIONS == [0,1,2,3] (got %s)" % consts["SPEED_OPTIONS"])
+	_check(consts["SPEED_OPTIONS"] == [0, 1, 2, 3], "SPEED_OPTIONS == [0,1,2,3] (got %s)" % str(consts["SPEED_OPTIONS"]))
 	# const-ness is enforced at parse time (reassignment is a compile error),
 	# so presence in get_script_constant_map() IS the const proof — a plain
 	# var would not appear there. Advisory note, not a runtime check.

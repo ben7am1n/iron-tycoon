@@ -84,6 +84,35 @@
 ##
 ## ADR-0002 §3 note: the on-disk envelope ({format_version, payload}) is
 ## Story 004's concern (file I/O). This story produces the flat Dictionary.
+##
+## STORY 004 (file I/O, JSON encoding, version checking) additions:
+##   - save_to_file()/save(): JSON.stringify with indent="  ", sort_keys=true,
+##     full_precision=true (ADR-0002 §6 + Control Manifest: sort_keys must be
+##     true — the story sketch's literal `false` for sort_keys is a typo, its
+##     own comment says true); every FileAccess.store_*() return checked
+##     (AC-FILE-1); flush() called before close() (AC-FILE-2); saves dir
+##     auto-created via DirAccess.make_dir_recursive(); file path is
+##     user_data_dir/saves/<name>.sav.json (AC-FILE-4).
+##   - load_from_file(): JSON.new().parse() (line numbers), type-safe version
+##     exact-match gate BEFORE any system is touched (AC6). JSON parses
+##     integer literals as FLOAT in 4.7.1 (verified empirically), so the
+##     version check accepts int|float and rejects everything else — a string
+##     version would crash the `!=` comparison (GDScript runtime error).
+##   - load_save(): file-level gate then delegates to Story 002's load() via
+##     guarded dynamic dispatch (has_method("load") + call) — SL-002 lands in
+##     parallel; until then a valid file returns an honest "not wired" error
+##     instead of crashing. Return type is Variant: Story 002 defines the
+##     typed load result (the global class_name `LoadResult` is taken by the
+##     equipment-catalog epic, so SL-002 must choose a distinct name).
+##
+## DEVIATION #3 (flush return): the story sketch says "call flush first, check
+## its return" — FileAccess.flush() returns void in Godot 4.7.1 (empirically
+## verified), so there is no return to check. The guarantee that IS enforced:
+## flush() is called before close() on every path (AC-FILE-2), and the mock
+## test verifies the ordering. Similarly close() returns void — the sketch's
+## `close_error := f.get_open_error()` would read the OPEN error, not a close
+## error, so it is omitted (get_open_error() is only meaningful for open
+## failures, which ARE checked).
 class_name SaveLoad extends RefCounted
 
 ## Save blob format version (GDD Core Rule 6 — exact-match on load).
@@ -97,6 +126,12 @@ const SAVE_FORMAT_VERSION := 1
 class SaveLoadResult extends RefCounted:
 	var ok: bool = false
 	var errors: Array[String] = []
+
+## Save directory name under the user data dir (ADR-0002: user://saves/...).
+const SAVE_DIR := "saves"
+
+## Save file extension (ADR-0002 §1: JSON, `.sav.json`).
+const SAVE_EXTENSION := ".sav.json"
 
 ## The fixed blob key set — the textual source of truth for TR-SL-002.
 ## Missing key = load error; key outside this set (e.g. a future system that
@@ -136,6 +171,15 @@ var _navigation        # Navigation — null until its story lands
 
 var _save_pending: bool = false
 var _initialized: bool = false
+
+## Test seam (AC-FILE-1/AC-FILE-2): when set, save_to_file() obtains the
+## write handle from this factory instead of FileAccess.open(). The factory
+## must return an Object exposing store_string(s)->bool, flush(), close()
+## (duck-typed — verified works through an Object var in 4.7.1). Production
+## wiring leaves it empty (real FileAccess). The mock test injects a
+## MockHandle whose store_string() returns false (AC-FILE-1) and whose call
+## order is recorded (AC-FILE-2 flush-before-close).
+var _file_access_factory: Callable = Callable()
 
 
 ## Two-phase init (ADR-0001). Captures the coordinated systems from the
@@ -459,3 +503,201 @@ func _extract_instance_ids(grid_data: Dictionary) -> Array:
 ## SaveLoad's Array[String] error list.
 func _format_grid_error(err: Dictionary) -> String:
 	return "GridSystem: [%s] %s" % [str(err.get("category", "?")), str(err.get("detail", ""))]
+# ================= Story 004 — File I/O, JSON Encoding, Version Checking =================
+
+
+## Public: save to disk using save_name as the slot identifier.
+## The caller (UI) is responsible for the save_name — e.g., "autosave",
+## "slot_1", etc. Returns error string (empty on success).
+## The caller should call this from within the tick_completed handler (the
+## save is synchronous at the boundary — Story 001's deferral is request_save()).
+func save(save_name: String) -> String:
+	return save_to_file(save_name)
+
+
+## Write save blob to disk. Returns error string if failed, empty string on success.
+## Resolves `user_data_dir/saves/<save_name>.sav.json` (AC-FILE-4), creates the
+## saves dir via DirAccess.make_dir_recursive() when missing, JSON-encodes with
+## full_precision=true + sort_keys=true, checks EVERY FileAccess.store_*()
+## return value (AC-FILE-1), and calls flush() before close() (AC-FILE-2).
+func save_to_file(save_name: String) -> String:
+	assert(_initialized, "SaveLoad: not initialized")
+
+	# Reject unsafe save names (Control Manifest: never write to
+	# user-controlled paths — path traversal). Story QA edge case: special
+	# characters are REJECTED (rejection chosen over sanitization — safer).
+	var name_error := _validate_save_name(save_name)
+	if not name_error.is_empty():
+		return name_error
+
+	# Produce the blob (delegates to save-blob composition from Story 001)
+	var blob := _perform_save()
+	if blob.is_empty():
+		return "SaveLoad: failed to compose save blob"
+
+	# JSON encode with deterministic options
+	var json_string := JSON.stringify(blob, "  ", true, true)
+	#                                   indent, sort_keys, full_precision
+	# indent="  " for human-readability; sort_keys=true for deterministic
+	# output (Control Manifest FORBIDS sort_keys=false — the story sketch's
+	# literal `false` is a typo, its own comment says true); full_precision=true
+	# for int64/float safety.
+
+	# Guardrail (Control Manifest): log a warning if > 1 MB (MVP est. < 50 KB).
+	if json_string.length() > 1_000_000:
+		push_warning("SaveLoad: save '%s' is %d bytes — exceeds 1 MB guardrail" % [save_name, json_string.length()])
+
+	# Resolve save path
+	var user_dir := OS.get_user_data_dir()
+	var save_dir := user_dir.path_join(SAVE_DIR)
+
+	# Ensure directory exists (AC-FILE-4 edge: save_dir doesn't exist yet)
+	var dir := DirAccess.open("user://")
+	if dir == null:
+		return "SaveLoad: failed to open user data dir (error %d)" % DirAccess.get_open_error()
+	if not dir.dir_exists(save_dir):
+		var mkdir_result := dir.make_dir_recursive(save_dir)
+		if mkdir_result != OK:
+			return "SaveLoad: failed to create save directory '%s' (error %d)" % [save_dir, mkdir_result]
+
+	var file_path := save_dir.path_join(save_name + SAVE_EXTENSION)
+
+	# Write to file — via the factory seam when a mock is injected, else the
+	# real FileAccess (AC-FILE-1/2 mock tests).
+	var f: Object = _open_write(file_path)
+	if f == null:
+		if _file_access_factory.is_valid():
+			return "SaveLoad: failed to open '%s' for writing (factory returned null)" % file_path
+		return "SaveLoad: failed to open '%s' for writing (error %d)" % [file_path, FileAccess.get_open_error()]
+
+	# Every store_*() call's return value MUST be checked (AC-FILE-1): a false
+	# return means the write failed silently in older versions, now it's explicit.
+	if not f.store_string(json_string):
+		f.close()
+		return "SaveLoad: failed to write save data to '%s'" % file_path
+
+	# flush() before close() — ensures OS-level write buffers are committed
+	# (AC-FILE-2). flush() returns void in 4.7.1 (deviation #3).
+	f.flush()
+	f.close()
+
+	return ""  # success
+
+
+## Read save blob from disk. Returns [blob: Dictionary, error: String].
+## error is empty on success.
+## The version exact-match gate lives HERE, before any Dictionary is passed to
+## load() — no system is touched when the version mismatches (AC6, "no Phase A
+## even starts"). Parsing uses JSON.new().parse() (line-numbered errors), not
+## parse_string() — self-written JSON may be corrupted by disk error, and the
+## line number is required by AC-FILE-3.
+func load_from_file(save_name: String) -> Array:  # [Dictionary, String]
+	assert(_initialized, "SaveLoad: not initialized")
+
+	var file_path := _save_path(save_name)
+
+	if not FileAccess.file_exists(file_path):
+		return [{}, "Save file '%s' not found" % file_path]
+
+	var f := FileAccess.open(file_path, FileAccess.READ)
+	if f == null:
+		return [{}, "Failed to open save file '%s' (error %d)" % [file_path, FileAccess.get_open_error()]]
+
+	var json_string := f.get_as_text()
+	f.close()
+
+	if json_string.is_empty():
+		return [{}, "Save file '%s' is empty" % file_path]
+
+	# Parse JSON (line-numbered errors for corruption diagnosis — AC-FILE-3)
+	var json := JSON.new()
+	var parse_error := json.parse(json_string)
+	if parse_error != OK:
+		return [{}, "Save file '%s' is corrupted or truncated (JSON parse error at line %d: %s)" % \
+			[file_path, json.get_error_line(), json.get_error_message()]]
+
+	var blob = json.get_data()
+	if not blob is Dictionary:
+		return [{}, "Save file '%s' has unexpected structure (not a JSON object)" % file_path]
+
+	# Version check — BEFORE any system is touched (AC6)
+	if not blob.has("version"):
+		return [{}, "Save file '%s' is missing version field — possibly from an older format" % file_path]
+
+	var file_version: Variant = blob["version"]
+	# Type-safe exact-match: JSON parses integer literals as FLOAT in 4.7.1
+	# (verified), and comparing a String to an int CRASHES at runtime in
+	# GDScript. Accept int|float (1.0 == 1 numerically), reject everything else
+	# as a version mismatch — never crash, always reject gracefully.
+	if typeof(file_version) != TYPE_INT and typeof(file_version) != TYPE_FLOAT:
+		return [{}, "Save file '%s' version mismatch: file version is %s (type %s), game expects v%d — incompatible save" % \
+			[file_path, str(file_version), type_string(typeof(file_version)), SAVE_FORMAT_VERSION]]
+
+	if file_version != SAVE_FORMAT_VERSION:
+		return [{}, "Save file '%s' version mismatch: file is v%s, game expects v%d — incompatible save" % \
+			[file_path, _version_label(file_version), SAVE_FORMAT_VERSION]]
+
+	return [blob, ""]
+
+
+## Public: load from disk. The caller must provide buildable_snapshot (level
+## geometry from the level loader — never from the save). Delegates to Story
+## 002's load() once the file-level gate passes. Returns Story 002's load
+## result shape: {ok: bool, errors: Array[String]} (duck-typed Dictionary for
+## now — SL-002 owns the typed result class; the global `LoadResult` name is
+## taken by the equipment-catalog epic, so SL-002 must choose a distinct name).
+func load_save(save_name: String, buildable_snapshot: PackedByteArray) -> Variant:
+	var arr := load_from_file(save_name)
+	var blob: Dictionary = arr[0]
+	var error: String = arr[1]
+
+	# File-level errors (not found, corrupt/truncated, version mismatch) return
+	# ok=false with the error collected. AC6: a version mismatch rejects BEFORE
+	# load() is ever called — load_from_file() gates it — so no system is
+	# touched (no Phase A even starts).
+	if not error.is_empty():
+		return {"ok": false, "errors": [error]}
+
+	# Delegate to Story 002's load(). SL-002 is a parallel story — until it
+	# lands, load() does not exist. Guarded dynamic dispatch (has_method +
+	# call): a valid file yields an honest "not wired" error, never a crash.
+	# When SL-002 merges, this returns its typed result unchanged.
+	if not has_method("load"):
+		return {"ok": false, "errors": ["SaveLoad: load pipeline not yet wired (Story 002)"]}
+	return call("load", blob, buildable_snapshot)
+
+
+## Opens the write handle for a save path. Test seam: when
+## _file_access_factory is set, delegates to it (mock Object with
+## store_string/flush/close); otherwise the real FileAccess. Returns null on
+## failure. Split from save_to_file() so AC-FILE-1/2 can inject a mock.
+func _open_write(file_path: String) -> Object:
+	if _file_access_factory.is_valid():
+		return _file_access_factory.call(file_path)
+	return FileAccess.open(file_path, FileAccess.WRITE)
+
+
+## Rejects save names that could escape the saves directory (Control Manifest:
+## never write to user-controlled paths — path traversal). Rejection (not
+## sanitization) per the story QA edge case. Returns error string or "".
+static func _validate_save_name(save_name: String) -> String:
+	if save_name.is_empty():
+		return "SaveLoad: save name must not be empty"
+	if save_name.contains("/") or save_name.contains("\\") or save_name.contains(".."):
+		return "SaveLoad: invalid save name '%s' — must not contain path separators or '..'" % save_name
+	return ""
+
+
+## Resolves the on-disk path for a save slot: user_data_dir/saves/<name>.sav.json.
+func _save_path(save_name: String) -> String:
+	return OS.get_user_data_dir().path_join(SAVE_DIR).path_join(save_name + SAVE_EXTENSION)
+
+
+## Formats a version value for user-facing messages. JSON parses integer
+## literals as FLOAT in 4.7.1 (e.g. 99.0), and `%d` with a float CRASHES in
+## GDScript 4.7.1 ("a number is required") — so integral floats render as
+## integers ("v99" not "v99.0"), everything else renders via str().
+static func _version_label(v: Variant) -> String:
+	if typeof(v) == TYPE_FLOAT and is_equal_approx(v, round(v)):
+		return str(int(v))
+	return str(v)

@@ -42,6 +42,7 @@ const TEST_FILES := [
 	"tests/integration/save_load/saveblob_composition_test.gd",
 	"tests/integration/save_load/load_orchestration_test.gd",
 	"tests/integration/save_load/roundtrip_determinism_test.gd",
+	"tests/integration/save_load/file_io_version_test.gd",
 ]
 
 # === 隔离的测试文件 ===
