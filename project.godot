@@ -11,6 +11,10 @@ config/features=PackedStringArray("4.7", "Forward Plus")
 [rendering]
 
 renderer/rendering_method.mobile="forward_plus"
+; Pixel-art 2D: default texture import filter = Nearest (0), mipmaps off (0)
+; (art-bible §8 — 2D 像素锐利靠导入设置的 Nearest 保证；4.7 最近邻视口缩放仅作用于 3D)
+textures/canvas_textures/default_texture_filter=0
+textures/canvas_textures/default_texture_mipmap_mode=0
 
 [input]
 
