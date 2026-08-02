@@ -1,12 +1,12 @@
 # Story 001: EquipmentDef Data Model and Catalog Container
 
 > **Epic**: equipment-catalog
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Foundation
 > **Type**: Logic
 > **Estimate**: [hours or t-shirt size — fill before sprint planning]
 > **Manifest Version**: 2026-07-23
-> **Last Updated**: [set by /dev-story when implementation begins]
+> **Last Updated**: 2026-08-02
 
 ## Context
 
@@ -31,11 +31,11 @@
 
 *From GDD `design/gdd/equipment-catalog.md`, scoped to this story:*
 
-- [ ] AC-C.8 [BLOCKING][Logic] GIVEN successfully loaded Catalog, WHEN any system calls get_definition(id) repeatedly for the same id, THEN both returns are value-equal; AND Catalog's public API surface contains no setter/mutator methods (static code check verifiable)
-- [ ] AC-CANONICAL.1 [BLOCKING][Logic] GIVEN an EquipmentDef constructed with canonical 0° footprint/access, WHEN queried, THEN only the original coordinates are stored — no 90°/180°/270° variants generated or stored on the record
-- [ ] AC-IMMUTABLE.1 [BLOCKING][Logic] GIVEN an EquipmentDef instance returned by get_definition(), WHEN caller attempts to modify any field (e.g. append to footprint_cells Array), THEN the original stored definition is unaffected (deep copy or immutable-by-convention)
-- [ ] AC-FROZEN.1 [BLOCKING][Logic] GIVEN Catalog before load() is called, WHEN get_definition(any_id) is called, THEN push_error() fires, returns null or safe default
-- [ ] AC-FROZEN.2 [BLOCKING][Logic] GIVEN Catalog after load() is complete, WHEN any code path attempts to add/remove/modify a definition, THEN the operation is rejected (Catalog exposes no write API)
+- [x] AC-C.8 [BLOCKING][Logic] GIVEN successfully loaded Catalog, WHEN any system calls get_definition(id) repeatedly for the same id, THEN both returns are value-equal; AND Catalog's public API surface contains no setter/mutator methods (static code check verifiable)
+- [x] AC-CANONICAL.1 [BLOCKING][Logic] GIVEN an EquipmentDef constructed with canonical 0° footprint/access, WHEN queried, THEN only the original coordinates are stored — no 90°/180°/270° variants generated or stored on the record
+- [x] AC-IMMUTABLE.1 [BLOCKING][Logic] GIVEN an EquipmentDef instance returned by get_definition(), WHEN caller attempts to modify any field (e.g. append to footprint_cells Array), THEN the original stored definition is unaffected (deep copy or immutable-by-convention)
+- [x] AC-FROZEN.1 [BLOCKING][Logic] GIVEN Catalog before load() is called, WHEN get_definition(any_id) is called, THEN push_error() fires, returns null or safe default
+- [x] AC-FROZEN.2 [BLOCKING][Logic] GIVEN Catalog after load() is complete, WHEN any code path attempts to add/remove/modify a definition, THEN the operation is rejected (Catalog exposes no write API)
 
 ---
 
@@ -177,7 +177,18 @@ func _freeze() -> void:
 **Required evidence**:
 - `tests/unit/equipment_catalog/equipment_def_catalog_test.gd` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing (2026-08-02)
+
+**Test Evidence**: Full suite 675/675 (was 599). New files:
+- `tests/unit/equipment_catalog/equipment_def_catalog_test.gd` — 76 assertions, 0 failures. AC-C.8 (repeated query value-equal across all 12 fields + distinct instances, static API check: public surface is exactly the 3 read-only queries with zero setter/mutator prefixes, missing-id null + push_error via probe, empty-catalog safe defaults), AC-CANONICAL.1 (exact stored coordinates, property-list proves no rotation field and no 90°/180°/270° variant arrays), AC-IMMUTABLE.1 (mutating every mutable surface of a returned copy — footprint/access/zone/effects/cost/display_name/unlock/durations — leaves the stored definition untouched; _init() defensive duplication verified against post-construction source mutation), AC-FROZEN.1 (all 3 queries return safe defaults before freeze; subprocess probe proves all 3 push_error), AC-FROZEN.2 (subprocess probe proves _add_definition() after freeze and double _freeze() both fire assert; no public remove/write method by static check).
+- `tests/unit/equipment_catalog/equipment_catalog_error_probe.gd` — subprocess probe (not a _test.gd): `query_before_freeze` / `query_missing_id` / `add_after_freeze` / `double_freeze` modes, same pattern as the grid-story probes.
+
+**Decisions recorded at close**:
+1. **`get_definition()` returns a DEEP COPY of the stored record, not the shared instance** (deviation from the Story 001 sketch, which returned `_definitions[id]` directly). The sketch as-written fails BLOCKING AC-IMMUTABLE.1's literal requirement — appending to the returned instance's `footprint_cells` would mutate the stored definition — so copy-on-return is the resolution sanctioned by the AC's own "(deep copy or immutable-by-convention)" clause. Implemented via `EquipmentDef.duplicate_def()`. Cost is negligible (cold/UI path, ~6-50 entries).
+2. **`has_definition()` carries the before-freeze guard** (sketch omitted it) — per the QA test case ("verify has_definition() errors") and the Control Manifest guardrail ("Catalog.is_frozen check on every public method"). The loader (Story 002) never calls it pre-freeze, so no conflict.
+3. **`_freeze()` fires assert on a second call** — per the QA edge case ("verify _freeze() cannot be called twice"). Verified by probe.
+4. **`get_all_ids()` builds its `Array[String]` via `ids.assign(_definitions.keys())`** — `var ids: Array[String] = _definitions.keys()` raises a SCRIPT ERROR in 4.7.1 (no implicit conversion from untyped `Dictionary.keys()` Array in a typed var initializer); extends the tech-debt knowledge about typed-array boundaries.
+5. **Subprocess probe pattern used a sixth time** — the promotion to a shared helper (e.g. `tests/support/probe_runner.gd`) remains open (tech-debt register).
 
 ---
 
