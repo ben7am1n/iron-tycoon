@@ -125,10 +125,11 @@ signal preview_validity_changed(valid: bool)
 signal placement_committed(instance_id: int, equipment_id: String, footprint_cells: Array[Vector2i])
 
 
-## S4 in the ADR-0005 Signal Catalog. DECLARED here for catalog completeness;
-## the rejected-drop EMISSION path is Story 003's domain. This story never
-## emits it — AC21 asserts placement_rejected does NOT fire on a successful
-## commit. Arity: exactly 4 arguments.
+## S4 in the ADR-0005 Signal Catalog. Emitted exactly once per REJECTED drop
+## — mouse released over an in-bounds cell and can_place() returned one of
+## GridSystem's 5 FailCode values; fail_code passes through raw, unmodified.
+## Silent cancels (out-of-bounds drop / Escape / focus-loss) emit NOTHING.
+## Arity: exactly 4 arguments.
 signal placement_rejected(equipment_id: String, anchor: Vector2i, rotation: int, fail_code: int)
 
 
@@ -315,14 +316,29 @@ func on_drop() -> void:
 	if not _has_previewed:
 		_clear_drag()
 		return
+	# AC8 (Story 003): drop OUTSIDE grid bounds is a SILENT CANCEL — no signal
+	# of any kind. Must be checked BEFORE can_place: an out-of-bounds anchor
+	# would otherwise reach the FAIL branch and emit placement_rejected with
+	# OUT_OF_BOUNDS, but AC8 demands silence for an OOB drop (the GDD's
+	# "silent cancel emits neither" rule, AC23 family).
+	if not _grid.is_in_bounds(_anchor):
+		_clear_drag()
+		return
 	var check: PlacementCheckResult = _grid.can_place(
 		_drag_def.footprint_cells, _drag_def.access_cells, _anchor, _rotation
 	)
 	if not check.valid:
-		# FAIL branch — Story 003 owns placement_rejected + fail_code. This
-		# story guarantees the no-write outcome: no id allocated, no commit(),
-		# no grid_changed, counter unchanged (AC10: failed drags never consume).
+		# AC7/AC22 (Story 003): rejected drop (in-bounds anchor, can_place FAIL)
+		# emits placement_rejected EXACTLY once with the RAW fail_code — no id
+		# allocated, no commit(), no grid_changed, counter unchanged (AC10:
+		# failed drags never consume). Payload args captured BEFORE _clear_drag
+		# wipes drag state.
+		var eq_id := _drag_def.id
+		var anchor := _anchor
+		var rot := _rotation
+		var fail_code := check.fail_code
 		_clear_drag()
+		placement_rejected.emit(eq_id, anchor, rot, fail_code)
 		return
 	var instance_id := _next_instance_id
 	var transformed: TransformedFootprint = _grid.get_transformed_cells(
@@ -337,14 +353,29 @@ func on_drop() -> void:
 	_clear_drag()
 
 
-## Silent cancel (Escape / focus-loss routed by the bridge — Story 003 owns
-## the full silent-cancel semantics; this is the drag-clearing primitive that
-## AC10's cancellation path needs). Ends the drag with no id, no commit, no
-## signal of any kind (AC10: cancellations never consume an id). Counter
-## untouched.
+## Silent cancel (Escape / focus-loss routed by the bridge). Ends the drag
+## with no id, no commit, no signal of any kind (AC10: cancellations never
+## consume an id). Counter untouched.
 func on_cancel() -> void:
 	if not _assert_initialized():
 		return
+	_cancel_drag()
+
+
+## Focus loss mid-drag (window deactivate, alt-tab, minimized). Routed to the
+## SAME silent-cancel path as Escape (AC17) — the bridge forwards an explicit
+## cancel event; this system treats it identically.
+func on_focus_lost() -> void:
+	if not _assert_initialized():
+		return
+	_cancel_drag()
+
+
+## Shared silent-cancel implementation: ends the drag with NO signal at all —
+## neither placement_committed nor placement_rejected (AC9/AC17/AC23),
+## regardless of the current cell's validity. No id, no commit(), no
+## grid_changed, counter untouched. No-op while IDLE.
+func _cancel_drag() -> void:
 	if _state != DragState.DRAGGING:
 		return
 	_clear_drag()

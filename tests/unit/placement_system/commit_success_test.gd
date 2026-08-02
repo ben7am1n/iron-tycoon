@@ -302,11 +302,16 @@ func _test_ac10_cancels_never_consume_ids() -> void:
 	placement.call("on_mouse_moved", Vector2i(2, 2))
 	placement.call("on_drop")
 
-	# After 3 cancellations: no new commits, no signals, counter untouched.
+	# After 3 cancellations: no new commits, no grid_changed, no id consumed.
+	# placement_rejected fires EXACTLY once — from Cancel #3 (the REJECTED
+	# drop), per ADR-0005 S4 / GDD AC22 (Story 003 union semantics: an
+	# in-bounds rejected drop emits placement_rejected once; Esc and OOB
+	# drops remain silent cancels that emit nothing). The AC10 invariant —
+	# cancellations never consume an instance_id — is unchanged.
 	_check(_commit_calls(grid).size() == baseline, "3 cancelled drags: commit() count unchanged (%d)" % _commit_calls(grid).size())
 	_check((spies["grid_changed"] as GridChangedSpy).count == gc_baseline, "3 cancelled drags: grid_changed never fires (delta 0)")
 	_check((spies["committed"] as CommittedSpy).count == 0, "3 cancelled drags: placement_committed never fires (0)")
-	_check((spies["rejected"] as RejectedSpy).count == 0, "3 cancelled drags: placement_rejected never fires (0)")
+	_check((spies["rejected"] as RejectedSpy).count == 1, "3 cancelled drags: placement_rejected fires exactly once — the rejected drop (count=%d)" % (spies["rejected"] as RejectedSpy).count)
 
 	# 4th drag commits successfully → allocated id == N == 0, counter → 1.
 	placement.call("begin_drag", "treadmill_01")
