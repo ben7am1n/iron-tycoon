@@ -43,6 +43,14 @@ class_name SimulationOrchestrator extends Node
 ##   then: tick_count += 1; tick_completed.emit(tick_count)
 const FIXED_TICK_ORDER: Array[String] = ["MemberSim", "Congestion", "Satisfaction", "Economy"]
 
+## Presentation cell size for the placement input bridge's screen→cell
+## conversion (GDD D.4 handoff note: 16 or 32px, finalized at architecture
+## stage). GridSystem deliberately never hardcodes this value — every
+## coordinate-conversion method takes cell_size as a parameter. The
+## composition root owns the presentation decision and injects it into the
+## bridge. PL-007.
+const PLACEMENT_CELL_SIZE: int = 32
+
 ## S2 in the ADR-0005 Signal Catalog — the ONLY signal in the tick sequence.
 ## Fires at the end of every _advance_tick(), AFTER all on_tick() calls and
 ## AFTER tick_count has incremented, carrying the NEW tick count. SaveLoad
@@ -61,15 +69,17 @@ var time_system        # TimeSystem — constructed in init() (Story 002: tick
 # Tier 1 — depends on Tier 0:
 var grid_system        # GridSystem — null until a level-definition source
                        # (LevelLoader) supplies dimensions for init(width,height).
-# SL-001: the coordinated-system fields SaveLoad.init() reads (the fields ARE
-# the contract — same pattern as grid_system). Null until each system's story
-# lands and init() constructs it; SaveLoad treats a null system as an empty {}
-# contribution so the save blob key set stays fixed at 8 keys from day one.
+## SL-001: the coordinated-system fields SaveLoad.init() reads (the fields ARE
+## the contract — same pattern as grid_system). Null until each system's story
+## lands and init() constructs it; SaveLoad treats a null system as an empty {}
+## contribution so the save blob key set stays fixed at 8 keys from day one.
 var member_sim         # MemberSim — null until its story lands (tick Tier 2)
 var congestion         # Congestion — null until its story lands (tick Tier 4)
 var satisfaction       # Satisfaction — null until its story lands (tick Tier 5)
 var economy            # Economy — null until its story lands (tick Tier 6)
-var placement_system   # PlacementSystem — null until its story lands (Tier 1)
+var placement_system   # PlacementSystem — constructed in init() Tier 1 once a
+                       # grid exists (LevelLoader story pending; tests inject
+                       # grid_system before init()). PL-007.
 var selection_system   # SelectionSystem — null until its story lands (Tier 6)
 var navigation         # Navigation — null until its story lands (Tier 2)
 # Tier 2-7 — PlacementSystem, Navigation, MemberSim, ZoneRules, Congestion,
@@ -184,12 +194,21 @@ func _guard_initialized() -> bool:
 func _initialize_topology() -> void:
 	# --- Phase 1: construct + init, tier by tier ---
 	# Tier 0: leaf systems (no upstream dependencies).
-	equipment_catalog = EquipmentCatalog.new()
+	# EquipmentCatalog: constructed here unless a test/boot sequence injected
+	# a prepared catalog first (same DI seam as grid_system below — the
+	# composition root accepts pre-injected dependencies, ADR-0001 §1).
+	if equipment_catalog == null:
+		equipment_catalog = EquipmentCatalog.new()
 	time_system = TimeSystem.new()
 	time_system.init(self)  # Story 002 — injects the orchestrator back-reference
 	                        # (process() calls _advance_tick() per fired tick)
 	# grid_system   = GridSystem.new(); grid_system.init(width, height)  # needs LevelLoader
-	# Tier 1: placement/navigation ... (stories not yet implemented)
+	# Tier 1: placement — constructed once a grid exists (LevelLoader story
+	# pending; tests inject grid_system before init()). PL-007.
+	if grid_system != null:
+		placement_system = PlacementSystem.new()
+		placement_system.init(grid_system, equipment_catalog)
+	# navigation    = Navigation.new(); navigation.init(grid_system)  # its story
 	# Tier 2-7: member_sim, zone_rules, congestion, satisfaction, economy,
 	#           shop, selection, save_load (stories not yet implemented)
 	#
@@ -200,3 +219,16 @@ func _initialize_topology() -> void:
 	# for sys in [time_system, grid_system, ...]:
 	#     sys._post_init()
 	# SaveLoad hooks tick_completed here (Story 004); bridges attach here.
+	#
+	# Placement input bridge (PL-007): created as a child Node by the
+	# composition root, NOT a separate scene, NOT owned by the presentation
+	# layer (TR-PS-011). The orchestrator holds PlacementSystem as a strong
+	# RefCounted field, so destroying/recreating this bridge Node on a scene
+	# transition never frees the system and DRAGGING state survives (AC
+	# bridge). The bridge receives the grid + presentation cell size to do its
+	# own screen→cell conversion (ADR-0005 §5).
+	if placement_system != null:
+		var bridge := PlacementInputBridge.new()
+		bridge.name = "PlacementInputBridge"
+		bridge.init(placement_system, grid_system, PLACEMENT_CELL_SIZE)
+		add_child(bridge)
