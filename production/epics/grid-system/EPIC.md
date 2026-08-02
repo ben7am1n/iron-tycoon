@@ -3,21 +3,31 @@
 > **Layer**: Foundation
 > **GDD**: design/gdd/grid-system.md
 > **Architecture Module**: GridSystem — owns `occupant_id` array, `buildable` array, `access_ids` dict, `declared_bounds` per-equipment
-> **Status**: Ready
-> **Stories**: 8 stories created — see below
+> **Status**: Complete
+> **Stories**: 8 stories completed — see below
 
 ## Stories
 
 | # | Story | Type | Status | ADR |
 |---|-------|------|--------|-----|
-| 001 | Grid Core Cell Data | Logic | Ready | ADR-0002 |
-| 002 | Grid Solidity and Coordinates | Logic | Ready | ADR-0003 |
-| 003 | Rotation Transform and Declared Bounds | Logic | Ready | ADR-0003 |
-| 004 | Placement Validation — can_place | Logic | Ready | ADR-0003 |
-| 005 | Commit, Clear, and Reverse Index | Logic | Ready | ADR-0003 |
-| 006 | GridStateReader and GridSnapshot | Logic | Ready | ADR-0003 |
-| 007 | Serialization and Deserialization | Integration | Ready | ADR-0002 |
-| 008 | Signals, Integration, and Performance | Integration | Ready | ADR-0005 |
+| 001 | Grid Core Cell Data | Logic | Complete | ADR-0002 |
+| 002 | Grid Solidity and Coordinates | Logic | Complete | ADR-0003 |
+| 003 | Rotation Transform and Declared Bounds | Logic | Complete | ADR-0003 |
+| 004 | Placement Validation — can_place | Logic | Complete | ADR-0003 |
+| 005 | Commit, Clear, and Reverse Index | Logic | Complete | ADR-0003 |
+| 006 | GridStateReader and GridSnapshot | Logic | Complete | ADR-0003 |
+| 007 | Serialization and Deserialization | Integration | Complete | ADR-0002 |
+| 008 | Signals, Integration, and Performance | Integration | Complete | ADR-0005 |
+
+## Completion Timeline
+
+| Date | Milestone |
+|------|-----------|
+| 2026-07-25 | Story 001 complete — Grid Core Cell Data |
+| 2026-07-31 | Story 002 complete — Grid Solidity and Coordinates |
+| 2026-08-01 | Story 003 complete — Rotation Transform and Declared Bounds |
+| 2026-08-02 | Stories 004–008 complete — can_place, commit/clear, GridStateReader/Snapshot, serialization, signals/integration/perf |
+| 2026-08-02 | Epic closed — QA sign-off (1040/1040 automated assertions, incl. GRID-008 perf smoke 11.15ms < 50ms) |
 
 ## Overview
 
@@ -82,4 +92,4 @@ This epic is complete when:
 
 ## Next Step
 
-Run `/create-stories grid-system` to break this epic into implementable stories.
+This epic is **Complete** (all 8 stories closed, 2026-08-02). Next recommended action: `/create-epics layer: core` — unlock PlacementSystem + Navigation (Sprint 3 dependency, gate-check 首批事项 #1).
