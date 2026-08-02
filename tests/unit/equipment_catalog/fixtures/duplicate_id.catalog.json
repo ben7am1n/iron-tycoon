@@ -1,0 +1,32 @@
+{
+  "equipment": [
+    {
+      "id": "treadmill",
+      "display_name": "Original Treadmill",
+      "zone_membership": ["cardio"],
+      "footprint_cells": [{"x": 0, "y": 0}, {"x": 1, "y": 0}],
+      "access_cells": [{"x": 0, "y": 1}],
+      "cost": 200,
+      "unlock_requirement": "",
+      "effects": [{"tag": "cardio", "magnitude": 1.0}],
+      "use_duration_mean_ticks": 200,
+      "use_duration_stddev_ticks": 35,
+      "use_duration_min_ticks": 100,
+      "use_duration_max_ticks": 300
+    },
+    {
+      "id": "treadmill",
+      "display_name": "Copycat Treadmill",
+      "zone_membership": ["cardio"],
+      "footprint_cells": [{"x": 0, "y": 0}, {"x": 1, "y": 0}],
+      "access_cells": [{"x": 0, "y": 1}],
+      "cost": 999,
+      "unlock_requirement": "",
+      "effects": [{"tag": "cardio", "magnitude": 1.0}],
+      "use_duration_mean_ticks": 200,
+      "use_duration_stddev_ticks": 35,
+      "use_duration_min_ticks": 100,
+      "use_duration_max_ticks": 300
+    }
+  ]
+}

@@ -22,10 +22,14 @@
 ## semantic validation of the GridSystem cross-document contract: footprint
 ## must be a 1x1/1x2/2x2 rectangular AABB (no L-shapes, no holes),
 ## access_cells exactly 1 entry, orthogonally adjacent, disjoint from
-## footprint (TR-EC-002, AC-C.3/4/5/6). Remaining semantic ranges
-## (cost>=0, use_duration_* ranges) are Story 004/005 and still NOT
-## implemented here. Normalization runs BEFORE validation: the Story 003
-## validators receive clean, normalized coordinates (Story 002 design note).
+## footprint (TR-EC-002, AC-C.3/4/5/6). Since Story 004: the ordered
+## validation PIPELINE (_validate_all) collects one error per FAILING
+## sub-validator in deterministic order (AC-PIPELINE.3), and the loader
+## detects DUPLICATE ids — first occurrence kept, later occurrences treated
+## as validation failures (AC-E.1). Remaining semantic ranges (cost>=0,
+## use_duration_* ranges) are Story 005/007 and still NOT implemented here.
+## Normalization runs BEFORE validation: the Story 003 validators receive
+## clean, normalized coordinates (Story 002 design note).
 ## Determinism guardrail (Control Manifest): same JSON input always produces
 ## the same EquipmentDef order — catalog insertion order is file order.
 class_name EquipmentCatalogLoader extends RefCounted
@@ -36,6 +40,7 @@ const CATEGORY_JSON_PARSE_ERROR := "JSON_PARSE_ERROR"
 const CATEGORY_INVALID_SCHEMA := "INVALID_SCHEMA"
 const CATEGORY_INVALID_ENTRY := "INVALID_ENTRY"
 const CATEGORY_VALIDATION_FAILED := "VALIDATION_FAILED"
+const CATEGORY_DUPLICATE_ID := "DUPLICATE_ID"
 
 
 ## Loads a catalog from `path` (a .catalog.json file).
@@ -76,8 +81,38 @@ static func load_from_file(path: String, strict_mode: bool) -> LoadResult:
 
 	var catalog := EquipmentCatalog.new()
 	var errors: Array[LoadError] = []
+	var seen_ids: Dictionary = {}  # id -> true, first occurrence wins (Story 004, AC-E.1)
 
 	for entry in data["equipment"]:
+		# Step 0: Duplicate id check (Story 004, AC-E.1) — FIRST check, before
+		# normalization/validation (story key design decision: prevents wasted
+		# work). First occurrence claims the id; later occurrences are treated
+		# as DUPLICATE_ID failures (GDD Edge Cases: "保留首次出现的定义，后出现的
+		# 视为该条记录校验失败").
+		var entry_id := _raw_entry_id(entry)
+		if entry_id != "" and seen_ids.has(entry_id):
+			var dup_err := LoadError.new(
+				entry_id,
+				CATEGORY_DUPLICATE_ID,
+				"Duplicate equipment id '%s'; first occurrence kept" % entry_id
+			)
+			errors.append(dup_err)
+			if strict_mode:
+				assert(false, "EquipmentCatalog: %s" % dup_err.message)
+			else:
+				# GDD Edge Cases: duplicates take the SAME failure path as
+				# validation failures — release posture excludes + push_error()
+				# (consistent with AC-C.2 / EC-003 decision: non-strict
+				# exclusions are recorded via push_error).
+				push_error(
+					"EquipmentCatalog: excluding duplicate entry '%s': %s"
+					% [entry_id, dup_err.message]
+				)
+			continue  # skip this entry — the first occurrence keeps the id
+
+		if entry_id != "":
+			seen_ids[entry_id] = true
+
 		var result := _load_single_definition(entry)
 		if result["ok"]:
 			catalog._add_definition(result["def"])
@@ -272,6 +307,63 @@ static func _validate_definition(
 	return ValidationResult.success()
 
 
+## Ordered validation pipeline for one definition (Story 004, AC-PIPELINE.3):
+## runs every sub-validator in deterministic order (footprint shape → access →
+## [use-duration: EC-005] → [cost: EC-007]) and collects ONE error per FAILING
+## sub-validator — each sub-validator early-exits at its OWN first failure, but
+## the pipeline does NOT stop at the first failing validator ("_validate_all
+## collects ALL errors per entry, not first-only" — Story 004 key design
+## decision; QA case: "returns 3 errors — NOT just the first"; implementation
+## notes comment: "first failure reported per sub-validator"). Result order is
+## deterministic: the fixed sub-validator order above.
+##
+## NOTE (spec contradiction, resolved): the BLOCKING AC text "only the FIRST
+## failure is reported" and the user's kanban summary ("多失败仅报第一条") can be
+## read as per-ENTRY first-only, which contradicts the story's own QA Test
+## Cases ("returns 3 errors (FOOTPRINT_EMPTY, ACCESS_COUNT, COST_NEGATIVE) —
+## NOT just the first"), the implementation-notes sketch, and the key design
+## decision. Resolved toward the detailed spec (3:1 evidence): one error per
+## failing sub-validator in deterministic order — this also satisfies the AC's
+## "deterministic error ordering" requirement, which is meaningless with a
+## single error. Logged in docs/tech-debt-register.md.
+##
+## Extension point: Story 005 (use-duration) and Story 007 (cost) append their
+## validators here IN THIS FIXED ORDER — do not reorder (determinism contract).
+static func _validate_all(
+	footprint_cells: Array[Vector2i],
+	access_cells: Array[Vector2i]
+) -> Array[ValidationResult]:
+	var failures: Array[ValidationResult] = []
+
+	var r := validate_footprint_shape(footprint_cells)
+	if not r.ok:
+		failures.append(r)
+
+	r = validate_access_cells(access_cells, footprint_cells)
+	if not r.ok:
+		failures.append(r)
+
+	# Story 005 (EC-005): validate_use_duration(...) appended here.
+	# Story 007 (EC-007): validate_cost(...) appended here.
+
+	return failures
+
+
+## Returns the entry's raw id as a String, or "" when the entry is not a
+## Dictionary / has no "id" / id is not a String. Used by the Step 0
+## duplicate-id check (Story 004, AC-E.1) — the structural parser (Story 002)
+## reports a missing or mistyped id separately as INVALID_ENTRY; this helper
+## only needs the id to detect duplicates, and empty ids are deliberately
+## NOT tracked (a missing id is a structural error, not a duplicate).
+static func _raw_entry_id(entry: Variant) -> String:
+	if not entry is Dictionary:
+		return ""
+	var id_value: Variant = entry.get("id", "")
+	if id_value is String:
+		return id_value
+	return ""
+
+
 # === Per-entry structural parsing (Story 002 scope) ===
 
 ## Parses ONE JSON entry into an EquipmentDef (with anchor normalization
@@ -315,20 +407,22 @@ static func _load_single_definition(entry: Variant) -> Dictionary:
 
 	var normalized := normalize_anchor(footprint_parse["cells"], access_parse["cells"])
 
-	# Story 003: semantic validation on the NORMALIZED coordinates (Story 002
-	# design note: "validator receives clean, normalized coordinates"). The
-	# result flows into the loader's strict_mode branch: strict=true aborts
-	# (AC-C.1), strict=false excludes + push_error (AC-C.2) — the other valid
-	# entries still load.
-	var validation := _validate_definition(normalized["footprint"], normalized["access"])
-	if not validation.ok:
-		errors.append(
-			LoadError.new(
-				entry_id,
-				CATEGORY_VALIDATION_FAILED,
-				"%s: %s" % [validation.code, validation.message]
+	# Story 003/004: semantic validation on the NORMALIZED coordinates (Story 002
+	# design note: "validator receives clean, normalized coordinates"). Story 004
+	# pipeline collects ALL per-validator failures (AC-PIPELINE.3, deterministic
+	# order) — one LoadError per failing validator, all flowing into the loader's
+	# strict_mode branch: strict=true aborts (AC-C.1), strict=false excludes +
+	# push_error (AC-C.2) — the other valid entries still load.
+	var validation_failures := _validate_all(normalized["footprint"], normalized["access"])
+	if not validation_failures.is_empty():
+		for failure in validation_failures:
+			errors.append(
+				LoadError.new(
+					entry_id,
+					CATEGORY_VALIDATION_FAILED,
+					"%s: %s" % [failure.code, failure.message]
+				)
 			)
-		)
 		return {"ok": false, "id": entry_id, "def": null, "errors": errors}
 
 	var def: EquipmentDef = EquipmentDef.new(

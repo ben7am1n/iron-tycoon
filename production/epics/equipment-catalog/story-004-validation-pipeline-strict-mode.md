@@ -1,12 +1,12 @@
 # Story 004: Validation Pipeline, strict_mode, and Duplicate ID Detection
 
 > **Epic**: equipment-catalog
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Foundation
 > **Type**: Logic
 > **Estimate**: [hours or t-shirt size — fill before sprint planning]
 > **Manifest Version**: 2026-07-23
-> **Last Updated**: [set by /dev-story when implementation begins]
+> **Last Updated**: 2026-08-02
 
 ## Context
 
@@ -31,10 +31,10 @@
 
 *From GDD `design/gdd/equipment-catalog.md`, scoped to this story:*
 
-- [ ] AC-E.1 [BLOCKING][Logic] GIVEN two equipment definitions sharing the same id (test fixture guarantees load order: A before B), WHEN Catalog loads, THEN final Catalog has A's definition under that id, B is treated as validation failure
-- [ ] AC-PIPELINE.1 [BLOCKING][Logic] GIVEN a catalog JSON with 1 valid entry + 1 invalid entry, WHEN loaded with strict_mode=false, THEN LoadResult.ok == true, catalog contains 1 definition, errors array has 1 entry
-- [ ] AC-PIPELINE.2 [BLOCKING][Logic] GIVEN same JSON, WHEN loaded with strict_mode=true, THEN assert() aborts on the invalid entry (never reaches freeze)
-- [ ] AC-PIPELINE.3 [BLOCKING][Integration] GIVEN a definition with multiple validation failures (e.g. empty footprint AND 2 access cells), WHEN validated, THEN only the FIRST failure is reported (deterministic error ordering)
+- [x] AC-E.1 [BLOCKING][Logic] GIVEN two equipment definitions sharing the same id (test fixture guarantees load order: A before B), WHEN Catalog loads, THEN final Catalog has A's definition under that id, B is treated as validation failure
+- [x] AC-PIPELINE.1 [BLOCKING][Logic] GIVEN a catalog JSON with 1 valid entry + 1 invalid entry, WHEN loaded with strict_mode=false, THEN LoadResult.ok == true, catalog contains 1 definition, errors array has 1 entry
+- [x] AC-PIPELINE.2 [BLOCKING][Logic] GIVEN same JSON, WHEN loaded with strict_mode=true, THEN assert() aborts on the invalid entry (never reaches freeze)
+- [x] AC-PIPELINE.3 [BLOCKING][Integration] GIVEN a definition with multiple validation failures (e.g. empty footprint AND 2 access cells), WHEN validated, THEN all failures are reported in deterministic order (footprint → access → …), NOT just the first — see Decisions note #1 for the AC-text/QA resolution
 
 ---
 
@@ -216,7 +216,19 @@ class LoadError extends RefCounted:
 **Required evidence**:
 - `tests/unit/equipment_catalog/catalog_pipeline_strict_mode_test.gd` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing (2026-08-02)
+
+**Test Evidence**: Full suite 878/878 (was 824). New files:
+- `tests/unit/equipment_catalog/catalog_pipeline_strict_mode_test.gd` — 52 assertions, 0 failures. AC-E.1 (duplicate id: first kept, second DUPLICATE_ID; 3-duplicate edge keeps only first; strict probe asserts on duplicate; non-strict probe push_error + KEPT_COST proves A won), AC-PIPELINE.1 (1 valid + 1 invalid → ok=true, 1 def, 1 error; all-valid → 0 errors; all-invalid → ok=false empty catalog), AC-PIPELINE.2 (strict probe: assert fires, message names `l_shape_rack` + FOOTPRINT_NOT_RECTANGULAR, probe completes after the aborted frame — freeze never reached), AC-PIPELINE.3 (empty footprint + 2 access → `_validate_all` returns both failures FOOTPRINT_EMPTY + ACCESS_COUNT, deterministic order across runs; loader path records both).
+- `tests/unit/equipment_catalog/catalog_pipeline_strict_mode_probe.gd` — subprocess probe (not a _test.gd): `strict_duplicate_id` + `strict_invalid_entry` + `nons_duplicate_keeps_first` modes, same pattern as the Story 003 probe (9th use of the subprocess-isolation pattern).
+- `tests/unit/equipment_catalog/fixtures/*.catalog.json` — 4 new committed fixtures (duplicate_id, duplicate_id_three, pipeline_one_valid_one_invalid, pipeline_multi_failure).
+
+**Decisions recorded at close**:
+1. **AC-PIPELINE.3 interpretation — all failures reported, deterministic order.** The AC text says "only the FIRST failure is reported", but the story's own QA Test Cases section says "returns 3 errors (FOOTPRINT_EMPTY, ACCESS_COUNT, COST_NEGATIVE) — NOT just the first" and the implementation-notes Key design decisions say "_validate_all collects ALL errors per entry, not first-only". Resolved toward the detailed spec (3:1 evidence): `_validate_all` runs every sub-validator in fixed order (footprint shape → access → use-duration → cost) and collects ONE error per FAILING sub-validator — each sub-validator still early-exits at its own first failure. This also satisfies the AC's "(deterministic error ordering)" requirement, which would be meaningless with a single error. Recorded in docs/tech-debt-register.md.
+2. **Duplicate id check runs BEFORE structural parsing** (Step 0, story sketch) — `_raw_entry_id()` extracts the raw String id without parsing the entry; a duplicate is skipped entirely (no wasted normalization). Empty ids are deliberately NOT tracked (missing id is a structural INVALID_ENTRY error, not a duplicate).
+3. **Non-strict duplicate exclusion fires push_error()** — the GDD Edge Cases say duplicates "走上一条的失败处理路径" (take the same failure path as validation failures), which per AC-C.2/EC-003 decision includes push_error in non-strict mode.
+4. **`_validate_all` wired into `_load_single_definition`** replacing the Story 003 first-fail `_validate_definition` call — consequence: the empty_footprint fixture now reports TWO errors (FOOTPRINT_EMPTY + ACCESS_NOT_ADJACENT); the EC-003 test assertion was updated accordingly (67→69 assertions).
+5. **Cost / use-duration validators NOT implemented here** — they are out of scope (Story 005/006/007) and remain as documented extension points inside `_validate_all`; the multi_failure fixture's negative cost does NOT yet produce COST_NEGATIVE (that joins in Story 007).
 
 ---
 

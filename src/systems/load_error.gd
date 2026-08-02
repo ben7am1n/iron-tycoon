@@ -14,7 +14,8 @@ class_name LoadError extends RefCounted
 var equipment_id: String
 
 ## Machine-readable category. Values emitted by the catalog loader:
-## FILE_NOT_FOUND, IO_ERROR, JSON_PARSE_ERROR, INVALID_SCHEMA, INVALID_ENTRY.
+## FILE_NOT_FOUND, IO_ERROR, JSON_PARSE_ERROR, INVALID_SCHEMA, INVALID_ENTRY,
+## VALIDATION_FAILED (Story 003), DUPLICATE_ID (Story 004).
 var category: String
 
 ## Human-readable description — safe to show in UI. Includes the JSON parse

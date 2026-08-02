@@ -115,11 +115,21 @@ func _test_ac_c2_non_strict_excludes_rest_load() -> void:
 		"catalog holds ONLY the 2 valid entries (empty-footprint entry excluded)"
 	)
 	var errors: Array = result.get("errors")
-	_check(errors.size() == 1, "exactly one error recorded")
+	# Story 004 collect-all pipeline (AC-PIPELINE.3): the empty-footprint entry
+	# now reports BOTH its failures — FOOTPRINT_EMPTY (footprint validator) AND
+	# ACCESS_NOT_ADJACENT (access validator: with zero footprint cells there is
+	# nothing to be orthogonally adjacent to). Before Story 004 the loader only
+	# reported the first failure; the pipeline change is the point of this story.
+	_check(errors.size() == 2, "exactly two errors recorded (FOOTPRINT_EMPTY + ACCESS_NOT_ADJACENT)")
 	var err = errors[0]
-	_check(err.get("category") == "VALIDATION_FAILED", "category is VALIDATION_FAILED")
-	_check(err.get("equipment_id") == "empty_footprint_bench", "error names the offending entry id")
-	_check(err.get("message").find("FOOTPRINT_EMPTY") != -1, "error message carries the rule code")
+	_check(err.get("category") == "VALIDATION_FAILED", "first error category is VALIDATION_FAILED")
+	_check(err.get("equipment_id") == "empty_footprint_bench", "first error names the offending entry id")
+	_check(err.get("message").find("FOOTPRINT_EMPTY") != -1, "first error message carries the rule code")
+	_check(errors[1].get("category") == "VALIDATION_FAILED", "second error category is VALIDATION_FAILED")
+	_check(
+		errors[1].get("message").find("ACCESS_NOT_ADJACENT") != -1,
+		"second error message carries the access rule code"
+	)
 
 	# push_error() must fire in the non-strict path (subprocess probe —
 	# GDScript has no in-process push_error capture).

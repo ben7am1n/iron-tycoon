@@ -27,6 +27,7 @@ const TEST_FILES := [
 	"tests/unit/equipment_catalog/equipment_def_catalog_test.gd",
 	"tests/unit/equipment_catalog/catalog_json_loading_test.gd",
 	"tests/unit/equipment_catalog/catalog_footprint_access_validation_test.gd",
+	"tests/unit/equipment_catalog/catalog_pipeline_strict_mode_test.gd",
 	"tests/integration/grid_system/grid_serialization_test.gd",
 	"tests/integration/grid_system/grid_navigation_solidity_test.gd",
 	"tests/integration/grid_system/grid_perf_drag_smoke_test.gd",
