@@ -14,14 +14,14 @@
 ## contract surface SaveLoad depends on is preserved exactly:
 ##   - class_name Congestion extends SimSystem
 ##   - init(orchestrator, seeded_rng) — extra OPTIONAL parameters (grid,
-##     member_sim, config) default to null/{} so pre-wiring call sites keep
-##     working unchanged.
+##     member_sim, config, navigation, entrance_cell) default to null/{}/-1
+##     so pre-wiring call sites keep working unchanged.
 ##   - system_name() == "Congestion"
 ##   - on_tick(tick_count: int) -> void  (the orchestrator's fixed dispatch)
 ##   - serialize() / deserialize(data, validate_only) two-phase protocol,
-##     returning StubDeserializeResult. The serialize SHAPE ({counter,
-##     rng_state}) is unchanged from the stub for this story — story-004
-##     (determinism/serialization) extends it with the prev buffer.
+##     returning StubDeserializeResult. The serialize SHAPE is extended by
+##     story-004 to {counter, rng_state, prev, smoothed_cells} — see the
+##     serialize() doc below for the float hex-encoding deviation.
 ##
 ## PRE-WIRING COMPATIBILITY PATH (documented, not silent): the SL-002
 ## save-load integration tests (roundtrip_determinism, load_orchestration)
@@ -632,17 +632,37 @@ func _splat_member(m: Dictionary, width: int, height: int) -> void:
 
 
 ## Returns the full observable state as a JSON-safe Dictionary:
-##   { counter: int, rng_state: "0x…" }
-## The SHAPE is unchanged from the SL-002 stub for this story — story-004
-## extends it with the prev buffer. The rng_state is the registered
-## sub-stream's state; this system never draws, so it is the deterministic
-## initial value (restores exactly). Pure read — no draws, no mutation.
+##   { counter: int, rng_state: "0x…",
+##     prev: {equipment_instance_id: "0x…"},          # per-equipment scalar
+##     smoothed_cells: {flat_cell_index: "0x…"} }    # per-cell EMA (Core Rule 7)
+## Story-004 extends the SL-002 stub shape ({counter, rng_state}) with the
+## two persistent buffers GDD Core Rule 7 mandates: `prev` (the per-equipment
+## scalars MemberSim reads next tick) and `smoothed_cells` (the per-cell EMA
+## state). `next` is NOT serialized — it is transient and fully
+## reconstructible the following tick. `access_reachable` is NOT serialized —
+## it is recomputed from the restored grid on the first post-load
+## grid_changed (or the init one-shot; story-003). `raw_cells`/`density_cells`
+## are derived from smoothed_cells each tick and are NOT serialized.
+## FLOAT ENCODING (story-004 DEVIATION, documented): floats are hex-encoded
+## as "0x" + 16 hex digits of the IEEE-754 bit pattern — NOT raw JSON
+## numbers. Empirically in Godot 4.7.1, JSON.stringify(full_precision=true)
+## followed by JSON.parse_string is NOT correctly rounded: a sweep of 20k
+## random doubles found ~12.4% lose the last bit through the round-trip, so
+## raw floats in the payload would break AC14's bit-exact restore. The hex
+## string is bit-exact by construction (same convention as the int64
+## rng_state hex encoding, ADR-0002 §6 risk section). Dictionary keys
+## re-stringify on parse — deserialize normalizes them back to int.
+## The rng_state is the registered sub-stream's state; this system never
+## draws, so it is the deterministic initial value (restores exactly).
+## Pure read — no draws, no mutation.
 func serialize() -> Dictionary:
 	if not _assert_initialized():
 		return {}
 	return {
 		"counter": counter,
 		"rng_state": SeededRNG.int64_to_hex(_seeded_rng.get_rng(system_name()).state),
+		"prev": _float_map_to_hex(prev),
+		"smoothed_cells": _float_map_to_hex(smoothed_cells),
 	}
 
 
@@ -652,19 +672,32 @@ func serialize() -> Dictionary:
 ## normal outcome). [validate_only] runs Phase A and returns the verdict
 ## without committing (SaveLoad Phase A protocol).
 ## Required fields (hard failure, no invented defaults):
-##   counter (int), rng_state ("0x" hex string).
+##   counter (int), rng_state ("0x" hex string),
+##   prev (Dictionary: equipment_instance_id -> numeric OR "0x" float hex),
+##   smoothed_cells (Dictionary: flat cell index -> numeric OR "0x" float
+##   hex).
+## JSON-safe shapes: keys arrive as int|float OR numeric strings (JSON.parse
+## stringifies Dictionary keys — "5" for 5), values as numeric OR float hex
+## ("0x" + 16 hex digits — the story-004 float encoding). Normalized to int
+## keys and float values in Phase B. access_reachable/next are NOT in the
+## payload — nothing to validate, nothing to restore (Core Rule 7).
 func deserialize(data: Dictionary, validate_only: bool = false) -> StubDeserializeResult:
 	var result := StubDeserializeResult.new()
 	if not _assert_initialized():
 		return StubDeserializeResult.fail("Congestion.deserialize(): called before init()")
 
 	# --- Phase A: validate (zero mutation) ---
-	if not data.has("counter") or typeof(data["counter"]) != TYPE_INT:
+	# counter arrives as int in-memory (blob dict) but FLOAT after a real
+	# file round-trip (JSON parses integer literals as floats in 4.7.1,
+	# verified in save_load.gd) — accept both numerics, coerce in Phase B.
+	if not data.has("counter") or not _is_numeric(data["counter"]):
 		result.errors.append("Congestion: missing or invalid 'counter'")
 	if not data.has("rng_state") or not data["rng_state"] is String:
 		result.errors.append("Congestion: missing or invalid 'rng_state'")
 	elif not str(data["rng_state"]).begins_with("0x") or not str(data["rng_state"]).is_valid_hex_number(true):
 		result.errors.append("Congestion: rng_state must be a 0x hex string")
+	_validate_float_map(data, "prev", result)
+	_validate_float_map(data, "smoothed_cells", result)
 
 	if not result.errors.is_empty():
 		return result  # Phase A failed — NOTHING was mutated
@@ -676,4 +709,114 @@ func deserialize(data: Dictionary, validate_only: bool = false) -> StubDeseriali
 	# --- Phase B: commit (only if all valid) ---
 	counter = int(data["counter"])
 	_seeded_rng.get_rng(system_name()).state = SeededRNG.hex_to_int64(str(data["rng_state"]))
+	prev = _normalize_float_map(data["prev"])
+	smoothed_cells = _normalize_float_map(data["smoothed_cells"])
+	# density_cells is DERIVED (clamp(smoothed/D_cell_max)) — rebuild it from
+	# the restored smoothed state so per_cell_density() serves the pre-save
+	# field immediately (Core Rule 7: smoothed restored exactly; density is a
+	# pure function of it). raw_cells stays empty until the next tick's
+	# recompute (transient by design).
+	_rebuild_density_from_smoothed()
 	return result
+
+
+## Phase A validation for a serialized float map (prev / smoothed_cells):
+## must be a Dictionary whose keys are numeric (int|float) or numeric
+## strings ("5" — JSON.parse stringifies keys) and whose values are numeric
+## (int|float) OR float hex ("0x" + 16 hex digits — the story-004 encoding;
+## JSON.parse keeps strings intact). Collects ALL problems (no
+## short-circuit), zero mutation.
+func _validate_float_map(data: Dictionary, field: String, result: StubDeserializeResult) -> void:
+	if not data.has(field) or not (data[field] is Dictionary):
+		result.errors.append("Congestion: missing or invalid '%s'" % field)
+		return
+	var map_data: Dictionary = data[field]
+	for key in map_data.keys():
+		if not _is_numeric_key(key):
+			result.errors.append("Congestion: %s key '%s' must be numeric" % [field, str(key)])
+			continue
+		var v: Variant = map_data[key]
+		if not _is_float_hex(v) and typeof(v) != TYPE_INT and typeof(v) != TYPE_FLOAT:
+			result.errors.append("Congestion: %s value for key '%s' must be numeric or a 0x float hex" % [field, str(key)])
+
+
+## Phase B coercion for a serialized float map: JSON-safe keys (int|float|
+## numeric string) -> int, values (numeric OR float hex) -> float. The
+## result is the live Dictionary shape the compute path uses (int keys,
+## float values).
+func _normalize_float_map(map_data: Dictionary) -> Dictionary:
+	var out: Dictionary = {}
+	for key in map_data.keys():
+		out[int(key)] = _coerce_float(map_data[key])
+	return out
+
+
+## True when [v] is a numeric key: int, float, or a numeric string ("5").
+## JSON.parse stringifies Dictionary keys (5 -> "5") — accept both.
+func _is_numeric_key(v: Variant) -> bool:
+	if typeof(v) == TYPE_INT or typeof(v) == TYPE_FLOAT:
+		return true
+	return typeof(v) == TYPE_STRING and str(v).is_valid_int()
+
+
+## True when [v] is int or float — the numeric types a save payload may
+## carry (JSON.parse returns floats for integer literals in 4.7.1; the same
+## convention MemberSim's _is_numeric uses).
+func _is_numeric(v: Variant) -> bool:
+	return typeof(v) == TYPE_INT or typeof(v) == TYPE_FLOAT
+
+
+## True when [v] is the story-004 float encoding: "0x" + exactly 16 hex
+## digits (the IEEE-754 double bit pattern, MSB-first hex).
+func _is_float_hex(v: Variant) -> bool:
+	if not (v is String):
+		return false
+	var s := str(v)
+	if not s.begins_with("0x") or s.length() != 18:
+		return false
+	# Bare digits after "0x" — with_prefix=false (true would REQUIRE "0x").
+	return s.substr(2).is_valid_hex_number(false)
+
+
+## Coerces a serialized float value (numeric OR "0x" float hex) to float.
+func _coerce_float(v: Variant) -> float:
+	if _is_float_hex(v):
+		return _hex_to_float(str(v))
+	return float(v)
+
+
+## Encodes a float map {int key -> float} into the JSON-safe hex form:
+##   {int key -> "0x" + 16 hex digits}.
+func _float_map_to_hex(map_data: Dictionary) -> Dictionary:
+	var out: Dictionary = {}
+	for key in map_data.keys():
+		out[int(key)] = _float_to_hex(float(map_data[key]))
+	return out
+
+
+## IEEE-754 bit-exact float -> "0x" hex string (16 hex digits of the double
+## bit pattern). Bit-exact by construction — immune to the 4.7.1
+## JSON.parse_string rounding bug (see serialize() header).
+static func _float_to_hex(v: float) -> String:
+	return "0x" + PackedFloat64Array([v]).to_byte_array().hex_encode()
+
+
+## "0x" hex string -> float. Decodes the 8 bytes back into the exact double.
+## NOTE: int("0x..") would stop at the invalid 'x' char; String.hex_to_int()
+## parses the bare hex digits correctly.
+static func _hex_to_float(h: String) -> float:
+	var hex := h.substr(2)
+	var bytes := PackedByteArray()
+	bytes.resize(8)
+	for i in 8:
+		bytes[i] = hex.substr(i * 2, 2).hex_to_int()
+	return bytes.decode_double(0)
+
+
+## Pure derivation: density_cells = clamp(smoothed / D_cell_max) per restored
+## smoothed entry (Core Rule 7 — density is never serialized, always derived
+## from the authoritative smoothed state).
+func _rebuild_density_from_smoothed() -> void:
+	density_cells = {}
+	for idx in smoothed_cells.keys():
+		density_cells[int(idx)] = clampf(float(smoothed_cells[idx]) / _d_cell_max, 0.0, 1.0)
