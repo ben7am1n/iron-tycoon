@@ -24,6 +24,11 @@ const TEST_FILES := [
 	"tests/unit/grid_system/grid_state_reader_snapshot_test.gd",
 	"tests/unit/grid_system/grid_system_signals_test.gd",
 	"tests/unit/grid_system/grid_system_guardrail_test.gd",
+	"tests/unit/time_system/orchestrator_tick_dispatch_test.gd",
+	"tests/unit/time_system/tick_accumulator_test.gd",
+	"tests/unit/time_system/lsr_helper_test.gd",
+	"tests/unit/time_system/seeded_rng_substream_test.gd",
+	"tests/unit/time_system/time_serialization_test.gd",
 	"tests/unit/equipment_catalog/equipment_def_catalog_test.gd",
 	"tests/unit/equipment_catalog/catalog_json_loading_test.gd",
 	"tests/unit/equipment_catalog/catalog_footprint_access_validation_test.gd",
@@ -34,6 +39,9 @@ const TEST_FILES := [
 	"tests/integration/grid_system/grid_serialization_test.gd",
 	"tests/integration/grid_system/grid_navigation_solidity_test.gd",
 	"tests/integration/grid_system/grid_perf_drag_smoke_test.gd",
+	"tests/integration/save_load/saveblob_composition_test.gd",
+	"tests/integration/save_load/load_orchestration_test.gd",
+	"tests/integration/save_load/roundtrip_determinism_test.gd",
 ]
 
 # === 隔离的测试文件 ===
