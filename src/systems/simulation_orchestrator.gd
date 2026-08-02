@@ -54,8 +54,10 @@ signal tick_completed(tick_count: int)
 #
 # Tier 0 — Foundation leaf systems (no upstream dependencies):
 var equipment_catalog  # EquipmentCatalog — constructed in init() (Story 001)
-var time_system        # TimeSystem — null until Story 002 (tick accumulator /
-                       # speed / pause). _process() forwards here when present.
+var time_system        # TimeSystem — constructed in init() (Story 002: tick
+                       # accumulator / speed / pause). _process() forwards
+                       # wall-time here each frame; it decides how many ticks
+                       # fire and calls _advance_tick() per tick.
 # Tier 1 — depends on Tier 0:
 var grid_system        # GridSystem — null until a level-definition source
                        # (LevelLoader) supplies dimensions for init(width,height).
@@ -161,7 +163,9 @@ func _initialize_topology() -> void:
 	# --- Phase 1: construct + init, tier by tier ---
 	# Tier 0: leaf systems (no upstream dependencies).
 	equipment_catalog = EquipmentCatalog.new()
-	# time_system   = TimeSystem.new(); time_system.init(master_seed)   # Story 002
+	time_system = TimeSystem.new()
+	time_system.init(self)  # Story 002 — injects the orchestrator back-reference
+	                        # (process() calls _advance_tick() per fired tick)
 	# grid_system   = GridSystem.new(); grid_system.init(width, height)  # needs LevelLoader
 	# Tier 1: placement/navigation ... (stories not yet implemented)
 	# Tier 2-7: member_sim, zone_rules, congestion, satisfaction, economy,
