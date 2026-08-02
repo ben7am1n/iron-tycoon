@@ -62,8 +62,36 @@
 ## the patience give-up short-term blacklist (AC19: no flip-flop back to the
 ## abandoned machine) and the mid-use deletion interrupt with its
 ## satisfaction-penalty read surface (AC14).
+## STORY 005 SCOPE — serialization, determinism and the flow hypothesis.
+## This story closes the epic by wiring the FULL serialization contract:
+##   - serialize() emits the JSON-safe cell encoding for member state
+##     (`cell` -> [x, y], `cached_path` -> [[x, y], ...] — the same [x, y]
+##     convention GridSystem._serialize_cells uses, so the blob survives
+##     JSON.stringify/parse with no type ambiguity). member_id_counter is
+##     serialized EXPLICITLY (TR-MS-011): it can never be re-derived from
+##     the active set, because GONE members' ids are retired forever
+##     (TR-MS-012) — max(active)+1 would silently reuse a retired id.
+##   - deserialize() enforces AC8: a payload MISSING member_id_counter, or
+##     whose member_id_counter <= the max id of any state-machine member in
+##     the payload, FAILS loudly — never silently substitutes a derived
+##     value. The counter-vs-max check covers state-bearing members only:
+##     legacy SL-002-era stub entries ({member_id, equipment_instance_id},
+##     no "state" key) are passive roster data that was never allocated
+##     from the counter, so they are exempt — this is what keeps the
+##     pre-wiring save-load integration tests (SL-003 roundtrip canary,
+##     SL-002 load orchestration) passing unchanged while the real machine
+##     enforces monotonicity.
+##   - the reservation map is REBUILT from members' own serialized claim
+##     flags on load (Core Rule 7 — never serialized as separate truth):
+##     USING -> occupant, WALKING_TO/QUEUEING -> next_claimant. Load-side
+##     AC4 mirror: two members claiming the same machine's occupant or
+##     queue slot is a structural corruption and fails validation.
+##   - use_duration now reads per-equipment fields from EquipmentCatalog
+##     (TR-MS-009) via an optional init-injected `equipment_id_resolver`
+##     (instance_id -> equipment_id Callable); absent resolver -> the
+##     config defaults (the pre-wiring rigs' deterministic behavior).
 ## Deliberately deferred to neighbouring stories and NOT implemented here:
-##   - full serialization of member state + reservation rebuild     -> Story 005
+##   - (Story 005 removes the last deferral: full serialization + rebuild)
 ## Story 002 implements the weighted target pick — Core Rule 3:
 ##   candidate pool (all placed instances ascending equipment_instance_id —
 ##   no-repeat blacklist is Story 004) -> weight per candidate -> sort desc
@@ -157,12 +185,14 @@
 ## candidate pool. The calm-wander behavior belongs to Story 004's patience
 ## system (out of scope here).
 ##
-## USE-DURATION NOTE (skeleton): TR-MS-009 rolls duration from per-equipment
-## catalog fields, but the instance_id -> equipment_id resolution does not
-## exist yet (GridSystem stores only integer occupant_id; PlacedInstance.
-## equipment_id is "" until the equipment-catalog wiring lands). The skeleton
-## therefore rolls from the config's default use-duration range; the
-## catalog-injected per-equipment roll lands with Story 002/005.
+## USE-DURATION NOTE: TR-MS-009 rolls duration from per-equipment catalog
+## fields, resolved via the init-injected `equipment_id_resolver` Callable
+## (instance_id -> equipment_id; the GridSystem stores only integer
+## occupant_id and PlacedInstance.equipment_id is "" — the resolution is
+## the composition root's wiring, not grid data). When the resolver is
+## absent or the id doesn't resolve to a catalog def, the roll falls back
+## to the config's default use-duration range (the pre-wiring rigs'
+## deterministic behavior — Story 005).
 ##
 ## CONFIG DICTIONARY (data-driven seam): all gameplay tuning values arrive
 ## via the init [config] Dictionary (defaults = GDD Tuning Knobs anchors). A
@@ -181,6 +211,15 @@ const STATE_GONE := "GONE"
 const VALID_STATES: Array[String] = [
 	STATE_ENTERING, STATE_SELECTING_TARGET, STATE_WALKING_TO,
 	STATE_QUEUEING, STATE_USING, STATE_LEAVING, STATE_GONE,
+]
+
+## Story 005: the int-typed fields of a state-machine member record. These
+## are validated as numeric on load (int|float — JSON.parse returns floats
+## for integer literals in 4.7.1) and coerced to int at commit.
+const STATE_MEMBER_INT_KEYS: Array[String] = [
+	"exercises_done", "exercises_per_visit", "target_equipment_instance_id",
+	"cached_path_grid_version", "repath_failures", "patience_ticks_remaining",
+	"leaving_timeout_ticks", "use_ticks_remaining",
 ]
 
 ## Why a member left the gym (drives S5 emission — quota-met departures only).
@@ -303,6 +342,15 @@ var _exit_cell: Vector2i = Vector2i(-1, -1)      # (-1,-1) = not supplied
 ## when absent, congestion is treated as 0.0 (neutral) — never a crash.
 var _congestion_reader: Variant = null
 
+## Story 005 (TR-MS-009): resolves an equipment_instance_id to its
+## equipment_id String so use_duration can read per-equipment catalog
+## fields. GridSystem stores only integer occupant_id (PlacedInstance.
+## equipment_id is "") — the resolution is the composition root's wiring.
+## A valid resolver returning a known catalog id selects that def's
+## use_duration_* fields; otherwise _roll_use_duration falls back to the
+## config defaults (the pre-wiring rigs' deterministic behavior).
+var _equipment_id_resolver: Callable = Callable()
+
 # === Tuning values (GDD Tuning Knobs anchors; see class header) ===
 var _max_concurrent_members: int = 15
 var _base_arrival_rate_per_min: float = 4.0
@@ -358,6 +406,11 @@ var _satisfaction_penalty_events: int = 0
 ## (`per_equipment_congestion(id) -> float`, see the _congestion_reader
 ## field). Optional — when null the weight treats every equipment as
 ## congestion 0.0, preserving the MS-001-era rigs' determinism.
+##
+## [equipment_id_resolver] (Story 005, TR-MS-009) is the instance_id ->
+## equipment_id Callable the composition root wires (GridSystem does not
+## store equipment ids). Optional — when invalid/empty the use-duration
+## roll falls back to the config defaults.
 func init(
 	orchestrator: SimulationOrchestrator,
 	seeded_rng: SeededRNG,
@@ -367,7 +420,8 @@ func init(
 	entrance_cell: Vector2i = Vector2i(-1, -1),
 	exit_cell: Vector2i = Vector2i(-1, -1),
 	config: Dictionary = {},
-	congestion_reader: Variant = null
+	congestion_reader: Variant = null,
+	equipment_id_resolver: Callable = Callable()
 ) -> void:
 	if not _mark_initialized():
 		return
@@ -379,6 +433,7 @@ func init(
 	_entrance_cell = entrance_cell
 	_exit_cell = exit_cell
 	_congestion_reader = congestion_reader
+	_equipment_id_resolver = equipment_id_resolver
 	_apply_config(config)
 	_seeded_rng.register_system(system_name())
 
@@ -1023,7 +1078,7 @@ func _on_queueing(member: Dictionary) -> void:
 ## use_ticks_remaining is rolled once.
 func _start_using(member: Dictionary) -> void:
 	member["state"] = STATE_USING
-	member["use_ticks_remaining"] = _roll_use_duration()
+	member["use_ticks_remaining"] = _roll_use_duration(int(member["target_equipment_instance_id"]))
 
 
 ## USING: counts down the use duration. Only SUCCESSFULLY completed uses
@@ -1215,12 +1270,27 @@ func _roll_preference_profile() -> Dictionary:
 
 
 ## TR-MS-009: use_duration = round(clamp(randfn(mean, stddev), min, max)).
-## Skeleton NOTE (class header): per-equipment values come from the config's
-## default range until instance_id -> equipment_id resolution lands (Story
-## 002/005) — the injected catalog is accepted but not yet queried.
-func _roll_use_duration() -> int:
-	var raw: float = _rng().randfn(float(_use_duration_mean_ticks), float(_use_duration_stddev_ticks))
-	return clampi(roundi(raw), _use_duration_min_ticks, _use_duration_max_ticks)
+## Per-equipment fields come from the EquipmentCatalog def the injected
+## `equipment_id_resolver` resolves for [target_instance_id] (Story 005).
+## When the resolver is absent, the id doesn't resolve, or the catalog has
+## no def for it, the config's default range is used — the pre-wiring
+## rigs' deterministic behavior. EXACTLY ONE rng draw per use start
+## (ADR-0004 fixed RNG consumption order — same as the config-only path).
+func _roll_use_duration(target_instance_id: int) -> int:
+	var mean := _use_duration_mean_ticks
+	var stddev := _use_duration_stddev_ticks
+	var min_t := _use_duration_min_ticks
+	var max_t := _use_duration_max_ticks
+	if _equipment_id_resolver.is_valid() and _catalog != null:
+		var equipment_id: String = str(_equipment_id_resolver.call(target_instance_id))
+		if not equipment_id.is_empty() and _catalog.has_definition(equipment_id):
+			var def: EquipmentDef = _catalog.get_definition(equipment_id)
+			mean = def.use_duration_mean_ticks
+			stddev = def.use_duration_stddev_ticks
+			min_t = def.use_duration_min_ticks
+			max_t = def.use_duration_max_ticks
+	var raw: float = _rng().randfn(float(mean), float(stddev))
+	return clampi(roundi(raw), min_t, max_t)
 
 
 ## GDD Formulas: patience_threshold_ticks = round(Uniform(patience_min_ticks,
@@ -1405,24 +1475,54 @@ func _tick_give_up_blacklist(member: Dictionary) -> void:
 ##   { counter: int, members: Array, member_id_counter: int,
 ##     rng_state: "0x…" }
 ## Pure read — no draws, no mutation (SL-001 AC1 counts serialize calls, so
-## serialize stays side-effect free). members are stored VERBATIM — legacy
-## roster entries and full state-machine records alike — so both shapes
-## round-trip unchanged (the integration tests' byte-identical contract).
-## rng_state is the CURRENT sub-stream state (hex per ADR-0002).
+## serialize stays side-effect free). rng_state is the CURRENT sub-stream
+## state (hex per ADR-0002).
 ##
-## Story 003 note: the reservation map is deliberately NOT serialized here —
-## Core Rule 7 rebuilds it from members' claim flags on load (Story 005 owns
-## that contract). Until then a loaded member mid-claim degrades gracefully
-## through the defensive release+reselect branches.
+## Story 005 (Core Rule 7): the members array carries the FULL per-member
+## serialized state — member_id, state, cell, cached path + its
+## grid_version, target_equipment_instance_id, patience/use/leaving
+## timers, exercises_done, the resolved preference_profile, and the
+## global member_id_counter. Cells use the project's JSON-safe [x, y]
+## encoding (same convention as GridSystem._serialize_cells) so the blob
+## survives JSON.stringify/parse with no type ambiguity — raw Vector2i is
+## never emitted. Legacy SL-002-era stub entries ({member_id,
+## equipment_instance_id}) pass through verbatim so old blobs round-trip
+## unchanged (the save-load integration tests' byte-identical contract).
+##
+## The reservation map is deliberately NOT serialized here — Core Rule 7
+## rebuilds it from members' own claim flags on load
+## (_rebuild_reservations_from_members). Serializing it separately would
+## risk desync.
 func serialize() -> Dictionary:
 	if not _assert_initialized():
 		return {}
+	var out_members: Array = []
+	for member in members:
+		out_members.append(_serialize_member_record(member))
 	return {
 		"counter": counter,
-		"members": members,
+		"members": out_members,
 		"member_id_counter": _member_id_counter,
 		"rng_state": SeededRNG.int64_to_hex(_rng().state),
 	}
+
+
+## One member record, JSON-safe: cell -> [x, y], cached_path ->
+## [[x, y], ...] (path ORDER preserved — it is a walk path, never sorted).
+## Everything else is deep-duplicated verbatim.
+func _serialize_member_record(member: Dictionary) -> Dictionary:
+	var out: Dictionary = member.duplicate(true)
+	if out.has("cell") and out["cell"] is Vector2i:
+		out["cell"] = [out["cell"].x, out["cell"].y]
+	if out.has("cached_path") and out["cached_path"] is Array:
+		var path: Array = []
+		for v in out["cached_path"]:
+			if v is Vector2i:
+				path.append([v.x, v.y])
+			else:
+				path.append(v)
+		out["cached_path"] = path
+	return out
 
 
 ## Two-phase deserialize (TR-SL-005, ADR-0002).
@@ -1433,31 +1533,56 @@ func serialize() -> Dictionary:
 ## without committing (SaveLoad Phase A protocol).
 ##
 ## AC9 (grid is the source of truth): every member's equipment reference —
-## legacy `equipment_instance_id` or full `target_equipment_instance_id` (>= 0)
-## — must be present in [known_instance_ids] (the set extracted from the
-## save's grid records that GridSystem Phase A validated). A member
+## legacy `equipment_instance_id` or full `target_equipment_instance_id`
+## (>= 0) — must be present in [known_instance_ids] (the set extracted from
+## the save's grid records that GridSystem Phase A validated). A member
 ## referencing an absent id fails the WHOLE load; never a silent orphan.
 ##
-## Required fields (hard failure, no invented defaults):
-##   counter (int), members (Array of member records), rng_state ("0x" hex).
-## Optional: member_id_counter (int — present in skeleton-era blobs; absent
-## in SL-002-era stub blobs, which keep the current counter).
+## Required fields (hard failure, no invented defaults — AC8):
+##   counter (int), members (Array of member records),
+##   member_id_counter (int — MUST be present; NEVER re-derived from the
+##   active set, TR-MS-011: a GONE member's retired id would silently be
+##   reused), rng_state ("0x" hex).
+##
+## AC8 counter-vs-max check: member_id_counter must exceed the max id of
+## every STATE-MACHINE member (a record carrying a "state" key) in the
+## payload — otherwise the next spawn would reuse a live or retired id.
+## Legacy SL-002-era stub entries (no "state" key) are passive roster data
+## that was never allocated from the counter and are exempt — this keeps
+## the pre-wiring save-load integration tests' blobs (counter 0 with
+## hand-assigned ids) loadable while the real machine enforces
+## monotonicity. Missing counter, or counter <= max state id, FAILS LOUDLY.
+##
+## Load-side reservation rebuild (Core Rule 7): after commit the
+## reservation map is rebuilt from members' claim flags — USING ->
+## occupant, WALKING_TO/QUEUEING -> next_claimant. A payload where two
+## members claim the same machine's occupant or queue slot is structurally
+## corrupt and fails Phase A (the load-side mirror of the AC4 capacity
+## invariant).
 func deserialize(data: Dictionary, validate_only: bool = false, known_instance_ids: Array = []) -> StubDeserializeResult:
 	var result := StubDeserializeResult.new()
 	if not _assert_initialized():
 		return StubDeserializeResult.fail("MemberSim.deserialize(): called before init()")
 
 	# --- Phase A: validate (zero mutation) ---
-	if not data.has("counter") or typeof(data["counter"]) != TYPE_INT:
+	if not data.has("counter") or not _is_numeric(data["counter"]):
 		result.errors.append("MemberSim: missing or invalid 'counter'")
 
-	if data.has("member_id_counter") and typeof(data["member_id_counter"]) != TYPE_INT:
-		result.errors.append("MemberSim: invalid 'member_id_counter'")
+	# AC8 — the counter is the allocator's truth; a missing counter means a
+	# new spawn could silently reuse a retired id (TR-MS-011). Never derive.
+	if not data.has("member_id_counter") or not _is_numeric(data["member_id_counter"]):
+		result.errors.append("MemberSim: missing or invalid 'member_id_counter' — required (AC8: never re-derive from the active set)")
 
 	if not data.has("members") or not (data["members"] is Array):
 		result.errors.append("MemberSim: missing or invalid 'members'")
 	else:
 		_validate_members(data["members"], known_instance_ids, result)
+		# AC8 monotonicity: counter must exceed every state-machine member id
+		# (a serialized GONE record included — its id must never be reused).
+		if data.has("member_id_counter") and _is_numeric(data["member_id_counter"]):
+			var max_state_id := _max_state_member_id(data["members"])
+			if max_state_id >= 0 and int(data["member_id_counter"]) <= max_state_id:
+				result.errors.append("MemberSim: member_id_counter %d <= max active member_id %d — a new spawn would reuse a retired id (AC8)" % [int(data["member_id_counter"]), max_state_id])
 
 	if not data.has("rng_state") or not data["rng_state"] is String:
 		result.errors.append("MemberSim: missing or invalid 'rng_state'")
@@ -1473,40 +1598,261 @@ func deserialize(data: Dictionary, validate_only: bool = false, known_instance_i
 
 	# --- Phase B: commit (only if all valid) ---
 	counter = int(data["counter"])
-	members = (data["members"] as Array).duplicate(true)
-	if data.has("member_id_counter"):
-		_member_id_counter = int(data["member_id_counter"])
+	_member_id_counter = int(data["member_id_counter"])
+	members = _normalize_members(data["members"])
 	_rng().state = SeededRNG.hex_to_int64(str(data["rng_state"]))
+	_rebuild_reservations_from_members()
 	return result
 
 
 ## Validates one member array's records against the grid-derived instance ids
 ## (AC9) and structural rules. Collects ALL problems (no short-circuit).
+## State-machine records (carrying a "state" key) additionally get their
+## JSON-safe shapes validated: cell / cached_path must be Vector2i or
+## [x, y] (path cells individually), numeric fields must be int|float, and
+## the load-side reservation capacity invariant is checked
+## (_validate_reservation_claims — at most one occupant + one next_claimant
+## per machine, no duplicate member ids).
 func _validate_members(member_data: Array, known_instance_ids: Array, result: StubDeserializeResult) -> void:
+	var seen_ids: Dictionary = {}
 	for i in member_data.size():
 		var member: Variant = member_data[i]
 		if not (member is Dictionary):
 			result.errors.append("MemberSim: member %d malformed (not a Dictionary)" % i)
 			continue
-		if not member.has("member_id") or typeof(member["member_id"]) != TYPE_INT:
-			result.errors.append("MemberSim: member %d malformed (need int member_id)" % i)
+		if not member.has("member_id") or not _is_numeric(member["member_id"]):
+			result.errors.append("MemberSim: member %d malformed (need numeric member_id)" % i)
 			continue
 		var member_id := int(member["member_id"])
-		if member.has("state"):
-			if typeof(member["state"]) != TYPE_STRING:
-				result.errors.append("MemberSim: member %d state must be a String" % i)
-				continue
-			if not VALID_STATES.has(str(member["state"])):
-				result.errors.append("MemberSim: member %d unknown state '%s'" % [i, str(member["state"])])
-		# AC9 — the grid is the source of truth: any equipment reference
-		# absent from the validated grid fails the WHOLE load. Legacy blobs
-		# carry equipment_instance_id; skeleton-era blobs carry
-		# target_equipment_instance_id (-1 = none).
-		if member.has("equipment_instance_id"):
-			var equipment_id := int(member["equipment_instance_id"])
-			if not known_instance_ids.has(equipment_id):
-				result.errors.append("MemberSim: member %s references unknown equipment_instance_id %d" % [str(member_id), equipment_id])
-		if member.has("target_equipment_instance_id") and int(member["target_equipment_instance_id"]) >= 0:
+		if seen_ids.has(member_id):
+			result.errors.append("MemberSim: duplicate member_id %d in payload" % member_id)
+		seen_ids[member_id] = true
+		if not member.has("state"):
+			# Legacy SL-002-era stub entry — passive roster data. AC9 only.
+			_validate_legacy_member(member, member_id, known_instance_ids, result)
+			continue
+		_validate_state_member(member, i, member_id, known_instance_ids, result)
+	_validate_reservation_claims(member_data, result)
+
+
+## AC9 for a legacy SL-002-era stub entry ({member_id,
+## equipment_instance_id}, no state). The equipment reference must resolve
+## against the validated grid.
+func _validate_legacy_member(member: Dictionary, member_id: int, known_instance_ids: Array, result: StubDeserializeResult) -> void:
+	if not member.has("equipment_instance_id"):
+		return
+	if not _is_numeric(member["equipment_instance_id"]):
+		result.errors.append("MemberSim: member %s has invalid equipment_instance_id" % str(member_id))
+		return
+	var equipment_id := int(member["equipment_instance_id"])
+	if not known_instance_ids.has(equipment_id):
+		result.errors.append("MemberSim: member %s references unknown equipment_instance_id %d" % [str(member_id), equipment_id])
+
+
+## Structural validation for a state-machine member record. Shapes checked
+## against what _normalize_member_record will commit — JSON-safe: cells as
+## Vector2i or [x, y] arrays, numerics as int|float (JSON.parse returns
+## floats for integer literals in 4.7.1), blacklist keys numeric.
+func _validate_state_member(member: Dictionary, i: int, member_id: int, known_instance_ids: Array, result: StubDeserializeResult) -> void:
+	if typeof(member["state"]) != TYPE_STRING:
+		result.errors.append("MemberSim: member %d state must be a String" % i)
+		return
+	if not VALID_STATES.has(str(member["state"])):
+		result.errors.append("MemberSim: member %d unknown state '%s'" % [i, str(member["state"])])
+		return
+	if not member.has("cell"):
+		result.errors.append("MemberSim: member %d missing 'cell'" % i)
+	elif not _is_cell_shape_valid(member["cell"]):
+		result.errors.append("MemberSim: member %d has malformed cell %s" % [i, str(member["cell"])])
+	if member.has("cached_path"):
+		if not (member["cached_path"] is Array):
+			result.errors.append("MemberSim: member %d cached_path must be an Array" % i)
+		else:
+			for j in (member["cached_path"] as Array).size():
+				if not _is_cell_shape_valid(member["cached_path"][j]):
+					result.errors.append("MemberSim: member %d cached_path[%d] malformed %s" % [i, j, str(member["cached_path"][j])])
+	for key in STATE_MEMBER_INT_KEYS:
+		if member.has(key) and not _is_numeric(member[key]):
+			result.errors.append("MemberSim: member %d '%s' must be numeric" % [i, key])
+	if member.has("preference_profile") and not (member["preference_profile"] is Dictionary):
+		result.errors.append("MemberSim: member %d preference_profile must be a Dictionary" % i)
+	if member.has("give_up_blacklist"):
+		if not (member["give_up_blacklist"] is Dictionary):
+			result.errors.append("MemberSim: member %d give_up_blacklist must be a Dictionary" % i)
+		else:
+			for k in (member["give_up_blacklist"] as Dictionary).keys():
+				# JSON.parse stringifies Dictionary keys (5 -> "5") — accept
+				# int|float keys AND numeric strings; normalize coerces to int.
+				if not _is_numeric_key(k) or not _is_numeric(member["give_up_blacklist"][k]):
+					result.errors.append("MemberSim: member %d give_up_blacklist entries must be numeric (id -> ticks)" % i)
+	if member.has("recently_used_ids"):
+		if not (member["recently_used_ids"] is Array):
+			result.errors.append("MemberSim: member %d recently_used_ids must be an Array" % i)
+		else:
+			for v in member["recently_used_ids"]:
+				if not _is_numeric(v):
+					result.errors.append("MemberSim: member %d recently_used_ids entries must be numeric" % i)
+	# AC9 — the grid is the source of truth: a target >= 0 must resolve
+	# against the validated grid (legacy blobs carry equipment_instance_id,
+	# state-machine blobs carry target_equipment_instance_id; -1 = none).
+	if member.has("target_equipment_instance_id"):
+		if not _is_numeric(member["target_equipment_instance_id"]):
+			result.errors.append("MemberSim: member %s has invalid target_equipment_instance_id" % str(member_id))
+		elif int(member["target_equipment_instance_id"]) >= 0:
 			var target_id := int(member["target_equipment_instance_id"])
 			if not known_instance_ids.has(target_id):
 				result.errors.append("MemberSim: member %s references unknown target_equipment_instance_id %d" % [str(member_id), target_id])
+
+
+## Load-side mirror of the AC4 capacity invariant: at most one member may be
+## occupant and at most one next_claimant per machine IN THE PAYLOAD (a
+## corrupt save otherwise — the live state machine can never produce two).
+## A USING occupant and a QUEUEING next_claimant may coexist on one machine
+## (the single queue slot), matching live semantics.
+func _validate_reservation_claims(member_data: Array, result: StubDeserializeResult) -> void:
+	var occupants: Dictionary = {}   # machine -> member_id
+	var claimants: Dictionary = {}   # machine -> member_id
+	for member in member_data:
+		if not (member is Dictionary) or not member.has("state"):
+			continue
+		if not member.has("target_equipment_instance_id") or not _is_numeric(member["target_equipment_instance_id"]):
+			continue
+		var target := int(member["target_equipment_instance_id"])
+		if target < 0:
+			continue
+		var mid := int(member["member_id"])
+		match str(member["state"]):
+			STATE_USING:
+				if occupants.has(target):
+					result.errors.append("MemberSim: machine E%d claimed as occupant by BOTH members %d and %d (load-side AC4)" % [target, int(occupants[target]), mid])
+				else:
+					occupants[target] = mid
+			STATE_WALKING_TO, STATE_QUEUEING:
+				if claimants.has(target):
+					result.errors.append("MemberSim: machine E%d queue slot claimed by BOTH members %d and %d (load-side AC4)" % [target, int(claimants[target]), mid])
+				else:
+					claimants[target] = mid
+
+
+## Highest member_id among records carrying a "state" key (state-machine
+## members — including a defensively-serialized GONE record, whose id must
+## never be reused). Legacy entries are excluded: they were never allocated
+## from the counter (see deserialize AC8 note). Returns -1 when no
+## state-machine member exists (the AC8 check is then vacuous).
+func _max_state_member_id(member_data: Array) -> int:
+	var max_id := -1
+	for member in member_data:
+		if member is Dictionary and member.has("state") and member.has("member_id") and _is_numeric(member["member_id"]):
+			max_id = maxi(max_id, int(member["member_id"]))
+	return max_id
+
+
+## Phase B: builds the committed member roster from the validated payload —
+## every record normalized so the state machine can run: ints coerced (JSON
+## parses integer literals as float in 4.7.1), cells restored to Vector2i,
+## give_up_blacklist keys restored to int. Legacy entries are preserved
+## verbatim (ids coerced to int).
+func _normalize_members(member_data: Array) -> Array:
+	var out: Array = []
+	for member in member_data:
+		out.append(_normalize_member_record(member))
+	return out
+
+
+func _normalize_member_record(member: Dictionary) -> Dictionary:
+	var norm: Dictionary = member.duplicate(true)
+	norm["member_id"] = int(member["member_id"])
+	if not member.has("state"):
+		if norm.has("equipment_instance_id") and _is_numeric(norm["equipment_instance_id"]):
+			norm["equipment_instance_id"] = int(norm["equipment_instance_id"])
+		return norm
+	norm["state"] = str(member["state"])
+	if member.has("cell"):
+		norm["cell"] = _cell_from_variant(member["cell"])
+	if member.has("cached_path"):
+		var path: Array = []
+		for v in member["cached_path"]:
+			path.append(_cell_from_variant(v))
+		norm["cached_path"] = path
+	for key in STATE_MEMBER_INT_KEYS:
+		if member.has(key) and _is_numeric(member[key]):
+			norm[key] = int(member[key])
+	if member.has("preference_profile") and member["preference_profile"] is Dictionary:
+		norm["preference_profile"] = (member["preference_profile"] as Dictionary).duplicate(true)
+	if member.has("give_up_blacklist") and member["give_up_blacklist"] is Dictionary:
+		var bl: Dictionary = {}
+		for k in (member["give_up_blacklist"] as Dictionary).keys():
+			bl[int(k)] = int(member["give_up_blacklist"][k])
+		norm["give_up_blacklist"] = bl
+	if member.has("recently_used_ids") and member["recently_used_ids"] is Array:
+		var rui: Array = []
+		for v in member["recently_used_ids"]:
+			rui.append(int(v))
+		norm["recently_used_ids"] = rui
+	return norm
+
+
+## Core Rule 7 load-side rebuild: the reservation map is DERIVED from the
+## members' own serialized claim flags — never serialized as separate truth
+## (avoids desync). USING -> occupant; WALKING_TO/QUEUEING -> next_claimant.
+## Processed in ascending member_id order (TR-MS-006). A USING occupant and
+## a QUEUEING next_claimant may coexist on one machine (queue depth 1),
+## matching live semantics. Called only after Phase B committed.
+func _rebuild_reservations_from_members() -> void:
+	reservations.clear()
+	var by_id: Dictionary = {}
+	for m in members:
+		if m is Dictionary and m.has("member_id"):
+			by_id[int(m["member_id"])] = m
+	var ids: Array = by_id.keys()
+	ids.sort()
+	for mid in ids:
+		var m: Dictionary = by_id[mid]
+		if not m.has("state"):
+			continue
+		var target := int(m.get("target_equipment_instance_id", -1))
+		if target < 0:
+			continue
+		var rec := _reservation(target)
+		match str(m["state"]):
+			STATE_USING:
+				rec["occupant"] = mid
+			STATE_WALKING_TO, STATE_QUEUEING:
+				rec["next_claimant"] = mid
+
+
+## True when [v] is a cell-shaped value: a Vector2i, or an Array of exactly
+## two numbers ([x, y] — the JSON-safe encoding; JSON.parse returns floats
+## for all numbers in 4.7.1). Anything else is structurally corrupt.
+func _is_cell_shape_valid(v: Variant) -> bool:
+	if v is Vector2i:
+		return true
+	if not (v is Array) or (v as Array).size() != 2:
+		return false
+	for component in v:
+		if typeof(component) != TYPE_INT and typeof(component) != TYPE_FLOAT:
+			return false
+	return true
+
+
+## Converts a cell-shaped variant to Vector2i. Caller MUST have passed
+## _is_cell_shape_valid() first.
+func _cell_from_variant(v: Variant) -> Vector2i:
+	if v is Vector2i:
+		return v
+	return Vector2i(int(v[0]), int(v[1]))
+
+
+## True when [v] is int or float — the numeric types a save payload may
+## carry (JSON.parse returns floats for integer literals in 4.7.1).
+func _is_numeric(v: Variant) -> bool:
+	return typeof(v) == TYPE_INT or typeof(v) == TYPE_FLOAT
+
+
+## True when [v] is numeric OR a numeric string ("5"). JSON.parse
+## stringifies Dictionary keys (give_up_blacklist {5: 3} -> {"5": 3}); the
+## value side stays numeric. _normalize_member_record coerces with int().
+func _is_numeric_key(v: Variant) -> bool:
+	if _is_numeric(v):
+		return true
+	return typeof(v) == TYPE_STRING and str(v).is_valid_int()

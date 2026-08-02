@@ -38,6 +38,7 @@ const TEST_FILES := [
 	"tests/unit/member_sim/reservation_map_test.gd",
 	"tests/unit/member_sim/path_invalidation_test.gd",
 	"tests/unit/member_sim/patience_interrupt_test.gd",
+	"tests/unit/member_sim/serialization_test.gd",
 	"tests/unit/navigation/config_basic_paths_test.gd",
 	"tests/unit/navigation/solidity_sync_test.gd",
 	"tests/unit/time_system/orchestrator_tick_dispatch_test.gd",
@@ -63,6 +64,7 @@ const TEST_FILES := [
 	"tests/integration/save_load/load_orchestration_test.gd",
 	"tests/integration/save_load/roundtrip_determinism_test.gd",
 	"tests/integration/save_load/file_io_version_test.gd",
+	"tests/integration/member_sim/flow_hypothesis_test.gd",
 ]
 
 # === 隔离的测试文件 ===
