@@ -158,6 +158,20 @@ func _post_init() -> void:
 
 ## QA Test Cases
 
+*Sourced from `production/qa/qa-plan-sprint-2-2026-08-02.md` — Automated Tests Required (TS-001). Authoritative test file: `tests/unit/time_system/orchestrator_tick_dispatch_test.gd` (~35 assertions).*
+
+**What to test**:
+- AC-INIT-1: init() 二次调用 → assert() 触发
+- AC-INIT-2: init() 前调用任意公开方法 → push_error() + 安全默认值
+- 拓扑初始化顺序（Tier 0-7）由 _ready() 强制
+- tick 固定序列（MemberSim → Congestion → Satisfaction → Economy 直接调用，非信号驱动）
+- tick_completed(tick_count) 信号 arity 与时机（每 tick 序列末尾恰一次）
+- AC-NO-AWAIT: 静态 grep 确认所有 on_tick() 无 await/yield
+
+**Edge cases**: 空 tick 序列、tick_completed 订阅者数量变化
+
+**Estimated assertions**: ~35
+
 - **AC5**: 分发顺序验证
   - Given: 4 spy/mock systems registered in order
   - When: one tick fires via _advance_tick()
@@ -194,7 +208,7 @@ func _post_init() -> void:
 
 **Story Type**: Logic
 **Required evidence**:
-- `tests/unit/time_system/orchestrator_init_dispatch_test.gd` — must exist and pass
+- `tests/unit/time_system/orchestrator_tick_dispatch_test.gd` — must exist and pass
 
 **Status**: [ ] Not yet created
 

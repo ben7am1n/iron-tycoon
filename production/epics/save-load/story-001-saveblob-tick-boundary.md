@@ -178,6 +178,18 @@ func _validate_blob_keys(blob: Dictionary) -> Array[String]:
 
 ## QA Test Cases
 
+*Sourced from `production/qa/qa-plan-sprint-2-2026-08-02.md` — Automated Tests Required (SL-001). Authoritative test file: `tests/integration/save_load/saveblob_composition_test.gd` (~25 assertions).*
+
+**What to test**:
+- AC-BLOB-1: 返回 blob 恰有 8 键 `{version, master_seed, time_system, grid_system, member_sim, congestion, satisfaction, economy}` — 无多无缺
+- AC-BLOB-2: 顶层 master_seed 与 time_system.master_seed 一致（冗余非分歧）
+- AC-BLOB-3: navigation/placement_system/selection_system/zone_rules 4 系统缺席
+- 保存仅在 tick 边界（TimeSystem no-mid-tick-yield 结构性保证）
+
+**Edge cases**: 空状态保存、6 系统 serialize 部分失败
+
+**Estimated assertions**: ~25
+
 - **AC1**: 保存仅在 tick 边界执行
   - Given: spy on each coordinated system's serialize() method
   - When: request_save() called from UI; sim is running at 1x speed
@@ -208,7 +220,7 @@ func _validate_blob_keys(blob: Dictionary) -> Array[String]:
 
 **Story Type**: Integration (crosses SaveLoad ↔ TimeSystem for signal hook, SaveLoad ↔ all 6 systems for blob composition)
 **Required evidence**:
-- `tests/integration/save_load/blob_composition_test.gd` — must exist and pass (AC1, AC-BLOB-1, AC-BLOB-2, AC-BLOB-3)
+- `tests/integration/save_load/saveblob_composition_test.gd` — must exist and pass (AC1, AC-BLOB-1, AC-BLOB-2, AC-BLOB-3)
 
 **Status**: [ ] Not yet created
 

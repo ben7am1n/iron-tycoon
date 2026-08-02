@@ -165,6 +165,19 @@ func test_rng_state_restored_exactly() -> void:
 
 ## QA Test Cases
 
+*Sourced from `production/qa/qa-plan-sprint-2-2026-08-02.md` — Automated Tests Required (SL-003). Authoritative test file: `tests/integration/save_load/roundtrip_determinism_test.gd` (~25 assertions + 确定性 probe).*
+
+**What to test**:
+- save→load→run→save2 与直接续跑 → save2 字节一致
+- 三条件：(a) RNG 流状态精确恢复 (b) tick 顺序一致 (c) Navigation AStarGrid2D tie-break 位一致（ADR-0007 门禁已 PASSED）
+- 加载后强制 paused（无论存档 speed）— Core Rule 7
+
+**Stub 方案**: 全部 6 协调系统 stub 覆盖；Navigation rebuild 用 ADR-0007 已验证路径
+
+**Edge cases**: 长时间运行后存档、多个 RNG 子流、paused 存档 round-trip
+
+**Estimated assertions**: ~25 + 确定性 probe
+
 - **AC2**: 往返确定性
   - Given: simulation with known master_seed, run to tick 200
   - When: save → load into fresh instance → run to tick 300 → save (produces blob_restored); compare to: continue original → run to tick 300 → save (produces blob_control)
@@ -189,9 +202,7 @@ func test_rng_state_restored_exactly() -> void:
 
 **Story Type**: Integration (end-to-end determinism pipeline spanning SaveLoad → TimeSystem → GridSystem → all tick systems)
 **Required evidence**:
-- `tests/integration/save_load/roundtrip_determinism_test.gd` — must exist and pass (AC2)
-- `tests/integration/save_load/resume_paused_test.gd` — must exist and pass (AC5)
-- `tests/integration/save_load/rng_restoration_test.gd` — must exist and pass (AC7)
+- `tests/integration/save_load/roundtrip_determinism_test.gd` — must exist and pass (AC2, AC5, AC7)
 
 **Status**: [ ] Not yet created
 

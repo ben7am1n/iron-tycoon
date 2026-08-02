@@ -136,6 +136,19 @@ func get_tick_count() -> int:
 
 ## QA Test Cases
 
+*Sourced from `production/qa/qa-plan-sprint-2-2026-08-02.md` — Automated Tests Required (TS-002). Authoritative test file: `tests/unit/time_system/tick_accumulator_test.gd` (~30 assertions).*
+
+**What to test**:
+- TICK_DURATION_SECONDS = 0.1 固定步进（accumulator 累积→扣减循环）
+- MAX_TICKS_PER_FRAME = 8 catch-up 上限
+- speed 1x/2x/3x 切换不重置 accumulator、不触碰 tick_count
+- pause（speed_multiplier=0）冻结全部状态；pause/resume 不推进 tick_count
+- 同 seed + 同 tick 序列 → replay 位一致（确定性与帧率无关）
+
+**Edge cases**: delta=0、超大 delta（单帧 catch-up 上限）、speed 切换恰在 tick 边界
+
+**Estimated assertions**: ~30
+
 - **AC1**: 单次 0.1s delta → 1 tick
   - Given: speed=1, accumulator=0, tick_count=0
   - When: process(0.1)

@@ -196,6 +196,21 @@ func _verify_load_order() -> void:
 
 ## QA Test Cases
 
+*Sourced from `production/qa/qa-plan-sprint-2-2026-08-02.md` — Automated Tests Required (SL-002). Authoritative test file: `tests/integration/save_load/load_orchestration_test.gd` (~30 assertions).*
+
+**What to test**:
+- Phase A: 所有系统 validate-only 模式零变更运行
+- Phase B: 全部通过后按序提交
+- 加载顺序程序化强制（TimeSystem → GridSystem → Placement.rederive → Selection.rebuild → Navigation.rebuild → MemberSim → Congestion → Satisfaction → Economy）
+- 任一失败 → 整体中止，当前会话零变更（all-or-nothing）
+- Phase B 失败 → fatal-to-menu（不应发生）
+
+**Stub 方案**: MemberSim/Congestion/Satisfaction/Economy 用最小 serialize/deserialize stub（推进 RNG 状态 + 递增计数），标记为 Core 层集成点
+
+**Edge cases**: 中间系统 validate 失败、网格数据冲突、引用不存在的 equipment_instance_id
+
+**Estimated assertions**: ~30
+
 - **AC3**: 全有或全无——验证失败则零变异
   - Given: fresh session with known state; corrupt save blob (missing MemberSim RNG state, or GridSystem Phase A fails)
   - When: load(corrupt_blob, buildable)

@@ -189,6 +189,19 @@ func load_save(save_name: String, buildable_snapshot: PackedByteArray) -> LoadRe
 
 ## QA Test Cases
 
+*Sourced from `production/qa/qa-plan-sprint-2-2026-08-02.md` — Automated Tests Required (SL-004). Authoritative test file: `tests/integration/save_load/file_io_version_test.gd` (~30 assertions).*
+
+**What to test**:
+- AC-FILE-1: 每个 FileAccess.store_*() 返回值检查 — mock store_string() 返回 false → save_to_file() 报错
+- AC-FILE-2: flush() 先于 close()（写后立即读文件内容验证）
+- AC-FILE-3: 截断/损坏 JSON → "save file corrupted or truncated" 错误，无崩溃/部分解析
+- AC-FILE-4: save_to_file("my_save") → `user_data_dir/saves/my_save.sav.json` 存在且 JSON 可解析
+- 版本 exact-match：不匹配 → 用户可见"不兼容存档"消息，无迁移
+
+**Edge cases**: 文件已存在覆盖、目录不存在、版本字段缺失
+
+**Estimated assertions**: ~30
+
 - **AC6**: 版本不匹配 → 优雅拒绝
   - Given: save file with version=99, current SAVE_FORMAT_VERSION=1
   - When: load_from_file("test_save")
@@ -225,8 +238,7 @@ func load_save(save_name: String, buildable_snapshot: PackedByteArray) -> LoadRe
 
 **Story Type**: Integration (FileAccess I/O + JSON encoding + SaveLoad coordination)
 **Required evidence**:
-- `tests/unit/save_load/file_io_test.gd` — must exist and pass (AC-FILE-1, AC-FILE-2, AC-FILE-3: file I/O logic with mocks)
-- `tests/integration/save_load/file_io_roundtrip_test.gd` — must exist and pass (AC6, AC-FILE-4: end-to-end with real filesystem)
+- `tests/integration/save_load/file_io_version_test.gd` — must exist and pass (AC6, AC-FILE-1, AC-FILE-2, AC-FILE-3, AC-FILE-4)
 
 **Status**: [ ] Not yet created
 

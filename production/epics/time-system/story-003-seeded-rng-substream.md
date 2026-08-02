@@ -139,6 +139,19 @@ func test_golden_vector() -> void:
 
 ## QA Test Cases
 
+*Sourced from `production/qa/qa-plan-sprint-2-2026-08-02.md` — Automated Tests Required (TS-003). Authoritative test files: `tests/unit/time_system/seeded_rng_substream_test.gd` + `tests/unit/time_system/lsr_helper_test.gd` (~40 assertions + 子进程 probe).*
+
+**What to test**:
+- AC-LSR-1: lsr(0x8000000000000000, 30) == 0x0000000200000000（逻辑右移，非符号扩展）
+- FNV-1a64 → XOR → SplitMix64 子流派生公式（钉死常量）
+- register_system(name) 恰一次；重复注册 = 硬错误
+- get_rng(name) 幂等：返回同一实例（携带已推进状态），绝不创建/重播种
+- 不同 system 子流独立（不因调用顺序互相影响）
+
+**Edge cases**: 高位 set 的种子值、空名注册、子流种子碰撞验证
+
+**Estimated assertions**: ~40 + 子进程 probe
+
 - **AC6**: get_rng 等幂
   - Given: register_system("MemberSim"), no draws
   - When: get_rng("MemberSim") called twice
@@ -175,7 +188,7 @@ func test_golden_vector() -> void:
 
 **Story Type**: Logic
 **Required evidence**:
-- `tests/unit/time_system/seeded_rng_test.gd` — must exist and pass (AC6, AC7, AC13, AC15)
+- `tests/unit/time_system/seeded_rng_substream_test.gd` — must exist and pass (AC6, AC7, AC13, AC15)
 - `tests/unit/time_system/lsr_helper_test.gd` — must exist and pass (AC-LSR-1)
 
 **Status**: [ ] Not yet created

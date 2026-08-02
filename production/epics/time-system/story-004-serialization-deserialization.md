@@ -188,6 +188,19 @@ func deserialize(data: Dictionary) -> TimeSystemDeserializeResult:
 
 ## QA Test Cases
 
+*Sourced from `production/qa/qa-plan-sprint-2-2026-08-02.md` — Automated Tests Required (TS-004). Authoritative test file: `tests/unit/time_system/time_serialization_test.gd` (~35 assertions).*
+
+**What to test**:
+- serialize() 输出 `{tick_count, master_seed, per_system_rng_states: {name: state}, speed_multiplier, paused}` 完整键
+- deserialize() 恢复 RNG 内部状态（`rng.state = hex_to_int()` 直接恢复，非重派生）
+- tick_count/speed_multiplier/paused 恢复
+- Core Rule 9: 加载后始终 paused（无论存档 speed）
+- 状态恢复后继续 tick 与未保存状态一致
+
+**Edge cases**: RNG 状态已推进多步、paused=true 存档、speed=2x 存档
+
+**Estimated assertions**: ~35
+
 - **AC8**: 往返序列化保真度
   - Given: sim at tick_count=500 with all 4 tick systems registered and each having consumed draws from their RNG
   - When: `serialize()`, then construct a fresh TimeSystem with same registered systems, call `deserialize(data)`
@@ -224,8 +237,7 @@ func deserialize(data: Dictionary) -> TimeSystemDeserializeResult:
 
 **Story Type**: Integration (crosses TimeSystem ↔ SeededRNG boundary) + Logic (AC16, AC17 are pure validation)
 **Required evidence**:
-- `tests/unit/time_system/serialization_test.gd` — must exist and pass (AC16, AC17: validation logic)
-- `tests/integration/time_system/serialization_roundtrip_test.gd` — must exist and pass (AC8, AC9, AC10: cross-system round-trip)
+- `tests/unit/time_system/time_serialization_test.gd` — must exist and pass (AC8, AC9, AC10, AC16, AC17)
 
 **Status**: [ ] Not yet created
 
