@@ -240,35 +240,42 @@ func _test_ac_pipeline2_strict_aborts_never_freezes() -> void:
 # === AC-PIPELINE.3: 多重校验失败 → 全部报告，顺序确定 ===
 
 func _test_ac_pipeline3_multiple_failures_deterministic_order() -> void:
-	print("\n[AC-PIPELINE.3] entry with empty footprint AND 2 access cells -> BOTH failures reported, deterministic order")
+	print("\n[AC-PIPELINE.3] entry with empty footprint AND 2 access cells AND cost=-1 -> ALL 3 failures reported, deterministic order")
 
 	# Direct validator-level: _validate_all returns every sub-validator's first
-	# failure in fixed order (footprint shape → access cells). Cost validation
-	# (COST_NEGATIVE) joins via EC-007's validate_cost — out of scope here.
+	# failure in fixed order (footprint shape → access cells → cost). Cost
+	# validation (COST_NEGATIVE) joined via EC-007's validate_cost — the story
+	# QA case documents the full 3-error order (FOOTPRINT_EMPTY, ACCESS_COUNT,
+	# COST_NEGATIVE).
 	var loader: Script = _loader()
 	var empty_footprint: Array[Vector2i] = []
 	var two_access: Array[Vector2i] = [Vector2i(0, 0), Vector2i(1, 0)]
-	var failures: Array = loader._validate_all(empty_footprint, two_access)
-	_check(failures.size() == 2, "_validate_all returns 2 failures")
+	var failures: Array = loader._validate_all(empty_footprint, two_access, -1)
+	_check(failures.size() == 3, "_validate_all returns 3 failures (FOOTPRINT_EMPTY, ACCESS_COUNT, COST_NEGATIVE)")
 	_check(failures[0].get("code") == "FOOTPRINT_EMPTY", "first failure is FOOTPRINT_EMPTY (footprint checked first)")
 	_check(failures[1].get("code") == "ACCESS_COUNT", "second failure is ACCESS_COUNT")
+	_check(failures[2].get("code") == "COST_NEGATIVE", "third failure is COST_NEGATIVE (cost validated last)")
 
 	# Deterministic error ordering: same input -> same error order every run.
-	var failures_again: Array = loader._validate_all(empty_footprint, two_access)
-	var order_a: Array = [failures[0].get("code"), failures[1].get("code")]
-	var order_b: Array = [failures_again[0].get("code"), failures_again[1].get("code")]
+	var failures_again: Array = loader._validate_all(empty_footprint, two_access, -1)
+	var order_a: Array = [failures[0].get("code"), failures[1].get("code"), failures[2].get("code")]
+	var order_b: Array = [failures_again[0].get("code"), failures_again[1].get("code"), failures_again[2].get("code")]
 	_check(order_a == order_b, "error order is deterministic across runs")
 
-	# Loader path: multi-failure entry excluded, valid control loads, BOTH
-	# failures recorded in deterministic order.
+	# Loader path: multi-failure entry excluded, valid control loads, ALL THREE
+	# failures recorded in deterministic order (cost=-1 in the fixture now
+	# contributes COST_NEGATIVE — Story 007 wired validate_cost into the
+	# pipeline; the fixture was designed for this in Story 004).
 	var result: RefCounted = _load_result("pipeline_multi_failure.catalog.json", false)
 	_check(result.get("ok") == true, "ok=true (valid control entry loaded)")
 	var catalog: RefCounted = result.get("catalog")
 	_check(catalog.call("get_all_ids") == ["valid_dumbbell"], "valid control loaded, multi-failure entry excluded")
 
 	var errors: Array = result.get("errors")
-	_check(errors.size() == 2, "both failures recorded for the multi-failure entry")
+	_check(errors.size() == 3, "all three failures recorded for the multi-failure entry")
 	_check(errors[0].get("equipment_id") == "multi_failure_rack", "first error names the entry")
 	_check(errors[0].get("message").find("FOOTPRINT_EMPTY") != -1, "first error is FOOTPRINT_EMPTY")
 	_check(errors[1].get("equipment_id") == "multi_failure_rack", "second error names the entry")
 	_check(errors[1].get("message").find("ACCESS_COUNT") != -1, "second error is ACCESS_COUNT")
+	_check(errors[2].get("equipment_id") == "multi_failure_rack", "third error names the entry")
+	_check(errors[2].get("message").find("COST_NEGATIVE") != -1, "third error is COST_NEGATIVE")
