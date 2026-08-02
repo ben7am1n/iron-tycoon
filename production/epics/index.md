@@ -1,6 +1,6 @@
 # Epics Index
 
-Last Updated: 2026-07-23
+Last Updated: 2026-08-02
 Engine: Godot 4.7.1
 
 ## Foundation Layer
@@ -16,7 +16,8 @@ Engine: Godot 4.7.1
 
 | Epic | Layer | System | GDD | Stories | Status |
 |------|-------|--------|-----|---------|--------|
-| — | — | — | — | — | Not yet created — run `/create-epics layer: core` |
+| [placement-system](placement-system/EPIC.md) | Core | PlacementSystem | design/gdd/placement-system.md | 7 stories | Ready |
+| [navigation](navigation/EPIC.md) | Core | Navigation (AStarGrid2D) | design/gdd/navigation.md | 6 stories | Ready |
 
 ## Feature Layer
 
