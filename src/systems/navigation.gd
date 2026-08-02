@@ -1,6 +1,7 @@
 ## Navigation — deterministic grid pathfinder wrapping a single AStarGrid2D.
 ##
 ## Stories: navigation / story-001-astargrid2d-configuration-basic-paths.md
+##          navigation / story-003-path-query-edge-cases.md
 ##          navigation / story-004-solidity-sync-via-grid-changed.md
 ##          navigation / story-006-rebuild-on-load-cell-size-independence.md
 ## Req:   TR-NAV-001 (single AStarGrid2D; DIAGONAL_MODE_ONLY_IF_NO_OBSTACLES;
@@ -27,6 +28,20 @@
 ## Navigation is deliberately congestion-blind (TR-NAV-004 — target selection
 ## lives in MemberSim, never in path cost) and owns NO serialized state: the
 ## AStarGrid2D is rebuilt from GridSystem occupancy on load (TR-NAV-005).
+##
+## STORY 003 EDGE-CASE CONTRACT (empty-array contract, Core Rule 4):
+## - get_path NEVER returns null under any condition; always a typed
+##   Array[Vector2i]. The engine's get_id_path() may return different array
+##   shapes across versions, so the wrapper converts + normalizes explicitly
+##   (story 003 engine note).
+## - No path exists (target enclosed by solids, from/to solid, from/to
+##   outside region) → [] (AC4/AC14).
+## - from == to → [from] for any OPEN cell (AC5). A SOLID from==to cell has
+##   no path → [] (empty-array contract applies to solid endpoints).
+## - Out-of-bounds from/to → [] WITHOUT an engine error (region guard).
+## - Debug-only log (not crash): if the destination `to` is in-bounds and
+##   solid, that signals an upstream invariant violation (access cells are
+##   never solid per GridSystem contract) — push_warning, still return [].
 ##
 ## CLASS HIERARCHY — DEVIATION FROM STORY SKETCH (documented, not silent):
 ## The Story 001 sketch shows `class_name Navigation extends RefCounted`, but
@@ -226,13 +241,46 @@ func _configure_astar(grid: GridStateReader) -> void:
 ## makes Navigation provably independent of cell_size (TR-NAV-008).
 ## No caching — every call recomputes (A* over ~130 cells is sub-ms).
 ##
-## Out-of-bounds from/to return [] WITHOUT an engine error (guarded by
-## region.has_point — GDD AC14). from == to returns [from] (GDD AC5, natively
-## handled by get_id_path). Solid endpoints return [] (no path exists).
-## The result is identical after rebuild() from identical occupancy (AC13).
+## Story 003 edge cases (see class doc):
+## - from == to → [from] for an OPEN cell (AC5; MemberSim treats as
+##   "already arrived"); a SOLID from==to cell → [] (empty-array contract
+##   applies to solid endpoints).
+## - solid from/to, enclosed target, out-of-bounds → [] (AC4/AC14).
+## - never null, always typed Array[Vector2i].
+## - The result is identical after rebuild() from identical occupancy (AC13).
 func get_path(from: Vector2i, to: Vector2i) -> Array[Vector2i]:
+	var empty_path: Array[Vector2i] = []
 	if not _assert_initialized():
-		return []
+		return empty_path
 	if not _region.has_point(from) or not _region.has_point(to):
-		return []
-	return _astar.get_id_path(from, to)
+		return empty_path
+	# AC5: from == to → [from] for an OPEN cell. A solid from==to cell has
+	# no path (empty-array contract covers solid endpoints) → [].
+	if from == to:
+		if _astar.is_point_solid(from):
+			# Debug-only log: a solid destination/start cell signals an
+			# upstream invariant violation (access cells are never solid
+			# per GridSystem contract). Log, don't crash.
+			push_warning("Navigation: get_path(%s, %s) — cell is solid; access cells are never solid (upstream invariant violation). Returning []." % [from, to])
+			return empty_path
+		var single: Array[Vector2i] = [from]
+		return single
+	# Empty-array contract: solid endpoints → no path → [].
+	if _astar.is_point_solid(from) or _astar.is_point_solid(to):
+		if _astar.is_point_solid(to):
+			# Debug-only log (don't crash): the destination `to` being solid
+			# means MemberSim targeted a solid access cell — upstream
+			# invariant violation per GridSystem contract.
+			push_warning("Navigation: get_path(%s, %s) — destination %s is solid; access cells are never solid (upstream invariant violation). Returning []." % [from, to, to])
+		return empty_path
+	# Normalize the engine result: get_id_path returns a typed
+	# Array[Vector2i] in 4.7.1, but the story contract requires the wrapper
+	# to convert + normalize explicitly (never null, always typed) so the
+	# behavior is independent of engine return-shape changes.
+	var raw: Array = _astar.get_id_path(from, to)
+	if raw.is_empty():
+		return empty_path
+	var out: Array[Vector2i] = []
+	for v in raw:
+		out.append(Vector2i(v.x, v.y))
+	return out
