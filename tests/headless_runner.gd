@@ -16,6 +16,7 @@ const RUNNER_META := "gym_manager_test_runner_active"
 # 添加新测试文件时在此数组中追加即可
 
 const TEST_FILES := [
+	"tests/unit/navigation/diagonal_corner_rules_test.gd",
 	"tests/unit/grid_system/grid_core_cell_data_test.gd",
 	"tests/unit/grid_system/grid_solidity_coords_test.gd",
 	"tests/unit/grid_system/grid_rotation_test.gd",
