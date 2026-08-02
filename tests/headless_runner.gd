@@ -26,6 +26,8 @@ const TEST_FILES := [
 	"tests/unit/grid_system/grid_system_guardrail_test.gd",
 	"tests/unit/time_system/orchestrator_tick_dispatch_test.gd",
 	"tests/unit/time_system/tick_accumulator_test.gd",
+	"tests/unit/time_system/lsr_helper_test.gd",
+	"tests/unit/time_system/seeded_rng_substream_test.gd",
 	"tests/unit/equipment_catalog/equipment_def_catalog_test.gd",
 	"tests/unit/equipment_catalog/catalog_json_loading_test.gd",
 	"tests/unit/equipment_catalog/catalog_footprint_access_validation_test.gd",
