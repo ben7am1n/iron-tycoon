@@ -1,9 +1,18 @@
 ## SaveLoad — the tick-boundary save coordinator (pure coordinator, owns no state).
 ##
-## Story: save-load / story-001-saveblob-tick-boundary.md
+## Story: save-load / story-001-saveblob-tick-boundary.md (save side),
+##        save-load / story-002-load-orchestration-phase-ab.md (load side)
 ## Req:   TR-SL-001 (coordinator, not state owner; tick-boundary saves),
 ##        TR-SL-002 (blob = {version, master_seed, time_system, grid_system,
 ##                  member_sim, congestion, satisfaction, economy}),
+##        TR-SL-003 (load order enforced: TimeSystem -> GridSystem ->
+##                  PlacementSystem.rederive -> SelectionSystem.rebuild ->
+##                  Navigation.rebuild -> MemberSim -> Congestion ->
+##                  Satisfaction -> Economy),
+##        TR-SL-004 (all-or-nothing: Phase A validate zero-mutation, Phase B
+##                  commit only if all valid),
+##        TR-SL-005 (every coordinated system's deserialize supports a
+##                  non-mutating validate/dry-run mode),
 ##        TR-SL-008 (ZoneRules/Navigation/PlacementSystem/SelectionSystem
 ##                  contribute NOTHING to the blob)
 ## ADR:   ADR-0002 (Storage Format — save blob is JSON at rest, composed here
@@ -17,6 +26,19 @@
 ## tick_completed handler, which TimeSystem/Orchestrator emits at the end of
 ## every tick sequence (S2). Because the tick loop forbids mid-tick yielding,
 ## every moment external code can run is already a consistent snapshot.
+##
+## LOAD SIDE (Story 002) — two-phase, all-or-nothing:
+##   Phase A (_validate_all) runs EVERY coordinated system's deserialize()
+##   in a non-mutating validate/dry-run mode in load order, collecting ALL
+##   errors. Any failure aborts with ZERO mutation to any system — the current
+##   session is untouched (AC3, TR-SL-004).
+##   Phase B (load()) re-runs deserialize() for real, in the hardcoded order
+##   (TR-SL-003), only after Phase A passed everything. The order is enforced
+##   PROGRAMMATICALLY by being written in this one method — never by
+##   convention or configuration. A Phase B failure (impossible after a clean
+##   Phase A) is treated as FATAL (AC4 / Control Manifest).
+##   buildable_snapshot comes from the LEVEL LOADER, never from the save blob
+##   (TR-GS-020) — GridSystem cross-validates the save against it.
 ##
 ## DEVIATION FROM STORY SKETCH (documented, not silent):
 ## The sketch connects `_time_system.tick_completed`. Story TS-001 locked
@@ -33,6 +55,24 @@
 ## be called exactly once per save request per system, so _perform_save()
 ## calls each system's serialize() exactly once and reuses the dict.
 ##
+## DEVIATION #3 (LoadResult nesting): the sketch declares a top-level
+## `class LoadResult`. The equipment-catalog epic already owns the global
+## class_name LoadResult (src/systems/load_result.gd), so a second top-level
+## class with that name would be a duplicate-class parse error — and a nested
+## class named LoadResult is rejected too (GDScript: "Class 'LoadResult' hides
+## a global script class"). The result type is therefore the NESTED class
+## SaveLoad.SaveLoadResult with the same shape (ok + errors: Array[String]).
+##
+## DEVIATION #4 (derivation steps are null-guarded): the sketch calls
+## _placement_system.rederive_counter() / _selection_system.rebuild_mapping()
+## / _navigation.rebuild() unconditionally. Those systems' stories have NOT
+## landed yet (orchestrator fields null, same pattern as SL-001), so the
+## derivation steps are guarded — when the story lands and the orchestrator
+## wires the system, the step runs; while null it is skipped. The AC4 test
+## injects spy stubs for the three derivation systems so the full 9-step
+## order is verified programmatically. The 6 coordinated systems are REQUIRED
+## (load fails with a wiring error if any is null — never skip Phase A).
+##
 ## BLOB SHAPE (TR-SL-002): exactly 8 flat keys, no more, no less.
 ##   {version, master_seed, time_system, grid_system, member_sim, congestion,
 ##    satisfaction, economy}
@@ -48,6 +88,15 @@ class_name SaveLoad extends RefCounted
 
 ## Save blob format version (GDD Core Rule 6 — exact-match on load).
 const SAVE_FORMAT_VERSION := 1
+
+## Composite return value for SaveLoad.load(). Nested class (DEVIATION #3):
+## the equipment-catalog epic already owns the global class_name LoadResult —
+## and GDScript 4.7.1 rejects even a nested class that hides a global script
+## class ("Class 'LoadResult' hides a global script class"), so the name is
+## SaveLoadResult. Same shape as the story sketch: ok + errors (Array[String]).
+class SaveLoadResult extends RefCounted:
+	var ok: bool = false
+	var errors: Array[String] = []
 
 ## The fixed blob key set — the textual source of truth for TR-SL-002.
 ## Missing key = load error; key outside this set (e.g. a future system that
@@ -215,3 +264,198 @@ func _validate_blob_keys(blob: Dictionary) -> Array[String]:
 			errors.append("SaveLoad: top-level master_seed diverges from TimeSystem's copy")
 
 	return errors
+
+
+## Two-phase load — TR-SL-003/004/005, GDD Core Rule 3+4 (Story 002).
+##
+## Phase A (_validate_all): every coordinated system's deserialize() runs in
+## non-mutating validate/dry-run mode, in load order, collecting ALL errors.
+## Any failure aborts with ZERO mutation to any system (AC3 all-or-nothing).
+##
+## Phase B (commit): only after Phase A passed, re-runs deserialize() for
+## real in the hardcoded order below. The order is load-bearing (TR-SL-003,
+## AC4) and enforced PROGRAMMATICALLY by being written in this one method —
+## never by convention or configuration. A Phase B failure (impossible after
+## a clean Phase A) is FATAL — treated as fatal-to-menu, never silent partial.
+##
+## [buildable_snapshot] comes from the LEVEL LOADER, never from the save blob
+## (TR-GS-020). GridSystem cross-validates the save against it in both phases.
+func load(save_blob: Dictionary, buildable_snapshot: PackedByteArray) -> SaveLoadResult:
+	var result := SaveLoadResult.new()
+	if not _initialized:
+		result.errors.append("SaveLoad.load(): called before init()")
+		return result
+
+	# --- Phase A: validate (zero mutation) ---
+	var phase_a_errors := _validate_all(save_blob, buildable_snapshot)
+	if not phase_a_errors.is_empty():
+		result.errors.append_array(phase_a_errors)
+		return result  # all-or-nothing: NOTHING was mutated
+
+	# --- Phase B: commit (all validations passed) ---
+	# Order is load-bearing — see class header / TR-SL-003.
+
+	# 1. TimeSystem — restores RNG streams + tick_count; forces paused=true
+	var ts_result: Variant = _time_system.deserialize(save_blob["time_system"])
+	if not ts_result.ok:
+		result.errors.append("FATAL: TimeSystem Phase B failed after Phase A passed")
+		return result
+
+	# 2. GridSystem — geometric ground truth; buildable from level loader
+	var gs_result: Variant = _grid_system.deserialize(save_blob["grid_system"], buildable_snapshot, "commit")
+	if not gs_result.success:
+		result.errors.append("FATAL: GridSystem Phase B failed after Phase A passed")
+		return result
+
+	# 3. PlacementSystem — re-derive instance_id counter from loaded grid.
+	#    Null-guarded (DEVIATION #4): the story has not landed yet.
+	if _placement_system != null:
+		_placement_system.rederive_counter()
+
+	# 3a. SelectionSystem — rebuild instance_id→equipment mapping from grid.
+	#     Null-guarded (DEVIATION #4).
+	if _selection_system != null:
+		_selection_system.rebuild_mapping()
+
+	# 4. Navigation — rebuild AStarGrid2D from GridSystem occupancy.
+	#    Null-guarded (DEVIATION #4).
+	if _navigation != null:
+		_navigation.rebuild(_grid_system)
+
+	# 5. MemberSim — members reference equipment_instance_ids from step 2.
+	#    Derived context: the validated grid's instance ids (AC9 — grid is
+	#    the source of truth; see _validate_all / stub header).
+	var known_ids := _extract_instance_ids(save_blob.get("grid_system", {}))
+	var ms_result: Variant = _member_sim.deserialize(save_blob["member_sim"], false, known_ids)
+	if not ms_result.ok:
+		result.errors.append("FATAL: MemberSim Phase B failed after Phase A passed")
+		return result
+
+	# 6. Congestion — prev buffer + per-cell smoothed; access_reachable
+	#    recomputed (real story; stub restores counter+rng for now).
+	var cong_result: Variant = _congestion.deserialize(save_blob["congestion"])
+	if not cong_result.ok:
+		result.errors.append("FATAL: Congestion Phase B failed after Phase A passed")
+		return result
+
+	# 7. Satisfaction — global_satisfaction + member_accumulators
+	var sat_result: Variant = _satisfaction.deserialize(save_blob["satisfaction"])
+	if not sat_result.ok:
+		result.errors.append("FATAL: Satisfaction Phase B failed after Phase A passed")
+		return result
+
+	# 8. Economy — balance
+	var econ_result: Variant = _economy.deserialize(save_blob["economy"])
+	if not econ_result.ok:
+		result.errors.append("FATAL: Economy Phase B failed after Phase A passed")
+		return result
+
+	result.ok = true
+	return result
+
+
+## Phase A validation — collects ALL errors, NEVER mutates (TR-SL-004/005).
+##
+## Order mirrors the load order (TR-SL-003), with two structural gates:
+## TimeSystem and GridSystem must pass before anything else can be validated
+## (nothing else can be validated without RNG/tick ground truth; nothing
+## references occupancy without the grid). Remaining systems (MemberSim →
+## Congestion → Satisfaction → Economy) all validate and ALL their errors are
+## collected — no short-circuit, the caller sees every problem at once.
+##
+## Each coordinated system's deserialize() is called with validate_only=true
+## (GridSystem uses mode="validate" — its real contract from grid-system
+## story-007; the story sketch's boolean maps to that mode). The contract:
+## validate-only checks all fields but mutates NOTHING, returns the same
+## result shape as real deserialize.
+##
+## MemberSim additionally receives the grid's validated instance ids as
+## derived context (AC9): a member referencing an equipment_instance_id absent
+## from the save's grid records fails the WHOLE load — the grid is the source
+## of truth, and there are no innocent-orphan members.
+func _validate_all(save_blob: Dictionary, buildable_snapshot: PackedByteArray) -> Array[String]:
+	var errors: Array[String] = []
+
+	# Blob structure validation (from Story 001) — the first gate.
+	var blob_errors := _validate_blob_keys(save_blob)
+	errors.append_array(blob_errors)
+	if not errors.is_empty():
+		return errors  # can't proceed without valid keys
+
+	# Wiring gate: every coordinated system must exist (never skip Phase A —
+	# Control Manifest). Missing systems are a programming/wiring error, not
+	# a corrupt-save outcome; fail loudly with zero mutation.
+	var missing := _missing_coordinated_systems()
+	if not missing.is_empty():
+		errors.append("SaveLoad: coordinated system(s) not wired — cannot load: %s" % ", ".join(missing))
+		return errors
+
+	# 1. TimeSystem — validate (dry-run)
+	var ts_result: Variant = _time_system.deserialize(save_blob["time_system"], true)
+	errors.append_array(ts_result.errors)
+	if not errors.is_empty():
+		return errors  # TimeSystem must pass — nothing else can be validated without it
+
+	# 2. GridSystem — validate with buildable (mode "validate", zero mutation)
+	var gs_result: Variant = _grid_system.deserialize(save_blob["grid_system"], buildable_snapshot, "validate")
+	if not gs_result.success:
+		for err in gs_result.errors:
+			errors.append(_format_grid_error(err))
+		return errors  # GridSystem must pass — nothing references its occupancy without it
+
+	# Derived context for MemberSim: the VALIDATED grid's instance ids (the
+	# grid data GridSystem Phase A just checked — AC9 "the grid is the source
+	# of truth"). This is the Control Manifest's "derived context" rule.
+	var known_ids := _extract_instance_ids(save_blob.get("grid_system", {}))
+
+	# 3-8. Remaining systems — each validate-only; collect ALL errors.
+	var ms_result: Variant = _member_sim.deserialize(save_blob["member_sim"], true, known_ids)
+	errors.append_array(ms_result.errors)
+
+	var cong_result: Variant = _congestion.deserialize(save_blob["congestion"], true)
+	errors.append_array(cong_result.errors)
+
+	var sat_result: Variant = _satisfaction.deserialize(save_blob["satisfaction"], true)
+	errors.append_array(sat_result.errors)
+
+	var econ_result: Variant = _economy.deserialize(save_blob["economy"], true)
+	errors.append_array(econ_result.errors)
+
+	return errors
+
+
+## Names of the 6 coordinated systems whose orchestrator field is null —
+## load cannot proceed without them (wiring gate, see _validate_all).
+func _missing_coordinated_systems() -> Array[String]:
+	var missing: Array[String] = []
+	var checks := {
+		"time_system": _time_system,
+		"grid_system": _grid_system,
+		"member_sim": _member_sim,
+		"congestion": _congestion,
+		"satisfaction": _satisfaction,
+		"economy": _economy,
+	}
+	for name in checks:
+		if checks[name] == null:
+			missing.append(name)
+	return missing
+
+
+## Extracts the instance ids from a grid_system payload's records. Used to
+## build MemberSim's derived context (AC9): after GridSystem Phase A validates
+## the records, the ids in those records ARE the loaded/validated grid.
+func _extract_instance_ids(grid_data: Dictionary) -> Array:
+	var ids: Array = []
+	if grid_data.has("records") and grid_data["records"] is Array:
+		for record in grid_data["records"]:
+			if record is Dictionary and record.has("instance_id"):
+				ids.append(int(record["instance_id"]))
+	return ids
+
+
+## Formats a GridSystem DeserializeResult error entry ({category, message,
+## detail} — grid-system story-007's structured shape) into a flat string for
+## SaveLoad's Array[String] error list.
+func _format_grid_error(err: Dictionary) -> String:
+	return "GridSystem: [%s] %s" % [str(err.get("category", "?")), str(err.get("detail", ""))]

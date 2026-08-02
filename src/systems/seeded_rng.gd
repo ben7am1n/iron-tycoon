@@ -193,6 +193,13 @@ func serialize() -> Dictionary:
 ## push_error'd — corrupt save data is a normal outcome, per the repo's
 ## DeserializeResult convention).
 ##
+## [validate_only] (TR-SL-005 — SaveLoad Phase A protocol): when true, run
+## Phase A validation and return the verdict WITHOUT committing anything.
+## ok=true means "data is valid"; nothing was mutated. This is the
+## non-mutating dry-run mode SaveLoad calls for every coordinated system
+## before any commit (all-or-nothing load). Default false preserves the
+## standalone two-phase behavior.
+##
 ## Required fields (hard failure, no invented defaults — TR-TS-009, AC16/17):
 ##   - master_seed: "0x"-prefixed hex string
 ##   - per_system_rng_states: Dictionary with an entry for EVERY registered
@@ -202,7 +209,7 @@ func serialize() -> Dictionary:
 ## RNG state is restored directly via rng.state = hex_to_int64() — NEVER
 ## re-derived from master_seed (re-deriving would discard the draws the system
 ## already consumed pre-save, silently breaking determinism — GDD Edge Cases).
-func deserialize(data: Dictionary) -> SeededRNGDeserializeResult:
+func deserialize(data: Dictionary, validate_only: bool = false) -> SeededRNGDeserializeResult:
 	var result := SeededRNGDeserializeResult.new()
 
 	# --- Phase A: validate (zero mutation) ---
@@ -273,6 +280,13 @@ func deserialize(data: Dictionary) -> SeededRNGDeserializeResult:
 
 	if not result.errors.is_empty():
 		return result  # Phase A failed — NOTHING was mutated
+
+	# Validate-only (SaveLoad Phase A): everything validated, commit NOTHING.
+	# ok=true means "valid data" — the caller (SaveLoad) runs the real
+	# deserialize (validate_only=false) in Phase B after ALL systems pass.
+	if validate_only:
+		result.ok = true
+		return result
 
 	# --- Phase B: commit (only if all valid) ---
 	master_seed = hex_to_int64(master_seed_str)

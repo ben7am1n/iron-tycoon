@@ -232,6 +232,12 @@ func serialize() -> Dictionary:
 ## Phase B commits only if Phase A passed (ADR-0002 / story design note).
 ## Failures are returned, never push_error'd (corrupt save = normal outcome).
 ##
+## [validate_only] (TR-SL-005 — SaveLoad Phase A protocol): when true, run
+## Phase A validation (including the SeededRNG dry-run) and return the
+## verdict WITHOUT committing anything. ok=true means "data is valid";
+## tick_count / accumulator / speed / RNG state are all untouched. Default
+## false preserves the standalone two-phase behavior.
+##
 ## Required fields (hard failure, no invented defaults — AC17):
 ##   tick_count (int), master_seed (hex string), per_system_rng_states
 ##   (Dictionary with an entry per registered system — AC16).
@@ -242,7 +248,7 @@ func serialize() -> Dictionary:
 ## is read into _last_speed first, then paused=true + speed_multiplier=0 are
 ## forced — the player sees their last speed preserved but the sim frozen.
 ## RNG state is committed by _seeded_rng.deserialize() (itself two-phase).
-func deserialize(data: Dictionary) -> TimeSystemDeserializeResult:
+func deserialize(data: Dictionary, validate_only: bool = false) -> TimeSystemDeserializeResult:
 	var result := TimeSystemDeserializeResult.new()
 	if not _assert_initialized():
 		result.add_error("TimeSystem.deserialize(): called before init()")
@@ -274,13 +280,19 @@ func deserialize(data: Dictionary) -> TimeSystemDeserializeResult:
 		var rng_result: Variant = _seeded_rng.deserialize({
 			"master_seed": data.get("master_seed", ""),
 			"per_system_rng_states": data.get("per_system_rng_states", {}),
-		})
+		}, validate_only)
 		if not rng_result.ok:
 			for err in rng_result.errors:
 				result.add_error(err)
 
 	if not result.errors.is_empty():
 		return result  # Phase A failed — NOTHING was mutated
+
+	# Validate-only (SaveLoad Phase A): everything validated (including the
+	# SeededRNG dry-run above, which committed nothing), commit NOTHING.
+	if validate_only:
+		result.ok = true
+		return result
 
 	# --- Phase B: commit (only if all valid) ---
 	_orchestrator._restore_tick_count(int(data["tick_count"]))
