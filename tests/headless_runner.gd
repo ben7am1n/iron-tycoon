@@ -46,6 +46,7 @@ const TEST_FILES := [
 	"tests/unit/time_system/lsr_helper_test.gd",
 	"tests/unit/time_system/seeded_rng_substream_test.gd",
 	"tests/unit/time_system/time_serialization_test.gd",
+	"tests/unit/zone_rules/evaluate_purity_test.gd",
 	"tests/unit/equipment_catalog/equipment_def_catalog_test.gd",
 	"tests/unit/equipment_catalog/catalog_json_loading_test.gd",
 	"tests/unit/equipment_catalog/catalog_footprint_access_validation_test.gd",
