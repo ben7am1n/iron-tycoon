@@ -528,9 +528,14 @@ func _property_checks(rig: Dictionary, tick: int, violations: Array) -> int:
 # === AC5: release invariant (deadlock prevention) ===
 
 func _test_ac5_release_on_blocked_walk() -> void:
-	print("\n[AC5] WALKING_TO member holding next_claimant; path cell becomes solid -> releases the SAME tick")
+	print("\n[AC5] WALKING_TO member holding next_claimant; path becomes FULLY blocked -> releases the SAME tick")
 	var equipment: Array = [{"id": 1, "fp": Vector2i(2, 2), "ac": Vector2i(3, 2)}]
-	var rig := _make_rig(0xAC5001, equipment)
+	# Wall (0,1) + equipment 2 footprint (1,0) FULLY ENCLOSE the member's cell
+	# (0,0) — so the Story 004 repath (grid_version mismatch -> re-query) comes
+	# back EMPTY, which is what triggers the release. (A merely-blocked path
+	# would be re-pathed AROUND and the member would keep walking — that is
+	# the new formal behavior, covered by path_invalidation_test.gd.)
+	var rig := _make_rig(0xAC5001, equipment, [Vector2i(0, 1)])
 	# Arm: member 100 mid-walk to E1 holding the queue slot; next hop (1,0).
 	_inject_member(rig, _make_member(100, "WALKING_TO", 0, 3, Vector2i(0, 0), {
 		"target_equipment_instance_id": 1,
@@ -539,10 +544,13 @@ func _test_ac5_release_on_blocked_walk() -> void:
 	var res: Dictionary = _reservations(rig)
 	res[1] = {"occupant": null, "next_claimant": 100}
 
-	# Block the path: commit a second machine whose footprint covers (1,0) —
-	# grid_changed re-syncs Navigation solidity (the rig wired _post_init).
+	# Commit a second machine whose footprint covers (1,0) — grid_changed
+	# re-syncs Navigation solidity AND bumps the grid_version stamp, so the
+	# member's cached path is invalidated and re-queried next tick.
 	_commit_equipment(rig["grid_system"], 2, Vector2i(1, 0), Vector2i(1, 1))
 	_check(rig["grid_system"].call("is_solid", Vector2i(1, 0)), "AC5: precondition — next path cell (1,0) is solid after the commit")
+	_check(rig["navigation"].call("get_path", Vector2i(0, 0), Vector2i(3, 2)).is_empty(),
+		"AC5: precondition — (0,0) fully enclosed, repath returns empty")
 
 	_run_ticks(rig, 1)
 	res = _reservations(rig)

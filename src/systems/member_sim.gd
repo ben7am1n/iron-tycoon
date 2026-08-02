@@ -56,8 +56,13 @@
 ##
 ## STATE MACHINE SCOPE: Core Rule 2's full transition list. Story 003 (this
 ## file) adds QUEUEING + the access-cell reservation map (Core Rule 4).
+## Story 004 (this file) adds path invalidation (Core Rule 5 / TR-MS-007:
+## grid_version stamp re-query, exactly once per tick), the bounded repath
+## retry (AC18: retry_limit consecutive empty results -> release + LEAVING),
+## the patience give-up short-term blacklist (AC19: no flip-flop back to the
+## abandoned machine) and the mid-use deletion interrupt with its
+## satisfaction-penalty read surface (AC14).
 ## Deliberately deferred to neighbouring stories and NOT implemented here:
-##   - grid_version path invalidation / patience give-up blacklist -> Story 004
 ##   - full serialization of member state + reservation rebuild     -> Story 005
 ## Story 002 implements the weighted target pick — Core Rule 3:
 ##   candidate pool (all placed instances ascending equipment_instance_id —
@@ -87,6 +92,31 @@
 ## Story 004 (patience give-up + path invalidation). A give-up member may
 ## therefore re-claim the same equipment on a later reselect — bounded by
 ## patience each cycle, not by a blacklist.
+##
+## STORY 004 SCOPE — the formal path-invalidation + patience systems:
+##   - PATH INVALIDATION (Core Rule 5, AC17): every WALKING_TO / LEAVING
+##     tick compares the cached path's grid_version stamp (member field
+##     cached_path_grid_version) against _grid.get_grid_version(); on
+##     mismatch, Navigation.get_path is re-queried EXACTLY ONCE that tick.
+##     Empty result is treated identically whether the grid changed blocked
+##     the path or the target equipment was deleted — release reservation,
+##     bounded retry (AC18), else LEAVING. No special-casing.
+##   - BOUNDED RETRY (AC18): a repath-empty result increments the member's
+##     repath_failures counter; on reaching _repath_retry_limit consecutive
+##     failures the member releases its reservation and LEAVING (reason
+##     "path_blocked" — distinct from AC1's no_candidates). A successful
+##     repath / successful reselect resets the counter.
+##   - PATIENCE GIVE-UP BLACKLIST (AC19): on patience exhaustion the member
+##     adds the abandoned equipment to its give_up_blacklist (id ->
+##     remaining_ticks, decremented per tick) so a same/next-tick reselect
+##     excludes it — no immediate flip-flop back. Entries expire after
+##     give_up_blacklist_ticks (config) and the machine becomes eligible
+##     again. Also applies a temporary novelty penalty (as if just-used).
+##   - MID-USE DELETION (AC14): a USING member whose target equipment no
+##     longer resolves (access cells empty) interrupts gracefully ->
+##     SELECTING_TARGET, emits exactly one satisfaction-penalty event
+##     (exposed via get_satisfaction_penalty_events() — the ADR-0005 §3
+##     direct method read Satisfaction consumes during its on_tick).
 ##
 ## CONGESTION READER SEAM (TR-MS-003 / AC11): the weight consumes
 ## `Congestion(t-1)` — the PRE-update value — as a per-equipment-instance
@@ -156,6 +186,10 @@ const VALID_STATES: Array[String] = [
 ## Why a member left the gym (drives S5 emission — quota-met departures only).
 const REASON_QUOTA_MET := "quota_met"
 const REASON_NO_CANDIDATES := "no_candidates"
+## Story 004 (AC18): repath-empty for retry_limit consecutive attempts —
+## bounded-retry exhaustion, deliberately distinct from AC1's
+## no_candidates. Also calm: S5 only fires on quota_met, so no signal here.
+const REASON_PATH_BLOCKED := "path_blocked"
 
 # === Config keys (see class header — the data-driven seam) ===
 const CONFIG_MAX_CONCURRENT_MEMBERS := "max_concurrent_members"
@@ -176,6 +210,8 @@ const CONFIG_D_MAX := "D_max"
 const CONFIG_TOP_K := "top_k"
 const CONFIG_PATIENCE_MIN_TICKS := "patience_min_ticks"
 const CONFIG_PATIENCE_MAX_TICKS := "patience_max_ticks"
+const CONFIG_REPATH_RETRY_LIMIT := "repath_retry_limit"
+const CONFIG_GIVE_UP_BLACKLIST_TICKS := "give_up_blacklist_ticks"
 
 ## Weight formula constants (Core Rule 3 / GDD Formulas — see class header).
 const BASE_WEIGHT := 1.0
@@ -208,11 +244,18 @@ var _seeded_rng: SeededRNG
 ##   - FULL (spawned by the state machine):
 ##       {member_id, state, cell: Vector2i, exercises_done, exercises_per_visit,
 ##        preference_profile: Dictionary, target_equipment_instance_id,
-##        cached_path: Array[Vector2i], leaving_timeout_ticks,
-##        use_ticks_remaining (USING only), leaving_reason (LEAVING only),
-##        patience_ticks_remaining (QUEUEING only — Story 003 patience
-##        countdown), recently_used_ids: Array (most-recent-first, capped at
-##        NOVELTY_RECENT_WINDOW — drives novelty_factor_i in Story 002)}
+##        cached_path: Array[Vector2i], cached_path_grid_version: int (Story 004
+##        — the grid_version stamp the cached path was computed at; -1 = never
+##        stamped, forces a first-tick re-query),
+##        repath_failures: int (Story 004 — consecutive empty repath results,
+##        bounded by _repath_retry_limit, AC18),
+##        give_up_blacklist: Dictionary (Story 004 — abandoned equipment id ->
+##        remaining_ticks; excludes the machine from reselect until expiry, AC19),
+##        leaving_timeout_ticks, use_ticks_remaining (USING only),
+##        leaving_reason (LEAVING only), patience_ticks_remaining (QUEUEING
+##        only — Story 003 patience countdown), recently_used_ids: Array
+##        (most-recent-first, capped at NOVELTY_RECENT_WINDOW — drives
+##        novelty_factor_i in Story 002)}
 var members: Array = []
 
 ## Story 003 — the access-cell reservation map (Core Rule 4 / TR-MS-004).
@@ -279,6 +322,23 @@ var _d_max: int = 16
 var _top_k: int = 4
 var _patience_min_ticks: int = 30
 var _patience_max_ticks: int = 80
+## Story 004 (AC18): consecutive empty repath results before bounded-retry
+## exhaustion -> release reservation + LEAVING. Default 3 (GDD guardrail:
+## "never tight-loop the same query"; 1 would make any transient blockage
+## force a leave, so >1 gives a real retry window).
+var _repath_retry_limit: int = 3
+## Story 004 (AC19): how many ticks a patience-give-up equipment stays on the
+## member's short-term no-repeat blacklist ("entries expire after a few
+## ticks" — 10 ticks = 1s at 10 Hz).
+var _give_up_blacklist_ticks: int = 10
+
+## Story 004 (AC14): satisfaction-penalty event counter for the CURRENT tick.
+## Reset at the start of every configured on_tick; incremented exactly once
+## per mid-use equipment deletion. Satisfaction reads it during ITS on_tick()
+## (which runs after MemberSim in the fixed tick order) via
+## get_satisfaction_penalty_events() — the ADR-0005 §3 direct method read,
+## NOT a cross-system signal.
+var _satisfaction_penalty_events: int = 0
 
 
 ## Two-phase init (ADR-0001). Registers the MemberSim RNG sub-stream exactly
@@ -350,6 +410,12 @@ func _apply_config(config: Dictionary) -> void:
 	# 30-80). A misconfigured min > max is clamped to a legal single value.
 	_patience_min_ticks = maxi(int(config.get(CONFIG_PATIENCE_MIN_TICKS, _patience_min_ticks)), 0)
 	_patience_max_ticks = maxi(int(config.get(CONFIG_PATIENCE_MAX_TICKS, _patience_max_ticks)), _patience_min_ticks)
+	# Story 004 bounded-retry knob (AC18). Guardrail: at least 1 — a
+	# misconfigured 0/negative value would make the FIRST empty repath force
+	# LEAVING, defeating the retry window entirely.
+	_repath_retry_limit = maxi(int(config.get(CONFIG_REPATH_RETRY_LIMIT, _repath_retry_limit)), 1)
+	# Story 004 give-up blacklist duration (AC19).
+	_give_up_blacklist_ticks = maxi(int(config.get(CONFIG_GIVE_UP_BLACKLIST_TICKS, _give_up_blacklist_ticks)), 0)
 
 
 func system_name() -> String:
@@ -393,8 +459,21 @@ func on_tick(tick_count: int) -> void:
 	if not _is_configured():
 		_seeded_rng.get_rng(system_name()).randi()
 		return
+	# Story 004 (AC14): per-tick satisfaction-penalty window — reset at the
+	# START of the tick so Satisfaction (running later in the fixed order)
+	# reads exactly this tick's mid-use deletion events.
+	_satisfaction_penalty_events = 0
 	_process_arrival()
 	_process_members()
+
+
+## Story 004 (AC14): the ADR-0005 §3 direct read Satisfaction consumes during
+## its on_tick() — the number of mid-use equipment deletions this tick
+## (exactly one event per interrupted member). Not a cross-system signal.
+func get_satisfaction_penalty_events() -> int:
+	if not _assert_initialized():
+		return 0
+	return _satisfaction_penalty_events
 
 
 ## (a) Arrival check — runs FIRST every tick (Core Rule 6). One Bernoulli
@@ -429,6 +508,9 @@ func _process_members() -> void:
 func _update_member(member: Dictionary, to_remove: Array) -> void:
 	if not member.has("state"):
 		return
+	# Story 004 (AC19): blacklist entries tick down for every active member,
+	# regardless of state — the exclusion is time-bounded, not state-bounded.
+	_tick_give_up_blacklist(member)
 	match str(member["state"]):
 		STATE_ENTERING:
 			_on_entering(member)
@@ -460,10 +542,16 @@ func _on_entering(member: Dictionary) -> void:
 ##   (b') pool emptied by CONTENTION (every remaining machine's queue slot is
 ##       claimed by another member) -> STAY in SELECTING_TARGET and retry next
 ##       tick — no partial state committed (Core Rule 3 step 6; AC3 QA edge)
+##   (b'') pool emptied by the give-up BLACKLIST (AC19) -> STAY and retry —
+##       the excluded machine becomes eligible again after
+##       give_up_blacklist_ticks, so this is a temporary exclusion, never a
+##       failure prompt (Pillar 2).
 ##   (c) candidate found          -> WALKING_TO (Story 002: the weighted pick —
 ##       candidate pool -> weights -> top-K sort -> path-check -> weighted
 ##       draw; Story 003: claim the reservation's next_claimant slot BEFORE
-##       walking — Core Rule 4, TR-MS-004)
+##       walking — Core Rule 4, TR-MS-004; Story 004: the cached path is
+##       stamped with the CURRENT grid_version so WALKING_TO can detect
+##       invalidation — Core Rule 5, AC17)
 func _on_selecting_target(member: Dictionary) -> void:
 	# Defensive invariant: entering SELECTING_TARGET implies NO claim held
 	# (every transition into this state releases first — Story 003). This
@@ -481,6 +569,25 @@ func _on_selecting_target(member: Dictionary) -> void:
 			# SELECTING_TARGET (no partial state committed) — a claim slot
 			# will free up (release invariant, TR-MS-005) and the retry
 			# succeeds. AC3 QA edge.
+			return
+		if _has_active_give_up_blacklist(member):
+			# Story 004 (AC19 / AC13 QA edge): the pool was emptied by the
+			# member's own short-term no-repeat blacklist (the machine it just
+			# gave up on), not by absence. Stay and retry — the blacklist
+			# expires after give_up_blacklist_ticks and the machine becomes
+			# eligible again. Never a failure prompt (Pillar 2).
+			return
+		# Story 004 (AC18): a member already in a repath-failure streak (came
+		# here from an empty WALKING_TO repath) treats an empty reselect as
+		# another failed attempt — bounded retry, LEAVING only when the streak
+		# reaches retry_limit (REASON_PATH_BLOCKED). A member with no streak
+		# (counter 0) is a genuine AC1 no-candidates departure.
+		var failures := int(member.get("repath_failures", 0))
+		if failures > 0:
+			failures += 1
+			member["repath_failures"] = failures
+			if failures >= _repath_retry_limit:
+				_begin_leaving(member, REASON_PATH_BLOCKED)
 			return
 		_begin_leaving(member, REASON_NO_CANDIDATES)
 		return
@@ -502,6 +609,11 @@ func _on_selecting_target(member: Dictionary) -> void:
 		return
 	member["target_equipment_instance_id"] = target_id
 	member["cached_path"] = path
+	# Story 004 (AC17): stamp the path with the grid version it was computed
+	# at. WALKING_TO re-queries Navigation.get_path on a stamp mismatch.
+	member["cached_path_grid_version"] = _grid.get_grid_version()
+	# A successful reselect ends any repath-failure streak (AC18).
+	member["repath_failures"] = 0
 	member["state"] = STATE_WALKING_TO
 
 
@@ -568,6 +680,11 @@ func _pick_weighted_target(member: Dictionary) -> int:
 ## its reservation `next_claimant` is held by another member — is EXCLUDED
 ## from the pool. This is the AC3 redraw mechanism: the loser of a contention
 ## race never re-picks the machine its winner already claimed.
+##
+## Story 004 (Core Rule 3 step 1 / AC19): equipment on this member's
+## short-term no-repeat blacklist (abandoned via patience give-up) is also
+## EXCLUDED — prevents the immediate flip-flop back to the machine the member
+## just gave up on. Entries expire after give_up_blacklist_ticks.
 func _build_weighted_candidates(member: Dictionary) -> Array:
 	var instances: Array = _grid.get_placed_instances()
 	var ids: Array[int] = []
@@ -583,6 +700,8 @@ func _build_weighted_candidates(member: Dictionary) -> Array:
 			continue  # no access cell — cannot be used
 		if _fully_spoken_for(instance_id, int(member["member_id"])):
 			continue  # Story 003: queue slot already claimed by another member
+		if _on_give_up_blacklist(member, instance_id):
+			continue  # Story 004: just abandoned via patience give-up (AC19)
 		var dist_cells := _dist_cells(from, access_cells[0])
 		var congestion := _congestion_value(instance_id)
 		var novelty := _novelty_factor(member, instance_id)
@@ -701,11 +820,13 @@ func _record_recently_used(member: Dictionary, instance_id: int) -> void:
 	member["recently_used_ids"] = recent
 
 
-## WALKING_TO: consumes the cached path one cell per tick. The skeleton has
-## no grid_version stamp (Story 004 owns path invalidation); it defensively
-## aborts back to SELECTING_TARGET if the next cell has become solid
-## (e.g. equipment placed onto the path mid-walk) — releasing the held
-## claim (TR-MS-005 / AC5) on that abort.
+## WALKING_TO: consumes the cached path one cell per tick. Story 004 (Core
+## Rule 5 / AC17) owns path invalidation: every tick compares the cached
+## path's `cached_path_grid_version` stamp to _grid.get_grid_version(); on
+## mismatch, Navigation.get_path is re-queried EXACTLY ONCE that tick.
+## An empty repath result is treated identically whether the grid changed
+## blocked the path or the target equipment was deleted — release the held
+## reservation the SAME tick (TR-MS-005 / AC5) and bounded-retry (AC18).
 ##
 ## Story 003 (Core Rule 4): the member holds the target's `next_claimant`
 ## slot from selection time. On arrival:
@@ -716,6 +837,7 @@ func _record_recently_used(member: Dictionary, instance_id: int) -> void:
 ##     cell, the member stops at its current cell (the one-cell-short
 ##     queue position).
 func _on_walking_to(member: Dictionary) -> void:
+	var target := int(member.get("target_equipment_instance_id", -1))
 	var path: Array = member["cached_path"]
 	# get_path() includes both endpoints — skip the current cell.
 	while not path.is_empty() and path[0] == member["cell"]:
@@ -725,29 +847,66 @@ func _on_walking_to(member: Dictionary) -> void:
 		member["cached_path"] = []
 		_handle_arrival(member)
 		return
+	# Story 004 (AC17): path invalidation — compare the cached stamp to the
+	# grid's current version. On mismatch re-query Navigation.get_path
+	# exactly once this tick (the comparison runs once per tick, so even a
+	# version that changes twice within the tick dedupes to one re-query).
+	var cached_version := int(member.get("cached_path_grid_version", -1))
+	if cached_version != _grid.get_grid_version():
+		var access_cells: Array = _grid.get_access_cells(target)
+		var repath: Array[Vector2i] = []
+		if not access_cells.is_empty():
+			repath = _navigation.get_path(member["cell"], access_cells[0])
+		if repath.is_empty():
+			# Empty result: path blocked OR target gone — the SAME handling
+			# (no special-casing, Core Rule 5). Release + bounded retry.
+			_handle_repath_failure(member)
+			return
+		member["cached_path"] = repath
+		member["cached_path_grid_version"] = _grid.get_grid_version()
+		member["repath_failures"] = 0  # a successful repath ends the streak
+		path = repath
+		while not path.is_empty() and path[0] == member["cell"]:
+			path.remove_at(0)
+		if path.is_empty():
+			member["cached_path"] = []
+			_handle_arrival(member)
+			return
 	var next_cell: Vector2i = path[0]
-	if path.size() == 1 and _access_busy(int(member["target_equipment_instance_id"])):
+	if path.size() == 1 and _access_busy(target):
 		# The only hop left lands on an OCCUPIED access cell — queue one
 		# cell short instead of stepping onto it (AC16). The member's
 		# current cell is by construction the penultimate path cell —
 		# adjacent to the access cell.
-		_enter_queueing(member, int(member["target_equipment_instance_id"]))
+		_enter_queueing(member, target)
 		return
 	if _grid.is_solid(next_cell):
-		# Path blocked mid-walk — release the held next_claimant claim the
-		# SAME tick (TR-MS-005 release invariant / AC5) and reselect. The
-		# machine becomes opportunistically claimable again — never a
-		# permanent deadlock.
-		_release_reservation(member)
-		member["cached_path"] = []
-		member["target_equipment_instance_id"] = -1
-		member["state"] = STATE_SELECTING_TARGET
+		# Defensive: stale path despite a matching stamp (injected edge) —
+		# release + bounded retry, identical to a blocked repath.
+		_handle_repath_failure(member)
 		return
 	member["cell"] = next_cell
 	path.remove_at(0)
 	member["cached_path"] = path
 	if path.is_empty():
 		_handle_arrival(member)
+
+
+## Story 004 (Core Rule 5 / AC18): a path resolution came back EMPTY — path
+## blocked or target deleted, treated identically. Releases any held claim
+## the SAME tick (TR-MS-005 / AC5). Bounded retry: the member returns to
+## SELECTING_TARGET; consecutive empty results count on repath_failures and
+## exhaustion (>= _repath_retry_limit) releases + LEAVING (REASON_PATH_BLOCKED
+## — deliberately distinct from AC1's no_candidates).
+func _handle_repath_failure(member: Dictionary) -> void:
+	_release_reservation(member)
+	member["cached_path"] = []
+	member["target_equipment_instance_id"] = -1
+	member["repath_failures"] = int(member.get("repath_failures", 0)) + 1
+	if int(member["repath_failures"]) >= _repath_retry_limit:
+		_begin_leaving(member, REASON_PATH_BLOCKED)
+		return
+	member["state"] = STATE_SELECTING_TARGET
 
 
 ## Story 003 arrival (Core Rule 4 "On arrival"). The member's cell is the
@@ -847,6 +1006,12 @@ func _on_queueing(member: Dictionary) -> void:
 	member["patience_ticks_remaining"] = int(member["patience_ticks_remaining"]) - 1
 	if int(member["patience_ticks_remaining"]) <= 0:
 		_release_reservation(member)  # TR-MS-005: next_claimant null same tick
+		# Story 004 (AC19): the abandoned equipment goes on the member's
+		# short-term no-repeat blacklist so a same/next-tick reselect EXCLUDES
+		# it — no immediate flip-flop back to the machine just given up on.
+		# The entry expires after give_up_blacklist_ticks and the machine
+		# becomes eligible again.
+		_blacklist_give_up(member, target)
 		member["target_equipment_instance_id"] = -1
 		member["cached_path"] = []
 		member["state"] = STATE_SELECTING_TARGET
@@ -869,7 +1034,24 @@ func _start_using(member: Dictionary) -> void:
 ##   - the used equipment becomes the member's most-recently-used (Story 002
 ##     novelty tracking — suppresses immediate repeats), and
 ##   - quota met -> LEAVING, else SELECTING_TARGET.
+##
+## Story 004 (AC14): each tick FIRST checks whether the target equipment was
+## deleted mid-use (its access cells no longer resolve). If so, interrupt
+## gracefully — release, clear the target + cached path, -> SELECTING_TARGET
+## and record EXACTLY ONE satisfaction-penalty event (Satisfaction consumes
+## the per-tick counter via get_satisfaction_penalty_events(), ADR-0005 §3).
+## No crash, no exercises_done mutation (the interrupted use neither counts
+## nor resets — Pillar 2).
 func _on_using(member: Dictionary) -> void:
+	var target := int(member.get("target_equipment_instance_id", -1))
+	if target >= 0 and _grid.get_access_cells(target).is_empty():
+		# Equipment deleted mid-use — graceful interrupt (AC14).
+		_release_reservation(member)
+		member["target_equipment_instance_id"] = -1
+		member["cached_path"] = []
+		member["state"] = STATE_SELECTING_TARGET
+		_satisfaction_penalty_events += 1  # exactly one penalty this tick
+		return
 	member["use_ticks_remaining"] = int(member["use_ticks_remaining"]) - 1
 	if int(member["use_ticks_remaining"]) > 0:
 		return
@@ -886,16 +1068,36 @@ func _on_using(member: Dictionary) -> void:
 
 
 ## LEAVING: paths to the single exit_cell with the same per-cell walk as
-## WALKING_TO. A defensive safety timeout forces GONE if no exit path ever
-## resolves — Pillar 2 forbids a permanently stuck member (AC21). The
-## timeout counts DOWN ONLY while the member is genuinely stuck (repath
-## empty); while a path resolves and is walked, it holds — a transient
-## blockage mid-leave must never cause a premature GONE (AC21 edge case).
+## WALKING_TO — including Story 004 path invalidation: the cached exit path
+## carries a cached_path_grid_version stamp, and every LEAVING tick re-queries
+## Navigation.get_path on a mismatch. A defensive safety timeout forces GONE
+## if no exit path ever resolves — Pillar 2 forbids a permanently stuck
+## member (AC21). The timeout counts DOWN ONLY while the member is genuinely
+## stuck (repath empty); while a path resolves and is walked, it holds — a
+## transient blockage mid-leave must never cause a premature GONE (AC21 edge
+## case). Unlike WALKING_TO, LEAVING does NOT reuse the AC18 bounded-retry
+## counter: the leaving_timeout is its bounded fallback (a stuck leaver still
+## leaves eventually — AC21).
 func _on_leaving(member: Dictionary, to_remove: Array) -> void:
 	var path: Array = member["cached_path"]
 	while not path.is_empty() and path[0] == member["cell"]:
 		path.remove_at(0)
 	if not path.is_empty():
+		# Story 004 (AC17 applies to LEAVING per Core Rule 5): re-query the
+		# exit path EXACTLY ONCE when the grid version moved on.
+		if int(member.get("cached_path_grid_version", -1)) != _grid.get_grid_version():
+			var repath: Array[Vector2i] = _navigation.get_path(member["cell"], _exit_cell)
+			if repath.is_empty():
+				member["cached_path"] = []  # blocked mid-leave — timeout next tick
+				return
+			member["cached_path"] = repath
+			member["cached_path_grid_version"] = _grid.get_grid_version()
+			path = repath
+			while not path.is_empty() and path[0] == member["cell"]:
+				path.remove_at(0)
+			if path.is_empty():
+				_mark_gone(member, to_remove)  # repath landed us on the exit
+				return
 		var next_cell: Vector2i = path[0]
 		if _grid.is_solid(next_cell):
 			member["cached_path"] = []  # blocked mid-leave — repath next tick
@@ -918,6 +1120,7 @@ func _on_leaving(member: Dictionary, to_remove: Array) -> void:
 			_mark_gone(member, to_remove)  # AC21 — forced GONE, never stuck
 		return
 	member["cached_path"] = exit_path
+	member["cached_path_grid_version"] = _grid.get_grid_version()
 
 
 ## Enters LEAVING. Records WHY (drives S5) and arms the safety timeout.
@@ -979,6 +1182,9 @@ func _spawn_member() -> void:
 		"preference_profile": _roll_preference_profile(),
 		"target_equipment_instance_id": -1,
 		"cached_path": [],
+		"cached_path_grid_version": -1,  # Story 004: stamped on first claim
+		"repath_failures": 0,            # Story 004: AC18 bounded-retry counter
+		"give_up_blacklist": {},         # Story 004: AC19 id -> remaining_ticks
 		"leaving_timeout_ticks": 0,
 		"patience_ticks_remaining": 0,  # Story 003: rolled on entering QUEUEING
 		"recently_used_ids": [],
@@ -1128,6 +1334,71 @@ func _enter_queueing(member: Dictionary, instance_id: int) -> void:
 func _access_busy(instance_id: int) -> bool:
 	var rec: Variant = reservations.get(instance_id)
 	return rec is Dictionary and rec["occupant"] != null
+
+
+# === Story 004 — patience give-up short-term blacklist (AC19) ===
+#
+# give_up_blacklist: Dictionary {equipment_instance_id: remaining_ticks}.
+# When a member gives up on a machine (patience exhausted in QUEUEING), the
+# machine is excluded from that member's reselect pool until the entry
+# expires — no immediate flip-flop back (AC19). Entries are decremented per
+# tick by _tick_give_up_blacklist (called from _update_member) and removed at
+# 0. The abandoned machine also gets a temporary novelty penalty (as if
+# just-used) via _record_recently_used — the GDD's "temporary novelty
+# penalty" (patience_threshold formula).
+#
+# DETERMINISM: the decrement iterates the blacklist, but each entry is
+# decremented independently and removals are order-independent — the final
+# set of surviving entries does not depend on Dictionary iteration order, so
+# the behavior is deterministic (TR-MS-006's never-iterate-dicts-for-behavior
+# rule targets the SHARED reservations map, where order decides contention;
+# this is per-member state with an order-free operation).
+
+## Adds [instance_id] to the member's give-up blacklist for
+## _give_up_blacklist_ticks ticks (refreshes an existing entry). Also applies
+## the temporary novelty penalty: the abandoned machine is recorded as
+## just-used (novelty_factor 0.2) so even after the blacklist expires the
+## member is biased away from it (GDD patience_threshold formula).
+func _blacklist_give_up(member: Dictionary, instance_id: int) -> void:
+	var blacklist: Dictionary = member.get("give_up_blacklist", {})
+	blacklist[instance_id] = _give_up_blacklist_ticks
+	member["give_up_blacklist"] = blacklist
+	if instance_id >= 0:
+		_record_recently_used(member, instance_id)
+
+
+## True while [instance_id] is on the member's give-up blacklist (AC19 — the
+## pool build excludes it). Membership read, no iteration.
+func _on_give_up_blacklist(member: Dictionary, instance_id: int) -> bool:
+	var blacklist: Dictionary = member.get("give_up_blacklist", {})
+	return blacklist.has(instance_id)
+
+
+## True when the member has ANY non-expired blacklist entry. Used by
+## SELECTING_TARGET's empty-pool branch to distinguish "temporarily nothing
+## because I just gave up on the only machine" (stay + retry — AC19/AC13 QA
+## edge) from "genuinely nothing" (LEAVING — AC1). No failure prompt, ever.
+func _has_active_give_up_blacklist(member: Dictionary) -> bool:
+	var blacklist: Dictionary = member.get("give_up_blacklist", {})
+	return not blacklist.is_empty()
+
+
+## Decrements every blacklist entry by one tick and removes expired entries.
+## Called at the START of every member update (regardless of state) so the
+## exclusion is time-bounded, not state-bounded.
+func _tick_give_up_blacklist(member: Dictionary) -> void:
+	var blacklist: Dictionary = member.get("give_up_blacklist", {})
+	if blacklist.is_empty():
+		return
+	var expired: Array = []
+	for instance_id in blacklist.keys():
+		var remaining: int = int(blacklist[instance_id]) - 1
+		if remaining <= 0:
+			expired.append(instance_id)
+		else:
+			blacklist[instance_id] = remaining
+	for instance_id in expired:
+		blacklist.erase(instance_id)
 
 
 ## Returns the full MemberSim state as a JSON-safe Dictionary:
