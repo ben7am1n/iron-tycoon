@@ -243,18 +243,20 @@ func _test_ac_pipeline3_multiple_failures_deterministic_order() -> void:
 	print("\n[AC-PIPELINE.3] entry with empty footprint AND 2 access cells -> BOTH failures reported, deterministic order")
 
 	# Direct validator-level: _validate_all returns every sub-validator's first
-	# failure in fixed order (footprint shape → access cells). Cost validation
-	# (COST_NEGATIVE) joins via EC-007's validate_cost — out of scope here.
+	# failure in fixed order (footprint shape → access → use-duration → cost).
+	# Cost validation (COST_NEGATIVE) joins via EC-007's validate_cost — out of
+	# scope here. Use-duration values are VALID (200/35/100/300) so they do not
+	# add a third failure — this test isolates the footprint/access ordering.
 	var loader: Script = _loader()
 	var empty_footprint: Array[Vector2i] = []
 	var two_access: Array[Vector2i] = [Vector2i(0, 0), Vector2i(1, 0)]
-	var failures: Array = loader._validate_all(empty_footprint, two_access)
+	var failures: Array = loader._validate_all(empty_footprint, two_access, 200, 35, 100, 300)
 	_check(failures.size() == 2, "_validate_all returns 2 failures")
 	_check(failures[0].get("code") == "FOOTPRINT_EMPTY", "first failure is FOOTPRINT_EMPTY (footprint checked first)")
 	_check(failures[1].get("code") == "ACCESS_COUNT", "second failure is ACCESS_COUNT")
 
 	# Deterministic error ordering: same input -> same error order every run.
-	var failures_again: Array = loader._validate_all(empty_footprint, two_access)
+	var failures_again: Array = loader._validate_all(empty_footprint, two_access, 200, 35, 100, 300)
 	var order_a: Array = [failures[0].get("code"), failures[1].get("code")]
 	var order_b: Array = [failures_again[0].get("code"), failures_again[1].get("code")]
 	_check(order_a == order_b, "error order is deterministic across runs")

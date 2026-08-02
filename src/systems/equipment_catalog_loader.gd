@@ -26,8 +26,10 @@
 ## validation PIPELINE (_validate_all) collects one error per FAILING
 ## sub-validator in deterministic order (AC-PIPELINE.3), and the loader
 ## detects DUPLICATE ids — first occurrence kept, later occurrences treated
-## as validation failures (AC-E.1). Remaining semantic ranges (cost>=0,
-## use_duration_* ranges) are Story 005/007 and still NOT implemented here.
+## as validation failures (AC-E.1). Since Story 005: the use_duration_* range
+## validation (GDD Core Rule 7 (e)-(h), TR-EC-004) — the cross-document hard
+## gate with MemberSim #6 OQ2 — joined the pipeline. Remaining semantic range
+## (cost>=0) is Story 007 and still NOT implemented here.
 ## Normalization runs BEFORE validation: the Story 003 validators receive
 ## clean, normalized coordinates (Story 002 design note).
 ## Determinism guardrail (Control Manifest): same JSON input always produces
@@ -287,6 +289,78 @@ static func validate_access_cells(
 	return ValidationResult.success()
 
 
+## Validates the use_duration_* range contract (GDD Core Rule 7 (e)-(h),
+## TR-EC-004; AC-U.1..U.5) — the cross-document hard gate with MemberSim
+## #6 OQ2: these 4 fields drive the USING-state timer's Gaussian duration
+## (`use_duration = clamp(gaussian_rng(mean, stddev), min, max)`). Catalog
+## load-time is the SINGLE authority — MemberSim trusts the Catalog output
+## and does no defensive re-validation (Story 005 key design decision).
+##
+## Pure integer range checks (Engine Notes: no engine API risk). Ordered
+## checks — first failure returns (deterministic error code for any given
+## bad input, same convention as the footprint/access validators):
+##   (e) mean > 0         — 0/negative mean = gaussian center ≤ 0 → no
+##                          positive duration possible → member stuck in
+##                          USING (Pillar 2 "永不卡死"); AC-U.1
+##   (f) stddev >= 0      — negative stddev invalid; 0 allowed (deterministic
+##                          duration, AC-U.5)
+##   (g) min >= 1 AND min <= mean — clamp lower bound; min=0 allows a 0-tick
+##                          USING state; min > mean is a nonsensical clamp;
+##                          AC-U.3
+##   (h) max >= mean AND min <= max — bounded-duration guarantee; AC-U.3
+##
+## Signature deviation from the Story 005 sketch (`entry: Dictionary`): the
+## loader has already parsed the 4 fields into typed ints via _field_int
+## (which also fails on missing/non-integer values — "never assume defaults
+## for missing use_duration fields" is enforced upstream at the structural
+## layer), so the validator takes typed args like the Story 003 validators.
+static func validate_use_duration(
+	mean: int,
+	stddev: int,
+	min_val: int,
+	max_val: int
+) -> ValidationResult:
+	# (e) mean > 0
+	if mean <= 0:
+		return ValidationResult.fail(
+			"USE_DURATION_MEAN_INVALID",
+			"use_duration_mean_ticks must be > 0; got %d" % mean
+		)
+
+	# (f) stddev >= 0
+	if stddev < 0:
+		return ValidationResult.fail(
+			"USE_DURATION_STDDEV_NEGATIVE",
+			"use_duration_stddev_ticks must be >= 0; got %d" % stddev
+		)
+
+	# (g) min >= 1 AND min <= mean
+	if min_val < 1:
+		return ValidationResult.fail(
+			"USE_DURATION_MIN_TOO_LOW",
+			"use_duration_min_ticks must be >= 1; got %d" % min_val
+		)
+	if min_val > mean:
+		return ValidationResult.fail(
+			"USE_DURATION_MIN_EXCEEDS_MEAN",
+			"use_duration_min_ticks (%d) must be <= mean (%d)" % [min_val, mean]
+		)
+
+	# (h) max >= mean AND min <= max
+	if max_val < mean:
+		return ValidationResult.fail(
+			"USE_DURATION_MAX_BELOW_MEAN",
+			"use_duration_max_ticks (%d) must be >= mean (%d)" % [max_val, mean]
+		)
+	if min_val > max_val:
+		return ValidationResult.fail(
+			"USE_DURATION_RANGE_INVALID",
+			"use_duration_min (%d) must be <= max (%d)" % [min_val, max_val]
+		)
+
+	return ValidationResult.success()
+
+
 ## Ordered validation pipeline for one definition (Story 003 sketch):
 ## footprint shape → access count → access disjoint → access adjacency.
 ## First failure returns — deterministic error for any given bad input.
@@ -327,11 +401,19 @@ static func _validate_definition(
 ## "deterministic error ordering" requirement, which is meaningless with a
 ## single error. Logged in docs/tech-debt-register.md.
 ##
-## Extension point: Story 005 (use-duration) and Story 007 (cost) append their
-## validators here IN THIS FIXED ORDER — do not reorder (determinism contract).
+## The use_duration_* ints are ALREADY parsed/typed by the caller (via
+## _field_int, which fails structurally on missing/non-integer values) — this
+## pipeline only enforces the GDD Core Rule 7 (e)-(h) RANGE contract.
+##
+## Extension point: Story 007 (cost) appends its validator here IN THIS FIXED
+## ORDER after use-duration — do not reorder (determinism contract).
 static func _validate_all(
 	footprint_cells: Array[Vector2i],
-	access_cells: Array[Vector2i]
+	access_cells: Array[Vector2i],
+	use_mean: int,
+	use_stddev: int,
+	use_min: int,
+	use_max: int
 ) -> Array[ValidationResult]:
 	var failures: Array[ValidationResult] = []
 
@@ -343,7 +425,11 @@ static func _validate_all(
 	if not r.ok:
 		failures.append(r)
 
-	# Story 005 (EC-005): validate_use_duration(...) appended here.
+	# Story 005 (EC-005): use-duration range contract (GDD Core Rule 7 (e)-(h)).
+	r = validate_use_duration(use_mean, use_stddev, use_min, use_max)
+	if not r.ok:
+		failures.append(r)
+
 	# Story 007 (EC-007): validate_cost(...) appended here.
 
 	return failures
@@ -413,7 +499,14 @@ static func _load_single_definition(entry: Variant) -> Dictionary:
 	# order) — one LoadError per failing validator, all flowing into the loader's
 	# strict_mode branch: strict=true aborts (AC-C.1), strict=false excludes +
 	# push_error (AC-C.2) — the other valid entries still load.
-	var validation_failures := _validate_all(normalized["footprint"], normalized["access"])
+	var validation_failures := _validate_all(
+		normalized["footprint"],
+		normalized["access"],
+		use_mean,
+		use_stddev,
+		use_min,
+		use_max
+	)
 	if not validation_failures.is_empty():
 		for failure in validation_failures:
 			errors.append(

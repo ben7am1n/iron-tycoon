@@ -1,0 +1,32 @@
+{
+  "equipment": [
+    {
+      "id": "deterministic_treadmill",
+      "display_name": "Deterministic Treadmill",
+      "zone_membership": ["cardio"],
+      "footprint_cells": [{"x": 0, "y": 0}],
+      "access_cells": [{"x": 1, "y": 0}],
+      "cost": 200,
+      "unlock_requirement": "",
+      "effects": [],
+      "use_duration_mean_ticks": 200,
+      "use_duration_stddev_ticks": 0,
+      "use_duration_min_ticks": 100,
+      "use_duration_max_ticks": 300
+    },
+    {
+      "id": "boundary_one_rack",
+      "display_name": "Boundary One Rack",
+      "zone_membership": ["strength"],
+      "footprint_cells": [{"x": 0, "y": 0}],
+      "access_cells": [{"x": 1, "y": 0}],
+      "cost": 200,
+      "unlock_requirement": "",
+      "effects": [],
+      "use_duration_mean_ticks": 1,
+      "use_duration_stddev_ticks": 0,
+      "use_duration_min_ticks": 1,
+      "use_duration_max_ticks": 1
+    }
+  ]
+}

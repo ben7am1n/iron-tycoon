@@ -6,7 +6,7 @@
 > **Type**: Logic
 > **Estimate**: [hours or t-shirt size — fill before sprint planning]
 > **Manifest Version**: 2026-07-23
-> **Last Updated**: [set by /dev-story when implementation begins]
+> **Last Updated**: 2026-08-02 (implementation by EC-005)
 
 ## Context
 
@@ -31,11 +31,11 @@
 
 *From GDD `design/gdd/equipment-catalog.md` §use-duration + AC-U.1–U.4:*
 
-- [ ] AC-U.1 [BLOCKING][Logic] GIVEN a definition with use_duration_mean_ticks <= 0, WHEN Catalog loads with strict_mode=true, THEN assert() aborts with entry id in message (Core Rule 7 (e))
-- [ ] AC-U.2 [BLOCKING][Logic] GIVEN a definition with use_duration_stddev_ticks < 0, WHEN loaded, THEN validation fails (Core Rule 7 (f))
-- [ ] AC-U.3 [BLOCKING][Logic] GIVEN a definition with use_duration_min_ticks < 1 OR min > mean OR max < mean OR min > max, WHEN loaded, THEN validation fails (Core Rule 7 (g)/(h))
-- [ ] AC-U.4 [BLOCKING][Logic] GIVEN a valid definition (mean=200, stddev=35, min=100, max=300), WHEN load succeeds and get_definition(id) called, THEN returned EquipmentDef contains all 4 fields with exact values — proves fields landed and are consumable by MemberSim
-- [ ] AC-U.5 [BLOCKING][Logic] GIVEN a definition with use_duration_stddev_ticks = 0, WHEN loaded, THEN validation passes (deterministic duration is allowed)
+- [x] AC-U.1 [BLOCKING][Logic] GIVEN a definition with use_duration_mean_ticks <= 0, WHEN Catalog loads with strict_mode=true, THEN assert() aborts with entry id in message (Core Rule 7 (e))
+- [x] AC-U.2 [BLOCKING][Logic] GIVEN a definition with use_duration_stddev_ticks < 0, WHEN loaded, THEN validation fails (Core Rule 7 (f))
+- [x] AC-U.3 [BLOCKING][Logic] GIVEN a definition with use_duration_min_ticks < 1 OR min > mean OR max < mean OR min > max, WHEN loaded, THEN validation fails (Core Rule 7 (g)/(h))
+- [x] AC-U.4 [BLOCKING][Logic] GIVEN a valid definition (mean=200, stddev=35, min=100, max=300), WHEN load succeeds and get_definition(id) called, THEN returned EquipmentDef contains all 4 fields with exact values — proves fields landed and are consumable by MemberSim
+- [x] AC-U.5 [BLOCKING][Logic] GIVEN a definition with use_duration_stddev_ticks = 0, WHEN loaded, THEN validation passes (deterministic duration is allowed)
 
 ---
 
@@ -154,7 +154,18 @@ If min > max → clamp is nonsensical — MemberSim's guarantee of bounded durat
 **Required evidence**:
 - `tests/unit/equipment_catalog/catalog_use_duration_validation_test.gd` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing (2026-08-02)
+
+**Test Evidence**: Full suite 951/951 (was 878). New files:
+- `tests/unit/equipment_catalog/catalog_use_duration_validation_test.gd` — 73 assertions, 0 failures. AC-U.1 (mean=0 strict probe: assert fires, message names `mean_zero_rack` + USE_DURATION_MEAN_INVALID; mean=-1/-100 validator edges; non-strict: entry excluded, valid control loads, push_error probe confirms), AC-U.2 (stddev=-1: validator code USE_DURATION_STDDEV_NEGATIVE + loader path excludes `stddev_negative_bench`), AC-U.3 (4 sub-cases a-d through the range_invalid fixture: min=0 → MIN_TOO_LOW, min=250>mean → MIN_EXCEEDS_MEAN, max=150<mean → MAX_BELOW_MEAN, min=300>max=200 → fails via MIN_EXCEEDS_MEAN per ordered checks; boundary equalities max==mean / min==mean / min==max==mean all pass), AC-U.4 (valid def lands with EXACT values through load + get_definition; typeof == TYPE_INT for all 4 fields — no int→float conversion; boundary def mean=1/stddev=0/min=1/max=1 also lands), AC-U.5 (stddev=0 accepted at validator + loader level; boundary all-ones accepted), Control Manifest forbidden rule (missing use_duration_mean_ticks → structural INVALID_ENTRY, never a default).
+- `tests/unit/equipment_catalog/catalog_use_duration_strict_probe.gd` — subprocess probe (not a _test.gd): `strict_mean_zero` + `nons_mean_zero_excludes` modes, same isolation pattern as Story 004's probe (10th use of the subprocess-isolation pattern).
+- `tests/unit/equipment_catalog/fixtures/*.catalog.json` — 4 new committed fixtures (use_duration_mean_zero, use_duration_stddev_negative, use_duration_range_invalid, use_duration_stddev_zero), each with a `valid_control` entry to prove partial-load isolation.
+
+**Decisions recorded at close**:
+1. **Validator signature deviation — typed ints, not the sketch's `entry: Dictionary`.** The story sketch shows `validate_use_duration(entry: Dictionary) -> ValidationResult` reading `entry.get(...)`. The loader already parses the 4 fields into typed ints via `_field_int` (which fails structurally on missing/non-integer values — the Control Manifest "never assume defaults for missing use_duration fields" is enforced UPSTREAM at the structural layer, verified by the forbidden-rule test), so the validator takes `(mean, stddev, min_val, max_val)` like the Story 003 typed validators. `_validate_all` signature extended to pass them through in fixed order.
+2. **AC-U.3 QA sub-case (d) `min=300 > max=200` reports MIN_EXCEEDS_MEAN, not RANGE_INVALID.** The ordered checks test `min > mean` (rule g) before `min > max` (rule h); with mean=200 the (g) violation fires first. RANGE_INVALID is documented as defensive dead code — it is mathematically unreachable because `min <= mean` (g) and `max >= mean` (h 1st clause) together imply `min <= max`. The AC only requires the entry to FAIL for `min > max`, which it does deterministically.
+3. **`_validate_all` signature change rippled to the EC-004 test** — the pipeline test's two direct `_validate_all(empty_footprint, two_access)` calls now pass valid use-duration values (200/35/100/300) so the test still isolates footprint/access ordering (2 failures, unchanged assertions).
+4. **stddev=0 and min==max==mean are valid** — AC-U.5 + boundary equality tests lock in the deterministic-duration contract (a member may spend exactly 1 tick, mean=1/stddev=0/min=1/max=1 loads).
 
 ---
 

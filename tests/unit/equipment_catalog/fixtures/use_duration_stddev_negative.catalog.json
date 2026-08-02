@@ -1,0 +1,32 @@
+{
+  "equipment": [
+    {
+      "id": "stddev_negative_bench",
+      "display_name": "Negative Stddev Bench",
+      "zone_membership": ["strength"],
+      "footprint_cells": [{"x": 0, "y": 0}],
+      "access_cells": [{"x": 1, "y": 0}],
+      "cost": 200,
+      "unlock_requirement": "",
+      "effects": [],
+      "use_duration_mean_ticks": 200,
+      "use_duration_stddev_ticks": -1,
+      "use_duration_min_ticks": 100,
+      "use_duration_max_ticks": 300
+    },
+    {
+      "id": "valid_control",
+      "display_name": "Valid Control",
+      "zone_membership": ["cardio"],
+      "footprint_cells": [{"x": 0, "y": 0}],
+      "access_cells": [{"x": 1, "y": 0}],
+      "cost": 200,
+      "unlock_requirement": "",
+      "effects": [],
+      "use_duration_mean_ticks": 200,
+      "use_duration_stddev_ticks": 35,
+      "use_duration_min_ticks": 100,
+      "use_duration_max_ticks": 300
+    }
+  ]
+}

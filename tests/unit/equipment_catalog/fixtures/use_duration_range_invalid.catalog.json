@@ -1,0 +1,74 @@
+{
+  "equipment": [
+    {
+      "id": "min_zero_rack",
+      "display_name": "Min Zero Rack",
+      "zone_membership": ["strength"],
+      "footprint_cells": [{"x": 0, "y": 0}],
+      "access_cells": [{"x": 1, "y": 0}],
+      "cost": 200,
+      "unlock_requirement": "",
+      "effects": [],
+      "use_duration_mean_ticks": 200,
+      "use_duration_stddev_ticks": 35,
+      "use_duration_min_ticks": 0,
+      "use_duration_max_ticks": 300
+    },
+    {
+      "id": "min_above_mean_rack",
+      "display_name": "Min Above Mean Rack",
+      "zone_membership": ["strength"],
+      "footprint_cells": [{"x": 0, "y": 0}],
+      "access_cells": [{"x": 1, "y": 0}],
+      "cost": 200,
+      "unlock_requirement": "",
+      "effects": [],
+      "use_duration_mean_ticks": 200,
+      "use_duration_stddev_ticks": 35,
+      "use_duration_min_ticks": 250,
+      "use_duration_max_ticks": 300
+    },
+    {
+      "id": "max_below_mean_rack",
+      "display_name": "Max Below Mean Rack",
+      "zone_membership": ["strength"],
+      "footprint_cells": [{"x": 0, "y": 0}],
+      "access_cells": [{"x": 1, "y": 0}],
+      "cost": 200,
+      "unlock_requirement": "",
+      "effects": [],
+      "use_duration_mean_ticks": 200,
+      "use_duration_stddev_ticks": 35,
+      "use_duration_min_ticks": 100,
+      "use_duration_max_ticks": 150
+    },
+    {
+      "id": "min_above_max_rack",
+      "display_name": "Min Above Max Rack",
+      "zone_membership": ["strength"],
+      "footprint_cells": [{"x": 0, "y": 0}],
+      "access_cells": [{"x": 1, "y": 0}],
+      "cost": 200,
+      "unlock_requirement": "",
+      "effects": [],
+      "use_duration_mean_ticks": 200,
+      "use_duration_stddev_ticks": 35,
+      "use_duration_min_ticks": 300,
+      "use_duration_max_ticks": 200
+    },
+    {
+      "id": "valid_control",
+      "display_name": "Valid Control",
+      "zone_membership": ["cardio"],
+      "footprint_cells": [{"x": 0, "y": 0}],
+      "access_cells": [{"x": 1, "y": 0}],
+      "cost": 200,
+      "unlock_requirement": "",
+      "effects": [],
+      "use_duration_mean_ticks": 200,
+      "use_duration_stddev_ticks": 35,
+      "use_duration_min_ticks": 100,
+      "use_duration_max_ticks": 300
+    }
+  ]
+}
