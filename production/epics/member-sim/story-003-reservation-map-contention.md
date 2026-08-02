@@ -1,7 +1,7 @@
 # Story 003: Reservation Map and Contention
 
 > **Epic**: member-sim
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Feature
 > **Type**: Logic
 > **Estimate**: M — 2 sessions (≤4h)
@@ -31,10 +31,10 @@
 
 *From GDD `design/gdd/member-sim.md`, scoped to this story:*
 
-- [ ] AC3 [UNIT][WB] GIVEN members `member_id` 5 and 7 both targeting the same free equipment on one tick, WHEN the reservation claim resolves, THEN member 5 becomes `occupant` and member 7's redraw excludes that equipment
-- [ ] AC4 [UNIT] GIVEN any equipment's reservation record, THEN at most one `member_id` is ever `occupant` and at most one is `next_claimant` at any tick boundary (property test over N randomized ticks)
-- [ ] AC5 [UNIT] GIVEN a member holding `next_claimant` for equipment E who leaves WALKING_TO or QUEUEING without becoming `occupant`, WHEN that transition occurs, THEN `reservations[E].next_claimant` is null by the end of that same tick (the release invariant — deadlock prevention)
-- [ ] AC16 [UNIT][WB] GIVEN a member in WALKING_TO or QUEUEING, THEN at no tick does its occupied cell equal a solid footprint cell (GridSystem's solid set as oracle) — only access cells and the one-cell-short queue position are permitted equipment-adjacent cells
+- [x] AC3 [UNIT][WB] GIVEN members `member_id` 5 and 7 both targeting the same free equipment on one tick, WHEN the reservation claim resolves, THEN member 5 becomes `occupant` and member 7's redraw excludes that equipment
+- [x] AC4 [UNIT] GIVEN any equipment's reservation record, THEN at most one `member_id` is ever `occupant` and at most one is `next_claimant` at any tick boundary (property test over N randomized ticks)
+- [x] AC5 [UNIT] GIVEN a member holding `next_claimant` for equipment E who leaves WALKING_TO or QUEUEING without becoming `occupant`, WHEN that transition occurs, THEN `reservations[E].next_claimant` is null by the end of that same tick (the release invariant — deadlock prevention)
+- [x] AC16 [UNIT][WB] GIVEN a member in WALKING_TO or QUEUEING, THEN at no tick does its occupied cell equal a solid footprint cell (GridSystem's solid set as oracle) — only access cells and the one-cell-short queue position are permitted equipment-adjacent cells
 
 ---
 
@@ -108,9 +108,9 @@
 
 **Story Type**: Logic
 **Required evidence**:
-- `tests/unit/member_sim/reservation_map_test.gd` — must exist and pass
+- `tests/unit/member_sim/reservation_map_test.gd` — must exist and pass ✅ 46 assertions green (AC3 contention + redraw + FIFO arrival, AC4 property 12,556 boundary checks / 3 seeds, AC5 blocked-walk + patience-exhaust release same tick, AC16 solid-oracle + one-cell-short queue position, queue depth 1, pool exclusion, TR-MS-006 determinism-with-contention byte-identical trace)
 
-**Status**: [ ] Not yet created
+**Status**: [x] Complete — headless full suite 2518 passed / 0 failed (baseline 2472 + 46 new), 0 SCRIPT ERROR, repeated twice identically
 
 ---
 

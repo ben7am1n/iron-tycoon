@@ -35,6 +35,7 @@ const TEST_FILES := [
 	"tests/unit/member_sim/lifecycle_state_machine_test.gd",
 	"tests/unit/member_sim/target_selection_weight_test.gd",
 	"tests/unit/member_sim/tick_order_test.gd",
+	"tests/unit/member_sim/reservation_map_test.gd",
 	"tests/unit/navigation/config_basic_paths_test.gd",
 	"tests/unit/navigation/solidity_sync_test.gd",
 	"tests/unit/time_system/orchestrator_tick_dispatch_test.gd",

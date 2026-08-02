@@ -1,14 +1,22 @@
 ## MemberSim — member lifecycle state machine core (Story MS-001) + weighted
-## target selection (Story MS-002).
+## target selection (Story MS-002) + access-cell reservation map and
+## contention (Story MS-003).
 ##
 ## Story: member-sim / story-001-lifecycle-state-machine-core.md
 ##        member-sim / story-002-target-selection-weighted-pick.md
+##        member-sim / story-003-reservation-map-contention.md
 ## Req:   TR-MS-001 (tick-driven, runs FIRST; all randomness via the
 ##        get_rng("MemberSim") sub-stream), TR-MS-002 (lifecycle state machine:
 ##        ENTERING -> SELECTING_TARGET -> WALKING_TO -> [QUEUEING] -> USING ->
 ##        LEAVING -> GONE), TR-MS-003 (target selection: candidate pool,
 ##        weight from Congestion(t-1)/distance/novelty, top-K=3-5, path-check,
-##        weighted-random draw), TR-MS-008 (arrival Bernoulli formula),
+##        weighted-random draw), TR-MS-004 (access-cell reservation map
+##        reservations[equipment_instance_id] = {occupant, next_claimant};
+##        queue depth 1 MVP), TR-MS-005 (release invariant: a member leaving
+##        WALKING_TO/QUEUEING without becoming occupant clears next_claimant
+##        the SAME tick — deadlock prevention), TR-MS-006 (fairness: all
+##        contention resolves by ascending member_id iteration order, never
+##        engine/hash order), TR-MS-008 (arrival Bernoulli formula),
 ##        TR-MS-009 (use_duration formula), TR-MS-010 (exercises_per_visit
 ##        formula), TR-MS-012 (member_id never reused), TR-MS-013 (entrance_cell
 ##        / exit_cell hard dependency), TR-MS-014 (member_completed_visit S5)
@@ -46,19 +54,39 @@
 ## the byte-identical determinism contract of the existing integration tests
 ## while the real machine ships.
 ##
-## STATE MACHINE SCOPE (skeleton + weighted selection): the full transition
-## list per Core Rule 2. Deliberately deferred to neighbouring stories and
-## NOT implemented here:
-##   - QUEUEING + the access-cell reservation map        -> Story 003
-##   - grid_version path invalidation / patience give-up -> Story 004
-##   - full serialization of member state                -> Story 005
-## Story 002 (this file) implements the weighted target pick — Core Rule 3:
+## STATE MACHINE SCOPE: Core Rule 2's full transition list. Story 003 (this
+## file) adds QUEUEING + the access-cell reservation map (Core Rule 4).
+## Deliberately deferred to neighbouring stories and NOT implemented here:
+##   - grid_version path invalidation / patience give-up blacklist -> Story 004
+##   - full serialization of member state + reservation rebuild     -> Story 005
+## Story 002 implements the weighted target pick — Core Rule 3:
 ##   candidate pool (all placed instances ascending equipment_instance_id —
-##   reservation "fully spoken for" filter is Story 003, no-repeat blacklist
-##   is Story 004) -> weight per candidate -> sort desc with deterministic
-##   tie-break by ascending id -> top-K (config, 3-5) -> path-check the K in
-##   ascending id order -> renormalize over survivors -> ONE rng.randf()
-##   weighted draw. Reservation claim is the call boundary (Story 003).
+##   no-repeat blacklist is Story 004) -> weight per candidate -> sort desc
+##   with deterministic tie-break by ascending id -> top-K (config, 3-5) ->
+##   path-check the K in ascending id order -> renormalize over survivors ->
+##   ONE rng.randf() weighted draw.
+## Story 003 (this file) implements Core Rule 4:
+##   reservations[equipment_instance_id] = {occupant: member_id?,
+##   next_claimant: member_id?} — MemberSim owns the map (GridSystem refused
+##   to), queue depth capped at 1. Claim rule: a member may set next_claimant
+##   iff currently null (free machine -> walk + become occupant; busy machine
+##   -> become the single queue slot). On arrival: occupant null -> claim
+##   occupant + clear next_claimant -> USING; else -> QUEUEING holding
+##   next_claimant (guaranteed FIFO of exactly one). Release invariant
+##   (TR-MS-005): any member holding next_claimant that leaves WALKING_TO or
+##   QUEUEING without becoming occupant clears next_claimant in the SAME tick
+##   — the lock stays opportunistic and self-cleaning. Fairness (TR-MS-006):
+##   contention resolves purely by ascending-member_id update order; the
+##   candidate pool EXCLUDES fully-spoken-for equipment (next_claimant held
+##   by another member) — the losing member's redraw skips it (AC3).
+##
+## STORY 003 SEAM (documented, not silent): the patience give-up transition
+## exists here in minimal form (QUEUEING patience countdown -> release +
+## SELECTING_TARGET) so the TR-MS-005 release invariant is exercisable; the
+## short-term no-repeat blacklist that prevents give-up flip-flop belongs to
+## Story 004 (patience give-up + path invalidation). A give-up member may
+## therefore re-claim the same equipment on a later reselect — bounded by
+## patience each cycle, not by a blacklist.
 ##
 ## CONGESTION READER SEAM (TR-MS-003 / AC11): the weight consumes
 ## `Congestion(t-1)` — the PRE-update value — as a per-equipment-instance
@@ -113,17 +141,16 @@
 class_name MemberSim extends SimSystem
 
 # === State machine (Core Rule 2) ===
-# QUEUEING is deliberately absent from the implemented set — it lands with
-# Story 003's reservation map.
 const STATE_ENTERING := "ENTERING"
 const STATE_SELECTING_TARGET := "SELECTING_TARGET"
 const STATE_WALKING_TO := "WALKING_TO"
+const STATE_QUEUEING := "QUEUEING"
 const STATE_USING := "USING"
 const STATE_LEAVING := "LEAVING"
 const STATE_GONE := "GONE"
 const VALID_STATES: Array[String] = [
 	STATE_ENTERING, STATE_SELECTING_TARGET, STATE_WALKING_TO,
-	STATE_USING, STATE_LEAVING, STATE_GONE,
+	STATE_QUEUEING, STATE_USING, STATE_LEAVING, STATE_GONE,
 ]
 
 ## Why a member left the gym (drives S5 emission — quota-met departures only).
@@ -147,6 +174,8 @@ const CONFIG_K_CONGESTION := "k_congestion"
 const CONFIG_K_PROXIMITY := "k_proximity"
 const CONFIG_D_MAX := "D_max"
 const CONFIG_TOP_K := "top_k"
+const CONFIG_PATIENCE_MIN_TICKS := "patience_min_ticks"
+const CONFIG_PATIENCE_MAX_TICKS := "patience_max_ticks"
 
 ## Weight formula constants (Core Rule 3 / GDD Formulas — see class header).
 const BASE_WEIGHT := 1.0
@@ -181,9 +210,29 @@ var _seeded_rng: SeededRNG
 ##        preference_profile: Dictionary, target_equipment_instance_id,
 ##        cached_path: Array[Vector2i], leaving_timeout_ticks,
 ##        use_ticks_remaining (USING only), leaving_reason (LEAVING only),
-##        recently_used_ids: Array (most-recent-first, capped at
+##        patience_ticks_remaining (QUEUEING only — Story 003 patience
+##        countdown), recently_used_ids: Array (most-recent-first, capped at
 ##        NOVELTY_RECENT_WINDOW — drives novelty_factor_i in Story 002)}
 var members: Array = []
+
+## Story 003 — the access-cell reservation map (Core Rule 4 / TR-MS-004).
+## MemberSim owns it (GridSystem explicitly refused). Keyed by
+## equipment_instance_id -> {"occupant": member_id?, "next_claimant":
+## member_id?}; null = free. Queue depth is capped at 1 (MVP): at most one
+## next_claimant per machine, and the claim rule (next_claimant settable iff
+## null) enforces it structurally.
+##
+## DETERMINISM (TR-MS-006): records are read/written only by KEYED access
+## from per-member updates in ascending member_id order — the map itself is
+## NEVER iterated for behavior (Dictionary iteration is engine-ordered).
+## Consumers iterate placed instances ascending id instead.
+##
+## SERIALIZATION NOTE (Story 005 owns this): the map is NOT serialized as
+## separate truth. Core Rule 7 rebuilds it from members' own claim flags on
+## load; until Story 005 lands, a deserialized member mid-claim degrades
+## gracefully (its _on_queueing/_handle_arrival defensive branches release
+## and reselect instead of deadlocking).
+var reservations: Dictionary = {}
 
 ## Per-tick counter. Kept from the SL-002 stub as an observable stand-in; the
 ## pre-wiring compatibility path increments it every tick (integration tests
@@ -228,6 +277,8 @@ var _k_congestion: float = 3.0
 var _k_proximity: float = 0.2
 var _d_max: int = 16
 var _top_k: int = 4
+var _patience_min_ticks: int = 30
+var _patience_max_ticks: int = 80
 
 
 ## Two-phase init (ADR-0001). Registers the MemberSim RNG sub-stream exactly
@@ -295,6 +346,10 @@ func _apply_config(config: Dictionary) -> void:
 	# equipment) pathfinding). Clamp so a misconfigured value can never break
 	# the bound.
 	_top_k = clampi(int(config.get(CONFIG_TOP_K, _top_k)), 3, 5)
+	# Patience bounds (GDD Formulas — second-most-important knob, anchors
+	# 30-80). A misconfigured min > max is clamped to a legal single value.
+	_patience_min_ticks = maxi(int(config.get(CONFIG_PATIENCE_MIN_TICKS, _patience_min_ticks)), 0)
+	_patience_max_ticks = maxi(int(config.get(CONFIG_PATIENCE_MAX_TICKS, _patience_max_ticks)), _patience_min_ticks)
 
 
 func system_name() -> String:
@@ -381,6 +436,8 @@ func _update_member(member: Dictionary, to_remove: Array) -> void:
 			_on_selecting_target(member)
 		STATE_WALKING_TO:
 			_on_walking_to(member)
+		STATE_QUEUEING:
+			_on_queueing(member)
 		STATE_USING:
 			_on_using(member)
 		STATE_LEAVING:
@@ -396,24 +453,52 @@ func _on_entering(member: Dictionary) -> void:
 	_on_selecting_target(member)
 
 
-## SELECTING_TARGET evaluation (Core Rule 2). Three outcomes:
+## SELECTING_TARGET evaluation (Core Rule 2). Outcomes:
 ##   (a) visit quota reached      -> LEAVING regardless of candidates (AC2)
 ##   (b) no reachable candidate   -> LEAVING the same tick (AC1 — the visible
 ##       "walked in, turned around, left" flow signal; never stalls)
+##   (b') pool emptied by CONTENTION (every remaining machine's queue slot is
+##       claimed by another member) -> STAY in SELECTING_TARGET and retry next
+##       tick — no partial state committed (Core Rule 3 step 6; AC3 QA edge)
 ##   (c) candidate found          -> WALKING_TO (Story 002: the weighted pick —
-##       candidate pool -> weights -> top-K sort -> path-check -> weighted draw)
+##       candidate pool -> weights -> top-K sort -> path-check -> weighted
+##       draw; Story 003: claim the reservation's next_claimant slot BEFORE
+##       walking — Core Rule 4, TR-MS-004)
 func _on_selecting_target(member: Dictionary) -> void:
+	# Defensive invariant: entering SELECTING_TARGET implies NO claim held
+	# (every transition into this state releases first — Story 003). This
+	# guards the member-aware "fully spoken for" exclusion against a stale
+	# residual claim.
+	_release_reservation(member)
 	if int(member["exercises_done"]) >= int(member["exercises_per_visit"]):
 		_begin_leaving(member, REASON_QUOTA_MET)
 		return
 	var target_id := _pick_weighted_target(member)
 	if target_id == -1:
+		if _any_fully_spoken_for():
+			# Contention, not absence: every remaining machine's single queue
+			# slot is held by a lower-`member_id` member. Stay in
+			# SELECTING_TARGET (no partial state committed) — a claim slot
+			# will free up (release invariant, TR-MS-005) and the retry
+			# succeeds. AC3 QA edge.
+			return
 		_begin_leaving(member, REASON_NO_CANDIDATES)
 		return
 	var access_cells: Array = _grid.get_access_cells(target_id)
+	if access_cells.is_empty():
+		_begin_leaving(member, REASON_NO_CANDIDATES)
+		return
 	var path: Array[Vector2i] = _navigation.get_path(member["cell"], access_cells[0])
 	if path.is_empty():
 		_begin_leaving(member, REASON_NO_CANDIDATES)
+		return
+	# Story 003: claim the queue slot (Core Rule 4 claim rule — settable iff
+	# null, whether or not occupant is null). The candidate pool already
+	# excluded fully-spoken-for machines, so the claim normally succeeds; a
+	# failed claim means the race was lost this tick (a lower member_id
+	# claimed first) — stay in SELECTING_TARGET, no partial state committed
+	# (Core Rule 3 step 6, TR-MS-006).
+	if not _claim_next_claimant(target_id, int(member["member_id"])):
 		return
 	member["target_equipment_instance_id"] = target_id
 	member["cached_path"] = path
@@ -478,6 +563,11 @@ func _pick_weighted_target(member: Dictionary) -> int:
 ##   {instance_id, weight, congestion, dist_cells, novelty, noise}
 ## in ascending equipment_instance_id order (never grid/hash order — the
 ## deterministic summation order AC12's ΣP depends on).
+##
+## Story 003 (Core Rule 3 step 1 / TR-MS-004): fully-spoken-for equipment —
+## its reservation `next_claimant` is held by another member — is EXCLUDED
+## from the pool. This is the AC3 redraw mechanism: the loser of a contention
+## race never re-picks the machine its winner already claimed.
 func _build_weighted_candidates(member: Dictionary) -> Array:
 	var instances: Array = _grid.get_placed_instances()
 	var ids: Array[int] = []
@@ -491,6 +581,8 @@ func _build_weighted_candidates(member: Dictionary) -> Array:
 		var access_cells: Array = _grid.get_access_cells(instance_id)
 		if access_cells.is_empty():
 			continue  # no access cell — cannot be used
+		if _fully_spoken_for(instance_id, int(member["member_id"])):
+			continue  # Story 003: queue slot already claimed by another member
 		var dist_cells := _dist_cells(from, access_cells[0])
 		var congestion := _congestion_value(instance_id)
 		var novelty := _novelty_factor(member, instance_id)
@@ -612,18 +704,41 @@ func _record_recently_used(member: Dictionary, instance_id: int) -> void:
 ## WALKING_TO: consumes the cached path one cell per tick. The skeleton has
 ## no grid_version stamp (Story 004 owns path invalidation); it defensively
 ## aborts back to SELECTING_TARGET if the next cell has become solid
-## (e.g. equipment placed onto the path mid-walk). On arrival at the access
-## cell -> USING (the QUEUEING/reservation branch lands with Story 003).
+## (e.g. equipment placed onto the path mid-walk) — releasing the held
+## claim (TR-MS-005 / AC5) on that abort.
+##
+## Story 003 (Core Rule 4): the member holds the target's `next_claimant`
+## slot from selection time. On arrival:
+##   - access cell FREE  -> claim `occupant`, clear `next_claimant`, -> USING
+##   - access cell BUSY  -> QUEUEING one cell short (never steps onto the
+##     occupied access cell — AC16 sprite rule). The last hop is checked
+##     BEFORE stepping: if the only remaining path cell is a busy access
+##     cell, the member stops at its current cell (the one-cell-short
+##     queue position).
 func _on_walking_to(member: Dictionary) -> void:
 	var path: Array = member["cached_path"]
 	# get_path() includes both endpoints — skip the current cell.
 	while not path.is_empty() and path[0] == member["cell"]:
 		path.remove_at(0)
 	if path.is_empty():
-		_start_using(member)
+		# Already at the access cell (path fully consumed) — arrive.
+		member["cached_path"] = []
+		_handle_arrival(member)
 		return
 	var next_cell: Vector2i = path[0]
+	if path.size() == 1 and _access_busy(int(member["target_equipment_instance_id"])):
+		# The only hop left lands on an OCCUPIED access cell — queue one
+		# cell short instead of stepping onto it (AC16). The member's
+		# current cell is by construction the penultimate path cell —
+		# adjacent to the access cell.
+		_enter_queueing(member, int(member["target_equipment_instance_id"]))
+		return
 	if _grid.is_solid(next_cell):
+		# Path blocked mid-walk — release the held next_claimant claim the
+		# SAME tick (TR-MS-005 release invariant / AC5) and reselect. The
+		# machine becomes opportunistically claimable again — never a
+		# permanent deadlock.
+		_release_reservation(member)
 		member["cached_path"] = []
 		member["target_equipment_instance_id"] = -1
 		member["state"] = STATE_SELECTING_TARGET
@@ -632,12 +747,115 @@ func _on_walking_to(member: Dictionary) -> void:
 	path.remove_at(0)
 	member["cached_path"] = path
 	if path.is_empty():
+		_handle_arrival(member)
+
+
+## Story 003 arrival (Core Rule 4 "On arrival"). The member's cell is the
+## access cell of [target_equipment_instance_id] (or it just consumed the
+## last path hop onto it).
+##   - occupant null + this member holds next_claimant -> claim occupant,
+##     clear next_claimant, -> USING (guaranteed FIFO of exactly one)
+##   - occupant busy -> QUEUEING one cell short (member already at the
+##     queue position — it never stepped onto the busy access cell)
+## Defensive fallbacks: target unresolvable (equipment gone / access cell
+## list empty) -> release + reselect; member somehow standing on a BUSY
+## access cell (loaded/injected edge) -> release + reselect rather than
+## violate the AC16 sprite rule.
+func _handle_arrival(member: Dictionary) -> void:
+	var target := int(member["target_equipment_instance_id"])
+	if target < 0:
+		_release_reservation(member)
+		member["cached_path"] = []
+		member["state"] = STATE_SELECTING_TARGET
+		return
+	var access_cells: Array = _grid.get_access_cells(target)
+	if access_cells.is_empty():
+		# Target no longer resolvable — release and reselect (defensive;
+		# Story 004's grid_version repath handles this formally).
+		_release_reservation(member)
+		member["target_equipment_instance_id"] = -1
+		member["cached_path"] = []
+		member["state"] = STATE_SELECTING_TARGET
+		return
+	var rec: Variant = reservations.get(target)
+	var member_id := int(member["member_id"])
+	if rec is Dictionary and rec["occupant"] == null and rec["next_claimant"] == member_id:
+		# Access cell free and this member holds the queue slot — claim
+		# occupancy (Core Rule 4 "On arrival").
+		_become_occupant(member, target)
 		_start_using(member)
+		return
+	if rec is Dictionary and rec["occupant"] == null and rec["next_claimant"] != null \
+			and rec["next_claimant"] != member_id:
+		# Another member holds the queue slot and the machine is free —
+		# defensive: never claim out of turn (should be impossible: the
+		# pool excludes spoken-for machines). Release and reselect.
+		_release_reservation(member)
+		member["target_equipment_instance_id"] = -1
+		member["cached_path"] = []
+		member["state"] = STATE_SELECTING_TARGET
+		return
+	if member["cell"] == access_cells[0]:
+		# Standing on a BUSY access cell (loaded/injected edge) — never
+		# occupy it (AC16); release and reselect.
+		_release_reservation(member)
+		member["target_equipment_instance_id"] = -1
+		member["cached_path"] = []
+		member["state"] = STATE_SELECTING_TARGET
+		return
+	# Access cell busy — queue one cell short. The member is at the
+	# penultimate path cell (never stepped onto the occupied access cell).
+	_enter_queueing(member, target)
 
 
-## Enters USING at the access cell. The skeleton has no reservation
-## occupancy — the member is simply on the access cell (Story 003 owns the
-## occupant/next_claimant mechanics). use_ticks_remaining is rolled once.
+## Story 003 QUEUEING (Core Rule 4). The member stands one cell short of the
+## access cell, holding the equipment's single next_claimant slot. Each tick:
+##   - occupant released (null) + this member holds next_claimant -> step
+##     onto the access cell, claim occupant (clears next_claimant), -> USING
+##   - occupant still active -> patience countdown; on 0 -> calm give-up:
+##     release next_claimant the SAME tick (TR-MS-005 / AC5), reselect.
+##     (The short-term no-repeat blacklist that prevents give-up flip-flop
+##     belongs to Story 004 — documented seam.)
+func _on_queueing(member: Dictionary) -> void:
+	var target := int(member["target_equipment_instance_id"])
+	var rec: Variant = reservations.get(target) if target >= 0 else null
+	var member_id := int(member["member_id"])
+	if rec is Dictionary and rec["occupant"] == null and rec["next_claimant"] == member_id:
+		# The occupant released — step onto the access cell and start using.
+		var access_cells: Array = _grid.get_access_cells(target)
+		if access_cells.is_empty():
+			_release_reservation(member)
+			member["target_equipment_instance_id"] = -1
+			member["cached_path"] = []
+			member["state"] = STATE_SELECTING_TARGET
+			return
+		member["cell"] = access_cells[0]
+		_become_occupant(member, target)
+		_start_using(member)
+		return
+	if not (rec is Dictionary) or rec["next_claimant"] != member_id:
+		# Defensive: the claim is gone (equipment deleted / claim lost) —
+		# release and reselect rather than queue forever.
+		_release_reservation(member)
+		member["target_equipment_instance_id"] = -1
+		member["cached_path"] = []
+		member["state"] = STATE_SELECTING_TARGET
+		return
+	# Occupant still active — patience countdown (GDD Formulas; drawn once on
+	# entering QUEUEING). Calm give-up on exhaustion (Pillar 2): release the
+	# queue slot the SAME tick, reselect elsewhere.
+	member["patience_ticks_remaining"] = int(member["patience_ticks_remaining"]) - 1
+	if int(member["patience_ticks_remaining"]) <= 0:
+		_release_reservation(member)  # TR-MS-005: next_claimant null same tick
+		member["target_equipment_instance_id"] = -1
+		member["cached_path"] = []
+		member["state"] = STATE_SELECTING_TARGET
+
+
+## Enters USING at the access cell. Story 003: the caller has already
+## claimed `occupant` in the reservation map (_handle_arrival /
+## _on_queueing) — the member physically occupies the access cell.
+## use_ticks_remaining is rolled once.
 func _start_using(member: Dictionary) -> void:
 	member["state"] = STATE_USING
 	member["use_ticks_remaining"] = _roll_use_duration()
@@ -645,14 +863,17 @@ func _start_using(member: Dictionary) -> void:
 
 ## USING: counts down the use duration. Only SUCCESSFULLY completed uses
 ## count toward the visit quota (GDD Formulas — abandoned queues neither
-## count nor reset). On completion: the used equipment becomes the member's
-## most-recently-used (Story 002 novelty tracking — suppresses immediate
-## repeats via novelty_factor_i), then quota met -> LEAVING, else
-## SELECTING_TARGET.
+## count nor reset). On completion:
+##   - Story 003: release the `occupant` claim FIRST (same tick) so a
+##     QUEUEING next_claimant holder can step in; then
+##   - the used equipment becomes the member's most-recently-used (Story 002
+##     novelty tracking — suppresses immediate repeats), and
+##   - quota met -> LEAVING, else SELECTING_TARGET.
 func _on_using(member: Dictionary) -> void:
 	member["use_ticks_remaining"] = int(member["use_ticks_remaining"]) - 1
 	if int(member["use_ticks_remaining"]) > 0:
 		return
+	_release_reservation(member)  # Story 003: occupant claim released same tick
 	if int(member["target_equipment_instance_id"]) >= 0:
 		_record_recently_used(member, int(member["target_equipment_instance_id"]))
 	member["exercises_done"] = int(member["exercises_done"]) + 1
@@ -700,7 +921,12 @@ func _on_leaving(member: Dictionary, to_remove: Array) -> void:
 
 
 ## Enters LEAVING. Records WHY (drives S5) and arms the safety timeout.
+## Story 003: releases any reservation claim this member still holds
+## (occupant from USING quota-met, or next_claimant on any leave path) —
+## the release invariant (TR-MS-005) must hold for EVERY exit, never just
+## the WALKING_TO/QUEUEING transitions.
 func _begin_leaving(member: Dictionary, reason: String) -> void:
+	_release_reservation(member)
 	member["state"] = STATE_LEAVING
 	member["leaving_reason"] = reason
 	member["leaving_timeout_ticks"] = _leaving_timeout_ticks
@@ -711,7 +937,10 @@ func _begin_leaving(member: Dictionary, reason: String) -> void:
 ## Terminal transition: marks the member GONE (removed at tick end; the id is
 ## retired forever — TR-MS-012) and emits S5 exactly once, ONLY for quota-met
 ## departures (ADR-0005 — walk-failure/patience-exhaust earn nothing).
+## Story 003 defensive: a despawned member must never leave a stale claim
+## behind (deadlock prevention — TR-MS-005).
 func _mark_gone(member: Dictionary, to_remove: Array) -> void:
+	_release_reservation(member)
 	member["state"] = STATE_GONE
 	if str(member.get("leaving_reason", "")) == REASON_QUOTA_MET:
 		member_completed_visit.emit(int(member["member_id"]))
@@ -751,6 +980,7 @@ func _spawn_member() -> void:
 		"target_equipment_instance_id": -1,
 		"cached_path": [],
 		"leaving_timeout_ticks": 0,
+		"patience_ticks_remaining": 0,  # Story 003: rolled on entering QUEUEING
 		"recently_used_ids": [],
 	}
 	members.append(member)
@@ -787,6 +1017,119 @@ func _roll_use_duration() -> int:
 	return clampi(roundi(raw), _use_duration_min_ticks, _use_duration_max_ticks)
 
 
+## GDD Formulas: patience_threshold_ticks = round(Uniform(patience_min_ticks,
+## patience_max_ticks)), drawn ONCE on entering QUEUEING (Story 003). The
+## countdown is the calm give-up knob (Pillar 2); the give-up blacklist is
+## Story 004.
+func _roll_patience() -> int:
+	return roundi(_rng().randf_range(float(_patience_min_ticks), float(_patience_max_ticks)))
+
+
+# === Story 003 — access-cell reservation map (Core Rule 4 / TR-MS-004..006) ===
+
+## Get-or-create the reservation record for [instance_id]. Records are ONLY
+## created here (claim path) — reads elsewhere use reservations.get() so a
+## never-claimed machine never appears in the map. Keyed access only: the
+## map is never iterated for behavior (TR-MS-006 — Dictionary iteration is
+## engine-ordered).
+func _reservation(instance_id: int) -> Dictionary:
+	if not reservations.has(instance_id):
+		reservations[instance_id] = {"occupant": null, "next_claimant": null}
+	return reservations[instance_id]
+
+
+## True when [instance_id]'s queue slot is already claimed by a DIFFERENT
+## member — the "fully spoken for" exclusion (Core Rule 3 step 1 /
+## TR-MS-004). A busy machine with a free queue slot is NOT fully spoken for
+## (a member may claim the slot and queue). The member's OWN claim never
+## excludes the machine from its own pool ("held by someone else" — the AC3
+## redraw contract); the release-before-reselect invariant means a
+## SELECTING_TARGET member holds no claim anyway.
+func _fully_spoken_for(instance_id: int, member_id: int) -> bool:
+	var rec: Variant = reservations.get(instance_id)
+	return rec is Dictionary and rec["next_claimant"] != null and rec["next_claimant"] != member_id
+
+
+## True when ANY placed instance's queue slot is claimed by another member.
+## Called only when the candidate pool came up empty, to distinguish "no
+## reachable equipment at all" (-> LEAVING, AC1) from "every remaining
+## machine's queue slot is claimed by another member" (-> stay
+## SELECTING_TARGET and retry — the AC3 QA edge). Iterates placed instances
+## in ASCENDING id order — never the reservations map itself (TR-MS-006).
+func _any_fully_spoken_for() -> bool:
+	var instances: Array = _grid.get_placed_instances()
+	var ids: Array[int] = []
+	for inst in instances:
+		ids.append(int(inst.instance_id))
+	ids.sort()
+	for instance_id in ids:
+		var rec: Variant = reservations.get(instance_id)
+		if rec is Dictionary and rec["next_claimant"] != null:
+			return true
+	return false
+
+
+## Claim rule (Core Rule 4): a member may set next_claimant iff it is
+## currently null — whether or not occupant is null (a free machine -> walk
+## and become occupant; a busy machine -> become the single queue slot).
+## Returns false when the slot is taken (race lost — the caller stays in
+## SELECTING_TARGET, no partial state committed; TR-MS-006).
+func _claim_next_claimant(instance_id: int, member_id: int) -> bool:
+	var rec := _reservation(instance_id)
+	if rec["next_claimant"] != null:
+		return false
+	rec["next_claimant"] = member_id
+	return true
+
+
+## Release invariant (TR-MS-005): clears EVERY claim this member holds on
+## its current target — occupant (USING completion) or next_claimant
+## (WALKING_TO abort / QUEUEING give-up) — so the same tick that a member
+## leaves WALKING_TO or QUEUEING without becoming occupant leaves
+## reservations[E].next_claimant null (deadlock prevention). Self-healing by
+## member_id match: a claim held by ANOTHER member is never touched. No-op
+## when the member holds nothing (idempotent — safe to call on every exit).
+func _release_reservation(member: Dictionary) -> void:
+	var target := int(member.get("target_equipment_instance_id", -1))
+	if target < 0:
+		return
+	var rec: Variant = reservations.get(target)
+	if not (rec is Dictionary):
+		return
+	var member_id := int(member["member_id"])
+	if rec["occupant"] != null and int(rec["occupant"]) == member_id:
+		rec["occupant"] = null
+	if rec["next_claimant"] != null and int(rec["next_claimant"]) == member_id:
+		rec["next_claimant"] = null
+
+
+## Core Rule 4 "On arrival": the member claims occupancy of the access cell —
+## occupant = self, next_claimant cleared (the FIFO of exactly one
+## completes). The caller positions the member ON the access cell.
+func _become_occupant(member: Dictionary, instance_id: int) -> void:
+	var rec := _reservation(instance_id)
+	rec["occupant"] = int(member["member_id"])
+	rec["next_claimant"] = null
+
+
+## Enters QUEUEING at the member's CURRENT cell — the one-cell-short queue
+## position (never the occupied access cell; AC16 sprite rule). Rolls the
+## patience threshold once (GDD Formulas).
+func _enter_queueing(member: Dictionary, instance_id: int) -> void:
+	member["cached_path"] = []
+	member["patience_ticks_remaining"] = _roll_patience()
+	member["state"] = STATE_QUEUEING
+
+
+## True when [instance_id]'s access cell is physically occupied (its
+## reservation has a live occupant). Used to decide whether the last walk
+## hop may step onto the access cell (AC16 — never step onto an occupied
+## access cell).
+func _access_busy(instance_id: int) -> bool:
+	var rec: Variant = reservations.get(instance_id)
+	return rec is Dictionary and rec["occupant"] != null
+
+
 ## Returns the full MemberSim state as a JSON-safe Dictionary:
 ##   { counter: int, members: Array, member_id_counter: int,
 ##     rng_state: "0x…" }
@@ -795,6 +1138,11 @@ func _roll_use_duration() -> int:
 ## roster entries and full state-machine records alike — so both shapes
 ## round-trip unchanged (the integration tests' byte-identical contract).
 ## rng_state is the CURRENT sub-stream state (hex per ADR-0002).
+##
+## Story 003 note: the reservation map is deliberately NOT serialized here —
+## Core Rule 7 rebuilds it from members' claim flags on load (Story 005 owns
+## that contract). Until then a loaded member mid-claim degrades gracefully
+## through the defensive release+reselect branches.
 func serialize() -> Dictionary:
 	if not _assert_initialized():
 		return {}
