@@ -1,12 +1,12 @@
 # Story 006: Provisional Cost Formula
 
 > **Epic**: equipment-catalog
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Foundation
 > **Type**: Logic
 > **Estimate**: [hours or t-shirt size — fill before sprint planning]
 > **Manifest Version**: 2026-07-23
-> **Last Updated**: [set by /dev-story when implementation begins]
+> **Last Updated**: 2026-08-02
 
 ## Context
 
@@ -31,10 +31,10 @@
 
 *From GDD `design/gdd/equipment-catalog.md` §Formulas:*
 
-- [ ] AC-D.3 [BLOCKING][Logic] GIVEN footprint_area ∈ {1, 2, 4} AND base_cost=200, tier_step=150, WHEN provisional_equipment_cost computed, THEN outputs 200/350/650 respectively
-- [ ] AC-D.4 [ADVISORY][Code Review] GIVEN provisional_equipment_cost formula is still marked as PROVISIONAL, WHEN Economy/Shop GDD (#11/#12) lands, THEN this formula's status must be re-evaluated — must not silently persist as final
-- [ ] AC-PROV.1 [BLOCKING][Logic] GIVEN a definition with footprint_area=2, WHEN get_definition(id).cost is queried, THEN the returned cost matches the formula output (350 with MVP defaults), not a hardcoded value from JSON
-- [ ] AC-PROV.2 [BLOCKING][Logic] GIVEN base_cost and tier_step are parameterized (not hardcoded), WHEN base_cost=100, tier_step=50, THEN formula outputs 100/150/250 for footprint_area 1/2/4
+- [x] AC-D.3 [BLOCKING][Logic] GIVEN footprint_area ∈ {1, 2, 4} AND base_cost=200, tier_step=150, WHEN provisional_equipment_cost computed, THEN outputs 200/350/650 respectively
+- [x] AC-D.4 [ADVISORY][Code Review] GIVEN provisional_equipment_cost formula is still marked as PROVISIONAL, WHEN Economy/Shop GDD (#11/#12) lands, THEN this formula's status must be re-evaluated — must not silently persist as final
+- [x] AC-PROV.1 [BLOCKING][Logic] GIVEN a definition with footprint_area=2, WHEN get_definition(id).cost is queried, THEN the returned cost matches the formula output (350 with MVP defaults), not a hardcoded value from JSON
+- [x] AC-PROV.2 [BLOCKING][Logic] GIVEN base_cost and tier_step are parameterized (not hardcoded), WHEN base_cost=100, tier_step=50, THEN formula outputs 100/150/250 for footprint_area 1/2/4
 
 ---
 
@@ -132,7 +132,16 @@ static func validate_cost(cost: int, expected_from_formula: int = -1) -> Validat
 **Required evidence**:
 - `tests/unit/equipment_catalog/catalog_cost_formula_test.gd` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing (2026-08-02)
+
+**Test Evidence**: Full suite 700/700 (was 675). New files:
+- `src/systems/equipment_cost_formula.gd` — dedicated static utility class `EquipmentCostFormula` (TR-EC-008). `compute_provisional_cost(footprint_cells, base_cost, tier_step)` with PROVISIONAL-prefixed constants; cost = base + tier × (area − 1).
+- `tests/unit/equipment_catalog/catalog_cost_formula_test.gd` — 25 assertions, 0 failures. AC-D.3 (area 1/2/4 → 200/350/650 with defaults; exactly 3 distinct MVP outputs), AC-PROV.1 (catalog `get_definition(id).cost` == 350 for 1×2 == formula output; same construction path verified for 200/650; static check: formula body is the parameterized expression, no embedded price table), AC-PROV.2 (base=100/tier=50 → 100/150/250, both direct and through a frozen catalog), AC-D.4 (static source check: PROVISIONAL_ constant prefix, deprecation trigger named, AC-D.4 checkpoint referenced).
+
+**Decisions recorded at close**:
+1. **The formula is a dedicated static class (`EquipmentCostFormula`), NOT a method on `EquipmentCatalog` or `EquipmentDef`** — the Story 001 test (AC-C.8) statically asserts the catalog's public API is exactly the 3 read-only queries via `get_script_method_list()`, and a public static method would appear in that list and break the check; `EquipmentDef` is a logic-free DTO per its charter. The loader (Story 002) calls `EquipmentCostFormula.compute_provisional_cost()` at EquipmentDef construction time when a JSON entry omits "cost" — the formula applies at construction, not during loading (Story 002 Out of Scope confirms this delegation).
+2. **`validate_cost()` (the "from Story 004 pipeline" sketch in this story's notes) is NOT implemented here** — it references `ValidationResult`, which is Story 004's type and does not exist yet; cost-boundary validation (AC-E.2, cost<0 rejected / cost=0 allowed) is explicitly Story 007's scope (its AC-E.2 and QA test cases own `validate_cost`). This story only delivers the cost FORMULA; validation is wired in by the loader stories.
+3. **AC-D.4 is advisory/Code Review, verified as a static source check** in the test (constant naming, PROVISIONAL marker, deprecation trigger text) — the runtime checkpoint remains the Economy GDD landing process, and the marker is embedded in the class header so code review cannot miss it.
 
 ---
 

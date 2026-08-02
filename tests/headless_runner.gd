@@ -25,6 +25,7 @@ const TEST_FILES := [
 	"tests/unit/grid_system/grid_system_signals_test.gd",
 	"tests/unit/grid_system/grid_system_guardrail_test.gd",
 	"tests/unit/equipment_catalog/equipment_def_catalog_test.gd",
+	"tests/unit/equipment_catalog/catalog_cost_formula_test.gd",
 	"tests/integration/grid_system/grid_serialization_test.gd",
 	"tests/integration/grid_system/grid_navigation_solidity_test.gd",
 	"tests/integration/grid_system/grid_perf_drag_smoke_test.gd",
