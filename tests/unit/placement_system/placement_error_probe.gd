@@ -20,6 +20,9 @@
 #                       ROTATION_AFTER=1080 (never laundered)
 #   "corrupt_45"      — same with 45
 #   "corrupt_neg90"   — same with -90
+#   "relocate_while_dragging" — begin_drag(A) then begin_relocate(0): expect
+#                       push_error (AC27) AND STATE_AFTER=1 (still DRAGGING,
+#                       no-op) AND RELOCATE_AFTER=-1 (no relocate started)
 #
 # Output contract:
 #   stdout+stderr merged contains "ERROR:" iff push_error fired.
@@ -69,6 +72,17 @@ func _init() -> void:
 			ps.call("_test_set_rotation_unchecked", -90)
 			ps.call("on_rotate_pressed")
 			print("ROTATION_AFTER=%d" % ps.get("_rotation"))
+		"relocate_while_dragging":
+			# AC27: begin_relocate while DRAGGING must push_error and no-op.
+			# Seed the instance map by placing a piece first (id 0), then
+			# start a new-placement drag, then attempt begin_relocate(0).
+			ps.call("begin_drag", "treadmill_01")
+			ps.call("on_mouse_moved", Vector2i(3, 3))
+			ps.call("on_drop")
+			ps.call("begin_drag", "treadmill_01")  # now DRAGGING
+			ps.call("begin_relocate", 0)
+			print("STATE_AFTER=%d" % ps.get("_state"))
+			print("RELOCATE_AFTER=%d" % ps.get("_relocate_id"))
 		_:
 			printerr("PROBE ERROR: unknown mode '%s'" % mode)
 			quit(2)

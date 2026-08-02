@@ -28,6 +28,7 @@ const TEST_FILES := [
 	"tests/unit/placement_system/commit_success_test.gd",
 	"tests/unit/placement_system/reject_cancel_test.gd",
 	"tests/unit/placement_system/instance_id_resume_test.gd",
+	"tests/unit/placement_system/relocate_flow_test.gd",
 	"tests/unit/time_system/orchestrator_tick_dispatch_test.gd",
 	"tests/unit/time_system/tick_accumulator_test.gd",
 	"tests/unit/time_system/lsr_helper_test.gd",

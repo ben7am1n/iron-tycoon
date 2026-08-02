@@ -5,21 +5,29 @@
 ##   PL-001 (merged base): drag lifecycle — start / live preview / rotation.
 ##     Drag initiation, per-cell `can_place` preview with zero writes, and
 ##     rotation normalization via `((rotation + 90) % 360) as Rotation`.
-##   PL-002 (THIS STORY): commit-on-drop success path — on_drop() runs
+##   PL-002 (merged base): commit-on-drop success path — on_drop() runs
 ##     can_place, allocates the next instance_id, calls GridSystem.commit(),
 ##     and emits placement_committed exactly once AFTER commit() returns
-##     (Core Rule 5, TR-PS-003, ADR-0005 S3). The rejected-drop emission
-##     (placement_rejected, S4) is Story 003's domain — this story's fail
-##     branch only guarantees the no-write outcome (no id, no commit, no
-##     grid_changed, counter unchanged).
-##   PL-004 (sibling story, merged base): the `instance_id` monotonic
-##     counter and its resume-after-load recomputation. Included here as
-##     the shared file base so the sprint's parallel branches compose.
+##     (Core Rule 5, TR-PS-003, ADR-0005 S3).
+##   PL-003 (merged base): rejected drop + silent cancel — in-bounds
+##     can_place FAIL emits placement_rejected once with the raw fail_code
+##     (AC7/AC22); OOB drop / Escape / focus-loss are silent cancels emitting
+##     nothing (AC8/AC9/AC17/AC23).
+##   PL-004 (merged base): the `instance_id` monotonic counter and its
+##     resume-after-load recomputation.
+##   PL-005 (THIS STORY): relocate flow — begin_relocate(instance_id) picks
+##     up an already-committed piece, clears its occupancy at drag-start
+##     (grid_changed fires once; in-use members repath), re-commits under the
+##     SAME instance_id on a valid drop (counter untouched), and silently
+##     restores (anchor₀, rotation₀) on cancel / focus-loss / rejected drop
+##     (Core Rule 1a, TR-PS-008, AC20/24/25/26/27/30).
 ## Req:   TR-PS-001 (single interactive surface), TR-PS-002 (live preview
 ##        via GridSystem.can_place against REAL grid state, no mutation),
 ##        TR-PS-003 (commit-on-drop: can_place check, allocate instance_id,
 ##        GridSystem.commit, emit placement_committed), TR-PS-006/007
-##        (instance_id counter, no save-blob contribution)
+##        (instance_id counter, no save-blob contribution), TR-PS-008
+##        (relocate: clear at drag-start, re-commit same id, restore on
+##        cancel/reject)
 ## ADR:   ADR-0001 (DI Container & Scene Bootstrap — init(grid, catalog),
 ##        SimSystem two-phase init), ADR-0003 (GridStateReader Contract —
 ##        can_place / get_transformed_cells are GridSystem write/query
@@ -186,6 +194,32 @@ var _has_previewed: bool = false
 var _last_preview_cell: Vector2i = Vector2i.ZERO
 
 
+# === Relocate state (PL-005) ===
+
+## Session-scoped instance_id → equipment_id map (GDD Core Rule 1a,
+## TR-PS-008, AC20). GridSystem deliberately stores only integer occupant_id
+## (TR-GS; tech-debt register 2026-08-02), so PlacementSystem — the SOLE
+## allocator of instance_id — is the only system that knows which equipment
+## each instance is. Populated on every successful commit (new placement AND
+## relocate re-commit). begin_relocate(N) resolves the def via this map +
+## catalog. NOT serialized (TR-PS-007): after a load the map is empty until
+## pieces are re-placed this session; relocating a pre-load piece is a
+## documented limitation (the grid cannot recover equipment identity).
+var _instance_equipment: Dictionary = {}
+
+## The instance_id being relocated; -1 when no relocate is in flight. This is
+## the one case PlacementSystem holds transient knowledge of an EXISTING
+## instance_id — released when the drag resolves (GDD Core Rule 1a).
+var _relocate_id: int = -1
+
+## Original anchor of the relocated piece — the restore target for
+## cancel / focus-loss / rejected drop (AC24/AC26).
+var _relocate_anchor0: Vector2i = Vector2i.ZERO
+
+## Original rotation of the relocated piece (degree-valued Rotation int).
+var _relocate_rotation0: int = GridSystem.Rotation.R0
+
+
 ## Two-phase init (ADR-0001). Stores the injected grid and catalog.
 ## Exactly once — a second call is a hard error (SimSystem._mark_initialized
 ## guard). Signature carries NO time-system dependency (AC18: the system
@@ -226,6 +260,69 @@ func begin_drag(equipment_id: String) -> void:
 		return
 	_drag_def = def
 	_rotation = GridSystem.Rotation.R0  # AC19: every new drag starts at R0
+	_anchor = Vector2i.ZERO
+	_preview = TransformedFootprint.new()
+	_has_previewed = false
+	_last_preview_cell = Vector2i.ZERO
+	_state = DragState.DRAGGING
+
+
+## RELOCATE FLOW — begin (Core Rule 1a, TR-PS-001 relocate half, TR-PS-008).
+##
+## Picks up an already-committed piece [instance_id] (the piece SelectionSystem
+## selected for Move). Sequence (ADR-0001/0003/0005 implementation notes):
+##   1. Resolve the piece's equipment_id from PlacementSystem's OWN session
+##      map (_instance_equipment — GridSystem stores only integer occupant_id
+##      by design, TR-GS) and load the def from the catalog.
+##   2. Read the piece's current anchor₀/rotation₀ from GridSystem via the
+##      granted read surface (get_placed_instances → PlacedInstance).
+##   3. Clear occupancy IMMEDIATELY via GridSystem.clear(instance_id) — fires
+##      grid_changed once; in-use members repath per MemberSim's
+##      equipment-deleted-mid-use handling (AC30 observable at drag-start).
+##   4. Enter the SAME DRAGGING state as a new placement, seeded with the
+##      piece's EXISTING rotation (relocate preserves facing — NOT R0).
+##
+## Restore bookkeeping: anchor₀/rotation₀ are held in _relocate_anchor0 /
+## _relocate_rotation0 for the whole drag; on cancel / focus-loss / rejected
+## drop they drive GridSystem.commit(N, def, anchor₀, rotation₀) — the piece
+## is restored under the SAME instance_id (AC24/AC26).
+##
+## AC27: while ALREADY DRAGGING (any source — including another relocate), this
+## is a NO-OP: push_error() fires, state stays DRAGGING, the in-flight drag is
+## undisturbed, and the piece at [instance_id] remains at its grid position
+## untouched. Unknown instance_id (not in this session's map): push_error() and
+## stay IDLE — never begin a relocate with no recoverable def.
+func begin_relocate(instance_id: int) -> void:
+	if not _assert_initialized():
+		return
+	if _state == DragState.DRAGGING:
+		# AC27: no-op while a drag is in flight — fail loudly, change nothing.
+		push_error("PlacementSystem: begin_relocate() ignored — already DRAGGING (AC27).")
+		return
+	if not _instance_equipment.has(instance_id):
+		push_error("PlacementSystem: begin_relocate() — unknown instance_id %d (not placed this session)." % instance_id)
+		return
+	var equipment_id: String = _instance_equipment[instance_id]
+	var def: EquipmentDef = _catalog.get_definition(equipment_id)
+	if def == null:
+		push_error("PlacementSystem: begin_relocate() — catalog lost definition for '%s'." % equipment_id)
+		return
+	# Read current anchor₀/rotation₀ via the granted read surface (ADR-0003).
+	var placed := _find_placed_instance(instance_id)
+	if placed == null:
+		# Map says we placed it but the grid has no record — state corruption.
+		push_error("PlacementSystem: begin_relocate() — instance_id %d has no grid record." % instance_id)
+		return
+	# Restore bookkeeping BEFORE clearing (the record is gone after clear()).
+	_relocate_id = instance_id
+	_relocate_anchor0 = placed.anchor
+	_relocate_rotation0 = placed.rotation
+	# Core Rule 1a: clear occupancy NOW — grid_changed fires once; in-use
+	# members repath (AC30). During the drag the piece is absent from the grid.
+	_grid.clear(instance_id)
+	# Enter the SAME DRAGGING state, seeded with the EXISTING rotation.
+	_drag_def = def
+	_rotation = placed.rotation as GridSystem.Rotation
 	_anchor = Vector2i.ZERO
 	_preview = TransformedFootprint.new()
 	_has_previewed = false
@@ -310,6 +407,12 @@ func on_drop() -> void:
 		return
 	if _state != DragState.DRAGGING:
 		return
+	if _relocate_id != -1:
+		# Relocate drop resolution — separate path from new-placement drop
+		# (AC25/AC26: same-id re-commit or silent restore, NEVER
+		# placement_rejected, counter untouched).
+		_resolve_relocate_drop()
+		return
 	# QA edge (AC6): drop with zero mouse moves since drag start — no cell was
 	# ever entered (_has_previewed stays false), so there is nothing to
 	# commit; treat as a silent cancel: no id, no commit, no signal.
@@ -346,10 +449,72 @@ func on_drop() -> void:
 	)
 	_grid.commit(instance_id, transformed.footprint_cells, transformed.access_cells, _rotation)
 	_next_instance_id += 1  # consumed ONLY on a successful commit (Core Rule 7)
+	# PL-005: record instance → equipment so a later begin_relocate(N) can
+	# recover the def (GridSystem stores no equipment type — TR-GS).
+	_instance_equipment[instance_id] = _drag_def.id
 	# Exactly 3 args — arity must match the signal declaration (AC21).
 	# equipment_id comes from the held def (catalog data is immutable, AC1);
 	# the def is non-null here because DRAGGING state implies begin_drag passed.
 	placement_committed.emit(instance_id, _drag_def.id, transformed.footprint_cells)
+	_clear_drag()
+
+
+## RELOCATE DROP RESOLUTION (Core Rule 1a, AC25/AC26) — the drop branch taken
+## while _relocate_id != -1 (a relocate drag is in flight).
+##
+## Three-way resolution, all under the SAME instance_id:
+##   - no cell entered (zero mouse moves) or drop OUTSIDE bounds  → silent
+##     restore (AC24's cancel family — the piece must never stay absent)
+##   - can_place FAIL (rejected drop) → silent restore (AC26 — a rejected
+##     relocate-drop is treated identically to a cancel: NO placement_rejected,
+##     the piece returns to (anchor₀, rotation₀))
+##   - can_place VALID → GridSystem.commit(N, def, anchor₁, rotation₁) with the
+##     SAME id N (AC25a) — grid_changed fires once via commit(), then emit
+##     placement_committed(N, equipment_id, new_footprint) (AC25c). The
+##     next_instance_id counter is NEVER touched (AC25e).
+func _resolve_relocate_drop() -> void:
+	# Zero-move or OOB drop → silent restore (cancel family, AC24).
+	if not _has_previewed or not _grid.is_in_bounds(_anchor):
+		_restore_relocate()
+		return
+	var check: PlacementCheckResult = _grid.can_place(
+		_drag_def.footprint_cells, _drag_def.access_cells, _anchor, _rotation
+	)
+	if not check.valid:
+		# AC26: rejected relocate-drop → silent restore. Unlike a new-placement
+		# reject, NO placement_rejected is emitted — the player already owns the
+		# piece and it has a safe home to return to.
+		_restore_relocate()
+		return
+	# AC25: valid drop → re-commit under the SAME instance_id. Fresh
+	# can_place at drop time; commit() is legal because begin_relocate's
+	# clear() removed N from the reverse index (AC-C7.2 duplicate check).
+	var transformed: TransformedFootprint = _grid.get_transformed_cells(
+		_drag_def.footprint_cells, _drag_def.access_cells, _anchor, _rotation
+	)
+	var relocate_id := _relocate_id
+	_grid.commit(relocate_id, transformed.footprint_cells, transformed.access_cells, _rotation)
+	# Counter NOT incremented — re-commit reuses N (AC25e). Map stays in sync.
+	_instance_equipment[relocate_id] = _drag_def.id
+	# Exactly 3 args (AC21 arity rule applies to relocate commits too). The
+	# piece is absent from the grid during the drag and re-appears here; emit
+	# AFTER commit() returns, exactly like the new-placement path.
+	placement_committed.emit(relocate_id, _drag_def.id, transformed.footprint_cells)
+	_clear_drag()
+
+
+## SILENT RESTORE (AC24/AC26) — the cancel / focus-loss / rejected-drop /
+## zero-move / OOB resolution for a relocate drag. Restores the piece to its
+## original (anchor₀, rotation₀) under the SAME instance_id via
+## GridSystem.commit(N, ...) — GridSystem fires grid_changed once (occupancy
+## restored cell-for-cell). Emits NEITHER placement_committed NOR
+## placement_rejected (AC24's "no new-id signals"; AC26's relocate-reject-is-
+## silent rule). Counter untouched.
+func _restore_relocate() -> void:
+	var transformed: TransformedFootprint = _grid.get_transformed_cells(
+		_drag_def.footprint_cells, _drag_def.access_cells, _relocate_anchor0, _relocate_rotation0
+	)
+	_grid.commit(_relocate_id, transformed.footprint_cells, transformed.access_cells, _relocate_rotation0)
 	_clear_drag()
 
 
@@ -375,15 +540,24 @@ func on_focus_lost() -> void:
 ## neither placement_committed nor placement_rejected (AC9/AC17/AC23),
 ## regardless of the current cell's validity. No id, no commit(), no
 ## grid_changed, counter untouched. No-op while IDLE.
+##
+## Relocate variant (PL-005): while a relocate drag is in flight, cancel /
+## focus-loss RESTORES the piece to (anchor₀, rotation₀) under the same
+## instance_id (AC24) — a relocate cancel is not destructive to the grid, and
+## the restore is silent (no placement signals).
 func _cancel_drag() -> void:
 	if _state != DragState.DRAGGING:
+		return
+	if _relocate_id != -1:
+		# AC24: cancel a relocate → silent restore to the original position.
+		_restore_relocate()
 		return
 	_clear_drag()
 
 
 ## Resets all drag-scoped state to IDLE. Never touches the instance_id
 ## counter and never emits any signal — called from every drag-ending path
-## (commit, reject, silent cancel).
+## (commit, reject, silent cancel, relocate commit/restore).
 func _clear_drag() -> void:
 	_state = DragState.IDLE
 	_drag_def = null
@@ -392,6 +566,20 @@ func _clear_drag() -> void:
 	_preview = TransformedFootprint.new()
 	_has_previewed = false
 	_last_preview_cell = Vector2i.ZERO
+	_relocate_id = -1
+	_relocate_anchor0 = Vector2i.ZERO
+	_relocate_rotation0 = GridSystem.Rotation.R0
+
+
+## Finds the PlacedInstance DTO for [instance_id] via the granted read surface
+## (GridStateReader.get_placed_instances, ADR-0003) — the relocate flow reads
+## the piece's current anchor/rotation from here before clearing. Returns null
+## when the id is not on the grid.
+func _find_placed_instance(instance_id: int) -> PlacedInstance:
+	for placed in _grid.get_placed_instances():
+		if placed.instance_id == instance_id:
+			return placed
+	return null
 
 
 ## WHITE-BOX TEST SEAM (Story 001 / AC4 precondition) — test-only.
