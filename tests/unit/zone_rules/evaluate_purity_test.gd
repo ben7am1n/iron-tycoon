@@ -213,7 +213,14 @@ func _test_ac8_all_values_non_negative_worst_case_clutter() -> void:
 	_check(all_non_negative, "every instance row: comfort, zone_synergy, spaciousness, total >= 0 (never negative)")
 
 	_check(result[4]["comfort"] == 0.0, "def with no comfort tag earns comfort 0.0 (missing tag is 0, never negative)")
-	_check(result[5]["total"] == result[5]["comfort"], "combo piece total equals its comfort (synergy/spaciousness placeholders are 0)")
+	# Story 002 handoff: zone_synergy is now a real formula (Core Rules 5/6).
+	# The combo piece [strength,cardio] at (4,0) is edge-adjacent to the
+	# strength piece at (3,0) — they share "strength" (OR-match), so the combo
+	# piece earns synergy ≈ 0.451 (r = 1/4); spaciousness is still a 0.0
+	# placeholder (Story 003). total must be the pure sum of the three terms.
+	var combo_synergy: float = result[5]["zone_synergy"]
+	_check(abs(combo_synergy - 0.4512) < 1e-4, "Story 002: combo piece earns zone_synergy ≈ 0.451 from its same-zone (strength) neighbor (got %f)" % combo_synergy)
+	_check(result[5]["total"] == result[5]["comfort"] + result[5]["zone_synergy"] + result[5]["spaciousness"], "combo piece total == comfort + zone_synergy + spaciousness (pure sum of non-negative terms)")
 
 
 # === AC11: 空布局 ===
