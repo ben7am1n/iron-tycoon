@@ -32,6 +32,7 @@ const TEST_FILES := [
 	"tests/unit/placement_system/instance_id_resume_test.gd",
 	"tests/unit/placement_system/relocate_flow_test.gd",
 	"tests/unit/placement_system/is_dragging_cost_scope_test.gd",
+	"tests/unit/member_sim/lifecycle_state_machine_test.gd",
 	"tests/unit/navigation/config_basic_paths_test.gd",
 	"tests/unit/navigation/solidity_sync_test.gd",
 	"tests/unit/time_system/orchestrator_tick_dispatch_test.gd",
