@@ -1,13 +1,17 @@
-## MemberSim — member lifecycle state machine core (Story MS-001).
+## MemberSim — member lifecycle state machine core (Story MS-001) + weighted
+## target selection (Story MS-002).
 ##
 ## Story: member-sim / story-001-lifecycle-state-machine-core.md
+##        member-sim / story-002-target-selection-weighted-pick.md
 ## Req:   TR-MS-001 (tick-driven, runs FIRST; all randomness via the
 ##        get_rng("MemberSim") sub-stream), TR-MS-002 (lifecycle state machine:
 ##        ENTERING -> SELECTING_TARGET -> WALKING_TO -> [QUEUEING] -> USING ->
-##        LEAVING -> GONE), TR-MS-008 (arrival Bernoulli formula), TR-MS-009
-##        (use_duration formula), TR-MS-010 (exercises_per_visit formula),
-##        TR-MS-012 (member_id never reused), TR-MS-013 (entrance_cell /
-##        exit_cell hard dependency), TR-MS-014 (member_completed_visit S5)
+##        LEAVING -> GONE), TR-MS-003 (target selection: candidate pool,
+##        weight from Congestion(t-1)/distance/novelty, top-K=3-5, path-check,
+##        weighted-random draw), TR-MS-008 (arrival Bernoulli formula),
+##        TR-MS-009 (use_duration formula), TR-MS-010 (exercises_per_visit
+##        formula), TR-MS-012 (member_id never reused), TR-MS-013 (entrance_cell
+##        / exit_cell hard dependency), TR-MS-014 (member_completed_visit S5)
 ## ADR:   ADR-0003 (GridStateReader read surface — occupancy/access reads go
 ##        through the typed read-only contract, never internal representation),
 ##        ADR-0004 (SeededRNG sub-stream — fixed RNG consumption order:
@@ -21,9 +25,9 @@
 ## contract surface SaveLoad depends on is preserved exactly:
 ##   - class_name MemberSim extends SimSystem
 ##   - init(orchestrator, seeded_rng) — extra OPTIONAL parameters (the state
-##     machine's grid/navigation/catalog/entrance/exit/config) default to null
-##     so pre-wiring call sites keep working; TR-MS-013 says the composition
-##     root supplies entrance/exit at init.
+##     machine's grid/navigation/catalog/entrance/exit/config/congestion_reader
+##     default to null so pre-wiring call sites keep working; TR-MS-013 says
+##     the composition root supplies entrance/exit at init).
 ##   - system_name() == "MemberSim"
 ##   - on_tick(tick_count: int) -> void  (the orchestrator's fixed dispatch)
 ##   - serialize() / deserialize(data, validate_only, known_instance_ids)
@@ -42,16 +46,51 @@
 ## the byte-identical determinism contract of the existing integration tests
 ## while the real machine ships.
 ##
-## STATE MACHINE SCOPE (skeleton): the full transition list per Core Rule 2.
-## Deliberately deferred to neighbouring stories and NOT implemented here:
+## STATE MACHINE SCOPE (skeleton + weighted selection): the full transition
+## list per Core Rule 2. Deliberately deferred to neighbouring stories and
+## NOT implemented here:
 ##   - QUEUEING + the access-cell reservation map        -> Story 003
-##   - weighted target pick / candidate pool / top-K     -> Story 002
 ##   - grid_version path invalidation / patience give-up -> Story 004
 ##   - full serialization of member state                -> Story 005
-## The skeleton resolves target selection to the FIRST reachable candidate in
-## ascending equipment_instance_id order (deterministic; Core Rule 6 / AC20's
-## tie-break) and walks straight to USING on arrival (no queue slot — story
-## 003 owns that).
+## Story 002 (this file) implements the weighted target pick — Core Rule 3:
+##   candidate pool (all placed instances ascending equipment_instance_id —
+##   reservation "fully spoken for" filter is Story 003, no-repeat blacklist
+##   is Story 004) -> weight per candidate -> sort desc with deterministic
+##   tie-break by ascending id -> top-K (config, 3-5) -> path-check the K in
+##   ascending id order -> renormalize over survivors -> ONE rng.randf()
+##   weighted draw. Reservation claim is the call boundary (Story 003).
+##
+## CONGESTION READER SEAM (TR-MS-003 / AC11): the weight consumes
+## `Congestion(t-1)` — the PRE-update value — as a per-equipment-instance
+## scalar in [0,1]. The real Congestion system (congestion epic story 001)
+## owns the double-buffered prev/next state and exposes the read surface
+## `per_equipment_congestion(equipment_instance_id) -> float` serving from
+## the `prev` buffer during the whole tick. MemberSim receives that reader as
+## an optional init dependency (duck-typed object — the class does not exist
+## in src/ yet). When absent, congestion is treated as 0.0 (neutral), which
+## keeps the pre-wiring and MS-001-era rigs deterministic. Tick ORDER (the
+## [INT] half of AC11: MemberSim before Congestion in _advance_tick()) is
+## pinned textually by SimulationOrchestrator.FIXED_TICK_ORDER and verified
+## by tests/unit/member_sim/tick_order_test.gd.
+##
+## WEIGHT FORMULA (Core Rule 3 / GDD Formulas):
+##   weight_i = BASE_WEIGHT × exp(-k_congestion × Congestion_i(t-1))
+##              × exp(-k_proximity × dist_i / D_max)
+##              × novelty_factor_i × pref_noise_i
+##   - dist_i = Chebyshev distance (cells) from the member to the access cell
+##     — the geometric proxy, NOT the pathfinding length: Core Rule 3 forbids
+##     pathfinding every candidate (top-K guardrail), so the weight is
+##     computed before any get_path(); exact reachability is verified only
+##     for the top-K.
+##   - novelty_factor_i ∈ {0.2 just-used, 0.6 recent, 1.0} — suppressed
+##     immediate repeats via the member's recently_used_ids (updated on each
+##     completed use).
+##   - pref_noise_i = the member's stored preference_profile.preference_noise
+##     (Uniform(0.85, 1.15), rolled at spawn).
+##   - WEIGHT_EPSILON floor keeps every weight strictly positive — fully
+##     congested floors never zero out (AC12: no divide-by-zero, no NaN).
+##   - Config keys: k_congestion (3), k_proximity (0.2), D_max (16),
+##     top_k (4). See class-header CONFIG_* block.
 ##
 ## AC1 / QA "wanders ~20 ticks" NOTE: the story QA edge case describes an
 ## empty gym as "member wanders ~20 ticks then leaves calmly". The BLOCKING
@@ -104,6 +143,18 @@ const CONFIG_EXERCISES_MEAN := "exercises_mean"
 const CONFIG_EXERCISES_STDDEV := "exercises_stddev"
 const CONFIG_EXERCISES_MIN := "exercises_min"
 const CONFIG_EXERCISES_MAX := "exercises_max"
+const CONFIG_K_CONGESTION := "k_congestion"
+const CONFIG_K_PROXIMITY := "k_proximity"
+const CONFIG_D_MAX := "D_max"
+const CONFIG_TOP_K := "top_k"
+
+## Weight formula constants (Core Rule 3 / GDD Formulas — see class header).
+const BASE_WEIGHT := 1.0
+const WEIGHT_EPSILON := 1e-9  # strict positivity floor — AC12 (no NaN, no 0)
+const NOVELTY_JUST_USED := 0.2
+const NOVELTY_RECENT := 0.6
+const NOVELTY_FRESH := 1.0
+const NOVELTY_RECENT_WINDOW := 3  # track the last 3 used ids (just-used + 2 recent)
 
 ## S5 in the ADR-0005 Signal Catalog. Fires exactly once per quota-met
 ## departure, when the member transitions to GONE — NEVER on walk-failure
@@ -129,7 +180,9 @@ var _seeded_rng: SeededRNG
 ##       {member_id, state, cell: Vector2i, exercises_done, exercises_per_visit,
 ##        preference_profile: Dictionary, target_equipment_instance_id,
 ##        cached_path: Array[Vector2i], leaving_timeout_ticks,
-##        use_ticks_remaining (USING only), leaving_reason (LEAVING only)}
+##        use_ticks_remaining (USING only), leaving_reason (LEAVING only),
+##        recently_used_ids: Array (most-recent-first, capped at
+##        NOVELTY_RECENT_WINDOW — drives novelty_factor_i in Story 002)}
 var members: Array = []
 
 ## Per-tick counter. Kept from the SL-002 stub as an observable stand-in; the
@@ -151,6 +204,13 @@ var _catalog: EquipmentCatalog = null
 var _entrance_cell: Vector2i = Vector2i(-1, -1)  # (-1,-1) = not supplied
 var _exit_cell: Vector2i = Vector2i(-1, -1)      # (-1,-1) = not supplied
 
+## Congestion reader seam (Story 002 / TR-MS-003 / AC11). Duck-typed object
+## exposing `per_equipment_congestion(equipment_instance_id: int) -> float`
+## serving the PRE-update (t-1) value from Congestion's `prev` buffer. The
+## real Congestion class does not exist in src/ yet (congestion story 001);
+## when absent, congestion is treated as 0.0 (neutral) — never a crash.
+var _congestion_reader: Variant = null
+
 # === Tuning values (GDD Tuning Knobs anchors; see class header) ===
 var _max_concurrent_members: int = 15
 var _base_arrival_rate_per_min: float = 4.0
@@ -164,6 +224,10 @@ var _exercises_mean: float = 3.0
 var _exercises_stddev: float = 1.0
 var _exercises_min: int = 1
 var _exercises_max: int = 5
+var _k_congestion: float = 3.0
+var _k_proximity: float = 0.2
+var _d_max: int = 16
+var _top_k: int = 4
 
 
 ## Two-phase init (ADR-0001). Registers the MemberSim RNG sub-stream exactly
@@ -178,6 +242,11 @@ var _exercises_max: int = 5
 ##
 ## [config] carries the data-driven tuning values (class-header CONFIG_*
 ## keys); missing keys fall back to the GDD anchors.
+##
+## [congestion_reader] (Story 002) is the duck-typed prev-buffer reader
+## (`per_equipment_congestion(id) -> float`, see the _congestion_reader
+## field). Optional — when null the weight treats every equipment as
+## congestion 0.0, preserving the MS-001-era rigs' determinism.
 func init(
 	orchestrator: SimulationOrchestrator,
 	seeded_rng: SeededRNG,
@@ -186,7 +255,8 @@ func init(
 	catalog: EquipmentCatalog = null,
 	entrance_cell: Vector2i = Vector2i(-1, -1),
 	exit_cell: Vector2i = Vector2i(-1, -1),
-	config: Dictionary = {}
+	config: Dictionary = {},
+	congestion_reader: Variant = null
 ) -> void:
 	if not _mark_initialized():
 		return
@@ -197,6 +267,7 @@ func init(
 	_catalog = catalog
 	_entrance_cell = entrance_cell
 	_exit_cell = exit_cell
+	_congestion_reader = congestion_reader
 	_apply_config(config)
 	_seeded_rng.register_system(system_name())
 
@@ -217,6 +288,13 @@ func _apply_config(config: Dictionary) -> void:
 	_exercises_stddev = float(config.get(CONFIG_EXERCISES_STDDEV, _exercises_stddev))
 	_exercises_min = int(config.get(CONFIG_EXERCISES_MIN, _exercises_min))
 	_exercises_max = int(config.get(CONFIG_EXERCISES_MAX, _exercises_max))
+	_k_congestion = float(config.get(CONFIG_K_CONGESTION, _k_congestion))
+	_k_proximity = float(config.get(CONFIG_K_PROXIMITY, _k_proximity))
+	_d_max = int(config.get(CONFIG_D_MAX, _d_max))
+	# Top-K guardrail: the GDD pins K to 3-5 (perf cap against O(members ×
+	# equipment) pathfinding). Clamp so a misconfigured value can never break
+	# the bound.
+	_top_k = clampi(int(config.get(CONFIG_TOP_K, _top_k)), 3, 5)
 
 
 func system_name() -> String:
@@ -322,14 +400,13 @@ func _on_entering(member: Dictionary) -> void:
 ##   (a) visit quota reached      -> LEAVING regardless of candidates (AC2)
 ##   (b) no reachable candidate   -> LEAVING the same tick (AC1 — the visible
 ##       "walked in, turned around, left" flow signal; never stalls)
-##   (c) candidate found          -> WALKING_TO (skeleton pick: first
-##       reachable candidate in ascending equipment_instance_id order — Story
-##       002 replaces this with the weighted pick)
+##   (c) candidate found          -> WALKING_TO (Story 002: the weighted pick —
+##       candidate pool -> weights -> top-K sort -> path-check -> weighted draw)
 func _on_selecting_target(member: Dictionary) -> void:
 	if int(member["exercises_done"]) >= int(member["exercises_per_visit"]):
 		_begin_leaving(member, REASON_QUOTA_MET)
 		return
-	var target_id := _pick_reachable_target(member)
+	var target_id := _pick_weighted_target(member)
 	if target_id == -1:
 		_begin_leaving(member, REASON_NO_CANDIDATES)
 		return
@@ -343,32 +420,193 @@ func _on_selecting_target(member: Dictionary) -> void:
 	member["state"] = STATE_WALKING_TO
 
 
-## Builds the skeleton candidate pool: every placed instance, ascending
-## equipment_instance_id (explicit sort — get_placed_instances() order is
-## stable within a grid version but NOT guaranteed across commits, so sorting
-## is what makes the pick deterministic), excluding nothing else — the
-## reservation "fully spoken for" filter is Story 003, the preference/novelty
-## weighting is Story 002. Returns the first candidate with a non-empty path
-## to its access cell, or -1 when NONE is reachable (AC1's "zero
-## reachable/available candidates").
-##
-## PERFORMANCE NOTE: this path-checks every candidate. Story 002 replaces the
-## pool with the top-K (3-5) weight-ordered subset precisely to bound this
-## cost; the skeleton optimizes for correctness, not for the perf budget.
-func _pick_reachable_target(member: Dictionary) -> int:
+## Core Rule 3 weighted target selection — the fixed order:
+##   1. candidate pool: every placed instance ascending equipment_instance_id
+##      (explicit sort — get_placed_instances() order is stable within a grid
+##      version but NOT guaranteed across commits). Reservation "fully spoken
+##      for" exclusion is Story 003; the no-repeat blacklist is Story 004.
+##   2. weight per candidate (see target_selection_weight)
+##   3. sort by weight desc, deterministic tie-break ascending id (AC20);
+##      take top-K (_top_k, 3-5)
+##   4. path-check the K in ascending id order via Navigation.get_path; drop
+##      unreachable; renormalize weights over survivors (AC12: ΣP = 1)
+##   5. weighted-random draw over survivors with ONE rng.randf() (ADR-0004)
+## Returns the chosen equipment_instance_id, or -1 when the pool is empty or
+## every top-K candidate is unreachable (AC1 — the caller transitions to
+## LEAVING the same tick).
+func _pick_weighted_target(member: Dictionary) -> int:
+	var candidates := _build_weighted_candidates(member)
+	if candidates.is_empty():
+		return -1
+	_sort_candidates_by_weight(candidates)  # weight desc, tie ascending id
+	var k: int = mini(_top_k, candidates.size())
+	var top_k: Array = candidates.slice(0, k)
+
+	# Path-check the K in ASCENDING equipment_instance_id order (AC20's fixed
+	# scan order); drop unreachable; keep the survivors in ascending id order.
+	var top_ids: Array[int] = []
+	for c in top_k:
+		top_ids.append(int(c["instance_id"]))
+	top_ids.sort()
+	var survivors: Array = []
+	var from: Vector2i = member["cell"]
+	for instance_id in top_ids:
+		var access_cells: Array = _grid.get_access_cells(instance_id)
+		if access_cells.is_empty():
+			continue  # no access cell — cannot be used
+		var entry: Dictionary = _candidate_entry_by_id(top_k, instance_id)
+		if not _navigation.get_path(from, access_cells[0]).is_empty():
+			survivors.append(entry)
+	if survivors.is_empty():
+		return -1  # AC1 / AC12 edge: zero survivors — caller transitions to LEAVING
+
+	# Renormalize over survivors (fixed summation order: ascending id) —
+	# Σ P_i = 1.0 (AC12), every P_i > 0 (weights are epsilon-floored).
+	var total := 0.0
+	for c in survivors:
+		total += float(c["weight"])
+	var draw := _rng().randf()  # exactly ONE draw (ADR-0004 fixed order)
+	var acc := 0.0
+	for c in survivors:
+		acc += float(c["weight"]) / total
+		if draw < acc:
+			return int(c["instance_id"])
+	return int(survivors[-1]["instance_id"])  # float-tolerance tail guard
+
+
+## Builds the Story 002 candidate pool with one weight per placed instance:
+##   {instance_id, weight, congestion, dist_cells, novelty, noise}
+## in ascending equipment_instance_id order (never grid/hash order — the
+## deterministic summation order AC12's ΣP depends on).
+func _build_weighted_candidates(member: Dictionary) -> Array:
 	var instances: Array = _grid.get_placed_instances()
 	var ids: Array[int] = []
 	for inst in instances:
 		ids.append(int(inst.instance_id))
 	ids.sort()
 	var from: Vector2i = member["cell"]
+	var noise: float = _pref_noise(member)
+	var out: Array = []
 	for instance_id in ids:
 		var access_cells: Array = _grid.get_access_cells(instance_id)
 		if access_cells.is_empty():
 			continue  # no access cell — cannot be used
-		if not _navigation.get_path(from, access_cells[0]).is_empty():
-			return instance_id
-	return -1
+		var dist_cells := _dist_cells(from, access_cells[0])
+		var congestion := _congestion_value(instance_id)
+		var novelty := _novelty_factor(member, instance_id)
+		out.append({
+			"instance_id": instance_id,
+			"weight": target_selection_weight(congestion, dist_cells, novelty, noise),
+			"congestion": congestion,
+			"dist_cells": dist_cells,
+			"novelty": novelty,
+			"noise": noise,
+		})
+	return out
+
+
+## Deterministic sort: weight DESC, equal weights tie-break by ASCENDING
+## equipment_instance_id (AC20). The comparator is total — equal weight + id
+## never collide — so the result is stable by construction (no engine-order
+## dependence).
+func _sort_candidates_by_weight(candidates: Array) -> void:
+	candidates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		var wa: float = float(a["weight"])
+		var wb: float = float(b["weight"])
+		if wa != wb:
+			return wa > wb
+		return int(a["instance_id"]) < int(b["instance_id"])
+	)
+
+
+## Returns the first candidate entry whose instance_id matches, or {} when
+## absent. Used by the path-check loop to recover the full entry (weight,
+## congestion, …) for a survivor by id — the top-K array is sorted by weight,
+## but the scan runs in ascending id order.
+func _candidate_entry_by_id(candidates: Array, instance_id: int) -> Dictionary:
+	for c in candidates:
+		if int(c["instance_id"]) == instance_id:
+			return c
+	return {}
+
+
+## Core Rule 3 / GDD Formulas target_selection_weight. Public because it is
+## the documented formula surface the unit tests assert directly (AC10
+## monotonicity sweep, AC12 positivity).
+##
+## weight = BASE_WEIGHT × exp(-k_congestion × congestion)
+##          × exp(-k_proximity × dist_cells / D_max)
+##          × novelty_factor × pref_noise
+## then floored at WEIGHT_EPSILON so the weight is ALWAYS strictly positive
+## (AC12: no divide-by-zero, no NaN, even at congestion 1.0).
+func target_selection_weight(
+	congestion: float,
+	dist_cells: int,
+	novelty_factor: float,
+	pref_noise: float
+) -> float:
+	var c := clampf(congestion, 0.0, 1.0)
+	var d := maxi(dist_cells, 0)
+	var raw := BASE_WEIGHT \
+		* exp(-_k_congestion * c) \
+		* exp(-_k_proximity * float(d) / float(maxi(_d_max, 1))) \
+		* clampf(novelty_factor, 0.0, 1.0) \
+		* clampf(pref_noise, 0.0, 2.0)
+	return maxf(raw, WEIGHT_EPSILON)
+
+
+## Reads Congestion(t-1) for [instance_id] through the injected reader (the
+## `prev` buffer contract — AC11). Absent reader -> 0.0 (neutral). Clamped to
+## [0,1] defensively (the real Congestion system guarantees this range).
+func _congestion_value(instance_id: int) -> float:
+	if _congestion_reader == null:
+		return 0.0
+	var v: Variant = _congestion_reader.call("per_equipment_congestion", instance_id)
+	if typeof(v) != TYPE_FLOAT and typeof(v) != TYPE_INT:
+		return 0.0
+	return clampf(float(v), 0.0, 1.0)
+
+
+## Chebyshev distance (cells) from [from] to [to] — the geometric proxy the
+## weight uses instead of the pathfinding length (see class header).
+func _dist_cells(from: Vector2i, to: Vector2i) -> int:
+	return maxi(absi(from.x - to.x), absi(from.y - to.y))
+
+
+## The member's stored preference noise (pref_noise_i, Uniform(0.85, 1.15),
+## rolled at spawn by _roll_preference_profile). Legacy/injected members with
+## no profile default to 1.0.
+func _pref_noise(member: Dictionary) -> float:
+	var profile: Variant = member.get("preference_profile", {})
+	if profile is Dictionary and profile.has("preference_noise"):
+		return float(profile["preference_noise"])
+	return 1.0
+
+
+## novelty_factor_i: {0.2 just-used, 0.6 recent, 1.0} — suppresses repeating
+## the same machine (GDD Formulas). Uses the member's recently_used_ids
+## (most-recent-first): index 0 = just-used -> 0.2; within the recent window
+## (next NOVELTY_RECENT_WINDOW-1 entries) -> 0.6; else fresh -> 1.0.
+func _novelty_factor(member: Dictionary, instance_id: int) -> float:
+	var recent: Array = member.get("recently_used_ids", [])
+	var idx := recent.find(instance_id)
+	if idx == 0:
+		return NOVELTY_JUST_USED
+	if idx > 0 and idx < NOVELTY_RECENT_WINDOW:
+		return NOVELTY_RECENT
+	return NOVELTY_FRESH
+
+
+## Records [instance_id] as the member's most-recently-used equipment
+## (Story 002 novelty tracking — called when a use completes). Keeps the list
+## most-recent-first and capped at NOVELTY_RECENT_WINDOW.
+func _record_recently_used(member: Dictionary, instance_id: int) -> void:
+	var recent: Array = member.get("recently_used_ids", [])
+	recent.erase(instance_id)  # re-use: move to front
+	recent.push_front(instance_id)
+	while recent.size() > NOVELTY_RECENT_WINDOW:
+		recent.pop_back()
+	member["recently_used_ids"] = recent
 
 
 ## WALKING_TO: consumes the cached path one cell per tick. The skeleton has
@@ -407,11 +645,16 @@ func _start_using(member: Dictionary) -> void:
 
 ## USING: counts down the use duration. Only SUCCESSFULLY completed uses
 ## count toward the visit quota (GDD Formulas — abandoned queues neither
-## count nor reset). On completion: quota met -> LEAVING, else SELECTING_TARGET.
+## count nor reset). On completion: the used equipment becomes the member's
+## most-recently-used (Story 002 novelty tracking — suppresses immediate
+## repeats via novelty_factor_i), then quota met -> LEAVING, else
+## SELECTING_TARGET.
 func _on_using(member: Dictionary) -> void:
 	member["use_ticks_remaining"] = int(member["use_ticks_remaining"]) - 1
 	if int(member["use_ticks_remaining"]) > 0:
 		return
+	if int(member["target_equipment_instance_id"]) >= 0:
+		_record_recently_used(member, int(member["target_equipment_instance_id"]))
 	member["exercises_done"] = int(member["exercises_done"]) + 1
 	member["target_equipment_instance_id"] = -1
 	member["cached_path"] = []
@@ -508,6 +751,7 @@ func _spawn_member() -> void:
 		"target_equipment_instance_id": -1,
 		"cached_path": [],
 		"leaving_timeout_ticks": 0,
+		"recently_used_ids": [],
 	}
 	members.append(member)
 

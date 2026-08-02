@@ -1,7 +1,7 @@
 # Story 002: Target Selection and Weighted Pick
 
 > **Epic**: member-sim
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Feature
 > **Type**: Logic
 > **Estimate**: M — 2 sessions (≤4h)
@@ -31,10 +31,10 @@
 
 *From GDD `design/gdd/member-sim.md`, scoped to this story:*
 
-- [ ] AC10 GIVEN two candidates identical except `Congestion(t-1)` (A=0.1, B=0.8), WHEN `target_selection_weight` is computed, THEN `weight_A > weight_B` — strictly monotonic in congestion across a swept range
-- [ ] AC11 [UNIT]+[INT] GIVEN Congestion for E is updated during the current tick's Congestion pass, WHEN a member runs SELECTING_TARGET in the *same* tick, THEN the weight uses the pre-update (t-1) value; the [INT] part asserts MemberSim's registered tick order runs before Congestion's
-- [ ] AC12 GIVEN every equipment has `Congestion(t-1) = 1.0` (fully congested), WHEN weights are computed, THEN all weights are > 0 (no divide-by-zero, no NaN) and Σ P_i = 1.0
-- [ ] AC20 GIVEN top-K candidate selection where two candidates have equal weight, WHEN they are sorted, THEN the tie-break is by ascending `equipment_instance_id` (deterministic)
+- [x] AC10 GIVEN two candidates identical except `Congestion(t-1)` (A=0.1, B=0.8), WHEN `target_selection_weight` is computed, THEN `weight_A > weight_B` — strictly monotonic in congestion across a swept range
+- [x] AC11 [UNIT]+[INT] GIVEN Congestion for E is updated during the current tick's Congestion pass, WHEN a member runs SELECTING_TARGET in the *same* tick, THEN the weight uses the pre-update (t-1) value; the [INT] part asserts MemberSim's registered tick order runs before Congestion's
+- [x] AC12 GIVEN every equipment has `Congestion(t-1) = 1.0` (fully congested), WHEN weights are computed, THEN all weights are > 0 (no divide-by-zero, no NaN) and Σ P_i = 1.0
+- [x] AC20 GIVEN top-K candidate selection where two candidates have equal weight, WHEN they are sorted, THEN the tie-break is by ascending `equipment_instance_id` (deterministic)
 
 ---
 
@@ -110,10 +110,10 @@
 
 **Story Type**: Logic
 **Required evidence**:
-- `tests/unit/member_sim/target_selection_weight_test.gd` — must exist and pass
-- `tests/unit/member_sim/tick_order_test.gd` — integration-style unit asserting MemberSim before Congestion
+- `tests/unit/member_sim/target_selection_weight_test.gd` — must exist and pass ✅ 27 assertions green (AC10 sweep/monotonic/golden, AC11-UNIT prev read, AC12 positivity+ΣP+empty-pool, AC20 tie-breaks+determinism)
+- `tests/unit/member_sim/tick_order_test.gd` — integration-style unit asserting MemberSim before Congestion ✅ 11 assertions green (FIXED_TICK_ORDER textual pin, real _advance_tick dispatch order, same-tick prev/next isolation)
 
-**Status**: [ ] Not yet created
+**Status**: [x] Complete — headless full suite 2472 passed / 0 failed (baseline 2434 + 38 new), 0 SCRIPT ERROR, repeated twice identically
 
 ---
 
