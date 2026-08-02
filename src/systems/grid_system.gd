@@ -162,6 +162,21 @@ var _buildable_frozen: bool = false
 # GridStateReader / get_placed_instances).
 var _reverse_index: Dictionary = {}  # instance_id:int → PlacementRecord
 
+# === Grid mutation version stamp (TR-MS-007 / member-sim Story 004) ===
+#
+# Monotonic counter bumped ONCE per successful commit()/clear() — the write
+# paths that emit grid_changed. MemberSim compares a member's cached path
+# stamp against get_grid_version() to detect path invalidation (Core Rule 5):
+# any placement or removal anywhere on the grid invalidates every cached
+# path, so the affected member re-queries Navigation.get_path.
+#
+# NOT serialized (runtime-only, like Navigation's AStarGrid2D): on load the
+# grid is rebuilt from the save's records and the counter restarts at 0.
+# A restored member's stale cached-path stamp then mismatches, triggering
+# exactly one safe re-query against the rebuilt grid — deterministic because
+# the rebuilt grid is identical, so the re-query returns the same path.
+var _grid_version: int = 0
+
 
 # === Read Methods ===
 
@@ -296,6 +311,20 @@ func get_placed_instances() -> Array[PlacedInstance]:
 	for instance_id in _reverse_index:
 		result.append(_to_placed_instance(instance_id))
 	return result
+
+
+## Returns the current grid mutation version stamp (TR-MS-007 — member-sim
+## Story 004 path invalidation). Monotonic, bumped once per successful
+## commit()/clear(); MemberSim compares a member's cached-path stamp against
+## this to detect that the grid changed and the path must be re-queried.
+##
+## Runtime-only, NOT serialized: on load the counter restarts at 0 and a
+## restored member's stale stamp triggers exactly one safe re-query (the
+## rebuilt grid is identical, so the re-query returns the same path).
+func get_grid_version() -> int:
+	if not _assert_initialized():
+		return 0
+	return _grid_version
 
 
 ## Builds a PlacedInstance DTO for [instance_id] from its reverse-index
@@ -519,6 +548,11 @@ func commit(instance_id: int, footprint_cells: Array[Vector2i], access_cells: Ar
 	var record := PlacementRecord.new(footprint_cells, access_cells, rotation)
 	_reverse_index[instance_id] = record
 
+	# Grid mutation stamp — ONE bump per successful commit (TR-MS-007). The
+	# version is what MemberSim's path invalidation compares against; any
+	# placement anywhere invalidates every cached path.
+	_grid_version += 1
+
 	# Signal — once per commit, never per cell. Payload arrays are
 	# duplicated so a subscriber mutating the payload cannot corrupt the
 	# reverse index record (same defensive posture as get_access_ids()).
@@ -577,6 +611,9 @@ func clear(instance_id: int) -> void:
 	# no longer sees it.
 	_reverse_index.erase(instance_id)
 
+	# Grid mutation stamp — ONE bump per successful clear (TR-MS-007).
+	_grid_version += 1
+
 	# Signal — once per clear, never per cell. Duplicated payload arrays
 	# (same rationale as commit()).
 	grid_changed.emit(record.footprint_cells.duplicate(), record.access_cells.duplicate())
@@ -632,6 +669,7 @@ func _deep_copy_for_snapshot() -> GridSystem:
 	copy._occupant_id = _occupant_id.duplicate()
 	copy._buildable = _buildable.duplicate()
 	copy._buildable_frozen = _buildable_frozen
+	copy._grid_version = _grid_version  # snapshot carries the source version stamp
 	for cell in _access_ids:
 		copy._access_ids[cell] = (_access_ids[cell] as Array).duplicate()
 	for instance_id in _reverse_index:

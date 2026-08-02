@@ -1,7 +1,7 @@
 # Story 005: Serialization, Determinism and Flow Hypothesis
 
 > **Epic**: member-sim
-> **Status**: Ready
+> **Status**: Complete — 2026-08-02
 > **Layer**: Feature
 > **Type**: Integration
 > **Estimate**: M — 2 sessions (≤4h)
@@ -32,10 +32,10 @@
 
 *From GDD `design/gdd/member-sim.md`, scoped to this story:*
 
-- [ ] AC7 [INT] GIVEN a save with `member_id_counter = 42` and no active member id ≥ 42, WHEN a new member spawns after load, THEN its `member_id` is 42 (not `max(active)+1`)
-- [ ] AC8 [UNIT] GIVEN a load payload missing `member_id_counter` or with `member_id_counter <= max(active member_id)`, WHEN load executes, THEN it fails loudly, never silently substituting a derived value
-- [ ] AC9 [UNIT] GIVEN a GONE member's retired `member_id`, WHEN any number of later spawns occur across a save/load boundary, THEN that id is never reassigned
-- [ ] AC22 [INT] GIVEN a full arrival→MemberSim→Congestion tick loop over ~200 ticks run against two layouts (one clumped, one spread) with identical seed and equipment set, WHEN flow is measured, THEN the spread layout shows measurably lower average queue occupancy than the clumped one — the end-to-end "layout causally drives flow" hypothesis check
+- [x] AC7 [INT] GIVEN a save with `member_id_counter = 42` and no active member id ≥ 42, WHEN a new member spawns after load, THEN its `member_id` is 42 (not `max(active)+1`)
+- [x] AC8 [UNIT] GIVEN a load payload missing `member_id_counter` or with `member_id_counter <= max(active member_id)`, WHEN load executes, THEN it fails loudly, never silently substituting a derived value
+- [x] AC9 [UNIT] GIVEN a GONE member's retired `member_id`, WHEN any number of later spawns occur across a save/load boundary, THEN that id is never reassigned
+- [x] AC22 [INT] GIVEN a full arrival→MemberSim→Congestion tick loop over ~200 ticks run against two layouts (one clumped, one spread) with identical seed and equipment set, WHEN flow is measured, THEN the spread layout shows measurably lower average queue occupancy than the clumped one — the end-to-end "layout causally drives flow" hypothesis check
 
 ---
 
@@ -110,7 +110,76 @@
 - `tests/unit/member_sim/serialization_test.gd` — AC7/AC8/AC9 (must exist and pass)
 - `tests/integration/member_sim/flow_hypothesis_test.gd` — AC22 (BLOCKING for epic DoD)
 
-**Status**: [ ] Not yet created
+**Status**: [x] Complete — 2026-08-02
+
+Both files exist and pass; registered in `tests/headless_runner.gd` TEST_FILES.
+Full headless suite: 2636 passed / 0 failed (baseline 2568 + 68 new
+assertions: 56 serialization + 12 flow hypothesis), 0 SCRIPT ERROR, run
+twice with identical per-file results.
+
+`serialization_test.gd` (56 assertions): AC7 counter restore (direct
+deserialize AND the full SaveLoad blob pipeline — spawn after load gets
+exactly 42), AC8 missing/illegal counter fails loudly (validate AND commit,
+zero mutation; legacy SL-002-era entries exempt), AC9 retired ids never
+reassigned (real GONE cycle + multi-load monotonic sweep), reservation-map
+rebuild from claim flags (USING+QUEUEING handoff continues, WALKING_TO
+rebuild, load-side AC4 double-claim rejection), JSON.stringify/parse
+round-trip (Vector2i cells restored, int fields coerced from JSON floats,
+int-keyed blacklists, rebuilt map consistent with member states), and
+serialize() purity/determinism.
+
+`flow_hypothesis_test.gd` (12 assertions): AC22 over 200 ticks
+(30 warm-up + 170 measured), 3 identical seeds, clumped vs spread (4
+treadmill instances each — OQ6). Per-seed spread < clumped AND <= 0.9x
+clumped; aggregate reduction 72% (clumped mean 0.339 vs spread mean 0.096
+queue-occupancy). Determinism: same seed + layout -> identical averages.
+
+---
+
+## Deviations (documented, not silent)
+
+1. **AC8 counter-vs-max check scope — state-machine members only.**
+   The check `member_id_counter <= max(active member_id) -> fail` applies
+   to records carrying a `"state"` key (the state machine's members — the
+   ids the counter actually allocated). Legacy SL-002-era stub entries
+   (`{member_id, equipment_instance_id}`, no state) are passive roster data
+   that was never allocated from the counter, so they are EXEMPT. Without
+   this, the pre-wiring save-load integration blobs (counter 0 with
+   hand-assigned ids 10/11 — SL-003 roundtrip canary, SL-002 load
+   orchestration) would fail their loads. The QA's "counter exactly equal
+   to max active id fails" is enforced for every state-machine payload.
+2. **AC22 Congestion is a test-local double, not the real system.**
+   Congestion (#7) does not exist in src/ yet (congestion epic story 001).
+   The test injects a small proximity-based double honoring the AC11 /
+   TR-CONG-002 contract: MemberSim reads `per_equipment_congestion(id)`
+   from a `prev` buffer (one-tick lag) during its on_tick(); the test
+   recomputes `next` from member positions after MemberSim and swaps —
+   mirroring the real fixed tick order. congestion(id) = min(1, members
+   within Chebyshev radius 2 of the access cell / 2) — the "local density"
+   term of the GDD's per-equipment congestion formula. The real Congestion
+   story must keep this read surface (`per_equipment_congestion(int)`)
+   compatible.
+3. **`equipment_id_resolver` seam (TR-MS-009).** GridSystem stores only
+   integer occupant_id (PlacedInstance.equipment_id is ""), so instance ->
+   equipment_id resolution cannot come from the grid. MemberSim.init()
+   gained an OPTIONAL 10th parameter: `equipment_id_resolver: Callable`
+   (instance_id -> equipment_id), wired by the composition root. When
+   present and resolving to a catalog def, `_roll_use_duration` reads the
+   def's per-equipment use_duration_* fields (exactly ONE rng draw per use
+   start — determinism preserved); absent resolver falls back to the
+   config defaults (pre-wiring rigs unchanged).
+4. **JSON-safe cell encoding in serialize().** Members' `cell` and
+   `cached_path` are emitted as `[x, y]` arrays (same convention as
+   GridSystem._serialize_cells) instead of raw Vector2i, so the blob
+   survives JSON.stringify/parse with no type ambiguity. deserialize()
+   restores Vector2i and coerces ints (JSON.parse returns floats for
+   integer literals in 4.7.1) and numeric-string dictionary keys
+   (give_up_blacklist). Legacy member records pass through verbatim —
+   the SL-003 byte-identical round-trip canary is preserved.
+5. **Load-side AC4 mirror.** A payload where two members claim the same
+   machine's occupant or queue slot is structurally corrupt (the live
+   machine can never produce it) and fails Phase A — extending the
+   runtime AC4 capacity invariant to the serialized state.
 
 ---
 

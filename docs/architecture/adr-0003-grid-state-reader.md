@@ -5,6 +5,13 @@ Accepted
 
 **Gate**: ADR-0001 Accepted (depends-on cleared) 2026-07-22. @abstract references updated to manual _init() guard pattern per ADR-0001 verified findings.
 
+**Amendment (2026-08-02, member-sim Story 004 / TR-MS-007)**: the read surface
+is extended with `get_grid_version() -> int` — the grid mutation version
+stamp (bumped once per successful `commit()`/`clear()`), consumed by
+MemberSim's cached-path invalidation. Additive: existing implementations
+override it (GridSystem returns the counter; GridSnapshot delegates to its
+base); the base stub push_errors + returns 0 per the OQ#3 fallback protocol.
+
 ## Date
 2026-07-21
 

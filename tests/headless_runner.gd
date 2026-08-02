@@ -32,6 +32,13 @@ const TEST_FILES := [
 	"tests/unit/placement_system/instance_id_resume_test.gd",
 	"tests/unit/placement_system/relocate_flow_test.gd",
 	"tests/unit/placement_system/is_dragging_cost_scope_test.gd",
+	"tests/unit/member_sim/lifecycle_state_machine_test.gd",
+	"tests/unit/member_sim/target_selection_weight_test.gd",
+	"tests/unit/member_sim/tick_order_test.gd",
+	"tests/unit/member_sim/reservation_map_test.gd",
+	"tests/unit/member_sim/path_invalidation_test.gd",
+	"tests/unit/member_sim/patience_interrupt_test.gd",
+	"tests/unit/member_sim/serialization_test.gd",
 	"tests/unit/navigation/config_basic_paths_test.gd",
 	"tests/unit/navigation/solidity_sync_test.gd",
 	"tests/unit/time_system/orchestrator_tick_dispatch_test.gd",
@@ -47,6 +54,7 @@ const TEST_FILES := [
 	"tests/unit/equipment_catalog/catalog_cost_formula_test.gd",
 	"tests/unit/navigation/determinism_congestion_blind_test.gd",
 	"tests/unit/navigation/tiebreak_cross_rebuild_test.gd",
+	"tests/unit/economy/revenue_balance_test.gd",
 	"tests/integration/equipment_catalog/catalog_edge_cases_test.gd",
 	"tests/integration/grid_system/grid_serialization_test.gd",
 	"tests/integration/grid_system/grid_navigation_solidity_test.gd",
@@ -57,6 +65,7 @@ const TEST_FILES := [
 	"tests/integration/save_load/load_orchestration_test.gd",
 	"tests/integration/save_load/roundtrip_determinism_test.gd",
 	"tests/integration/save_load/file_io_version_test.gd",
+	"tests/integration/member_sim/flow_hypothesis_test.gd",
 ]
 
 # === 隔离的测试文件 ===

@@ -91,6 +91,13 @@ func get_dimensions() -> Vector2i:
 	return _base.get_dimensions()
 
 
+## A speculative snapshot carries its base's mutation stamp (TR-MS-007):
+## MemberSim path invalidation compares against the REAL grid's version, and
+## a snapshot is a read-only view — its deltas never bump a version counter.
+func get_grid_version() -> int:
+	return _base.get_grid_version()
+
+
 ## Resolved view: base instances (seeded at init) + speculative adds −
 ## speculative clears. Order is stable within one snapshot.
 func get_placed_instances() -> Array[PlacedInstance]:

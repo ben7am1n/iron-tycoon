@@ -1,7 +1,7 @@
 # Story 001: Balance and Flat-Fee Revenue
 
 > **Epic**: economy
-> **Status**: Ready
+> **Status**: Complete — 2026-08-02
 > **Layer**: Feature
 > **Type**: Logic
 > **Estimate**: M — 2 sessions (≤4h)
@@ -32,12 +32,12 @@
 
 *From GDD `design/gdd/economy.md`, scoped to this story:*
 
-- [ ] AC1 Never negative: GIVEN a sequence of income and `spend` operations that includes at least one `spend(amount)` where `amount > balance`, WHEN applied, THEN `balance` is never < 0 at any point and the overspend call returns false
-- [ ] AC8 Flat fee: GIVEN N `member_completed_visit` events, WHEN income accrues, THEN `balance` increases by exactly `N × R_visit`
-- [ ] AC9 Multi-departure determinism: GIVEN multiple `member_completed_visit` events on one tick, WHEN income is applied, THEN the result is a single deterministic delta `N × R_visit` (sum is order-independent by construction)
-- [ ] AC11 Starting capital: GIVEN `Economy.new()` (fresh-state constructor), WHEN `balance` is read immediately with no prior events, THEN `balance == 500`
-- [ ] AC13 Income emits balance_changed: GIVEN a `member_completed_visit` event processed by Economy, WHEN revenue accrues, THEN `balance_changed(new_balance, +R_visit)` fires exactly once with a positive delta
-- [ ] AC14 Only quota-met departures earn revenue: GIVEN a member that departed without meeting their exercise quota (walk-failure or patience-exhausted), WHEN Economy processes the departure, THEN no revenue accrues and no `balance_changed` fires
+- [x] AC1 Never negative: GIVEN a sequence of income and `spend` operations that includes at least one `spend(amount)` where `amount > balance`, WHEN applied, THEN `balance` is never < 0 at any point and the overspend call returns false
+- [x] AC8 Flat fee: GIVEN N `member_completed_visit` events, WHEN income accrues, THEN `balance` increases by exactly `N × R_visit`
+- [x] AC9 Multi-departure determinism: GIVEN multiple `member_completed_visit` events on one tick, WHEN income is applied, THEN the result is a single deterministic delta `N × R_visit` (sum is order-independent by construction)
+- [x] AC11 Starting capital: GIVEN `Economy.new()` (fresh-state constructor), WHEN `balance` is read immediately with no prior events, THEN `balance == 500`
+- [x] AC13 Income emits balance_changed: GIVEN a `member_completed_visit` event processed by Economy, WHEN revenue accrues, THEN `balance_changed(new_balance, +R_visit)` fires exactly once with a positive delta
+- [x] AC14 Only quota-met departures earn revenue: GIVEN a member that departed without meeting their exercise quota (walk-failure or patience-exhausted), WHEN Economy processes the departure, THEN no revenue accrues and no `balance_changed` fires
 
 ---
 
@@ -124,7 +124,71 @@
 **Required evidence**:
 - `tests/unit/economy/revenue_balance_test.gd` — must exist and pass (AC1, AC8, AC9, AC11, AC13, AC14)
 
-**Status**: [ ] Not yet created
+**Status**: [x] Complete — 2026-08-02
+
+`tests/unit/economy/revenue_balance_test.gd` (46 assertions) exists, passes,
+and is registered in `tests/headless_runner.gd` TEST_FILES. Full headless
+suite: 2682 passed / 0 failed (baseline 2636 + 46 new), 0 SCRIPT ERROR, run
+3× with identical per-file results.
+
+Coverage by AC:
+- **AC11** (4): fresh instance balance == 500; deserialize with saved
+  balance 777 -> NOT reset to 500.
+- **AC8** (3): N=0/1/101 events -> balance += N × 12 (1712 after 101).
+- **AC9** (5): 3 events same tick -> +36; ascending vs descending feed order
+  -> identical balance (commutative sum).
+- **AC13** (7): one event -> exactly one balance_changed(512, +12); two more
+  -> one signal per event, each +12.
+- **AC1** (15): income + spend sequence including overspend -> never < 0,
+  overspend false + unchanged + NO signal; balance=0 then spend(1); balance=1
+  then spend(2); spend(0)/spend(-100) rejected (defensive gate).
+- **AC14** (10): REAL MemberSim rig (grid + navigation + catalog + entrance/
+  exit) wired to Economy via _post_init(): walk-failure departure (no
+  candidates) -> $0, no balance_changed; patience-exhausted departure
+  (queue give-up, machine removed mid-blacklist) -> $0, no balance_changed;
+  quota-met departure -> +R_visit with exactly one balance_changed.
+- **no-decay** (2): 30 ticks with zero departures/spend -> balance unchanged
+  (GDD AC10 — no upkeep).
+
+---
+
+## Deviations (documented, not silent)
+
+1. **`spend()` ships here, not story 002 — AC1's QA requires it.** The story
+   QA case for AC1 is "income + spend sequence including an overspend
+   (amount > balance) → overspend call returns false, balance unchanged".
+   That cannot be exercised without a `spend()` method, so this story lands
+   the Economy-side gates from GDD Core Rule 5: `amount > 0` (rejects
+   zero/negative — prevents the `spend(-100)` balance-increase exploit) and
+   `amount <= balance` (the affordability gate). Story 002 keeps its full
+   scope: `can_afford()`, the Shop pre-check chain, and the dedicated
+   spend-triple-gating test file (AC2/3/4/5). `credit()` remains story 003
+   (ADR-0006) — not implemented here.
+2. **`_post_init()` S5 subscription is dormant in the pre-wiring save-load
+   rigs.** The SL-002/003 integration tests construct Economy with
+   `init(orch, srg)` and never call `_post_init()`, so no
+   `member_completed_visit` subscription exists there and balance stays
+   exactly as the test set it — the documented compatibility path. The
+   subscription engages when the composition root (or a test) calls
+   `_post_init()` after wiring `orchestrator.member_sim`.
+3. **"Economy" RNG sub-stream registered but never drawn.** The save-load
+   AC7 tests read `get_rng("Economy")` and require its state to round-trip
+   exactly, so `init()` keeps `register_system("Economy")`; the ledger never
+   draws from it (GDD Core Rule 1: no RNG). `serialize()` keeps the stub-era
+   payload `{counter, balance, rng_state}` so SL-002/SL-003 blobs load
+   unchanged (story 004 owns the final serialization shape).
+4. **`on_tick()` is a no-op pass (counter += 1 only).** Revenue accrues
+   synchronously via the S5 signal during MemberSim's tick (ADR-0005 §3);
+   Economy's tick slot exists to satisfy the fixed dispatch order and keeps
+   the stub's observable counter so the roundtrip byte-identity contract
+   holds.
+5. **AC14 patience-exhausted test removes the machine mid-blacklist.** With
+   the single machine still present, a give-up member re-queues after the
+   blacklist expires (AC19 anti-flip-flop by design) and never departs; the
+   test clears the machine after the give-up so the member's reselect finds
+   zero candidates and departs via the no_candidates path — the genuine
+   patience-exhausted departure, earning $0. The occupant also departs via
+   the mid-use deletion interrupt; both are non-quota departures.
 
 ---
 

@@ -10,7 +10,7 @@
 
 | # | Story | Type | Status | ADR |
 |---|-------|------|--------|-----|
-| 001 | Balance and Flat-Fee Revenue | Logic | Ready | ADR-0005, ADR-0006 |
+| 001 | Balance and Flat-Fee Revenue | Logic | Complete — 2026-08-02 | ADR-0005, ADR-0006 |
 | 002 | spend() and can_afford Triple-Gating | Logic | Ready | ADR-0006 |
 | 003 | credit() Interface and No-Satisfaction Structure | Logic | Ready | ADR-0006 |
 | 004 | Serialization, Determinism and No-Decay | Integration | Ready | ADR-0002, ADR-0005, ADR-0006 |
@@ -19,7 +19,7 @@
 
 Economy is the money resource and revenue engine that closes the MVP loop: a good layout raises satisfaction, satisfaction brings more members, more members completing visits earns more cash, and cash buys more/better equipment to improve the layout again. It owns exactly one piece of state — the player's cash `balance` (an integer) — and one job: accrue income when members complete their visits, and let Shop/Purchase spend it. Pillar 2 constraint: money is a purely additive, positive resource — no rent, no upkeep, no bankruptcy, no lose condition. Revenue is a flat fee per completed visit (quota-met departures only) with **zero** reference to satisfaction — satisfaction's only economic lever is throughput, keeping the loop auditable and non-runaway.
 
-**⚠️ Replacement stub**: `src/systems/economy.gd` is currently a CORE-LAYER INTEGRATION STUB (created for save-load story SL-002). The real Economy replaces this file. It MUST keep the contract surface: `class_name Economy extends SimSystem`, `init(orchestrator, seeded_rng)` with RNG sub-stream registration, `system_name() -> "Economy"`, `serialize()` / `deserialize(data, validate_only)` two-phase protocol. **Note**: the real Economy uses NO RNG and serializes ONLY `balance: int` — the stub currently serializes `{counter, balance, rng_state}`; the real schema becomes `{balance}` — coordinate the schema change with SaveLoad (`tests/integration/save_load/`).
+**⚠️ Serialization schema note**: `src/systems/economy.gd` (real ledger, landed story 001) keeps the stub-era payload `{counter, balance, rng_state}` because the save-load AC7 tests require the "Economy" RNG sub-stream state to round-trip exactly. The GDD's "serialize ONLY `balance: int`" schema change is owned by story 004 (Serialization, Determinism and No-Decay) — coordinate with SaveLoad (`tests/integration/save_load/`) when it lands.
 
 ## Governing ADRs
 

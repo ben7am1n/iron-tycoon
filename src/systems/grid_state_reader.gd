@@ -75,3 +75,13 @@ func get_dimensions() -> Vector2i:
 func get_placed_instances() -> Array[PlacedInstance]:
 	push_error("GridStateReader.get_placed_instances not overridden by subclass")
 	return []
+
+
+## Returns the current grid mutation version stamp (TR-MS-007 — MemberSim
+## path invalidation). Monotonic, bumped once per successful commit()/clear()
+## in the real grid; consumers compare a cached path's stamp against this to
+## detect that the grid changed and the path must be re-queried.
+## Safe default: 0 (a fresh grid epoch).
+func get_grid_version() -> int:
+	push_error("GridStateReader.get_grid_version not overridden by subclass")
+	return 0
