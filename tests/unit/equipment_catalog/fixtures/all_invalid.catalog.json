@@ -1,0 +1,32 @@
+{
+  "equipment": [
+    {
+      "id": "bad_one",
+      "display_name": "Bad One",
+      "zone_membership": ["cardio"],
+      "footprint_cells": [{"x": 0, "y": 0}],
+      "access_cells": [{"x": 1, "y": 0}],
+      "cost": 100,
+      "unlock_requirement": "",
+      "effects": [],
+      "use_duration_mean_ticks": "not-a-number",
+      "use_duration_stddev_ticks": 10,
+      "use_duration_min_ticks": 50,
+      "use_duration_max_ticks": 150
+    },
+    {
+      "id": "bad_two",
+      "display_name": "Bad Two",
+      "zone_membership": ["cardio"],
+      "footprint_cells": [{"x": 0, "y": 0}],
+      "access_cells": [{"x": 1, "y": 0}],
+      "cost": "expensive",
+      "unlock_requirement": "",
+      "effects": [],
+      "use_duration_mean_ticks": 100,
+      "use_duration_stddev_ticks": 10,
+      "use_duration_min_ticks": 50,
+      "use_duration_max_ticks": 150
+    }
+  ]
+}

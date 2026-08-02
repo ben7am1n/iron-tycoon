@@ -1,12 +1,12 @@
 # Story 002: JSON Loading and Anchor Normalization
 
 > **Epic**: equipment-catalog
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Foundation
 > **Type**: Logic
 > **Estimate**: [hours or t-shirt size — fill before sprint planning]
 > **Manifest Version**: 2026-07-23
-> **Last Updated**: [set by /dev-story when implementation begins]
+> **Last Updated**: 2026-08-02
 
 ## Context
 
@@ -31,11 +31,11 @@
 
 *From GDD `design/gdd/equipment-catalog.md`, scoped to this story:*
 
-- [ ] AC-C.7 [BLOCKING][Logic] GIVEN a definition with footprint_cells/access_cells NOT pre-normalized (union min != (0,0)), WHEN loader executes anchor_normalization, THEN normalized coordinates are written into the final EquipmentDef, AND post-normalization union min == (0,0) — catches GridSystem OQ#13 item (b)
-- [ ] AC-D.1 [BLOCKING][Logic] GIVEN footprint_cells={(1,0),(2,0)}, access_cells={(0,0)} (already normalized), WHEN anchor_normalization executes, THEN output is footprint={(1,0),(2,0)}, access={(0,0)} — no transform applied (idempotent for already-normalized input)
-- [ ] AC-D.2 [BLOCKING][Logic] GIVEN any definition that passes footprint shape and access cell validation, WHEN anchor_normalization executes, THEN every output coordinate component falls in [0, 2] range — bounding-box guarantee (footprint ≤ 2×2 + access orthogonally adjacent ⇒ union ≤ 3×3)
-- [ ] AC-JSON.1 [BLOCKING][Logic] GIVEN a valid .catalog.json file with N definitions, WHEN Catalog loads it, THEN N EquipmentDef instances are created with correct field values from JSON
-- [ ] AC-JSON.2 [BLOCKING][Logic] GIVEN a malformed JSON file (syntax error), WHEN Catalog attempts to load, THEN loader returns a LoadError with line number information from JSON.parse()
+- [x] AC-C.7 [BLOCKING][Logic] GIVEN a definition with footprint_cells/access_cells NOT pre-normalized (union min != (0,0)), WHEN loader executes anchor_normalization, THEN normalized coordinates are written into the final EquipmentDef, AND post-normalization union min == (0,0) — catches GridSystem OQ#13 item (b)
+- [x] AC-D.1 [BLOCKING][Logic] GIVEN footprint_cells={(1,0),(2,0)}, access_cells={(0,0)} (already normalized), WHEN anchor_normalization executes, THEN output is footprint={(1,0),(2,0)}, access={(0,0)} — no transform applied (idempotent for already-normalized input)
+- [x] AC-D.2 [BLOCKING][Logic] GIVEN any definition that passes footprint shape and access cell validation, WHEN anchor_normalization executes, THEN every output coordinate component falls in [0, 2] range — bounding-box guarantee (footprint ≤ 2×2 + access orthogonally adjacent ⇒ union ≤ 3×3)
+- [x] AC-JSON.1 [BLOCKING][Logic] GIVEN a valid .catalog.json file with N definitions, WHEN Catalog loads it, THEN N EquipmentDef instances are created with correct field values from JSON
+- [x] AC-JSON.2 [BLOCKING][Logic] GIVEN a malformed JSON file (syntax error), WHEN Catalog attempts to load, THEN loader returns a LoadError with line number information from JSON.parse()
 
 ---
 
@@ -185,7 +185,21 @@ static func load_from_file(path: String, strict_mode: bool) -> LoadResult:
 **Required evidence**:
 - `tests/unit/equipment_catalog/catalog_json_loading_test.gd` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing (2026-08-02)
+
+**Test Evidence**: Full suite 757/757 (was 675). New files:
+- `tests/unit/equipment_catalog/catalog_json_loading_test.gd` — 82 assertions, 0 failures. AC-C.7 (unnormalized fixture with min=(1,1) → footprint {(0,0),(1,0)} + access {(2,0)} written into the final EquipmentDef, union min == (0,0); negative-coordinate edge: access (-1,0) → (0,0)), AC-D.1 (idempotent for {(1,0),(2,0)}+{(0,0)}, single-cell at origin, 2×2 at origin; no-aliasing behavioral check), AC-D.2 (every normalized coordinate component in [0,2] — left-access, 2×2, fully-shifted, plus every loaded def from the valid fixture), AC-JSON.1 (3-entry fixture → 3 defs, file-order `get_all_ids`, all 12 fields round-trip, empty effects, non-empty unlock_requirement, multi-zone), AC-JSON.2 (syntax errors → JSON_PARSE_ERROR with exact "Line 3" from `JSON.parse()`; missing `equipment` key / equipment-as-string → INVALID_SCHEMA; missing file → FILE_NOT_FOUND with queryable empty frozen catalog), strict_mode=false skip path (bad entry excluded, one INVALID_ENTRY LoadError naming entry id + field; all-invalid fixture → frozen empty catalog, ok=false), strict_mode=true assert path via subprocess probe.
+- `tests/unit/equipment_catalog/equipment_catalog_loader_error_probe.gd` — subprocess probe (not a _test.gd): `strict_assert` mode, same pattern as the Story 001 probe.
+- `tests/unit/equipment_catalog/fixtures/*.catalog.json` — 8 committed fixtures (three_valid, unnormalized, one_invalid_entry, all_invalid, missing_equipment, equipment_not_array, syntax_missing_comma, missing_brace).
+
+**Decisions recorded at close**:
+1. **Godot 4.7.1 `JSON.parse()` parses ALL JSON numbers as float** — empirically verified (`"200"` → `200.0`, `"-3"` → `-3.0`, `"0"` → `0.0`). The loader's int parsers (`_field_int`, cell x/y) accept integer-valued floats and convert via `int(value)`; genuinely fractional floats (e.g. `cost: 200.5`) are still rejected with a clear error. This is a NEW engine pitfall — recorded in docs/tech-debt-register.md.
+2. **Godot 4.7.1's JSON parser LENIENTLY accepts trailing commas** — the QA "trailing comma" case cannot produce a parse error (`err=0`, `line=0`). A missing-comma syntax error fixture (`syntax_missing_comma.catalog.json`) is used for AC-JSON.2 instead; both malformed fixtures report the error at line 3 (verified empirically). Recorded in tech-debt register.
+3. **LoadError / LoadResult implemented per the Story 004 DTO sketch** — `LoadError` is `{equipment_id, category, message}` (ADR-0002 section 7's `detail` field is folded into `message`); `LoadResult` is `{ok, catalog, errors}` with static `fail(category, message)` + `new_loaded(catalog, errors)` factories (ok = frozen catalog has ≥1 definition). The ADR-0002 `CatalogLoadResult` name/shape diverges from the Story 002/004 sketches; the stories (later, more specific) win — recorded in tech-debt register.
+4. **ADR-0002's `format_version` envelope is NOT enforced by this loader** — Story 002's sketch checks `data.has("equipment")` at the root (no version/payload wrapper); version-envelope validation is left to the validation-pipeline stories (004+) to add if required. Recorded in tech-debt register.
+5. **`zone_membership` accepts only Array-of-String** (Story 002 schema), not ADR-0002's single-string form — the EquipmentDef field is typed `Array`; a single-string `"cardio"` is rejected with an INVALID_ENTRY error.
+6. **`_load_single_definition()` dropped the sketch's unused `strict_mode` parameter** — the assert lives in `load_from_file()` where the sketch places it; the per-entry parser is pure structural parsing.
+7. **`normalize_anchor()` degrades safely on an empty union** (returns copies) instead of crashing on `all_cells[0]` — an empty footprint is Story 003's validation failure (AC-C.1), not a loader crash. It also returns copies (no aliasing), consistent with EquipmentDef's defensive duplication posture.
 
 ---
 
