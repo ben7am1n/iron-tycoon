@@ -40,6 +40,7 @@ const TEST_FILES := [
 	"tests/integration/grid_system/grid_navigation_solidity_test.gd",
 	"tests/integration/grid_system/grid_perf_drag_smoke_test.gd",
 	"tests/integration/save_load/saveblob_composition_test.gd",
+	"tests/integration/save_load/file_io_version_test.gd",
 ]
 
 # === 隔离的测试文件 ===
