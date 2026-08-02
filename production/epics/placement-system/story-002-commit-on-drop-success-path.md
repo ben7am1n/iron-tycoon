@@ -1,7 +1,7 @@
 # Story 002: Commit-on-Drop — Success Path
 
 > **Epic**: placement-system
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Logic
 > **Estimate**: M — 2 sessions (≤4h)
@@ -106,7 +106,7 @@
 **Required evidence**:
 - `tests/unit/placement_system/commit_success_test.gd` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing — tests/unit/placement_system/commit_success_test.gd — 36 assertions, 0 failures; full suite 2394/0, exit 0 (2026-08-02)
 
 ---
 

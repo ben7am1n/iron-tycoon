@@ -1,7 +1,7 @@
 # Story 004: Solidity Sync via grid_changed
 
 > **Epic**: navigation
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Logic
 > **Estimate**: M — 2 sessions (≤4h)
@@ -104,7 +104,7 @@ func _on_grid_changed(footprint_cells: Array, access_cells: Array) -> void:
 **Required evidence**:
 - `tests/unit/navigation/solidity_sync_test.gd` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing — tests/unit/navigation/solidity_sync_test.gd — 27 assertions, 0 failures; full suite 2394/0, exit 0 (2026-08-02)
 
 ---
 

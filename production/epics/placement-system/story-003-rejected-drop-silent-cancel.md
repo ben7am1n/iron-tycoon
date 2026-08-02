@@ -1,7 +1,7 @@
 # Story 003: Rejected Drop and Silent Cancel
 
 > **Epic**: placement-system
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Logic
 > **Estimate**: M — 2 sessions (≤4h)
@@ -122,7 +122,7 @@
 **Required evidence**:
 - `tests/unit/placement_system/reject_cancel_test.gd` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing — tests/unit/placement_system/reject_cancel_test.gd — 97 assertions, 0 failures; full suite 2394/0, exit 0 (2026-08-02)
 
 ---
 

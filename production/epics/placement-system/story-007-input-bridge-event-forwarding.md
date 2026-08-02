@@ -1,7 +1,7 @@
 # Story 007: Input Bridge and Event Forwarding
 
 > **Epic**: placement-system
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Integration
 > **Estimate**: M — 2 sessions (≤4h)
@@ -110,7 +110,7 @@
 **Required evidence**:
 - `tests/integration/placement_system/input_bridge_test.gd` — must exist and pass (headless SceneTree + synthetic events)
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing — tests/integration/placement_system/input_bridge_test.gd — 46 assertions, 0 failures; full suite 2394/0, exit 0 (2026-08-02)
 
 ---
 

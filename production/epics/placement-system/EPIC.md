@@ -3,20 +3,20 @@
 > **Layer**: Core
 > **GDD**: design/gdd/placement-system.md
 > **Architecture Module**: PlacementSystem — owns `next_instance_id` counter, drag state (DRAGGING/IDLE), current drag def/anchor/rotation
-> **Status**: Ready
+> **Status**: Complete
 > **Stories**: 7 stories created — see below
 
 ## Stories
 
 | # | Story | Type | Status | ADR |
 |---|-------|------|--------|-----|
-| 001 | Drag Lifecycle — Start, Preview, Rotation | Logic | Ready | ADR-0001, ADR-0003 |
-| 002 | Commit-on-Drop — Success Path | Logic | Ready | ADR-0001, ADR-0003, ADR-0005 |
-| 003 | Rejected Drop and Silent Cancel | Logic | Ready | ADR-0003, ADR-0005 |
-| 004 | instance_id Resume After Load | Logic | Ready | ADR-0001, ADR-0002 |
-| 005 | Relocate Flow | Logic | Ready | ADR-0001, ADR-0003, ADR-0005 |
-| 006 | is_dragging Query and Cost Scope | Logic | Ready | ADR-0001 |
-| 007 | Input Bridge and Event Forwarding | Integration | Ready | ADR-0001, ADR-0005 |
+| 001 | Drag Lifecycle — Start, Preview, Rotation | Logic | Complete | ADR-0001, ADR-0003 |
+| 002 | Commit-on-Drop — Success Path | Logic | Complete | ADR-0001, ADR-0003, ADR-0005 |
+| 003 | Rejected Drop and Silent Cancel | Logic | Complete | ADR-0003, ADR-0005 |
+| 004 | instance_id Resume After Load | Logic | Complete | ADR-0001, ADR-0002 |
+| 005 | Relocate Flow | Logic | Complete | ADR-0001, ADR-0003, ADR-0005 |
+| 006 | is_dragging Query and Cost Scope | Logic | Complete | ADR-0001 |
+| 007 | Input Bridge and Event Forwarding | Integration | Complete | ADR-0001, ADR-0005 |
 
 ## Overview
 

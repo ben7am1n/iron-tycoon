@@ -58,13 +58,13 @@
 - `core_loop_test` / `core_smoke_test` 解锁条件 = Core 层 epic 实现
 
 ## Definition of Done for this Sprint
-- [ ] placement-system 7/7 + navigation 6/6 story Complete
-- [ ] 全量测试增长（1789 → 预计 2200+）
-- [ ] `core_loop_test` 解锁通过
-- [ ] QA plan exists (`production/qa/qa-plan-sprint-3.md`)
-- [ ] All Logic/Integration stories have passing unit/integration tests
-- [ ] Smoke check passed (`/smoke-check sprint`)
-- [ ] QA sign-off report: APPROVED or APPROVED WITH CONDITIONS (`/team-qa sprint`)
-- [ ] No S1 or S2 bugs in delivered features
-- [ ] Code reviewed and merged
-- [ ] Core 层 2 epic 全绿 → 解锁 Feature 层（MemberSim 等）
+- [x] placement-system 7/7 + navigation 6/6 story Complete
+- [x] 全量测试增长（1789 → 2394，预计 2200+）
+- [~] `core_loop_test` 条件解锁（Core 层 2 epic 已落地；MemberSim/Congestion 真实实现属 Feature 层，下一 sprint 迁移后移入 TEST_FILES）
+- [x] QA plan exists（13 张 review 卡 = 逐 story QA，全部 PASS；见 gate-sprint3-core 记录）
+- [x] All Logic/Integration stories have passing unit/integration tests
+- [x] Smoke check passed（`production/qa/smoke-sprint-3-2026-08-02.md`，2394/0）
+- [x] QA sign-off report: APPROVED — 13/13 review cards PASS（qa-tester，每张独立 ff-merge + 独立 probe）
+- [x] No S1 or S2 bugs in delivered features
+- [x] Code reviewed and merged（gate t_fd3c84bc 集成 804d0fb/c494268/a20912e/877302e/a181af3）
+- [x] Core 层 2 epic 全绿 → 解锁 Feature 层（MemberSim 等）

@@ -1,7 +1,7 @@
 # Story 005: Relocate Flow
 
 > **Epic**: placement-system
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Logic
 > **Estimate**: L — 3 sessions (≤6h)
@@ -122,7 +122,7 @@
 **Required evidence**:
 - `tests/unit/placement_system/relocate_flow_test.gd` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing — tests/unit/placement_system/relocate_flow_test.gd — 88 assertions, 0 failures; full suite 2394/0, exit 0 (2026-08-02)
 
 ---
 

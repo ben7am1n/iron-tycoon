@@ -1,7 +1,7 @@
 # Story 003: Path Query Edge Cases
 
 > **Epic**: navigation
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Logic
 > **Estimate**: S — 1 session (≤2h)
@@ -100,7 +100,7 @@
 **Required evidence**:
 - `tests/unit/navigation/path_query_edge_cases_test.gd` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing — tests/unit/navigation/path_query_edge_cases_test.gd — 78 assertions, 0 failures; full suite 2394/0, exit 0 (2026-08-02)
 
 ---
 

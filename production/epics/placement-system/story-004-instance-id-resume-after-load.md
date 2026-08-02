@@ -1,7 +1,7 @@
 # Story 004: instance_id Resume After Load
 
 > **Epic**: placement-system
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Logic
 > **Estimate**: S — 1 session (≤2h)
@@ -101,7 +101,7 @@
 **Required evidence**:
 - `tests/unit/placement_system/instance_id_resume_test.gd` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing — tests/unit/placement_system/instance_id_resume_test.gd — 20 assertions, 0 failures; full suite 2394/0, exit 0 (2026-08-02)
 
 ---
 

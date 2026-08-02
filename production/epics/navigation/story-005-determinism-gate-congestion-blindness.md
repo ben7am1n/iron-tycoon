@@ -1,7 +1,7 @@
 # Story 005: Determinism Gate and Congestion Blindness
 
 > **Epic**: navigation
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Integration
 > **Estimate**: M — 2 sessions (≤4h)
@@ -104,7 +104,7 @@
 - `tests/unit/navigation/tiebreak_cross_rebuild_test.gd` — must exist and pass (ADR-0007 gate test)
 - `tests/unit/navigation/determinism_congestion_blind_test.gd` — AC10/AC12 assertions
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing — tests/unit/navigation/determinism_congestion_blind_test.gd — 19 assertions (+ tiebreak_cross_rebuild_test.gd 13, 24/24 child processes bit-identical), 0 failures; full suite 2394/0, exit 0 (2026-08-02)
 
 ---
 

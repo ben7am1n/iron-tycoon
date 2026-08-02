@@ -1,7 +1,7 @@
 # Story 002: Diagonal Mode and Corner Clipping Rules
 
 > **Epic**: navigation
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Logic
 > **Estimate**: M — 2 sessions (≤4h)
@@ -102,7 +102,7 @@
 **Required evidence**:
 - `tests/unit/navigation/diagonal_corner_rules_test.gd` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing — tests/unit/navigation/diagonal_corner_rules_test.gd — 17 assertions, 0 failures; full suite 2394/0, exit 0 (2026-08-02)
 
 ---
 

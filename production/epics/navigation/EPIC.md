@@ -3,19 +3,19 @@
 > **Layer**: Core
 > **GDD**: design/gdd/navigation.md
 > **Architecture Module**: Navigation — owns AStarGrid2D instance (rebuilt on occupancy change)
-> **Status**: Ready
+> **Status**: Complete
 > **Stories**: 6 stories created — see below
 
 ## Stories
 
 | # | Story | Type | Status | ADR |
 |---|-------|------|--------|-----|
-| 001 | AStarGrid2D Configuration and Basic Paths | Logic | Ready | ADR-0007 |
-| 002 | Diagonal Mode and Corner Clipping Rules | Logic | Ready | ADR-0007 |
-| 003 | Path Query Edge Cases | Logic | Ready | ADR-0007 |
-| 004 | Solidity Sync via grid_changed | Logic | Ready | ADR-0005, ADR-0007 |
-| 005 | Determinism Gate and Congestion Blindness | Integration | Ready | ADR-0007 |
-| 006 | Rebuild-on-Load and cell_size Independence | Integration | Ready | ADR-0002, ADR-0007 |
+| 001 | AStarGrid2D Configuration and Basic Paths | Logic | Complete | ADR-0007 |
+| 002 | Diagonal Mode and Corner Clipping Rules | Logic | Complete | ADR-0007 |
+| 003 | Path Query Edge Cases | Logic | Complete | ADR-0007 |
+| 004 | Solidity Sync via grid_changed | Logic | Complete | ADR-0005, ADR-0007 |
+| 005 | Determinism Gate and Congestion Blindness | Integration | Complete | ADR-0007 |
+| 006 | Rebuild-on-Load and cell_size Independence | Integration | Complete | ADR-0002, ADR-0007 |
 
 ## Overview
 

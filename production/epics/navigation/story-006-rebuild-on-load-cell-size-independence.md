@@ -1,7 +1,7 @@
 # Story 006: Rebuild-on-Load and cell_size Independence
 
 > **Epic**: navigation
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Core
 > **Type**: Integration
 > **Estimate**: M — 2 sessions (≤4h)
@@ -97,7 +97,7 @@
 - `tests/integration/navigation/rebuild_load_cell_size_test.gd` — must exist and pass (AC6, AC13)
 - Depends on: save-load round-trip harness (or a minimal grid serialize/deserialize fixture)
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing — tests/integration/navigation/rebuild_load_cell_size_test.gd — 29 assertions, 0 failures; full suite 2394/0, exit 0 (2026-08-02)
 
 ---
 

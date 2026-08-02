@@ -21,128 +21,128 @@ stories:
     name: "Drag Lifecycle — Start, Preview, Rotation"
     file: "production/epics/placement-system/story-001-drag-lifecycle-start-preview-rotation.md"
     priority: must-have
-    status: ready-for-dev
+    status: done
     owner: ""
     estimate_days: 1.0
     blocker: ""
-    completed: ""
+    completed: "2026-08-02"
 
   - id: "PL-002"
     name: "Commit-on-Drop — Success Path"
     file: "production/epics/placement-system/story-002-commit-on-drop-success-path.md"
     priority: must-have
-    status: ready-for-dev
+    status: done
     owner: ""
     estimate_days: 1.0
     blocker: ""
-    completed: ""
+    completed: "2026-08-02"
 
   - id: "PL-003"
     name: "Rejected Drop and Silent Cancel"
     file: "production/epics/placement-system/story-003-rejected-drop-silent-cancel.md"
     priority: must-have
-    status: ready-for-dev
+    status: done
     owner: ""
     estimate_days: 1.0
     blocker: ""
-    completed: ""
+    completed: "2026-08-02"
 
   - id: "PL-004"
     name: "instance_id Resume After Load"
     file: "production/epics/placement-system/story-004-instance-id-resume-after-load.md"
     priority: must-have
-    status: ready-for-dev
+    status: done
     owner: ""
     estimate_days: 0.5
     blocker: ""
-    completed: ""
+    completed: "2026-08-02"
 
   - id: "PL-005"
     name: "Relocate Flow"
     file: "production/epics/placement-system/story-005-relocate-flow.md"
     priority: must-have
-    status: ready-for-dev
+    status: done
     owner: ""
     estimate_days: 1.5
     blocker: ""
-    completed: ""
+    completed: "2026-08-02"
 
   - id: "PL-006"
     name: "is_dragging Query and Cost Scope"
     file: "production/epics/placement-system/story-006-is-dragging-query-cost-scope.md"
     priority: must-have
-    status: ready-for-dev
+    status: done
     owner: ""
     estimate_days: 0.5
     blocker: ""
-    completed: ""
+    completed: "2026-08-02"
 
   - id: "PL-007"
     name: "Input Bridge and Event Forwarding"
     file: "production/epics/placement-system/story-007-input-bridge-event-forwarding.md"
     priority: must-have
-    status: ready-for-dev
+    status: done
     owner: ""
     estimate_days: 1.0
     blocker: ""
-    completed: ""
+    completed: "2026-08-02"
 
   - id: "NV-001"
     name: "AStarGrid2D Configuration and Basic Paths"
     file: "production/epics/navigation/story-001-astargrid2d-configuration-basic-paths.md"
     priority: must-have
-    status: ready-for-dev
+    status: done
     owner: ""
     estimate_days: 1.0
     blocker: ""
-    completed: ""
+    completed: "2026-08-02"
 
   - id: "NV-002"
     name: "Diagonal Mode and Corner Clipping Rules"
     file: "production/epics/navigation/story-002-diagonal-mode-corner-clipping-rules.md"
     priority: must-have
-    status: ready-for-dev
+    status: done
     owner: ""
     estimate_days: 1.0
     blocker: ""
-    completed: ""
+    completed: "2026-08-02"
 
   - id: "NV-003"
     name: "Path Query Edge Cases"
     file: "production/epics/navigation/story-003-path-query-edge-cases.md"
     priority: must-have
-    status: ready-for-dev
+    status: done
     owner: ""
     estimate_days: 0.5
     blocker: ""
-    completed: ""
+    completed: "2026-08-02"
 
   - id: "NV-004"
     name: "Solidity Sync via grid_changed"
     file: "production/epics/navigation/story-004-solidity-sync-via-grid-changed.md"
     priority: must-have
-    status: ready-for-dev
+    status: done
     owner: ""
     estimate_days: 1.0
     blocker: ""
-    completed: ""
+    completed: "2026-08-02"
 
   - id: "NV-005"
     name: "Determinism Gate and Congestion Blindness"
     file: "production/epics/navigation/story-005-determinism-gate-congestion-blindness.md"
     priority: must-have
-    status: ready-for-dev
+    status: done
     owner: ""
     estimate_days: 1.0
     blocker: ""
-    completed: ""
+    completed: "2026-08-02"
 
   - id: "NV-006"
     name: "Rebuild-on-Load and cell_size Independence"
     file: "production/epics/navigation/story-006-rebuild-on-load-cell-size-independence.md"
     priority: must-have
-    status: ready-for-dev
+    status: done
     owner: ""
     estimate_days: 1.0
     blocker: ""
-    completed: ""
+    completed: "2026-08-02"

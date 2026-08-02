@@ -16,8 +16,8 @@ Engine: Godot 4.7.1
 
 | Epic | Layer | System | GDD | Stories | Status |
 |------|-------|--------|-----|---------|--------|
-| [placement-system](placement-system/EPIC.md) | Core | PlacementSystem | design/gdd/placement-system.md | 7 stories | Ready |
-| [navigation](navigation/EPIC.md) | Core | Navigation (AStarGrid2D) | design/gdd/navigation.md | 6 stories | Ready |
+| [placement-system](placement-system/EPIC.md) | Core | PlacementSystem | design/gdd/placement-system.md | 7 stories | Complete |
+| [navigation](navigation/EPIC.md) | Core | Navigation (AStarGrid2D) | design/gdd/navigation.md | 6 stories | Complete |
 
 ## Feature Layer
 
