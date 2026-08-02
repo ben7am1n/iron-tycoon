@@ -1,0 +1,32 @@
+{
+  "equipment": [
+    {
+      "id": "two_access_treadmill",
+      "display_name": "Two Access Treadmill",
+      "zone_membership": ["cardio"],
+      "footprint_cells": [{"x": 0, "y": 0}, {"x": 1, "y": 0}],
+      "access_cells": [{"x": 0, "y": 1}, {"x": 1, "y": 1}],
+      "cost": 200,
+      "unlock_requirement": "",
+      "effects": [],
+      "use_duration_mean_ticks": 200,
+      "use_duration_stddev_ticks": 35,
+      "use_duration_min_ticks": 100,
+      "use_duration_max_ticks": 300
+    },
+    {
+      "id": "valid_dumbbell",
+      "display_name": "Valid Dumbbell",
+      "zone_membership": ["free_weights"],
+      "footprint_cells": [{"x": 0, "y": 0}],
+      "access_cells": [{"x": 1, "y": 0}],
+      "cost": 200,
+      "unlock_requirement": "",
+      "effects": [],
+      "use_duration_mean_ticks": 150,
+      "use_duration_stddev_ticks": 15,
+      "use_duration_min_ticks": 75,
+      "use_duration_max_ticks": 225
+    }
+  ]
+}

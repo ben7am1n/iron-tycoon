@@ -17,12 +17,15 @@
 ## so designer-facing syntax errors carry the offending LINE number via
 ## json.get_error_line() (AC-JSON.2, ADR-0002 section 6).
 ##
-## Validation scope: this story performs STRUCTURAL parsing only (required
-## keys, JSON types, {"x":N,"y":N} cell shape). Semantic validation —
-## footprint 1x1/1x2/2x2 shape, access count==1, orthogonal adjacency,
-## cost>=0, use_duration_* ranges — is Story 003/004/005 and deliberately
-## NOT implemented here. Normalization runs BEFORE validation: Story 003's
-## validator receives clean, normalized coordinates (Story 002 design note).
+## Validation scope: this story performs STRUCTURAL parsing (required keys,
+## JSON types, {"x":N,"y":N} cell shape) AND — since Story 003 — the
+## semantic validation of the GridSystem cross-document contract: footprint
+## must be a 1x1/1x2/2x2 rectangular AABB (no L-shapes, no holes),
+## access_cells exactly 1 entry, orthogonally adjacent, disjoint from
+## footprint (TR-EC-002, AC-C.3/4/5/6). Remaining semantic ranges
+## (cost>=0, use_duration_* ranges) are Story 004/005 and still NOT
+## implemented here. Normalization runs BEFORE validation: the Story 003
+## validators receive clean, normalized coordinates (Story 002 design note).
 ## Determinism guardrail (Control Manifest): same JSON input always produces
 ## the same EquipmentDef order — catalog insertion order is file order.
 class_name EquipmentCatalogLoader extends RefCounted
@@ -32,6 +35,7 @@ const CATEGORY_IO_ERROR := "IO_ERROR"
 const CATEGORY_JSON_PARSE_ERROR := "JSON_PARSE_ERROR"
 const CATEGORY_INVALID_SCHEMA := "INVALID_SCHEMA"
 const CATEGORY_INVALID_ENTRY := "INVALID_ENTRY"
+const CATEGORY_VALIDATION_FAILED := "VALIDATION_FAILED"
 
 
 ## Loads a catalog from `path` (a .catalog.json file).
@@ -84,6 +88,15 @@ static func load_from_file(path: String, strict_mode: bool) -> LoadResult:
 					false,
 					"EquipmentCatalog: failed to load '%s': %s" % [result["id"], _errors_summary(result["errors"])]
 				)
+			else:
+				# AC-C.2 / GDD Edge Cases: release posture — the bad entry is
+				# EXCLUDED from the catalog but push_error() records it (deep
+				# defense; one bad record must not block the game from
+				# starting). The valid entries still load below.
+				push_error(
+					"EquipmentCatalog: excluding invalid entry '%s': %s"
+					% [result["id"], _errors_summary(result["errors"])]
+				)
 
 	catalog._freeze()
 	return LoadResult.new_loaded(catalog, errors)
@@ -124,6 +137,139 @@ static func normalize_anchor(
 		result_ac.append(Vector2i(cell.x - min_x, cell.y - min_y))
 
 	return {"footprint": result_fp, "access": result_ac}
+
+
+# === Semantic validation (Story 003 scope, TR-EC-002) ===
+#
+# These validators enforce the GridSystem cross-document contract that
+# declared_bounds / rotation transform depend on (GDD Core Rules 3+4,
+# grid-system OQ#11/#13): footprint must be a 1x1 / 1x2 / 2x2 rectangular
+# AABB (no L-shapes, no holes); access_cells must have exactly 1 entry that
+# is orthogonally adjacent to (and disjoint from) the footprint.
+#
+# Both are pure functions returning ValidationResult — the loader's
+# strict_mode branch (in load_from_file) decides abort vs skip per entry
+# (Story 004 owns that branching decision; this story only produces the
+# result, per the story's Out of Scope note).
+
+## The three locked footprint shapes, keyed by canonical label. bbox w/h are
+## the AABB dimensions; "cells" is the required cell count. The 1x2 label
+## covers BOTH orientations (w=1,h=2 and w=2,h=1) — GridSystem handles
+## rotation at runtime, the canonical definition is just a straight line
+## (GDD Core Rule 3).
+const VALID_SHAPES := {
+	"1x1": {"cells": 1, "w": 1, "h": 1},
+	"1x2": {"cells": 2, "w": 1, "h": 2},  # or w=2,h=1
+	"2x2": {"cells": 4, "w": 2, "h": 2},
+}
+
+
+## Validates that `cells` is one of the three locked rectangular AABB
+## footprints (AC-C.3: L-shape / hole / diagonal-only / oversized all fail).
+## Uses bounding-box + cell-count: a rectangular AABB satisfies
+## cell_count == bbox_w * bbox_h, which catches holes and L-shapes
+## naturally. Ordered checks — first failure returns (deterministic error
+## for any given bad input).
+static func validate_footprint_shape(cells: Array[Vector2i]) -> ValidationResult:
+	if cells.is_empty():
+		return ValidationResult.fail("FOOTPRINT_EMPTY", "footprint_cells must not be empty")
+
+	var cell_count := cells.size()
+
+	# Bounding box
+	var min_x := cells[0].x
+	var max_x := cells[0].x
+	var min_y := cells[0].y
+	var max_y := cells[0].y
+	for c in cells:
+		min_x = min(min_x, c.x)
+		max_x = max(max_x, c.x)
+		min_y = min(min_y, c.y)
+		max_y = max(max_y, c.y)
+
+	var bbox_w := max_x - min_x + 1
+	var bbox_h := max_y - min_y + 1
+
+	# Must match cell count AND bounding box dimensions AND be rectangular
+	# (cell_count == bbox_w * bbox_h) — the rectangularity check alone
+	# catches L-shapes (3 cells in a 2x2 bbox) and holes.
+	var is_rectangular := cell_count == (bbox_w * bbox_h)
+	if not is_rectangular:
+		return ValidationResult.fail(
+			"FOOTPRINT_NOT_RECTANGULAR",
+			"footprint must be rectangular AABB; got %d cells in %dx%d bbox (expected %d cells)"
+			% [cell_count, bbox_w, bbox_h, bbox_w * bbox_h]
+		)
+
+	var is_valid_shape := (bbox_w in [1, 2] and bbox_h in [1, 2]) and cell_count in [1, 2, 4]
+	if not is_valid_shape:
+		return ValidationResult.fail(
+			"FOOTPRINT_INVALID_SHAPE",
+			"footprint must be 1×1, 1×2, or 2×2; got %d×%d (%d cells)" % [bbox_w, bbox_h, cell_count]
+		)
+
+	return ValidationResult.success()
+
+
+## Validates the access cell contract (GDD Core Rule 4): exactly 1 entry,
+## disjoint from footprint, orthogonally adjacent (shares an edge — diagonal
+## dx=1,dy=1 is NOT adjacent, AC-C.5; far cells fail, AC-C.5 edge cases).
+static func validate_access_cells(
+	access_cells: Array[Vector2i],
+	footprint_cells: Array[Vector2i]
+) -> ValidationResult:
+	# (d) Exactly 1 access cell
+	if access_cells.size() != 1:
+		return ValidationResult.fail(
+			"ACCESS_COUNT",
+			"access_cells must have exactly 1 entry; got %d" % access_cells.size()
+		)
+
+	var ac := access_cells[0]
+
+	# (c) Access must not overlap footprint (GridSystem OQ#13 item (c), AC-C.6)
+	if ac in footprint_cells:
+		return ValidationResult.fail(
+			"ACCESS_OVERLAPS_FOOTPRINT",
+			"access cell %s overlaps with footprint" % ac
+		)
+
+	# Orthogonal adjacency: must share at least one edge with a footprint cell
+	var is_adjacent := false
+	for fc in footprint_cells:
+		var dx: int = abs(ac.x - fc.x)
+		var dy: int = abs(ac.y - fc.y)
+		if (dx == 1 and dy == 0) or (dx == 0 and dy == 1):
+			is_adjacent = true
+			break
+
+	if not is_adjacent:
+		return ValidationResult.fail(
+			"ACCESS_NOT_ADJACENT",
+			"access cell %s is not orthogonally adjacent to any footprint cell" % ac
+		)
+
+	return ValidationResult.success()
+
+
+## Ordered validation pipeline for one definition (Story 003 sketch):
+## footprint shape → access count → access disjoint → access adjacency.
+## First failure returns — deterministic error for any given bad input.
+## Operates on ALREADY-NORMALIZED coordinates (Story 002 runs
+## normalize_anchor before this; the union min is guaranteed (0,0)).
+static func _validate_definition(
+	footprint_cells: Array[Vector2i],
+	access_cells: Array[Vector2i]
+) -> ValidationResult:
+	var r := validate_footprint_shape(footprint_cells)
+	if not r.ok:
+		return r
+
+	r = validate_access_cells(access_cells, footprint_cells)
+	if not r.ok:
+		return r
+
+	return ValidationResult.success()
 
 
 # === Per-entry structural parsing (Story 002 scope) ===
@@ -168,6 +314,23 @@ static func _load_single_definition(entry: Variant) -> Dictionary:
 		return {"ok": false, "id": entry_id, "def": null, "errors": errors}
 
 	var normalized := normalize_anchor(footprint_parse["cells"], access_parse["cells"])
+
+	# Story 003: semantic validation on the NORMALIZED coordinates (Story 002
+	# design note: "validator receives clean, normalized coordinates"). The
+	# result flows into the loader's strict_mode branch: strict=true aborts
+	# (AC-C.1), strict=false excludes + push_error (AC-C.2) — the other valid
+	# entries still load.
+	var validation := _validate_definition(normalized["footprint"], normalized["access"])
+	if not validation.ok:
+		errors.append(
+			LoadError.new(
+				entry_id,
+				CATEGORY_VALIDATION_FAILED,
+				"%s: %s" % [validation.code, validation.message]
+			)
+		)
+		return {"ok": false, "id": entry_id, "def": null, "errors": errors}
+
 	var def: EquipmentDef = EquipmentDef.new(
 		id,
 		display_name,
