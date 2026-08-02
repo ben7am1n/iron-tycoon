@@ -1,12 +1,12 @@
 # Story 001: Pure evaluate() and Effect Vocabulary
 
 > **Epic**: zone-rules
-> **Status**: Ready
+> **Status**: Complete — 2026-08-03 (QA 终审 PASS, t_f1010c0a)
 > **Layer**: Feature
 > **Type**: Logic
 > **Estimate**: M — 2 sessions (≤4h)
 > **Manifest Version**: 2026-07-23
-> **Last Updated**: 2026-08-02
+> **Last Updated**: 2026-08-03
 
 ## Context
 
@@ -31,13 +31,13 @@
 
 *From GDD `design/gdd/zone-rules.md`, scoped to this story:*
 
-- [ ] AC1 [WB] GIVEN a fixed snapshot S with N placed instances, WHEN `evaluate(S)` is called 100 times in sequence, THEN every call returns bit-identical Dictionary values (no variance, no time/order dependence, no RNG)
-- [ ] AC8 GIVEN any valid snapshot including worst-case cross-zone clutter, WHEN `evaluate()` runs, THEN `comfort_i, zone_synergy_i, spaciousness_i, total_i ≥ 0` for every instance (never negative)
-- [ ] AC11 GIVEN `get_placed_instances()` returns `[]`, WHEN `evaluate()` runs, THEN it returns an empty Dictionary
-- [ ] AC12 GIVEN exactly 1 placed instance with no neighbors, WHEN `evaluate()` runs, THEN `zone_synergy_i == 0.0` and `total_i == comfort_i + spaciousness_i`
-- [ ] AC13 [WB] GIVEN the implementation file `zone_rules.gd`, WHEN its source is scanned (grep / static analysis), THEN it references **only** the documented `GridStateReader` read contract methods (`get_placed_instances`, `is_solid`, `get_dimensions`) and `EquipmentCatalog.get_definition` — no member-position, queue-length, or other dynamic-state API appears anywhere in the file
-- [ ] AC14 GIVEN any valid snapshot, WHEN `evaluate()` returns, THEN every value Dictionary contains **exactly** `{comfort, zone_synergy, spaciousness, total}` — no missing/extra keys
-- [ ] AC16 GIVEN placed instances whose `instance_id`s are non-contiguous (e.g. 2, 7, 40), WHEN `evaluate()` iterates, THEN iteration is in ascending `instance_id` order
+- [x] AC1 [WB] GIVEN a fixed snapshot S with N placed instances, WHEN `evaluate(S)` is called 100 times in sequence, THEN every call returns bit-identical Dictionary values (no variance, no time/order dependence, no RNG)
+- [x] AC8 GIVEN any valid snapshot including worst-case cross-zone clutter, WHEN `evaluate()` runs, THEN `comfort_i, zone_synergy_i, spaciousness_i, total_i ≥ 0` for every instance (never negative)
+- [x] AC11 GIVEN `get_placed_instances()` returns `[]`, WHEN `evaluate()` runs, THEN it returns an empty Dictionary
+- [x] AC12 GIVEN exactly 1 placed instance with no neighbors, WHEN `evaluate()` runs, THEN `zone_synergy_i == 0.0` and `total_i == comfort_i + spaciousness_i`
+- [x] AC13 [WB] GIVEN the implementation file `zone_rules.gd`, WHEN its source is scanned (grep / static analysis), THEN it references **only** the documented `GridStateReader` read contract methods (`get_placed_instances`, `is_solid`, `get_dimensions`) and `EquipmentCatalog.get_definition` — no member-position, queue-length, or other dynamic-state API appears anywhere in the file
+- [x] AC14 GIVEN any valid snapshot, WHEN `evaluate()` returns, THEN every value Dictionary contains **exactly** `{comfort, zone_synergy, spaciousness, total}` — no missing/extra keys
+- [x] AC16 GIVEN placed instances whose `instance_id`s are non-contiguous (e.g. 2, 7, 40), WHEN `evaluate()` iterates, THEN iteration is in ascending `instance_id` order
 
 ---
 
@@ -93,42 +93,49 @@
   - When: evaluate(S) called 100 times
   - Then: every call returns bit-identical Dictionary values; no variance/order dependence/RNG
   - Edge cases: repeated calls between other evaluations (no hidden state)
+  - **QA 回填 (2026-08-03)**: PASS — `_test_ac1_pure_function_100_calls_bit_identical`（1+99 次连续调用 `next == first`）+ `_test_ac1_interleaved_calls_no_hidden_state`（A→B→B→A 复评位等同）
 
 - **AC8**: 非负性
   - Given: any valid snapshot including worst-case cross-zone clutter
   - When: evaluate() runs
   - Then: comfort_i, zone_synergy_i, spaciousness_i, total_i ≥ 0 for every instance
   - Edge cases: cross-zone adjacency (neutral 0, never negative); mixed zones
+  - **QA 回填 (2026-08-03)**: PASS — 最坏杂乱布局（4 异区共邻 + 无 comfort tag 件 + 多区件）逐行四键全非负；无 tag 件 comfort==0.0
 
 - **AC11**: 空布局
   - Given: get_placed_instances() returns []
   - When: evaluate() runs
   - Then: returns empty Dictionary, no error
   - Edge cases: null-ish empty vs absent field
+  - **QA 回填 (2026-08-03)**: PASS — `[]` → `{}`（`result is Dictionary && result.is_empty() && size()==0`），无错误
 
 - **AC12**: 单实例
   - Given: exactly 1 placed instance, no neighbors
   - When: evaluate() runs
   - Then: zone_synergy_i == 0.0; total_i == comfort_i + spaciousness_i
   - Edge cases: spaciousness computes normally (usually high)
+  - **QA 回填 (2026-08-03)**: PASS — `zone_synergy == 0.0` 精确相等；`total == comfort + spaciousness`（spaciousness 本期为占位 0.0）；comfort 0.6 直通
 
 - **AC13**: 静态只读
   - Given: zone_rules.gd source
   - When: scanned (grep/static analysis)
   - Then: references only documented GridStateReader methods + EquipmentCatalog.get_definition; no member-position/queue-length/dynamic-state API
   - Edge cases: no references to Congestion, MemberSim, or any live data accessor
+  - **QA 回填 (2026-08-03)**: PASS — 独立 grep 复核：仅 `get_placed_instances`(L52) + `get_definition`(L89)（`is_solid`/`get_dimensions` 属白名单但本期不需要）；禁词 get_occupant_id/get_access_cells/get_member_position/get_queue_length/get_position/Congestion/MemberSim 零命中
 
 - **AC14**: 输出形状
   - Given: any valid snapshot
   - When: evaluate() returns
   - Then: every value Dictionary contains exactly {comfort, zone_synergy, spaciousness, total}
   - Edge cases: missing key never happens; extra key never added
+  - **QA 回填 (2026-08-03)**: PASS — 每行 `size()==4` 且四键 `has()` 全中（无缺键、无增键）；3 实例 → 3 行
 
 - **AC16**: 非连续 id 排序
   - Given: placed instances with instance_ids 2, 7, 40
   - When: evaluate() iterates
   - Then: iteration in ascending instance_id order
   - Edge cases: Dictionary insertion order differs from id order (implementation sorts)
+  - **QA 回填 (2026-08-03)**: PASS — 输入打乱为 [7, 40, 2]，输出 `result.keys() == [2, 7, 40]`（实现显式 `sort_custom` 升序）
 
 ---
 
@@ -138,7 +145,20 @@
 **Required evidence**:
 - `tests/unit/zone_rules/evaluate_purity_test.gd` — must exist and pass (AC1, AC8, AC11, AC12, AC14, AC16)
 
-**Status**: [ ] Not yet created
+**Status**: [x] Complete — 2026-08-03
+
+`tests/unit/zone_rules/evaluate_purity_test.gd` exists and passes: 20/20
+assertions standalone (exit 0), covering AC1 (100 sequential bit-identical
+calls + interleaved no-hidden-state edge), AC8 (worst-case cross-zone
+clutter non-negativity), AC11 (empty layout → empty Dictionary), AC12
+(single instance zone_synergy == 0.0, total == comfort + spaciousness),
+AC13 (static source scan — only get_placed_instances + get_definition,
+zero forbidden dynamic-state tokens; independently re-grepped by QA),
+AC14 (exactly the 4 keys per row), AC16 (shuffled [7,40,2] input →
+ascending [2,7,40] keys). Registered in `tests/headless_runner.gd`
+TEST_FILES. Full headless suite run twice independently by QA: 2702
+passed / 0 failed, RESULT PASSED, 0 SCRIPT ERROR, exit 0, per-file
+results identical across both runs (51 files, evaluate_purity 20/0 both).
 
 ---
 
