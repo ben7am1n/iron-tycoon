@@ -45,6 +45,7 @@ const TEST_FILES := [
 	"tests/integration/grid_system/grid_serialization_test.gd",
 	"tests/integration/grid_system/grid_navigation_solidity_test.gd",
 	"tests/integration/grid_system/grid_perf_drag_smoke_test.gd",
+	"tests/integration/placement_system/input_bridge_test.gd",
 	"tests/integration/save_load/saveblob_composition_test.gd",
 	"tests/integration/save_load/load_orchestration_test.gd",
 	"tests/integration/save_load/roundtrip_determinism_test.gd",

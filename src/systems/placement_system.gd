@@ -15,12 +15,16 @@
 ##     nothing (AC8/AC9/AC17/AC23).
 ##   PL-004 (merged base): the `instance_id` monotonic counter and its
 ##     resume-after-load recomputation.
-##   PL-005 (THIS STORY): relocate flow — begin_relocate(instance_id) picks
+##   PL-005 (merged base): relocate flow — begin_relocate(instance_id) picks
 ##     up an already-committed piece, clears its occupancy at drag-start
 ##     (grid_changed fires once; in-use members repath), re-commits under the
 ##     SAME instance_id on a valid drop (counter untouched), and silently
 ##     restores (anchor₀, rotation₀) on cancel / focus-loss / rejected drop
 ##     (Core Rule 1a, TR-PS-008, AC20/24/25/26/27/30).
+##   PL-006 (merged): is_dragging() — the pure synchronous state query (Core
+##     Rule 10, TR-PS-010, AC28/29) plus the cost-scope guarantee on init()
+##     (AC14: signature carries exactly GridSystem + EquipmentCatalog, no
+##     currency dependency — Core Rule 9).
 ## Req:   TR-PS-001 (single interactive surface), TR-PS-002 (live preview
 ##        via GridSystem.can_place against REAL grid state, no mutation),
 ##        TR-PS-003 (commit-on-drop: can_place check, allocate instance_id,
@@ -233,6 +237,18 @@ func init(grid: GridSystem, catalog: EquipmentCatalog) -> void:
 
 func system_name() -> String:
 	return "PlacementSystem"
+
+
+## Returns true iff a drag is currently in flight (DRAGGING — new placement or
+## relocate, any source); false when IDLE (Core Rule 10, TR-PS-010, PL-006).
+##
+## Pure synchronous read: never mutates state, never emits a signal, callable
+## at any time including mid-drag. Guards use-before-init per the Control
+## Manifest — returns the safe default (false) before init().
+func is_dragging() -> bool:
+	if not _assert_initialized():
+		return false
+	return _state == DragState.DRAGGING
 
 
 ## Drag start (Core Rule 2, AC1/AC15/AC16).
@@ -673,3 +689,14 @@ func rederive_counter() -> void:
 ## tests/unit/placement_system/; never from any production call site.
 func _test_set_next_instance_id(value: int) -> void:
 	_next_instance_id = value
+
+
+## WHITE-BOX TEST SEAM (Story 006 / AC28/AC29 precondition, PL-006) — test-only.
+##
+## Forces the drag state so tests can construct DRAGGING (AC29) without going
+## through the full begin_drag/begin_relocate lifecycle. Uses the SAME field
+## (_state) that the drag lifecycle transitions — is_dragging() reflects it
+## verbatim, so a drag constructed via this seam is indistinguishable from a
+## real one. Reachable only from tests/; never from any production call site.
+func _test_set_dragging(active: bool) -> void:
+	_state = DragState.DRAGGING if active else DragState.IDLE
