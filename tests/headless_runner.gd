@@ -56,6 +56,7 @@ const TEST_FILES := [
 	"tests/unit/navigation/tiebreak_cross_rebuild_test.gd",
 	"tests/unit/congestion/per_equipment_scalar_test.gd",
 	"tests/unit/congestion/per_cell_density_test.gd",
+	"tests/unit/congestion/access_reachable_test.gd",
 	"tests/integration/equipment_catalog/catalog_edge_cases_test.gd",
 	"tests/integration/grid_system/grid_serialization_test.gd",
 	"tests/integration/grid_system/grid_navigation_solidity_test.gd",
