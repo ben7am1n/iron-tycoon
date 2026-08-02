@@ -68,7 +68,9 @@ class MockFactory:
 	func open_write(file_path: String) -> Object:
 		if return_null:
 			return null
-		handle = MockHandle.new()
+		# 复用已预创建的 handle（测试需在 save_to_file() 前注入 store_result）
+		if handle == null:
+			handle = MockHandle.new()
 		return handle
 
 
@@ -303,6 +305,8 @@ func _test_file1_store_string_failure_errors() -> void:
 	var rig := _make_rig(21)
 	var factory := MockFactory.new()
 	rig["save_load"].set("_file_access_factory", Callable(factory, "open_write"))
+	# open_write() 尚未调用，handle 为 Nil —— 先创建再注入失败结果
+	factory.handle = MockHandle.new()
 	factory.handle.store_result = false  # simulate disk-full / failed write
 
 	var err: String = rig["save_load"].call("save_to_file", "sl004_failwrite")
@@ -352,6 +356,8 @@ func _test_file2_close_still_called_on_write_failure() -> void:
 	var rig := _make_rig(37)
 	var factory := MockFactory.new()
 	rig["save_load"].set("_file_access_factory", Callable(factory, "open_write"))
+	# open_write() 尚未调用，handle 为 Nil —— 先创建再注入失败结果
+	factory.handle = MockHandle.new()
 	factory.handle.store_result = false
 	var err: String = rig["save_load"].call("save_to_file", "sl004_orderfail")
 	_check(err != "", "write failure surfaced as an error")
