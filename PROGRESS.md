@@ -37,28 +37,33 @@
 2026-07-30 起进入编码实现，走 **story 驱动**流程：
 `/dev-story` → `/code-review` → `/story-done`，每个 story 必须有通过的自动化测试。
 
-### Sprint 1（2026-07-31 → 2026-08-13）
-目标：吃完 GridSystem 剩余 7 个 story，让"空间真相的唯一所有者"完整收尾。
+### Sprint 1（2026-07-31 → 2026-08-13）✅ 完成
+GridSystem 收尾 + equipment-catalog 追加：14/14 story Complete，测试 1040 全绿，QA APPROVED。
+
+### Sprint 2（2026-08-04 → 2026-08-15）✅ 完成
+Foundation 层收官：time-system（4 story）+ save-load（4 story）8/8 Complete，测试 1789 全绿，QA 门禁 PASS。
+
+**Foundation 层 4 个 epic 全部 Complete**（grid-system / equipment-catalog / time-system / save-load）。
+**Core 层**：placement-system（7 stories）+ navigation（6 stories）epic 已创建，待开工。
+
+### 下一步
+1. Core 层实现（PlacementSystem + Navigation + MemberSim + Congestion）—— 游戏核心循环成形
+2. `/create-epics layer: core` 已由 gate 首批事项完成；`core_loop_test` 待 Core 层实现后解锁
 
 | Story | 内容 | 状态 |
 |---|---|---|
 | GRID-001 | 单元格数据模型（occupant_id / buildable / access_ids） | ✅ Complete |
 | GRID-002 | 实体性公式 `is_solid` + 坐标换算 | ✅ Complete |
 | GRID-003 | 旋转变换 + 声明包围盒 | ✅ Complete |
-| GRID-004 | `can_place` 放置校验 | ⬜ Ready（下一个） |
-| GRID-005 | commit / clear + 反向索引 | ⬜ Ready |
-| GRID-006 | GridStateReader + GridSnapshot | ⬜ Ready |
-| GRID-007 | 序列化 / 反序列化 | ⬜ Ready |
-| GRID-008 | 信号 + 集成 + 性能冒烟 | ⬜ Ready |
+| GRID-004 | `can_place` 放置校验 | ✅ Complete |
+| GRID-005 | commit / clear + 反向索引 | ✅ Complete |
+| GRID-006 | GridStateReader + GridSnapshot | ✅ Complete |
+| GRID-007 | 序列化 / 反序列化 | ✅ Complete |
+| GRID-008 | 信号 + 集成 + 性能冒烟 | ✅ Complete |
 
-**测试**：192 个断言全绿，CI 已在 GitHub Actions 实测通过。
-**其余 Foundation epic**：equipment-catalog(7) / time-system(4) / save-load(4) 共 15 个 story 已就绪，未开工。
-**Core 层及以上**：epic 尚未创建（`/create-epics layer: core`）。
-
-### 下一步
-1. `/dev-story production/epics/grid-system/story-004-grid-can-place.md`
-2. GridSystem 收尾后 → `/smoke-check sprint` → `/team-qa sprint`
-3. `/gate-check production` —— 顺便修正 `production/stage.txt`（仍写着过期的 `Concept`）
+**测试**：1789 个断言全绿（Sprint 1 基线 1040 → Sprint 2 收官 1789），CI 已在 GitHub Actions 实测通过。
+**Foundation 层**：4 个 epic 全部 Complete（grid-system 8 / equipment-catalog 7 / time-system 4 / save-load 4）。
+**Core 层**：placement-system（7 stories）+ navigation（6 stories）epic 已创建，待开工。
 
 ## 实现中确认的引擎事实（Godot 4.7.1，代价换来的）
 - **`assert(false)` 会中止当前函数栈帧的剩余部分**，但不终止进程。值类型返回会静默变成零值，**对象类型返回会变成 `null` 并让调用方崩溃** —— 因此公开 API 的守卫用 `push_error()`，不用 `assert()`。
