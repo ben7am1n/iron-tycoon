@@ -1,0 +1,31 @@
+{
+  "equipment": [
+    {
+      "id": "null_unlock_mat",
+      "display_name": "Null Unlock Mat",
+      "zone_membership": ["flex"],
+      "footprint_cells": [{"x": 0, "y": 0}],
+      "access_cells": [{"x": 1, "y": 0}],
+      "cost": 200,
+      "unlock_requirement": null,
+      "effects": [],
+      "use_duration_mean_ticks": 150,
+      "use_duration_stddev_ticks": 15,
+      "use_duration_min_ticks": 75,
+      "use_duration_max_ticks": 225
+    },
+    {
+      "id": "missing_unlock_mat",
+      "display_name": "Missing Unlock Mat",
+      "zone_membership": ["flex"],
+      "footprint_cells": [{"x": 0, "y": 0}],
+      "access_cells": [{"x": 1, "y": 0}],
+      "cost": 200,
+      "effects": [],
+      "use_duration_mean_ticks": 150,
+      "use_duration_stddev_ticks": 15,
+      "use_duration_min_ticks": 75,
+      "use_duration_max_ticks": 225
+    }
+  ]
+}

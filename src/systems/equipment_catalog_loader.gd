@@ -28,8 +28,12 @@
 ## detects DUPLICATE ids — first occurrence kept, later occurrences treated
 ## as validation failures (AC-E.1). Since Story 005: the use_duration_* range
 ## validation (GDD Core Rule 7 (e)-(h), TR-EC-004) — the cross-document hard
-## gate with MemberSim #6 OQ2 — joined the pipeline. Remaining semantic range
-## (cost>=0) is Story 007 and still NOT implemented here.
+## gate with MemberSim #6 OQ2 — joined the pipeline (AC-U.1..U.5). Since
+## Story 007: the pipeline also validates the cost boundary (cost >= 0,
+## AC-E.2) as its LAST sub-validator, and unlock_requirement is stored as an
+## OPAQUE string with no existence check (AC-E.3); a JSON entry that omits
+## "cost" gets the provisional formula value at EquipmentDef construction
+## (EC-006 contract).
 ## Normalization runs BEFORE validation: the Story 003 validators receive
 ## clean, normalized coordinates (Story 002 design note).
 ## Determinism guardrail (Control Manifest): same JSON input always produces
@@ -361,6 +365,20 @@ static func validate_use_duration(
 	return ValidationResult.success()
 
 
+## Validates the purchase-cost boundary (GDD Edge Cases, AC-E.2): cost < 0 is
+## a load-time validation failure (COST_NEGATIVE); cost = 0 is explicitly
+## ALLOWED — free starter equipment design space (new-player onboarding),
+## per the GDD "cost = 0 允许" rule. No upper bound: very large positive
+## costs are valid (MAX_INT accepted — AC-E.2 QA edge case).
+static func validate_cost(cost: int) -> ValidationResult:
+	if cost < 0:
+		return ValidationResult.fail(
+			"COST_NEGATIVE",
+			"equipment cost must be >= 0; got %d" % cost
+		)
+	return ValidationResult.success()
+
+
 ## Ordered validation pipeline for one definition (Story 003 sketch):
 ## footprint shape → access count → access disjoint → access adjacency.
 ## First failure returns — deterministic error for any given bad input.
@@ -383,7 +401,7 @@ static func _validate_definition(
 
 ## Ordered validation pipeline for one definition (Story 004, AC-PIPELINE.3):
 ## runs every sub-validator in deterministic order (footprint shape → access →
-## [use-duration: EC-005] → [cost: EC-007]) and collects ONE error per FAILING
+## [use-duration: EC-005] → cost) and collects ONE error per FAILING
 ## sub-validator — each sub-validator early-exits at its OWN first failure, but
 ## the pipeline does NOT stop at the first failing validator ("_validate_all
 ## collects ALL errors per entry, not first-only" — Story 004 key design
@@ -403,17 +421,18 @@ static func _validate_definition(
 ##
 ## The use_duration_* ints are ALREADY parsed/typed by the caller (via
 ## _field_int, which fails structurally on missing/non-integer values) — this
-## pipeline only enforces the GDD Core Rule 7 (e)-(h) RANGE contract.
-##
-## Extension point: Story 007 (cost) appends its validator here IN THIS FIXED
-## ORDER after use-duration — do not reorder (determinism contract).
+## pipeline only enforces the GDD Core Rule 7 (e)-(h) RANGE contract. The
+## effective cost (explicit JSON value, or provisional formula output when
+## omitted) is validated LAST so the documented QA order (FOOTPRINT_EMPTY,
+## ACCESS_COUNT, COST_NEGATIVE) holds its deterministic sequence.
 static func _validate_all(
 	footprint_cells: Array[Vector2i],
 	access_cells: Array[Vector2i],
 	use_mean: int,
 	use_stddev: int,
 	use_min: int,
-	use_max: int
+	use_max: int,
+	cost: int
 ) -> Array[ValidationResult]:
 	var failures: Array[ValidationResult] = []
 
@@ -430,7 +449,12 @@ static func _validate_all(
 	if not r.ok:
 		failures.append(r)
 
-	# Story 007 (EC-007): validate_cost(...) appended here.
+	# Story 007 (EC-007): cost boundary contract (AC-E.2) — validated LAST so
+	# the documented QA order (FOOTPRINT_EMPTY, ACCESS_COUNT, COST_NEGATIVE)
+	# holds its deterministic sequence.
+	r = validate_cost(cost)
+	if not r.ok:
+		failures.append(r)
 
 	return failures
 
@@ -470,7 +494,20 @@ static func _load_single_definition(entry: Variant) -> Dictionary:
 
 	var display_name := _field_string(entry, "display_name", entry_id, errors)
 	var zone := _field_string_array(entry, "zone_membership", entry_id, errors)
-	var cost := _field_int(entry, "cost", entry_id, errors)
+	# cost is OPTIONAL (Story 007, AC-E.2 QA edge): a JSON entry that omits
+	# "cost" gets the provisional formula value at construction time (EC-006
+	# contract: "call compute_provisional_cost(normalized_footprint_cells) at
+	# EquipmentDef construction time when a JSON entry omits 'cost'; use the
+	# explicit JSON value when present"). When present, it must be an int —
+	# wrong type is still a structural INVALID_ENTRY (Story 002 behavior).
+	var cost := 0
+	var has_explicit_cost: bool = entry.has("cost")
+	if has_explicit_cost:
+		cost = _field_int(entry, "cost", entry_id, errors)
+	# unlock_requirement is OPTIONAL (Story 007, AC-E.3 QA edge): missing /
+	# null default to "" (always available); stored AS-IS otherwise — the
+	# Catalog never parses this string's semantics (AC-E.3, existence check
+	# belongs to future /consistency-check).
 	var unlock := _field_string_or_null(entry, "unlock_requirement", entry_id, errors)
 	var use_mean := _field_int(entry, "use_duration_mean_ticks", entry_id, errors)
 	var use_stddev := _field_int(entry, "use_duration_stddev_ticks", entry_id, errors)
@@ -493,19 +530,34 @@ static func _load_single_definition(entry: Variant) -> Dictionary:
 
 	var normalized := normalize_anchor(footprint_parse["cells"], access_parse["cells"])
 
+	# Effective cost resolution (Story 007, AC-E.2 QA edge + EC-006 contract):
+	# explicit JSON "cost" wins when present; a MISSING cost gets the
+	# provisional formula value computed from the NORMALIZED footprint
+	# (footprint_area = cells.size()). The formula output is always >= 0, so
+	# validate_cost() below can never flag it — COST_NEGATIVE only fires for
+	# an EXPLICIT negative cost. The value written into EquipmentDef is the
+	# resolved effective cost (formula applies at construction time).
+	var effective_cost: int = cost
+	if not has_explicit_cost:
+		effective_cost = EquipmentCostFormula.compute_provisional_cost(normalized["footprint"])
+
 	# Story 003/004: semantic validation on the NORMALIZED coordinates (Story 002
 	# design note: "validator receives clean, normalized coordinates"). Story 004
 	# pipeline collects ALL per-validator failures (AC-PIPELINE.3, deterministic
 	# order) — one LoadError per failing validator, all flowing into the loader's
 	# strict_mode branch: strict=true aborts (AC-C.1), strict=false excludes +
-	# push_error (AC-C.2) — the other valid entries still load.
+	# push_error (AC-C.2) — the other valid entries still load. Story 007 appends
+	# the cost validator (AC-E.2: cost=-1 fails, cost=0 allowed) as the LAST
+	# sub-validator so the documented QA order (FOOTPRINT_EMPTY, ACCESS_COUNT,
+	# COST_NEGATIVE) holds.
 	var validation_failures := _validate_all(
 		normalized["footprint"],
 		normalized["access"],
 		use_mean,
 		use_stddev,
 		use_min,
-		use_max
+		use_max,
+		effective_cost
 	)
 	if not validation_failures.is_empty():
 		for failure in validation_failures:
@@ -524,7 +576,7 @@ static func _load_single_definition(entry: Variant) -> Dictionary:
 		zone,
 		normalized["footprint"],
 		normalized["access"],
-		cost,
+		effective_cost,
 		unlock,
 		effects_parse["effects"],
 		use_mean,
@@ -569,12 +621,14 @@ static func _field_int(entry: Dictionary, key: String, entry_id: String, errors:
 	return 0
 
 
-## Reads a required String-or-null field. null is accepted and converted to
-## "" (GDD Core Rule 1: unlock_requirement String / null; Story 001 decision:
-## empty string = always available, null is NOT used in EquipmentDef).
+## Reads an OPTIONAL String-or-null field (unlock_requirement — Story 007,
+## AC-E.3). missing and null both map to "" (empty string = always available,
+## GDD Core Rule 1; Story 001 decision: null is NOT used in EquipmentDef).
+## A present-but-non-string value is still a structural INVALID_ENTRY. The
+## value is stored AS-IS — no parsing of the milestone-reference semantics
+## (existence check belongs to future /consistency-check, AC-E.3).
 static func _field_string_or_null(entry: Dictionary, key: String, entry_id: String, errors: Array[LoadError]) -> String:
 	if not entry.has(key):
-		errors.append(LoadError.new(entry_id, CATEGORY_INVALID_ENTRY, "entry missing required field '%s'" % key))
 		return ""
 	var value: Variant = entry[key]
 	if value == null:

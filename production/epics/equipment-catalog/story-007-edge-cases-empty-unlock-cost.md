@@ -1,12 +1,12 @@
 # Story 007: Edge Cases — Empty Catalog, Unlock Requirements, and Cost Boundary
 
 > **Epic**: equipment-catalog
-> **Status**: Ready
+> **Status**: Implemented
 > **Layer**: Foundation
 > **Type**: Integration
 > **Estimate**: [hours or t-shirt size — fill before sprint planning]
 > **Manifest Version**: 2026-07-23
-> **Last Updated**: [set by /dev-story when implementation begins]
+> **Last Updated**: 2026-08-02 (EC-007)
 
 ## Context
 
@@ -31,10 +31,10 @@
 
 *From GDD `design/gdd/equipment-catalog.md` §Edge Cases:*
 
-- [ ] AC-E.2 [BLOCKING][Logic] GIVEN cost = -1, WHEN loaded, THEN validation fails; GIVEN cost = 0, WHEN loaded, THEN loads successfully
-- [ ] AC-E.3 [ADVISORY][Logic] GIVEN a definition whose unlock_requirement references a non-existent milestone id, WHEN Catalog loads, THEN the definition loads successfully, no error — Catalog does NOT parse this string's semantics (existence check belongs to future /consistency-check)
-- [ ] AC-E.5 [BLOCKING][Logic] GIVEN all entries fail validation (or data source is empty), WHEN Catalog loads with strict_mode=true, THEN assert() aborts; WHEN loads with strict_mode=false, THEN no crash, push_error() logs, final Catalog has 0 entries
-- [ ] AC-E.6 [BLOCKING][Integration] GIVEN empty Catalog (0 entries) after freeze(), WHEN get_all_ids() is called, THEN returns empty Array (not null); WHEN get_definition(any_id) is called, THEN push_error() + returns null
+- [x] AC-E.2 [BLOCKING][Logic] GIVEN cost = -1, WHEN loaded, THEN validation fails; GIVEN cost = 0, WHEN loaded, THEN loads successfully
+- [x] AC-E.3 [ADVISORY][Logic] GIVEN a definition whose unlock_requirement references a non-existent milestone id, WHEN Catalog loads, THEN the definition loads successfully, no error — Catalog does NOT parse this string's semantics (existence check belongs to future /consistency-check)
+- [x] AC-E.5 [BLOCKING][Logic] GIVEN all entries fail validation (or data source is empty), WHEN Catalog loads with strict_mode=true, THEN assert() aborts; WHEN loads with strict_mode=false, THEN no crash, push_error() logs, final Catalog has 0 entries
+- [x] AC-E.6 [BLOCKING][Integration] GIVEN empty Catalog (0 entries) after freeze(), WHEN get_all_ids() is called, THEN returns empty Array (not null); WHEN get_definition(any_id) is called, THEN push_error() + returns null
 
 ---
 
@@ -172,7 +172,17 @@ func load_catalog(path: String, strict_mode: bool) -> void:
 **Required evidence**:
 - `tests/integration/equipment_catalog/catalog_edge_cases_test.gd` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Implemented — 2026-08-02 (EC-007)
+
+**Test evidence** (full suite 967/967, was 878 after EC-004 + 25 from EC-006):
+
+- `tests/integration/equipment_catalog/catalog_edge_cases_test.gd` — **61 assertions, 0 failures** (integration test through the FULL loader path, not just individual validators):
+  - **AC-E.2** (cost boundary): `cost_negative.catalog.json` → ok=false, 1 error, COST_NEGATIVE code + value in message, catalog 0 entries; `cost_zero.catalog.json` → ok=true, cost=0 round-trips; `cost_max_int.catalog.json` → ok=true, MAX_INT (2147483647) accepted — no upper bound; `cost_omitted.catalog.json` → ok=true, cost=200 = formula output for 1×1 (EC-006 contract: missing cost → `EquipmentCostFormula.compute_provisional_cost(normalized footprint)`). Direct `validate_cost(-1/0/MAX_INT)` unit-level checks.
+  - **AC-E.3** (advisory, unlock opaque): `unlock_opaque.catalog.json` → loads ok, unlock_requirement `"milestone_not_yet_designed"` stored AS-IS; subprocess probe proves NO `push_error` (no ERROR:) and NO warning (no WARNING:) fired; `unlock_null_missing.catalog.json` → null and missing field both default to `""`.
+  - **AC-E.5** (all-fail → empty catalog): `all_cost_negative.catalog.json` (3 entries, costs -1/-5/-10) with strict_mode=true → assert fires on FIRST invalid entry `neg_one` (subprocess probe, `COST_NEGATIVE` in message); strict_mode=false → NO crash, `push_error()` fires exactly 3 times (one per excluded entry), final catalog has 0 entries, ok=false. Empty data source `empty_equipment.catalog.json` (`{"equipment": []}`) → ok=false, no errors, empty-but-frozen queryable catalog; strict=true on empty source is a no-op (no entries to fail).
+  - **AC-E.6** (empty catalog safe queries): get_all_ids() → non-null `[]`, has_definition(any) → false, get_definition(any) → null + push_error naming the unknown id (subprocess probe), no crash on any query.
+  - **Deviation (reviewer note)**: the story sketch's `get_definition_count()` is NOT implemented — it conflicts with Story 001's AC-C.8 test, which pins the public API to EXACTLY 3 read-only queries via `get_script_method_list()`; the BLOCKING AC-E.6 text only requires `get_all_ids()`/`get_definition()`, both covered. See docs/tech-debt-register.md.
+- Updated `tests/unit/equipment_catalog/catalog_pipeline_strict_mode_test.gd` (52 → 55 assertions): the `pipeline_multi_failure.catalog.json` fixture's cost=-1 now contributes a THIRD error (COST_NEGATIVE) — the fixed pipeline order FOOTPRINT_EMPTY → ACCESS_COUNT → COST_NEGATIVE matches this story's QA case exactly. This is the observable EC-004 explicitly deferred to EC-007 ("pipeline_multi_failure fixture 的负数 cost 暂不产生 COST_NEGATIVE（Story 007 加入）").
 
 ---
 
