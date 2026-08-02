@@ -26,6 +26,18 @@
 ## Having two counters would risk divergence. TimeSystem therefore exposes
 ## get_tick_count() as a DELEGATE to _orchestrator.get_tick_count() — one source
 ## of truth, GDD-compatible public surface (HUD/Economy read TimeSystem's getter).
+## serialize() reads through the same delegate; deserialize() Phase B restores
+## the counter via _orchestrator._restore_tick_count() (the orchestrator's
+## Story-004 write path).
+##
+## SERIALIZATION (Story TS-004) — seeded RNG injection:
+## The sketch shows `_seeded_rng` as a field. init() takes it as a SECOND
+## parameter (default null) so Story 001/002's `time_system.init(self)` call
+## sites keep working while the SaveLoad epic supplies the real wiring later.
+## With null, serialize() push_errors and returns {} (guard-contract safe
+## default), and deserialize() fails loudly — no RNG state can be restored
+## without a SeededRNG, and inventing one would break the determinism contract.
+## Tests wire the full assembly explicitly (orchestrator + SeededRNG + systems).
 ##
 ## PAUSE SEMANTICS (Control Manifest — Foundation layer):
 ## - pause is an EARLY RETURN before the `+=` — never "add zero". Repeated no-op
@@ -82,14 +94,22 @@ var _last_speed: int = 1
 ## delegates get_tick_count() to it (see class header).
 var _orchestrator: SimulationOrchestrator
 
+## Injected SeededRNG registry (Story TS-004). Null until wired — see class
+## header "SERIALIZATION — seeded RNG injection" for the null semantics.
+var _seeded_rng: SeededRNG
+
 
 ## Two-phase init (ADR-0001). Injects the orchestrator back-reference used to
-## fire ticks. Safe to call once; a second call pushes an error via
-## SimSystem._mark_initialized() and leaves state untouched.
-func init(orchestrator: SimulationOrchestrator) -> void:
+## fire ticks, plus the SeededRNG registry serialize()/deserialize() delegate
+## to (Story TS-004; optional with a null default for compatibility with the
+## Story 001/002 call site — see class header). Safe to call once; a second
+## call pushes an error via SimSystem._mark_initialized() and leaves state
+## untouched.
+func init(orchestrator: SimulationOrchestrator, seeded_rng: SeededRNG = null) -> void:
 	if not _mark_initialized():
 		return
 	_orchestrator = orchestrator
+	_seeded_rng = seeded_rng
 
 
 func system_name() -> String:
@@ -169,3 +189,107 @@ func get_tick_count() -> int:
 	if not _assert_initialized():
 		return 0
 	return _orchestrator.get_tick_count()
+
+
+## Composite return value for TimeSystem.deserialize(). Carries the verdict
+## and every collected validation error (Phase A failures do not short-circuit
+## — the caller sees all problems at once). Plain data-transfer object.
+class TimeSystemDeserializeResult extends RefCounted:
+	var ok: bool = false
+	var errors: Array[String] = []
+
+	func add_error(msg: String) -> void:
+		errors.append(msg)
+
+
+## Returns the full serializable time-system state (GDD Core Rule 7):
+##   { tick_count, tick_accumulator, speed_multiplier, paused, _last_speed,
+##     master_seed: "0x…", per_system_rng_states: { name: "0x…", … } }
+## Pure read — no side effects. Int64 values (master_seed, RNG states) are
+## hex strings per ADR-0002; tick_count/accumulator/speed are native JSON-safe
+## numbers (tick_count is a plain counter, never a 64-bit bit pattern).
+## Delegates RNG serialization to SeededRNG.serialize().
+## Guard: with no wired SeededRNG, push_error + {} (see class header).
+func serialize() -> Dictionary:
+	if not _assert_initialized():
+		return {}
+	if _seeded_rng == null:
+		push_error("TimeSystem.serialize(): seeded_rng not wired — call init(orchestrator, seeded_rng)")
+		return {}
+	var rng_data: Dictionary = _seeded_rng.serialize()
+	return {
+		"tick_count": get_tick_count(),
+		"tick_accumulator": tick_accumulator,
+		"speed_multiplier": speed_multiplier,
+		"paused": paused,
+		"_last_speed": _last_speed,
+		"master_seed": rng_data["master_seed"],
+		"per_system_rng_states": rng_data["per_system_rng_states"],
+	}
+
+
+## Two-phase deserialize: Phase A validates EVERYTHING with zero mutation;
+## Phase B commits only if Phase A passed (ADR-0002 / story design note).
+## Failures are returned, never push_error'd (corrupt save = normal outcome).
+##
+## Required fields (hard failure, no invented defaults — AC17):
+##   tick_count (int), master_seed (hex string), per_system_rng_states
+##   (Dictionary with an entry per registered system — AC16).
+## Optional with documented defaults: tick_accumulator (0.0), speed_multiplier
+## (1), _last_speed (1).
+##
+## Core Rule 9 (AC10): load ALWAYS resumes PAUSED. The saved speed_multiplier
+## is read into _last_speed first, then paused=true + speed_multiplier=0 are
+## forced — the player sees their last speed preserved but the sim frozen.
+## RNG state is committed by _seeded_rng.deserialize() (itself two-phase).
+func deserialize(data: Dictionary) -> TimeSystemDeserializeResult:
+	var result := TimeSystemDeserializeResult.new()
+	if not _assert_initialized():
+		result.add_error("TimeSystem.deserialize(): called before init()")
+		return result
+	if _seeded_rng == null:
+		result.add_error("TimeSystem.deserialize(): seeded_rng not wired — cannot restore RNG state")
+		return result
+
+	# --- Phase A: validate (zero mutation) ---
+	# Collect ALL errors (story design note: no short-circuit on first error).
+	if not data.has("tick_count") or typeof(data["tick_count"]) != TYPE_INT:
+		result.add_error("TimeSystem.deserialize: missing or invalid 'tick_count'")
+	if not data.has("master_seed") or not data["master_seed"] is String:
+		result.add_error("TimeSystem.deserialize: missing or invalid 'master_seed'")
+	if not data.has("per_system_rng_states") or not data["per_system_rng_states"] is Dictionary:
+		result.add_error("TimeSystem.deserialize: missing or invalid 'per_system_rng_states'")
+
+	# Delegate RNG validation to SeededRNG (still Phase A — no mutation at
+	# TimeSystem level; SeededRNG.deserialize is itself two-phase, so a
+	# failure there commits nothing).
+	#
+	# CRITICAL: only delegate when TimeSystem's OWN Phase A passed. The RNG
+	# data may be perfectly valid even when e.g. tick_count is missing — if
+	# we delegated regardless, SeededRNG's Phase B would COMMIT RNG state
+	# during a load that is about to fail, violating the two-phase contract
+	# ("nothing mutated on any failed load" — QA AC16/17). Guarding the
+	# delegation on zero local errors preserves all-or-nothing atomicity.
+	if result.errors.is_empty():
+		var rng_result: Variant = _seeded_rng.deserialize({
+			"master_seed": data.get("master_seed", ""),
+			"per_system_rng_states": data.get("per_system_rng_states", {}),
+		})
+		if not rng_result.ok:
+			for err in rng_result.errors:
+				result.add_error(err)
+
+	if not result.errors.is_empty():
+		return result  # Phase A failed — NOTHING was mutated
+
+	# --- Phase B: commit (only if all valid) ---
+	_orchestrator._restore_tick_count(int(data["tick_count"]))
+	tick_accumulator = float(data.get("tick_accumulator", 0.0))
+	_last_speed = int(data.get("_last_speed", int(data.get("speed_multiplier", 1))))
+
+	# Core Rule 9: load always resumes PAUSED regardless of saved paused/speed
+	paused = true
+	speed_multiplier = 0
+
+	result.ok = true
+	return result

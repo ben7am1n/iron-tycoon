@@ -108,10 +108,21 @@ func get_tick_count() -> int:
 	return _tick_count
 
 
-## STUB until Story 004 (Serialization / Deserialization / Resume).
-## Present now so the AC-INIT-2 guard contract is testable on the full
-## public surface. Story 004 fills: tick_count, master_seed,
-## per_system_rng_states, speed_multiplier, paused (GDD Core Rule 7).
+## Story-004 write path: restores the tick counter from deserialized save
+## data. Called by TimeSystem.deserialize() Phase B AFTER full validation
+## passed — this is the only way tick_count is ever written outside
+## _advance_tick() (the counter's owner is this orchestrator; see class
+## header / TS-001). Guarded like every public method (AC-INIT-2).
+func _restore_tick_count(value: int) -> void:
+	if not _guard_initialized():
+		return
+	_tick_count = value
+
+
+## STUB — kept from TS-001 for the AC-INIT-2 guard contract (safe default {}).
+## The REAL Story-004 serialization contract lives on TimeSystem.serialize()
+## (GDD Core Rule 7), which SaveLoad calls as a coordination step (SL-001);
+## this orchestrator-level method remains empty for MVP.
 func serialize() -> Dictionary:
 	if not _guard_initialized():
 		return {}

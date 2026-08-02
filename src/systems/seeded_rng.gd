@@ -11,6 +11,29 @@
 ## advanced state) and never creates or re-seeds anything. A get_rng() for an
 ## unregistered name returns null after push_error — never a fresh RNG.
 ##
+## SERIALIZATION (Story TS-004) — int64 hex encoding. ADR-0002 mandates every
+## 64-bit value in a save blob be a hex string ("0x" prefix). Two engine facts
+## verified empirically on 4.7.1 (see tests/unit/time_system/hex_int64_probe
+## run log) force the implementation below:
+##   * String formatting "%x" % negative_int produces "0x-405f..." — a minus
+##     sign AFTER the "0x" prefix. hex_to_int() rejects that string outright
+##     ("Invalid hexadecimal notation character '-'"), so the story sketch's
+##     "0x%x" % state would CORRUPT any save whose RNG state has the high bit
+##     set (common — SplitMix64 state is arbitrary 64-bit). We therefore
+##     serialize via String.num_uint64(value, 16).lpad(16, "0"): the UNSIGNED
+##     bit pattern, always 16 hex digits, no sign character.
+##   * hex_to_int() on 4.7.1 does NOT wrap values with the high bit set — it
+##     prints an error and clamps to INT64_MAX. ADR-0002's table claims
+##     "bits preserved; values >= 2^63 display as negative int" — empirically
+##     FALSE on 4.7.1. We therefore parse in two halves (hi = bits 63..32,
+##     lo = bits 31..0) and recombine with (hi << 32) | lo, which reconstructs
+##     the exact two's-complement int64 for ANY bit pattern.
+##   * The full pipeline is pinned by the hex boundary test in
+##     tests/unit/time_system/time_serialization_test.gd (round-trips
+##     0, ±1, ±(2^62), ±(2^63-1), INT64_MIN, and arbitrary negative RNG
+##     states, both directly and through JSON.stringify/parse_string with
+##     full_precision=true + sort_keys=true).
+##
 ## GODOT 4.7.1 ENGINE FACTS (verified empirically before this file was written
 ## — see tests/unit/time_system/int64_probe.gd run log and ADR-0004 §Engine
 ## Compatibility):
@@ -106,3 +129,155 @@ func get_rng(system_name: String) -> RandomNumberGenerator:
 		push_error("SeededRNG: system '%s' not registered — call register_system() first" % system_name)
 		return null
 	return _streams[system_name]
+
+
+## Serializes a signed int64 as a JSON-safe hex string with "0x" prefix.
+##
+## ADR-0002: 64-bit values must never appear as bare JSON numbers (53-bit
+## mantissa would truncate them). Story sketch wrote `"0x%x" % value`; that is
+## VERIFIED BROKEN on 4.7.1 for negative values — "%x" formats the sign
+## AFTER the prefix ("0x-405f..."), which hex_to_int() rejects on parse. The
+## robust spelling is the UNSIGNED bit pattern via String.num_uint64(),
+## zero-padded to exactly 16 hex digits: "0x" + 16 chars, no sign character,
+## round-trips every int64 bit pattern (see class header + hex boundary test).
+static func int64_to_hex(value: int) -> String:
+	return "0x%s" % String.num_uint64(value, 16).lpad(16, "0")
+
+
+## Deserializes a "0x"-prefixed hex string back to a signed int64.
+##
+## hex_to_int() on 4.7.1 does NOT wrap high-bit values — it errors and clamps
+## to INT64_MAX (ADR-0002's "bits preserved" claim is empirically false).
+## Reconstruct in two halves instead: hi = bits 63..32, lo = bits 31..0,
+## recombined as (hi << 32) | lo. Verified bit-exact for the full int64 range.
+## Body is left-padded to 16 digits so short hand-written hex ("0x3039")
+## parses correctly; values LONGER than 16 hex digits exceed int64 and are
+## rejected by the caller's validation (is_valid_hex_number does NOT check
+## length — see deserialize()).
+static func hex_to_int64(hex_str: String) -> int:
+	var body := hex_str.trim_prefix("0x").lpad(16, "0")
+	var hi: int = body.substr(0, 8).hex_to_int()
+	var lo: int = body.substr(8, 8).hex_to_int()
+	return (hi << 32) | lo
+
+
+## Composite return value for SeededRNG.deserialize(). Carries the verdict
+## and every collected validation error (Phase A failures do not short-circuit
+## — the caller sees all problems at once). Plain data-transfer object.
+class SeededRNGDeserializeResult extends RefCounted:
+	var ok: bool = false
+	var errors: Array[String] = []
+
+	func add_error(msg: String) -> void:
+		errors.append(msg)
+
+
+## Returns this RNG registry's full serializable state:
+##   { master_seed: "0x…", per_system_rng_states: { system_name: "0x…", … } }
+## Pure read — no side effects, no draws. The exact internal state of each
+## sub-stream is captured (rng.state), NOT its derived seed — restoring state
+## is draw-count-agnostic (ADR-0004 §3): it does not matter how many draws a
+## system consumed pre-save; the restored generator resumes exactly there.
+func serialize() -> Dictionary:
+	var states := {}
+	for system_name in _streams:
+		states[system_name] = int64_to_hex(_streams[system_name].state)
+	return {
+		"master_seed": int64_to_hex(master_seed),
+		"per_system_rng_states": states,
+	}
+
+
+## Two-phase deserialize: Phase A validates EVERYTHING with zero mutation;
+## Phase B commits only if Phase A passed. Failures are returned (never
+## push_error'd — corrupt save data is a normal outcome, per the repo's
+## DeserializeResult convention).
+##
+## Required fields (hard failure, no invented defaults — TR-TS-009, AC16/17):
+##   - master_seed: "0x"-prefixed hex string
+##   - per_system_rng_states: Dictionary with an entry for EVERY registered
+##     system. Extra unknown keys are ignored (we validate the registered
+##     set, not the dictionary's keys — QA AC16 edge case).
+##
+## RNG state is restored directly via rng.state = hex_to_int64() — NEVER
+## re-derived from master_seed (re-deriving would discard the draws the system
+## already consumed pre-save, silently breaking determinism — GDD Edge Cases).
+func deserialize(data: Dictionary) -> SeededRNGDeserializeResult:
+	var result := SeededRNGDeserializeResult.new()
+
+	# --- Phase A: validate (zero mutation) ---
+	# Collect ALL errors (story design note: "the first error does not
+	# short-circuit, so the caller sees all problems at once"). Structural
+	# dependencies are guarded so a missing parent key never crashes the
+	# collector (e.g. per-system checks require the states dict to exist).
+
+	var master_seed_str := ""
+	if not data.has("master_seed"):
+		result.add_error("SeededRNG: missing 'master_seed' in save data")
+	elif not data["master_seed"] is String:
+		result.add_error("SeededRNG: master_seed must be a hex string (0x prefix)")
+	elif not str(data["master_seed"]).begins_with("0x") or not str(data["master_seed"]).is_valid_hex_number(true):
+		result.add_error("SeededRNG: master_seed must be hex string (0x prefix)")
+	elif str(data["master_seed"]).trim_prefix("0x").length() > 16:
+		result.add_error("SeededRNG: master_seed exceeds 64-bit range (max 16 hex digits)")
+	else:
+		master_seed_str = str(data["master_seed"])
+
+	var states: Dictionary = {}
+	var states_ok := false
+	if not data.has("per_system_rng_states"):
+		result.add_error("SeededRNG: missing 'per_system_rng_states' in save data")
+	elif not data["per_system_rng_states"] is Dictionary:
+		result.add_error("SeededRNG: per_system_rng_states must be a Dictionary")
+	else:
+		states = data["per_system_rng_states"]
+		states_ok = true
+
+	# Every REGISTERED system must have an entry — the registered set is the
+	# contract. Collect ALL missing names at once (no per-name short-circuit).
+	# An EMPTY states dict with registered systems reports every system as
+	# missing (QA AC16 edge case). Only a structurally-invalid/missing states
+	# dict skips this (already reported above).
+	var missing: Array[String] = []
+	if states_ok:
+		for system_name in _streams:
+			if not states.has(system_name):
+				missing.append(system_name)
+	for system_name in missing:
+		result.add_error("SeededRNG: missing RNG state for system '%s'" % system_name)
+
+	# Validate ALL hex strings parse before committing ANY state (parse into
+	# a staging dict — Phase B consumes it only if nothing failed).
+	var parsed_states: Dictionary = {}
+	for system_name in _streams:
+		if missing.has(system_name):
+			continue
+		if not states_ok or not states.has(system_name):
+			continue  # already reported — do not double-report
+		var state_hex: Variant = states[system_name]
+		if not state_hex is String:
+			result.add_error("SeededRNG: RNG state for '%s' must be a hex string (0x prefix)" % system_name)
+			continue
+		var state_hex_str: String = state_hex
+		# hex_to_int returns garbage on invalid input — validate prefix + hex
+		# digits instead of trusting the parse (story engine note). Also cap
+		# length: >16 hex digits cannot fit in int64 (is_valid_hex_number
+		# accepts arbitrarily long strings — it only checks character class).
+		if not state_hex_str.begins_with("0x") or not state_hex_str.is_valid_hex_number(true):
+			result.add_error("SeededRNG: RNG state for '%s' must be hex string (0x prefix)" % system_name)
+			continue
+		if state_hex_str.trim_prefix("0x").length() > 16:
+			result.add_error("SeededRNG: RNG state for '%s' exceeds 64-bit range (max 16 hex digits)" % system_name)
+			continue
+		parsed_states[system_name] = hex_to_int64(state_hex_str)
+
+	if not result.errors.is_empty():
+		return result  # Phase A failed — NOTHING was mutated
+
+	# --- Phase B: commit (only if all valid) ---
+	master_seed = hex_to_int64(master_seed_str)
+	for system_name in parsed_states:
+		_streams[system_name].state = parsed_states[system_name]
+
+	result.ok = true
+	return result
