@@ -3,20 +3,20 @@
 > **Layer**: Foundation
 > **GDD**: design/gdd/equipment-catalog.md
 > **Architecture Module**: EquipmentCatalog — immutable, read-only data (`EquipmentDef` records)
-> **Status**: Ready
-> **Stories**: 7 stories created — see below
+> **Status**: Complete
+> **Stories**: 7 stories completed — see below
 
 ## Stories
 
 | # | Story | Type | Status | ADR |
 |---|-------|------|--------|-----|
-| 001 | EquipmentDef Data Model and Catalog Container | Logic | Ready | ADR-0001, ADR-0002 |
-| 002 | JSON Loading and Anchor Normalization | Logic | Ready | ADR-0002 |
-| 003 | Footprint Shape and Access Cell Validation | Logic | Ready | ADR-0002 |
-| 004 | Validation Pipeline, strict_mode, and Duplicate ID Detection | Logic | Ready | ADR-0001, ADR-0002 |
-| 005 | Use-Duration Field Validation | Logic | Ready | ADR-0002 |
-| 006 | Provisional Cost Formula | Logic | Ready | ADR-0002 |
-| 007 | Edge Cases — Empty Catalog, Unlock Requirements, and Cost Boundary | Integration | Ready | ADR-0001 |
+| 001 | EquipmentDef Data Model and Catalog Container | Logic | Complete | ADR-0001, ADR-0002 |
+| 002 | JSON Loading and Anchor Normalization | Logic | Complete | ADR-0002 |
+| 003 | Footprint Shape and Access Cell Validation | Logic | Complete | ADR-0002 |
+| 004 | Validation Pipeline, strict_mode, and Duplicate ID Detection | Logic | Complete | ADR-0001, ADR-0002 |
+| 005 | Use-Duration Field Validation | Logic | Complete | ADR-0002 |
+| 006 | Provisional Cost Formula | Logic | Complete | ADR-0002 |
+| 007 | Edge Cases — Empty Catalog, Unlock Requirements, and Cost Boundary | Integration | Complete | ADR-0001 |
 
 ## Overview
 

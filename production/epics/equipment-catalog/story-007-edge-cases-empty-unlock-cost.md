@@ -1,7 +1,7 @@
 # Story 007: Edge Cases — Empty Catalog, Unlock Requirements, and Cost Boundary
 
 > **Epic**: equipment-catalog
-> **Status**: Implemented
+> **Status**: Complete
 > **Layer**: Foundation
 > **Type**: Integration
 > **Estimate**: [hours or t-shirt size — fill before sprint planning]

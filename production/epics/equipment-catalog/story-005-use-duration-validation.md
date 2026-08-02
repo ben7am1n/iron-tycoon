@@ -1,7 +1,7 @@
 # Story 005: Use-Duration Field Validation
 
 > **Epic**: equipment-catalog
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Foundation
 > **Type**: Logic
 > **Estimate**: [hours or t-shirt size — fill before sprint planning]
