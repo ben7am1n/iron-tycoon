@@ -3,17 +3,17 @@
 > **Layer**: Foundation
 > **GDD**: design/gdd/save-load.md
 > **Architecture Module**: SaveLoad — pure coordinator, owns no state
-> **Status**: Ready
+> **Status**: Complete
 > **Stories**: 4 stories created — see below
 
 ## Stories
 
 | # | Story | Type | Status | ADR |
 |---|-------|------|--------|-----|
-| 001 | SaveBlob Composition and Tick-Boundary Hook | Integration | Ready | ADR-0002, ADR-0005 |
-| 002 | Load Orchestration — Phase A/B and Load Order | Integration | Ready | ADR-0001, ADR-0002, ADR-0007 |
-| 003 | Round-Trip Determinism and Resume-Paused Enforcement | Integration | Ready | ADR-0005, ADR-0007, ADR-0002, ADR-0004 |
-| 004 | File I/O, JSON Encoding, and Version Checking | Integration | Ready | ADR-0002 |
+| 001 | SaveBlob Composition and Tick-Boundary Hook | Integration | Complete | ADR-0002, ADR-0005 |
+| 002 | Load Orchestration — Phase A/B and Load Order | Integration | Complete | ADR-0001, ADR-0002, ADR-0007 |
+| 003 | Round-Trip Determinism and Resume-Paused Enforcement | Integration | Complete | ADR-0005, ADR-0007, ADR-0002, ADR-0004 |
+| 004 | File I/O, JSON Encoding, and Version Checking | Integration | Complete | ADR-0002 |
 
 ## Overview
 

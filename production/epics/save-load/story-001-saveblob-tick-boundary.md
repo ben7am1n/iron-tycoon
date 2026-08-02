@@ -1,12 +1,12 @@
 # Story 001: SaveBlob Composition and Tick-Boundary Hook
 
 > **Epic**: save-load
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Foundation
 > **Type**: Integration
 > **Estimate**: [hours or t-shirt size — fill before sprint planning]
 > **Manifest Version**: 2026-07-23
-> **Last Updated**: [set by /dev-story when implementation begins]
+> **Last Updated**: 2026-08-02
 
 ## Context
 
@@ -222,7 +222,7 @@ func _validate_blob_keys(blob: Dictionary) -> Array[String]:
 **Required evidence**:
 - `tests/integration/save_load/saveblob_composition_test.gd` — must exist and pass (AC1, AC-BLOB-1, AC-BLOB-2, AC-BLOB-3)
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing — saveblob_composition_test.gd — 108 assertions, 0 failures; full suite 1789/0, exit 0 (2026-08-02)
 
 ---
 

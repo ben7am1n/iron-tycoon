@@ -1,12 +1,12 @@
 # Story 004: Serialization, Deserialization, and Resume Behavior
 
 > **Epic**: time-system
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Foundation
 > **Type**: Integration
 > **Estimate**: [hours or t-shirt size — fill before sprint planning]
 > **Manifest Version**: 2026-07-23
-> **Last Updated**: [set by /dev-story when implementation begins]
+> **Last Updated**: 2026-08-02
 
 ## Context
 
@@ -239,7 +239,7 @@ func deserialize(data: Dictionary) -> TimeSystemDeserializeResult:
 **Required evidence**:
 - `tests/unit/time_system/time_serialization_test.gd` — must exist and pass (AC8, AC9, AC10, AC16, AC17)
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing — time_serialization_test.gd — 129 assertions, 0 failures; full suite 1789/0, exit 0 (2026-08-02)
 
 ---
 

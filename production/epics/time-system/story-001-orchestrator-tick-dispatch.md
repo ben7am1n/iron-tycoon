@@ -1,12 +1,12 @@
 # Story 001: SimulationOrchestrator and Tick Dispatch
 
 > **Epic**: time-system
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Foundation
 > **Type**: Logic
 > **Estimate**: [hours or t-shirt size — fill before sprint planning]
 > **Manifest Version**: 2026-07-23
-> **Last Updated**: [set by /dev-story when implementation begins]
+> **Last Updated**: 2026-08-02
 
 ## Context
 
@@ -210,7 +210,7 @@ func _post_init() -> void:
 **Required evidence**:
 - `tests/unit/time_system/orchestrator_tick_dispatch_test.gd` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing — orchestrator_tick_dispatch_test.gd — 50 assertions, 0 failures; full suite 1789/0, exit 0 (2026-08-02)
 
 ---
 

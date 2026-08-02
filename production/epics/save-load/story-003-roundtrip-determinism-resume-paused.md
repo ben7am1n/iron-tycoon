@@ -1,12 +1,12 @@
 # Story 003: Round-Trip Determinism and Resume-Paused Enforcement
 
 > **Epic**: save-load
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Foundation
 > **Type**: Integration
 > **Estimate**: [hours or t-shirt size — fill before sprint planning]
 > **Manifest Version**: 2026-07-23
-> **Last Updated**: [set by /dev-story when implementation begins]
+> **Last Updated**: 2026-08-02
 
 ## Context
 
@@ -204,7 +204,7 @@ func test_rng_state_restored_exactly() -> void:
 **Required evidence**:
 - `tests/integration/save_load/roundtrip_determinism_test.gd` — must exist and pass (AC2, AC5, AC7)
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing — roundtrip_determinism_test.gd — 152 assertions, 0 failures; full suite 1789/0, exit 0 (2026-08-02)
 
 ---
 

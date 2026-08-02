@@ -1,12 +1,12 @@
 # Story 003: SeededRNG and Sub-Stream Derivation
 
 > **Epic**: time-system
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Foundation
 > **Type**: Logic
 > **Estimate**: [hours or t-shirt size — fill before sprint planning]
 > **Manifest Version**: 2026-07-23
-> **Last Updated**: [set by /dev-story when implementation begins]
+> **Last Updated**: 2026-08-02
 
 ## Context
 
@@ -191,7 +191,7 @@ func test_golden_vector() -> void:
 - `tests/unit/time_system/seeded_rng_substream_test.gd` — must exist and pass (AC6, AC7, AC13, AC15)
 - `tests/unit/time_system/lsr_helper_test.gd` — must exist and pass (AC-LSR-1)
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing — seeded_rng_substream_test.gd (60) + lsr_helper_test.gd (30) — 90 assertions, 0 failures; full suite 1789/0, exit 0 (2026-08-02)
 
 ---
 

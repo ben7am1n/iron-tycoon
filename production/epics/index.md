@@ -9,8 +9,8 @@ Engine: Godot 4.7.1
 |------|-------|--------|-----|---------|--------|
 | [grid-system](grid-system/EPIC.md) | Foundation | GridSystem | design/gdd/grid-system.md | 8 stories | Complete |
 | [equipment-catalog](equipment-catalog/EPIC.md) | Foundation | EquipmentCatalog | design/gdd/equipment-catalog.md | 7 stories | Complete |
-| [time-system](time-system/EPIC.md) | Foundation | TimeSystem + SimulationOrchestrator + SeededRNG | design/gdd/time-system.md | 4 stories | Ready |
-| [save-load](save-load/EPIC.md) | Foundation | SaveLoad | design/gdd/save-load.md | 4 stories | Ready |
+| [time-system](time-system/EPIC.md) | Foundation | TimeSystem + SimulationOrchestrator + SeededRNG | design/gdd/time-system.md | 4 stories | Complete |
+| [save-load](save-load/EPIC.md) | Foundation | SaveLoad | design/gdd/save-load.md | 4 stories | Complete |
 
 ## Core Layer
 

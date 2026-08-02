@@ -144,3 +144,6 @@ $RECYCLE.BIN/
 *.msm
 *.msp
 *.lnk
+
+# Kanban worktree admin dir (Hermes)
+.worktrees/

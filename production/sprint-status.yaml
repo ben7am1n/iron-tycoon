@@ -9,80 +9,90 @@
 #   done           ↔  Complete
 #   blocked        ↔  Blocked
 
-sprint: 1
-goal: "吃完 GridSystem 剩余 7 个 story（002–008），完整收尾 GridSystem"
-start: "2026-07-31"
-end: "2026-08-13"
-generated: "2026-07-31"
-updated: "2026-07-31"
+sprint: 2
+goal: "完成 Foundation 层最后两个 epic（time-system + save-load，8 张 story），让确定性时钟 + 存档读档闭环落地，解锁 Core 层实现"
+start: "2026-08-04"
+end: "2026-08-15"
+generated: "2026-08-02"
+updated: "2026-08-02"
 
 stories:
-  - id: "GRID-002"
-    name: "Solidity Formula and Coordinate Conversion"
-    file: "production/epics/grid-system/story-002-grid-solidity-coords.md"
-    priority: must-have
-    status: done
-    owner: ""
-    estimate_days: 0.5
-    blocker: ""
-    completed: "2026-07-31"
-
-  - id: "GRID-003"
-    name: "Rotation Transform and Declared Bounds"
-    file: "production/epics/grid-system/story-003-grid-rotation-transform.md"
+  - id: "TS-001"
+    name: "SimulationOrchestrator and Tick Dispatch"
+    file: "production/epics/time-system/story-001-orchestrator-tick-dispatch.md"
     priority: must-have
     status: done
     owner: ""
     estimate_days: 1.0
     blocker: ""
-    completed: "2026-08-01"
+    completed: "2026-08-02"
 
-  - id: "GRID-004"
-    name: "Placement Validation — can_place"
-    file: "production/epics/grid-system/story-004-grid-can-place.md"
+  - id: "TS-002"
+    name: "Tick Accumulator, Speed Control, and Pause"
+    file: "production/epics/time-system/story-002-tick-accumulator-speed-pause.md"
     priority: must-have
-    status: ready-for-dev
+    status: done
     owner: ""
     estimate_days: 0.5
     blocker: ""
-    completed: ""
+    completed: "2026-08-02"
 
-  - id: "GRID-005"
-    name: "Commit, Clear, and Reverse Index"
-    file: "production/epics/grid-system/story-005-grid-commit-clear.md"
+  - id: "TS-003"
+    name: "SeededRNG and Sub-Stream Derivation"
+    file: "production/epics/time-system/story-003-seeded-rng-substream.md"
     priority: must-have
-    status: ready-for-dev
+    status: done
     owner: ""
     estimate_days: 1.0
     blocker: ""
-    completed: ""
+    completed: "2026-08-02"
 
-  - id: "GRID-006"
-    name: "GridStateReader and GridSnapshot"
-    file: "production/epics/grid-system/story-006-grid-state-reader-snapshot.md"
+  - id: "TS-004"
+    name: "Serialization, Deserialization, and Resume"
+    file: "production/epics/time-system/story-004-serialization-deserialization.md"
     priority: must-have
-    status: ready-for-dev
+    status: done
     owner: ""
     estimate_days: 1.0
     blocker: ""
-    completed: ""
+    completed: "2026-08-02"
 
-  - id: "GRID-007"
-    name: "Serialization and Deserialization"
-    file: "production/epics/grid-system/story-007-grid-serialization.md"
+  - id: "SL-001"
+    name: "SaveBlob Composition and Tick-Boundary Hook"
+    file: "production/epics/save-load/story-001-saveblob-tick-boundary.md"
     priority: must-have
-    status: ready-for-dev
+    status: done
     owner: ""
     estimate_days: 1.0
     blocker: ""
-    completed: ""
+    completed: "2026-08-02"
 
-  - id: "GRID-008"
-    name: "Signals, Integration, and Performance"
-    file: "production/epics/grid-system/story-008-grid-signals-integration-perf.md"
+  - id: "SL-002"
+    name: "Load Orchestration — Phase A/B and Load Order"
+    file: "production/epics/save-load/story-002-load-orchestration-phase-ab.md"
     priority: must-have
-    status: ready-for-dev
+    status: done
+    owner: ""
+    estimate_days: 1.5
+    blocker: ""
+    completed: "2026-08-02"
+
+  - id: "SL-003"
+    name: "Round-Trip Determinism and Resume-Paused Enforcement"
+    file: "production/epics/save-load/story-003-roundtrip-determinism-resume-paused.md"
+    priority: must-have
+    status: done
+    owner: ""
+    estimate_days: 1.5
+    blocker: ""
+    completed: "2026-08-02"
+
+  - id: "SL-004"
+    name: "File I/O, JSON Encoding, and Version Checking"
+    file: "production/epics/save-load/story-004-file-io-json-version.md"
+    priority: must-have
+    status: done
     owner: ""
     estimate_days: 1.0
     blocker: ""
-    completed: ""
+    completed: "2026-08-02"

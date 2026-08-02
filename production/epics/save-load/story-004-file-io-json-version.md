@@ -1,12 +1,12 @@
 # Story 004: File I/O, JSON Encoding, and Version Checking
 
 > **Epic**: save-load
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Foundation
 > **Type**: Integration
 > **Estimate**: [hours or t-shirt size — fill before sprint planning]
 > **Manifest Version**: 2026-07-23
-> **Last Updated**: [set by /dev-story when implementation begins]
+> **Last Updated**: 2026-08-02
 
 ## Context
 
@@ -240,7 +240,7 @@ func load_save(save_name: String, buildable_snapshot: PackedByteArray) -> LoadRe
 **Required evidence**:
 - `tests/integration/save_load/file_io_version_test.gd` — must exist and pass (AC6, AC-FILE-1, AC-FILE-2, AC-FILE-3, AC-FILE-4)
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing — file_io_version_test.gd — 68 assertions, 0 failures; full suite 1789/0, exit 0 (2026-08-02)
 
 ---
 

@@ -1,12 +1,12 @@
 # Story 002: Load Orchestration — Phase A/B and Load Order
 
 > **Epic**: save-load
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Foundation
 > **Type**: Integration
 > **Estimate**: [hours or t-shirt size — fill before sprint planning]
 > **Manifest Version**: 2026-07-23
-> **Last Updated**: [set by /dev-story when implementation begins]
+> **Last Updated**: 2026-08-02
 
 ## Context
 
@@ -237,7 +237,7 @@ func _verify_load_order() -> void:
 **Required evidence**:
 - `tests/integration/save_load/load_orchestration_test.gd` — must exist and pass (AC3, AC4, AC9)
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing — load_orchestration_test.gd — 87 assertions, 0 failures; full suite 1789/0, exit 0 (2026-08-02)
 
 ---
 

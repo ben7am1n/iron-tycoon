@@ -3,17 +3,17 @@
 > **Layer**: Foundation
 > **GDD**: design/gdd/time-system.md
 > **Architecture Module**: TimeSystem — owns `tick_count`, `master_seed`, RNG sub-stream states, `paused`, `speed_multiplier`; drives the tick loop
-> **Status**: Ready
+> **Status**: Complete
 > **Stories**: 4 stories created — see below
 
 ## Stories
 
 | # | Story | Type | Status | ADR |
 |---|-------|------|--------|-----|
-| 001 | SimulationOrchestrator and Tick Dispatch | Logic | Ready | ADR-0001, ADR-0005 |
-| 002 | Tick Accumulator, Speed Control, and Pause | Logic | Ready | ADR-0001 |
-| 003 | SeededRNG and Sub-Stream Derivation | Logic | Ready | ADR-0004 |
-| 004 | Serialization, Deserialization, and Resume Behavior | Integration | Ready | ADR-0002, ADR-0004, ADR-0005 |
+| 001 | SimulationOrchestrator and Tick Dispatch | Logic | Complete | ADR-0001, ADR-0005 |
+| 002 | Tick Accumulator, Speed Control, and Pause | Logic | Complete | ADR-0001 |
+| 003 | SeededRNG and Sub-Stream Derivation | Logic | Complete | ADR-0004 |
+| 004 | Serialization, Deserialization, and Resume Behavior | Integration | Complete | ADR-0002, ADR-0004, ADR-0005 |
 
 ## Overview
 

@@ -1,12 +1,12 @@
 # Story 002: Tick Accumulator, Speed Control, and Pause
 
 > **Epic**: time-system
-> **Status**: Ready
+> **Status**: Complete
 > **Layer**: Foundation
 > **Type**: Logic
 > **Estimate**: [hours or t-shirt size — fill before sprint planning]
 > **Manifest Version**: 2026-07-23
-> **Last Updated**: [set by /dev-story when implementation begins]
+> **Last Updated**: 2026-08-02
 
 ## Context
 
@@ -211,7 +211,7 @@ func get_tick_count() -> int:
 **Required evidence**:
 - `tests/unit/time_system/tick_accumulator_test.gd` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing — tick_accumulator_test.gd — 65 assertions, 0 failures; full suite 1789/0, exit 0 (2026-08-02)
 
 ---
 
