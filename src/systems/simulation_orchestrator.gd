@@ -61,6 +61,17 @@ var time_system        # TimeSystem — constructed in init() (Story 002: tick
 # Tier 1 — depends on Tier 0:
 var grid_system        # GridSystem — null until a level-definition source
                        # (LevelLoader) supplies dimensions for init(width,height).
+# SL-001: the coordinated-system fields SaveLoad.init() reads (the fields ARE
+# the contract — same pattern as grid_system). Null until each system's story
+# lands and init() constructs it; SaveLoad treats a null system as an empty {}
+# contribution so the save blob key set stays fixed at 8 keys from day one.
+var member_sim         # MemberSim — null until its story lands (tick Tier 2)
+var congestion         # Congestion — null until its story lands (tick Tier 4)
+var satisfaction       # Satisfaction — null until its story lands (tick Tier 5)
+var economy            # Economy — null until its story lands (tick Tier 6)
+var placement_system   # PlacementSystem — null until its story lands (Tier 1)
+var selection_system   # SelectionSystem — null until its story lands (Tier 6)
+var navigation         # Navigation — null until its story lands (Tier 2)
 # Tier 2-7 — PlacementSystem, Navigation, MemberSim, ZoneRules, Congestion,
 # Satisfaction, Economy, Shop, SelectionSystem, SaveLoad: null until their
 # stories land. Deliberately NOT typed — the classes do not exist in src/
