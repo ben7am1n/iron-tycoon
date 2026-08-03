@@ -1,12 +1,12 @@
 # Story 004: Serialization, Determinism and Recovery Loop
 
 > **Epic**: satisfaction
-> **Status**: Ready
+> **Status**: In Review
 > **Layer**: Feature
 > **Type**: Integration
 > **Estimate**: M — 2 sessions (≤4h)
 > **Manifest Version**: 2026-07-23
-> **Last Updated**: 2026-08-02
+> **Last Updated**: 2026-08-03
 
 ## Context
 
@@ -31,9 +31,9 @@
 
 *From GDD `design/gdd/satisfaction.md`, scoped to this story:*
 
-- [ ] AC1 Determinism: GIVEN a fixed event sequence (entered / use-completed with a congestion snapshot / queue / departed), WHEN replayed twice, THEN every `S_member` and `global_satisfaction` value is bit-identical
-- [ ] AC15 Serialization round-trip: GIVEN mid-visit accumulators and a `global_satisfaction` value, WHEN serialized and reloaded, THEN the next tick's computation is bit-identical to uninterrupted play. The test must trigger a use-completion or departure after reload to verify accumulator fields survive
-- [ ] AC17 (integration, advisory) Self-correcting recovery (no death spiral): GIVEN a maximally-congested gym driving `global_satisfaction` toward 0, WHEN the loop runs (arrivals floor at modifier 0.5 → fewer members → congestion eases), THEN `global_satisfaction` stops falling and recovers by ≥ 0.01 within 200 departures — it never reaches a stuck/zero-arrival state
+- [x] AC1 Determinism: GIVEN a fixed event sequence (entered / use-completed with a congestion snapshot / queue / departed), WHEN replayed twice, THEN every `S_member` and `global_satisfaction` value is bit-identical
+- [x] AC15 Serialization round-trip: GIVEN mid-visit accumulators and a `global_satisfaction` value, WHEN serialized and reloaded, THEN the next tick's computation is bit-identical to uninterrupted play. The test must trigger a use-completion or departure after reload to verify accumulator fields survive
+- [x] AC17 (integration, advisory) Self-correcting recovery (no death spiral): GIVEN a maximally-congested gym driving `global_satisfaction` toward 0, WHEN the loop runs (arrivals floor at modifier 0.5 → fewer members → congestion eases), THEN `global_satisfaction` stops falling and recovers by ≥ 0.01 within 200 departures — it never reaches a stuck/zero-arrival state
 
 ---
 
@@ -99,7 +99,15 @@
 - `tests/unit/satisfaction/determinism_serialization_test.gd` — AC1/AC15 (must exist and pass)
 - `tests/integration/satisfaction/recovery_loop_test.gd` — AC17 (advisory)
 
-**Status**: [ ] Not yet created
+**Status**: [x] In Review — 2026-08-03
+
+Implemented and verified (51 assertions in `tests/unit/satisfaction/determinism_serialization_test.gd` + 21 in `tests/integration/satisfaction/recovery_loop_test.gd`, full suite 2990 passed / 0 failed, up from 2918):
+- Production (`src/systems/satisfaction.gd`): `serialize()` now emits `global_satisfaction` (float) + `member_accumulators` (the TR-SAT-002 per-member dict) alongside the stub-era `{counter, rng_state}` — the extended shape is exactly Core Rule 8's serialized set, and the stub-era keys are KEPT so the save-load integration tests' byte-identical contract round-trips unchanged (MemberSim precedent). `deserialize()` is two-phase: Phase A validates counter / rng_state / global in [0,1] / the accumulator shape (all errors collected, zero mutation); Phase B commits with JSON-safe coercion (float counter, stringified keys, float int-fields — the 4.7.1 JSON.parse reality) and REBUILDS the transient `_pending_uses` + `_last_seen` from the already-loaded MemberSim roster (SaveLoad load order — MemberSim before Satisfaction), mirroring MemberSim's reservation-map-rebuild precedent: pending uses are transient per Core Rule 8, never serialized as separate truth.
+- AC1 verified: the fixed QA event sequence (entered / use-completed with a congestion snapshot / queue / departed, three members with distinct outcomes) replayed in fresh rigs is BIT-IDENTICAL through both the event API (S_member per departure + global after every event) and the on_tick roster-diff path (non-contiguous ids 3/7/12, same-tick multi-departure fold). A worst visit clamps S_member to 0.0 exactly; blank-visit + queue lands at 0.47.
+- AC15 verified: mid-visit state (m1 n_uses 2, queue_ticks 3, n_fail 1, n_interrupt 1, S_acc 0.175; m2 mid-use with a live pending snapshot; global moved to 0.5225) → serialize → JSON.stringify(full_precision=true) → parse → deserialize → restored state bit-exact, then a use-completion AND a departure triggered after reload → the continuation is BIT-IDENTICAL to uninterrupted play (accumulator fields survived). Reload exactly at a departure boundary folds bit-identically (0.49985 both paths). Determinism policy documented: pending-use congestion is re-taken at the load boundary (Core Rule 8), so the AC15 bit-identity scenario uses a stable congestion t-1 per instance.
+- AC17 verified (advisory integration): a deterministic member/congestion surrogate driven by the REAL `satisfaction_modifier`/`visit_length_modifier` (MemberSim does not consume the modifiers yet — OQ1/OQ3 is a MemberSim-side change; documented in the test header). Seeded at maximum congestion (20 members on 10 instances, zone totals 0 → use_quality = −0.5·c): global FELL to 0.0899, then RECOVERED to 0.300 by 200 departures (≥ 0.01 above min), zero-arrival ticks NEVER happened (modifier floor 0.5 → arrivals ≥ 1), the modifier never violated its structural floor, and global never reached zero. Save/load MID-recovery: two reloads of the same payload continue bit-identically (deterministic load) and the loop keeps self-correcting.
+- deserialize validation: corrupt payloads fail loudly with zero mutation — stub-era blob (missing the two new fields), global out of [0,1] or NaN, accumulator missing the TR-SAT-002 key set, non-numeric fields/keys — while the realistic JSON-parsed shape (float counter, string keys, float ints) is accepted and coerced.
+- Existing save-load integration tests all pass unchanged (saveblob 108, load_orchestration 87, roundtrip_determinism 152, file_io 68) — the schema extension was coordinated with them as required. New test files registered in `tests/headless_runner.gd` TEST_FILES. No RNG, no MemberSim wiring (OQ3 closure is a MemberSim-side change), no Economy touch (TR-SAT-010 — the loop test feeds satisfaction only through arrivals/visit-length, never reads Economy).
 
 ---
 
