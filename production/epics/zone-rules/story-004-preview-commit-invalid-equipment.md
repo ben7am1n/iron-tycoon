@@ -1,7 +1,7 @@
 # Story 004: Preview==Commit Equivalence and Invalid Equipment
 
 > **Epic**: zone-rules
-> **Status**: Ready
+> **Status**: In Review
 > **Layer**: Feature
 > **Type**: Logic
 > **Estimate**: M — 2 sessions (≤4h)
@@ -32,9 +32,9 @@
 
 *From GDD `design/gdd/zone-rules.md`, scoped to this story:*
 
-- [ ] AC2 [WB] GIVEN a speculative snapshot with hypothetical piece X (provisional `instance_id` P), WHEN `evaluate(speculative)` is diffed against `evaluate(real snapshot after X is committed)` for the same resulting instance set, THEN every shared instance_id's `{comfort, zone_synergy, spaciousness, total}` are identical. *(The single most important test — preview==commit.)*
-- [ ] AC15a [WB] GIVEN a placed instance whose `equipment_id` has no EquipmentCatalog definition, WHEN `evaluate()` runs with `strict_mode=false`, THEN it returns normally, that instance's row is `{comfort=0, zone_synergy=0, spaciousness=<computed>, total=spaciousness}`, it is excluded from neighbors' `n_same`, AND the injected `on_invalid_equipment` callback is invoked exactly once with the offending `instance_id` and `equipment_id`
-- [ ] AC15b [WB] GIVEN the same setup with `strict_mode=true`, WHEN `evaluate()` runs, THEN it does **not** return a normal result — the injected error channel captures a structured error (deterministically observable by a test harness **without** relying on stderr capture, process exit code, or `assert()`)
+- [x] AC2 [WB] GIVEN a speculative snapshot with hypothetical piece X (provisional `instance_id` P), WHEN `evaluate(speculative)` is diffed against `evaluate(real snapshot after X is committed)` for the same resulting instance set, THEN every shared instance_id's `{comfort, zone_synergy, spaciousness, total}` are identical. *(The single most important test — preview==commit.)*
+- [x] AC15a [WB] GIVEN a placed instance whose `equipment_id` has no EquipmentCatalog definition, WHEN `evaluate()` runs with `strict_mode=false`, THEN it returns normally, that instance's row is `{comfort=0, zone_synergy=0, spaciousness=<computed>, total=spaciousness}`, it is excluded from neighbors' `n_same`, AND the injected `on_invalid_equipment` callback is invoked exactly once with the offending `instance_id` and `equipment_id`
+- [x] AC15b [WB] GIVEN the same setup with `strict_mode=true`, WHEN `evaluate()` runs, THEN it does **not** return a normal result — the injected error channel captures a structured error (deterministically observable by a test harness **without** relying on stderr capture, process exit code, or `assert()`)
 
 ---
 
@@ -101,7 +101,7 @@
 - `tests/unit/zone_rules/preview_commit_test.gd` — AC2 (must exist and pass)
 - `tests/unit/zone_rules/invalid_equipment_test.gd` — AC15a/AC15b (must exist and pass)
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — `tests/unit/zone_rules/preview_commit_test.gd` (AC2, 22 asserts) + `tests/unit/zone_rules/invalid_equipment_test.gd` (AC15a/15b + static guards, 30 asserts), both registered in TEST_FILES; full headless suite 2812 passed / 0 failed.
 
 ---
 
