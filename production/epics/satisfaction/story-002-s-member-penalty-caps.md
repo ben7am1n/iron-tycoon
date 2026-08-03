@@ -1,12 +1,12 @@
 # Story 002: S_member and Penalty Caps
 
 > **Epic**: satisfaction
-> **Status**: Ready
+> **Status**: In Review
 > **Layer**: Feature
 > **Type**: Logic
 > **Estimate**: S — 1 session (≤2h)
 > **Manifest Version**: 2026-07-23
-> **Last Updated**: 2026-08-02
+> **Last Updated**: 2026-08-03
 
 ## Context
 
@@ -30,8 +30,8 @@
 
 *From GDD `design/gdd/satisfaction.md`, scoped to this story:*
 
-- [ ] AC11 Queue penalty cap: GIVEN `queue_ticks_total` far exceeding `queue_norm_ticks`, WHEN `queue_penalty` is computed, THEN it is ≤ 0.3
-- [ ] AC12 Fail/interrupt penalty caps: GIVEN `n_fail = 10, n_interrupt = 10`, WHEN `fail_penalty` and `interrupt_penalty` are computed, THEN `fail_penalty ≤ 0.30` and `interrupt_penalty ≤ 0.20`
+- [x] AC11 Queue penalty cap: GIVEN `queue_ticks_total` far exceeding `queue_norm_ticks`, WHEN `queue_penalty` is computed, THEN it is ≤ 0.3
+- [x] AC12 Fail/interrupt penalty caps: GIVEN `n_fail = 10, n_interrupt = 10`, WHEN `fail_penalty` and `interrupt_penalty` are computed, THEN `fail_penalty ≤ 0.30` and `interrupt_penalty ≤ 0.20`
 
 ---
 
@@ -93,7 +93,27 @@ interrupt_penalty = min(w_interrupt × n_interrupt, cap_interrupt)
 **Required evidence**:
 - `tests/unit/satisfaction/penalty_caps_test.gd` — must exist and pass (AC11, AC12)
 
-**Status**: [ ] Not yet created
+**Status**: [x] Complete — penalty_caps_test.gd 38 asserts all green (AC11, AC12 + guardrail + on_tick wiring), registered in TEST_FILES; full headless suite 2881 passed / 0 failed (was 2843).
+
+### Implementation summary (SAT-002)
+
+- S_member and the capped penalty terms were already landed in SAT-001 (`compute_s_member` +
+  `_queue_penalty` / `_fail_penalty` / `_interrupt_penalty` in `src/systems/satisfaction.gd`,
+  TR-SAT-004) because the story-001 QA cases (AC5/6/8/10) exercised them. This story owns the
+  dedicated penalty-cap test file `tests/unit/satisfaction/penalty_caps_test.gd` (AC11/12) —
+  no production-code change was needed; the caps verified as specified:
+  - AC11: `queue_penalty = 0.3 × clamp(queue_ticks/100, 0, 1)` — ≤ 0.3 for any count;
+    edge `== 100 → 0.3`, `== 0 → 0` (sweep 0..100000, monotonic, saturating).
+  - AC12: `fail_penalty = min(0.15×n_fail, 0.30)`, `interrupt_penalty = min(0.20×n_interrupt, 0.20)`
+    — at n_fail=10 / n_interrupt=10 the caps hold; edge n_fail 1→0.15 / 2→0.30 / 3→0.30,
+    n_interrupt 1→0.20 / 2→0.20.
+  - Guardrail: each cap < max |use_quality| (0.5); max total event penalty 0.80 < S_base +
+    best avg (1.0) — a perfect use + ALL caps still lands S_member 0.2 (spatial signal
+    dominant, never zeroed by event noise).
+  - Event path: public API (add_queue_ticks / on_walk_fail / on_interrupt / on_member_departed
+    fold-return) + one on_tick roster-diff case (LEAVING no_candidates → n_fail, mid-use
+    interrupt → n_interrupt, quota_met NOT a failure) — all capped S_members fold correctly.
+- No RNG, no new serialize surface (story-004 owns the extended shape), no production diff.
 
 ---
 
