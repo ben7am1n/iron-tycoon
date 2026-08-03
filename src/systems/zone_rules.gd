@@ -1,5 +1,5 @@
 ## ZoneRules — stateless pure function scoring the static quality of a placed
-## layout (zone-rules epic, Stories 001+002; TR-ZR-001/002/003/004/006; GDD
+## layout (zone-rules epic, Stories 001+002+003+004; TR-ZR-001..007; GDD
 ## Core Rules 1/3/4/5/6/7/8).
 ##
 ## Sole entry point: evaluate(snapshot, catalog) -> Dictionary. It reads ONLY
@@ -22,7 +22,8 @@
 ## are NEVER authored in the catalog:
 ##   - zone_synergy: computed output — Story 002 formula (Core Rules 5/6,
 ##     TR-ZR-004/006): S_max × (1 − e^(−k × r_i)), r_i = n_same_i / N_max_i
-##   - spaciousness: computed output — Story 003 formula; 0.0 in this story
+##   - spaciousness: computed output — Story 003 formula (implemented here):
+##     C_max × (open_adj_i / total_adj_i)
 ## All three are non-negative by construction — this system never subtracts;
 ## a poor layout earns 0 on a tag, it is never punished (Pillar 2 enforced
 ## at the vocabulary level, not by a downstream clamp).
@@ -72,9 +73,17 @@ const K := 2.4
 const CONFIG_S_MAX := "zone_synergy_s_max"
 const CONFIG_K := "zone_synergy_k"
 
-## The four orthogonal neighbor offsets — edge-sharing only, no diagonals
-## (TR-ZR-006, consistent with the Navigation no-corner-cut rule).
-const _ORTHOGONAL_STEPS := [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
+## Spaciousness ceiling C_max (GDD Formulas / Tuning Knobs — provisional MVP
+## anchor; safe range 0.3–0.8). spaciousness_i = C_max × (open_adj_i /
+## total_adj_i), clamped to [0, C_max] by construction: open_adj_i ≤
+## total_adj_i, and total_adj_i == 0 → 0.0 (AC7 guard).
+const C_MAX_SPACIOUSNESS := 0.5
+
+## The four orthogonal neighbor offsets (共边 adjacency — diagonal never
+## counts, consistent with the no-corner-cut movement rule, Core Rule 6).
+const ORTHOGONAL_DIRS: Array[Vector2i] = [
+	Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1),
+]
 
 
 ## Sole entry point — scores every placed instance in [snapshot].
@@ -119,8 +128,8 @@ func evaluate(snapshot: GridStateReader, catalog: EquipmentCatalog, config: Dict
 	for inst in sorted:
 		var comfort: float = _read_comfort(catalog, inst.equipment_id)
 		var zone_synergy: float = _compute_zone_synergy(inst, sorted, zone_membership, n_max, s_max, k)
-		# Story 003 owns the spaciousness formula — placeholder 0.0 here.
-		var spaciousness := 0.0
+		# Story 003 owns the spaciousness formula — C_max × (open_adj / total_adj).
+		var spaciousness := _compute_spaciousness(snapshot, inst)
 		result[inst.instance_id] = {
 			"comfort": comfort,
 			"zone_synergy": zone_synergy,
@@ -200,7 +209,7 @@ func _are_adjacent(a: PlacedInstance, b: PlacedInstance) -> bool:
 func _perimeter_cell_count(footprint_cells: Array[Vector2i]) -> int:
 	var perimeter := {}
 	for cell in footprint_cells:
-		for step in _ORTHOGONAL_STEPS:
+		for step in ORTHOGONAL_DIRS:
 			var neighbor: Vector2i = cell + step
 			if not footprint_cells.has(neighbor) and not perimeter.has(neighbor):
 				perimeter[neighbor] = true
@@ -238,3 +247,58 @@ func _read_comfort(catalog: EquipmentCatalog, equipment_id: String) -> float:
 		if effect["tag"] == "comfort":
 			return float(effect["magnitude"])
 	return 0.0
+
+
+## Spaciousness (Story 003, TR-ZR-005, GDD Formulas): the open-breathing-room
+## bonus for instance i:
+##
+##     spaciousness_i = C_max × (open_adj_i / total_adj_i)
+##
+## total_adj_i counts DISTINCT in-bounds cells orthogonally adjacent to i's
+## footprint_cells ∪ access_cells, excluding i's own cells (AC17: out-of-
+## bounds cells are dropped entirely — never counted as solid or open; a
+## neighbor cell shared by two own cells counts once, dedupe via a set).
+## open_adj_i is the subset where the snapshot reports is_solid == false —
+## STATIC solidity only (walls + placed footprints). This reads no member
+## data: the static/dynamic split is deliberate (Core Rule 1), so this
+## function has zero overlap with the dynamic density field.
+##
+## Output ∈ [0, C_max]. total_adj_i == 0 (fully walled in — should not occur
+## under placement rules) is guarded to 0.0, never a divide-by-zero (AC7).
+func _compute_spaciousness(snapshot: GridStateReader, inst: PlacedInstance) -> float:
+	var dims: Vector2i = snapshot.get_dimensions()
+
+	# i's own cells = footprint ∪ access. Excluding own cells from the
+	# adjacency set is part of the formula (GDD "excluding i's own cells").
+	var own: Dictionary = {}
+	for c in inst.footprint_cells:
+		own[c] = true
+	for c in inst.access_cells:
+		own[c] = true
+
+	# Distinct in-bounds orthogonal neighbors of the own-cell set.
+	var adjacent: Dictionary = {}
+	for key in own:
+		var cell: Vector2i = key
+		for dir in ORTHOGONAL_DIRS:
+			var n: Vector2i = cell + dir
+			# AC17 — out-of-bounds cells excluded (not solid, not open).
+			if n.x < 0 or n.y < 0 or n.x >= dims.x or n.y >= dims.y:
+				continue
+			# Exclude i's own cells (footprint ∪ access).
+			if own.has(n):
+				continue
+			adjacent[n] = true
+
+	var total_adj: int = adjacent.size()
+	if total_adj == 0:
+		# AC7 — guard, never divide by zero.
+		return 0.0
+
+	var open_adj := 0
+	for key in adjacent:
+		var cell: Vector2i = key
+		if not snapshot.is_solid(cell):
+			open_adj += 1
+
+	return C_MAX_SPACIOUSNESS * (float(open_adj) / float(total_adj))
