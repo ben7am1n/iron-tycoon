@@ -428,9 +428,10 @@ func _test_s8_recompute_before_emit() -> void:
 	var cong: RefCounted = rig["congestion"]
 
 	var observed: Array = []
-	cong.connect("congestion_updated", func() -> void:
+	var handler := func() -> void:
 		# At emit time the current tick's field must already be visible.
-		observed.append(cong.call("per_cell_density", Vector2i(3, 3))))
+		observed.append(cong.call("per_cell_density", Vector2i(3, 3)))
+	cong.connect("congestion_updated", handler)
 
 	cong.call("on_tick", 0)
 	_check(observed.size() == 1, "S8: emitted exactly once per tick (got %d)" % observed.size())
@@ -444,6 +445,12 @@ func _test_s8_recompute_before_emit() -> void:
 	var expected2: float = (0.4 * 1.0 + 0.6 * 0.4) / 3.0
 	_check(observed.size() == 2 and absf(float(observed[1]) - expected2) < EPS,
 		"S8: second emit sees blended value (%s)" % str(observed[1]))
+
+	# Break the lambda -> emitter reference cycle: the signal connection holds
+	# `handler`, and `handler` captures `cong` (RefCounted). Without an explicit
+	# disconnect the whole rig (cong + srg + grid + member_sim + scripts) never
+	# frees and leaks at exit. Disconnect deterministically after the assertions.
+	cong.disconnect("congestion_updated", handler)
 
 
 # === Config knobs ===
