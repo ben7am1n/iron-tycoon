@@ -1,12 +1,12 @@
 # Story 004: Determinism and Serialization
 
 > **Epic**: congestion
-> **Status**: Ready
+> **Status**: Complete — 2026-08-03
 > **Layer**: Feature
 > **Type**: Integration
 > **Estimate**: M — 2 sessions (≤4h)
 > **Manifest Version**: 2026-07-23
-> **Last Updated**: 2026-08-02
+> **Last Updated**: 2026-08-03
 
 ## Context
 
@@ -32,9 +32,9 @@
 
 *From GDD `design/gdd/congestion.md`, scoped to this story:*
 
-- [ ] AC1 GIVEN an identical fixed sequence of member states across N ticks, WHEN Congestion processes it twice, THEN `per_equipment_congestion`, `per_cell_density`, and `access_reachable` are bit-identical run-to-run
-- [ ] AC2 [WB] GIVEN the Congestion source, WHEN statically inspected, THEN it contains zero `randi`/`randf`/`RandomNumberGenerator` calls (static/grep check)
-- [ ] AC14 GIVEN a save at tick `t` with `prev` + per-cell `smoothed`, WHEN loaded and MemberSim runs at `t+1`, THEN MemberSim's read matches pre-save `prev` bit-for-bit, and `access_reachable` is recomputed from the loaded grid (not deserialized)
+- [x] AC1 GIVEN an identical fixed sequence of member states across N ticks, WHEN Congestion processes it twice, THEN `per_equipment_congestion`, `per_cell_density`, and `access_reachable` are bit-identical run-to-run
+- [x] AC2 [WB] GIVEN the Congestion source, WHEN statically inspected, THEN it contains zero `randi`/`randf`/`RandomNumberGenerator` calls (static/grep check)
+- [x] AC14 GIVEN a save at tick `t` with `prev` + per-cell `smoothed`, WHEN loaded and MemberSim runs at `t+1`, THEN MemberSim's read matches pre-save `prev` bit-for-bit, and `access_reachable` is recomputed from the loaded grid (not deserialized)
 
 ---
 
@@ -103,7 +103,28 @@
 - `tests/unit/congestion/determinism_no_rng_test.gd` — AC1/AC2 (must exist and pass)
 - `tests/unit/congestion/serialization_test.gd` — AC14 (must exist and pass)
 
-**Status**: [ ] Not yet created
+**Status**: [x] Complete — 2026-08-03 (18 determinism + 68 serialization assertions, all green)
+
+```
+=== DETERMINISM NO-RNG TEST: 18 passed, 0 failed ===
+=== SERIALIZATION TEST: 68 passed, 0 failed ===
+```
+
+**Documented deviation — float encoding (engine-verified)**: The story's serialization
+mechanism says "JSON.stringify(full_precision=true) 浮点位等同". Empirically in Godot
+4.7.1, `JSON.stringify(full_precision=true)` followed by `JSON.parse_string` is NOT
+correctly rounded: a 20k-double sweep found ~12.4% lose the last bit through the
+round-trip (e.g. `0.021599999999999998` → `"0.02159999999999999"`). Raw floats in the
+payload would therefore break AC14's bit-exact restore on the real file-load path.
+Congestion instead hex-encodes floats as `"0x" + 16 hex digits` of the IEEE-754 bit
+pattern (same convention as the int64 `rng_state` hex, ADR-0002 §6 risk section) —
+bit-exact by construction, immune to the engine's parse rounding. `_hex_to_float`
+uses `String.hex_to_int()` (verified; `int("0x..")` stops at the invalid `x` char).
+The `counter` field accepts int|float on deserialize (JSON parses integer literals
+as floats in 4.7.1 — the same convention MemberSim's `_is_numeric` uses), coerced
+with `int()` in Phase B. Keys re-stringify on JSON.parse (5 → "5") — normalized back
+to int keys in Phase B. `density_cells` is rebuilt from restored `smoothed_cells` in
+Phase B (pure derivation, never serialized).
 
 ---
 
