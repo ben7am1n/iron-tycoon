@@ -54,6 +54,7 @@ const TEST_FILES := [
 	"tests/unit/satisfaction/use_quality_test.gd",
 	"tests/unit/satisfaction/penalty_caps_test.gd",
 	"tests/unit/satisfaction/global_satisfaction_modifiers_test.gd",
+	"tests/unit/satisfaction/determinism_serialization_test.gd",
 	"tests/unit/equipment_catalog/equipment_def_catalog_test.gd",
 	"tests/unit/equipment_catalog/catalog_json_loading_test.gd",
 	"tests/unit/equipment_catalog/catalog_footprint_access_validation_test.gd",
@@ -74,6 +75,7 @@ const TEST_FILES := [
 	"tests/integration/save_load/roundtrip_determinism_test.gd",
 	"tests/integration/save_load/file_io_version_test.gd",
 	"tests/integration/member_sim/flow_hypothesis_test.gd",
+	"tests/integration/satisfaction/recovery_loop_test.gd",
 ]
 
 # === 隔离的测试文件 ===

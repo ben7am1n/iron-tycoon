@@ -21,9 +21,11 @@
 ##   - system_name() == "Satisfaction"
 ##   - on_tick(tick_count: int) -> void  (orchestrator's fixed dispatch)
 ##   - serialize() / deserialize(data, validate_only) two-phase protocol,
-##     returning StubDeserializeResult. The serialize SHAPE is preserved from
-##     the stub as {counter, rng_state} — story-004 owns the extended shape
-##     (member_accumulators + global_satisfaction, TR-SAT-009).
+##     returning StubDeserializeResult. The serialize shape EXTENDS the
+##     stub's {counter, rng_state} with the story-004 real state
+##     (member_accumulators + global_satisfaction, TR-SAT-009) — the
+##     stub-era keys are kept so the save-load integration tests'
+##     byte-identical contract round-trips unchanged (MemberSim precedent).
 ##
 ## PRE-WIRING COMPATIBILITY PATH (documented, not silent): the SL-002/003
 ## save-load integration tests construct Satisfaction with ONLY
@@ -546,16 +548,29 @@ func _read_zone_total(instance_id: int) -> float:
 
 
 ## Returns the full observable state as a JSON-safe Dictionary:
-##   { counter: int, rng_state: "0x…" }
+##   { counter: int, global_satisfaction: float, member_accumulators: Dict,
+##     rng_state: "0x…" }
 ## Pure read — no draws, no mutation (SL-001 AC1 counts serialize calls, so
-## serialize stays side-effect free). The key set is the stub contract —
-## kept so SL-002/SL-003-era blobs load unchanged. Story-004 owns the
-## extended shape (member_accumulators + global_satisfaction, TR-SAT-009).
+## serialize stays side-effect free). Story-004 (TR-SAT-009 / Core Rule 8)
+## added the real state: the reputation meter float + the per-member
+## accumulator dict ({S_acc, n_uses, queue_ticks, n_fail, n_interrupt} —
+## TR-SAT-002 exact key set). The stub-era keys {counter, rng_state} are
+## KEPT alongside (MemberSim precedent): the save-load integration tests'
+## byte-identical contract round-trips whatever serialize() emits, and
+## keeping the keys means the stub-era blobs stay structurally compatible.
+## The transient bookkeeping (_pending_uses, _last_seen) is deliberately
+## NOT serialized — it is re-derived from the loaded MemberSim roster at
+## commit (Core Rule 8 serialized set is exactly global_satisfaction +
+## member_accumulators; the reservation-map-rebuild precedent, TR-MS-007).
+## member_accumulators is deep-duplicated so the caller can never mutate
+## live state through the returned dict.
 func serialize() -> Dictionary:
 	if not _assert_initialized():
 		return {}
 	return {
 		"counter": counter,
+		"global_satisfaction": global_satisfaction,
+		"member_accumulators": member_accumulators.duplicate(true),
 		"rng_state": SeededRNG.int64_to_hex(_seeded_rng.get_rng(system_name()).state),
 	}
 
@@ -566,20 +581,46 @@ func serialize() -> Dictionary:
 ## normal outcome). [validate_only] runs Phase A and returns the verdict
 ## without committing (SaveLoad Phase A protocol).
 ## Required fields (hard failure, no invented defaults):
-##   counter (int), rng_state ("0x" hex string).
-## Story-004 extends this with member_accumulators + global_satisfaction.
+##   counter (int|float), rng_state ("0x" hex string),
+##   global_satisfaction (float in [0,1] — Core Rule 8 / TR-SAT-009),
+##   member_accumulators (Dictionary: member_id -> accumulator with the
+##   TR-SAT-002 exact key set). A stub-era blob missing the two new fields
+##   FAILS — the meter/accumulators cannot be restored without them.
+## Phase B additionally rebuilds the transient per-member bookkeeping
+## (_pending_uses + _last_seen) from the already-loaded MemberSim roster
+## (SaveLoad load order puts MemberSim before Satisfaction) — see
+## _rebuild_transient_state().
 func deserialize(data: Dictionary, validate_only: bool = false) -> StubDeserializeResult:
 	var result := StubDeserializeResult.new()
 	if not _assert_initialized():
 		return StubDeserializeResult.fail("Satisfaction.deserialize(): called before init()")
 
 	# --- Phase A: validate (zero mutation) ---
-	if not data.has("counter") or typeof(data["counter"]) != TYPE_INT:
+	# counter may be int or float: JSON.parse returns integer literals as
+	# float in 4.7.1 (verified — MemberSim's _is_numeric precedent).
+	if not data.has("counter") or not _is_numeric(data["counter"]):
 		result.errors.append("Satisfaction: missing or invalid 'counter'")
 	if not data.has("rng_state") or not data["rng_state"] is String:
 		result.errors.append("Satisfaction: missing or invalid 'rng_state'")
 	elif not str(data["rng_state"]).begins_with("0x") or not str(data["rng_state"]).is_valid_hex_number(true):
 		result.errors.append("Satisfaction: rng_state must be a 0x hex string")
+
+	# global_satisfaction — required, numeric, finite, in [0,1] (Core Rule 5
+	# output range; a corrupt out-of-range meter would silently skew the
+	# modifier, so it fails loudly instead).
+	if not data.has("global_satisfaction") or not _is_numeric(data["global_satisfaction"]):
+		result.errors.append("Satisfaction: missing or invalid 'global_satisfaction'")
+	else:
+		var g := float(data["global_satisfaction"])
+		if is_nan(g) or is_inf(g) or g < 0.0 or g > 1.0:
+			result.errors.append("Satisfaction: 'global_satisfaction' must be a finite number in [0,1] (got %s)" % str(g))
+
+	# member_accumulators — Dictionary keyed by member_id, each value an
+	# accumulator with the TR-SAT-002 exact key set (collects ALL errors).
+	if not data.has("member_accumulators") or not (data["member_accumulators"] is Dictionary):
+		result.errors.append("Satisfaction: missing or invalid 'member_accumulators'")
+	else:
+		_validate_accumulators(data["member_accumulators"], result)
 
 	if not result.errors.is_empty():
 		return result  # Phase A failed — NOTHING was mutated
@@ -591,4 +632,119 @@ func deserialize(data: Dictionary, validate_only: bool = false) -> StubDeseriali
 	# --- Phase B: commit (only if all valid) ---
 	counter = int(data["counter"])
 	_seeded_rng.get_rng(system_name()).state = SeededRNG.hex_to_int64(str(data["rng_state"]))
+	global_satisfaction = float(data["global_satisfaction"])
+	member_accumulators = _normalize_accumulators(data["member_accumulators"])
+	_rebuild_transient_state()
 	return result
+
+
+## Phase A: validates the member_accumulators payload with zero mutation.
+## Every key must coerce to an int member_id (int / integral float /
+## numeric string — JSON.stringify stringifies Dictionary keys), every
+## value must be a Dictionary carrying the TR-SAT-002 exact key set with
+## numeric fields, and S_acc must be finite. Collects ALL problems — the
+## caller sees every violation, not the first one (TR-SL-004).
+func _validate_accumulators(accumulators: Dictionary, result: StubDeserializeResult) -> void:
+	var expected := [
+		ACC_S_ACC, ACC_N_USES, ACC_QUEUE_TICKS, ACC_N_FAIL, ACC_N_INTERRUPT,
+	]
+	for raw_key in accumulators:
+		var member_id := _coerce_member_key(raw_key)
+		if member_id < 0:
+			result.errors.append("Satisfaction: invalid member key '%s' in member_accumulators" % str(raw_key))
+			continue
+		var acc: Variant = accumulators[raw_key]
+		if not (acc is Dictionary):
+			result.errors.append("Satisfaction: accumulator for member %d is not a Dictionary" % member_id)
+			continue
+		for field in expected:
+			if not (acc as Dictionary).has(field) or not _is_numeric((acc as Dictionary)[field]):
+				result.errors.append("Satisfaction: accumulator for member %d missing/invalid '%s'" % [member_id, field])
+		var s_acc: Variant = (acc as Dictionary).get(ACC_S_ACC, null)
+		if s_acc != null and _is_numeric(s_acc):
+			var s_acc_f := float(s_acc)
+			if is_nan(s_acc_f) or is_inf(s_acc_f):
+				result.errors.append("Satisfaction: accumulator for member %d has non-finite S_acc" % member_id)
+
+
+## Phase B: rebuilds member_accumulators from the validated payload with
+## JSON-safe coercion — keys back to int member_id (JSON stringifies dict
+## keys), int counters back to int (JSON.parse returns floats for integer
+## literals in 4.7.1), S_acc back to float. The output carries exactly the
+## TR-SAT-002 key set; unknown extra keys in the payload are dropped (the
+## shape IS the contract — a future field is a schema change, not a silent
+## pass-through).
+func _normalize_accumulators(accumulators: Dictionary) -> Dictionary:
+	var out: Dictionary = {}
+	for raw_key in accumulators:
+		var member_id := _coerce_member_key(raw_key)
+		if member_id < 0:
+			continue  # Phase A already rejected — unreachable in commit mode
+		var acc: Dictionary = accumulators[raw_key]
+		out[member_id] = {
+			ACC_S_ACC: float(acc.get(ACC_S_ACC, 0.0)),
+			ACC_N_USES: int(acc.get(ACC_N_USES, 0)),
+			ACC_QUEUE_TICKS: int(acc.get(ACC_QUEUE_TICKS, 0)),
+			ACC_N_FAIL: int(acc.get(ACC_N_FAIL, 0)),
+			ACC_N_INTERRUPT: int(acc.get(ACC_N_INTERRUPT, 0)),
+		}
+	return out
+
+
+## Coerces a member_accumulators key to an int member_id. Accepts int,
+## integral float (JSON.parse floats), and numeric strings ("5" —
+## JSON.stringify stringifies object keys). Returns -1 for anything else.
+func _coerce_member_key(key: Variant) -> int:
+	if typeof(key) == TYPE_INT:
+		return int(key)
+	if typeof(key) == TYPE_FLOAT and is_equal_approx(float(key), round(float(key))):
+		return int(key)
+	if typeof(key) == TYPE_STRING and str(key).is_valid_int():
+		return int(str(key))
+	return -1
+
+
+## True when [v] is int or float — the numeric types a save payload may
+## carry (JSON.parse returns floats for integer literals in 4.7.1).
+func _is_numeric(v: Variant) -> bool:
+	return typeof(v) == TYPE_INT or typeof(v) == TYPE_FLOAT
+
+
+## Phase B load-side rebuild of the transient per-member bookkeeping (Core
+## Rule 8: the serialized set is exactly global_satisfaction +
+## member_accumulators; _pending_uses + _last_seen are DERIVED state,
+## mirroring MemberSim's reservation-map rebuild precedent — never
+## serialized as separate truth). Called only after commit, and only when
+## the member_sim read surface is wired (pre-wiring rigs have nothing to
+## observe — skip).
+##
+##   _last_seen[member_id].exercises_done = the loaded roster's current
+##     count — prevents a FALSE use-completion on the first tick after
+##     load (the member's completed uses already live in S_acc/n_uses).
+##   _pending_uses[member_id] = {instance_id, congestion} for every member
+##     still USING with a real target — the single Congestion_i(t-1)
+##     snapshot is RE-taken at the load boundary (the "read t-1 at
+##     use-start" rule applied at reload). This preserves the AC15
+##     bit-identity contract under a stable congestion t-1 (the QA
+##     scenario), AND keeps the departure-defensive interrupt correct: a
+##     member still USING at load who departs next tick must count the
+##     interrupt, exactly as uninterrupted play would.
+func _rebuild_transient_state() -> void:
+	_last_seen.clear()
+	_pending_uses.clear()
+	if _member_sim == null:
+		return
+	for m in _member_sim.members:
+		if not (m is Dictionary) or not m.has("member_id") or not m.has("state"):
+			continue  # legacy state-less roster entries are exempt (on_tick mirror)
+		var member_id := int(m["member_id"])
+		_last_seen[member_id] = {
+			"exercises_done": int(m.get("exercises_done", 0)),
+		}
+		var state := str(m["state"])
+		var target := int(m.get("target_equipment_instance_id", -1))
+		if state == "USING" and target >= 0:
+			_pending_uses[member_id] = {
+				"instance_id": target,
+				"congestion": _read_congestion(target),
+			}
