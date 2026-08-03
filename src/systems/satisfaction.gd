@@ -83,6 +83,7 @@ const CONFIG_CAP_FAIL := "cap_fail"
 const CONFIG_W_INTERRUPT := "w_interrupt"
 const CONFIG_CAP_INTERRUPT := "cap_interrupt"
 const CONFIG_ALPHA_G := "alpha_g"
+const CONFIG_DAMP := "damp"
 
 ## GDD Formulas — provisional MVP anchors (playtest tuning).
 const W_ZONE := 0.5        ## equal weight — neither cluster nor spread dominates
@@ -96,6 +97,8 @@ const CAP_FAIL := 0.30
 const W_INTERRUPT := 0.20
 const CAP_INTERRUPT := 0.20
 const ALPHA_G := 0.05      ## slow global EMA — one member can't swing reputation
+const DAMP := 0.5          ## visit-length leg damping — halves the deviation
+                           ## (prevents ~modifier² occupancy oscillation)
 
 ## Accumulator key names (TR-SAT-002 — story-004 serializes this exact set).
 const ACC_S_ACC := "S_acc"
@@ -173,6 +176,7 @@ var _cap_fail: float = CAP_FAIL
 var _w_interrupt: float = W_INTERRUPT
 var _cap_interrupt: float = CAP_INTERRUPT
 var _alpha_g: float = ALPHA_G
+var _damp: float = DAMP
 
 
 ## Two-phase init (ADR-0001). Stores the injected dependencies (all optional
@@ -215,6 +219,7 @@ func _apply_config(config: Dictionary) -> void:
 	_w_interrupt = float(config.get(CONFIG_W_INTERRUPT, _w_interrupt))
 	_cap_interrupt = float(config.get(CONFIG_CAP_INTERRUPT, _cap_interrupt))
 	_alpha_g = float(config.get(CONFIG_ALPHA_G, _alpha_g))
+	_damp = float(config.get(CONFIG_DAMP, _damp))
 
 
 func system_name() -> String:
@@ -456,6 +461,44 @@ func _fold_global(s_member: float) -> void:
 		_alpha_g * s_member + (1.0 - _alpha_g) * global_satisfaction,
 		0.0, 1.0
 	)
+
+
+## --- Core Rule 6 modifiers (story-003 / TR-SAT-006 / TR-SAT-007) ---
+
+## Core Rule 6 / TR-SAT-006: satisfaction_modifier — the arrival-rate
+## multiplier that fulfills MemberSim's OQ3 placeholder. Piecewise-linear:
+##   G_c < 0.5:  G_c + 0.5
+##   G_c >= 0.5: 2 * G_c
+## so G = 0.5 -> exactly 1.0 (seamless with MemberSim's placeholder — AC3)
+## and the range is [0.5, 2.0] (AC2) with a STRUCTURAL floor of 0.5 at G = 0
+## (never 0 — the anti-death-spiral mechanism, not an afterthought clamp).
+## Input is defensively clamped to [0,1] first (AC16); non-finite inputs
+## (NaN/Inf, e.g. an upstream bug) fall back to the neutral anchor 0.5 so
+## the modifier can never crash or emit NaN.
+func satisfaction_modifier(g: float) -> float:
+	var g_c := _clamp_modifier_input(g)
+	if g_c < 0.5:
+		return g_c + 0.5
+	return 2.0 * g_c
+
+
+## Core Rule 6 / TR-SAT-007: visit_length_modifier — the DAMPED leg driving
+## MemberSim's exercises_per_visit. Deviation from 1.0 is exactly half of
+## satisfaction_modifier's (damp = 0.5), so range is [0.75, 1.5] (AC4).
+## Damping prevents ~modifier² occupancy oscillation (arrivals AND visit
+## length would otherwise both scale with the full modifier). Defensive
+## clamp is inherited from satisfaction_modifier (AC16).
+func visit_length_modifier(g: float) -> float:
+	return 1.0 + (satisfaction_modifier(g) - 1.0) * _damp
+
+
+## AC16: defensive input clamp — G outside [0,1] (upstream bug) is clamped
+## before the piecewise formula; non-finite (NaN/±Inf) maps to the neutral
+## anchor (0.5) so the anti-spiral guarantee (modifier >= 0.5) still holds.
+func _clamp_modifier_input(g: float) -> float:
+	if is_nan(g) or is_inf(g):
+		return S_BASE
+	return clampf(g, 0.0, 1.0)
 
 
 ## --- Read surfaces (tests / story 004) ---

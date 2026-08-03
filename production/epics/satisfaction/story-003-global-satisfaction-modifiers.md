@@ -1,12 +1,12 @@
 # Story 003: global_satisfaction and Modifiers
 
 > **Epic**: satisfaction
-> **Status**: Ready
+> **Status**: In Review
 > **Layer**: Feature
 > **Type**: Logic
 > **Estimate**: M — 2 sessions (≤4h)
 > **Manifest Version**: 2026-07-23
-> **Last Updated**: 2026-08-02
+> **Last Updated**: 2026-08-03
 
 ## Context
 
@@ -31,13 +31,13 @@
 
 *From GDD `design/gdd/satisfaction.md`, scoped to this story:*
 
-- [ ] AC2 Modifier bounds + anti-spiral floor: GIVEN any `G ∈ [0,1]`, WHEN `satisfaction_modifier(clamp(G, 0, 1))` is computed, THEN it ∈ `[0.5, 2.0]`, and at `G = 0` it is **strictly 0.5** (never 0). Input defensively clamped to `[0,1]` before the piecewise formula
-- [ ] AC3 Neutral continuity: GIVEN `G = 0.5`, WHEN `satisfaction_modifier` is computed, THEN it equals exactly `1.0` (seamless with MemberSim's placeholder)
-- [ ] AC4 Visit modifier damping: GIVEN any `G`, WHEN `visit_length_modifier(G)` is computed, THEN it ∈ `[0.75, 1.5]` and its deviation from 1.0 is exactly half that of `satisfaction_modifier(G)`
-- [ ] AC7 Monotonicity — modifier: GIVEN two satisfaction values `G1 < G2`, WHEN modifiers are computed, THEN `satisfaction_modifier(G1) ≤ satisfaction_modifier(G2)` (non-decreasing)
-- [ ] AC13 Deterministic multi-departure: GIVEN multiple members departing on one tick, WHEN folded into `global_satisfaction`, THEN they fold in ascending `member_id` order (reproducible)
-- [ ] AC14 No silent drift: GIVEN a tick with no departures, WHEN it processes, THEN `global_satisfaction(t) == global_satisfaction(t-1)` bit-for-bit
-- [ ] AC16 Defensive modifier clamp: GIVEN `G` outside `[0,1]` (e.g., due to an upstream bug), WHEN `satisfaction_modifier(G)` is computed, THEN input is clamped to `[0,1]` before the piecewise formula, and the anti-spiral guarantee (`modifier ≥ 0.5`) holds
+- [x] AC2 Modifier bounds + anti-spiral floor: GIVEN any `G ∈ [0,1]`, WHEN `satisfaction_modifier(clamp(G, 0, 1))` is computed, THEN it ∈ `[0.5, 2.0]`, and at `G = 0` it is **strictly 0.5** (never 0). Input defensively clamped to `[0,1]` before the piecewise formula
+- [x] AC3 Neutral continuity: GIVEN `G = 0.5`, WHEN `satisfaction_modifier` is computed, THEN it equals exactly `1.0` (seamless with MemberSim's placeholder)
+- [x] AC4 Visit modifier damping: GIVEN any `G`, WHEN `visit_length_modifier(G)` is computed, THEN it ∈ `[0.75, 1.5]` and its deviation from 1.0 is exactly half that of `satisfaction_modifier(G)`
+- [x] AC7 Monotonicity — modifier: GIVEN two satisfaction values `G1 < G2`, WHEN modifiers are computed, THEN `satisfaction_modifier(G1) ≤ satisfaction_modifier(G2)` (non-decreasing)
+- [x] AC13 Deterministic multi-departure: GIVEN multiple members departing on one tick, WHEN folded into `global_satisfaction`, THEN they fold in ascending `member_id` order (reproducible)
+- [x] AC14 No silent drift: GIVEN a tick with no departures, WHEN it processes, THEN `global_satisfaction(t) == global_satisfaction(t-1)` bit-for-bit
+- [x] AC16 Defensive modifier clamp: GIVEN `G` outside `[0,1]` (e.g., due to an upstream bug), WHEN `satisfaction_modifier(G)` is computed, THEN input is clamped to `[0,1]` before the piecewise formula, and the anti-spiral guarantee (`modifier ≥ 0.5`) holds
 
 ---
 
@@ -133,7 +133,15 @@ visit_length_modifier(G) = 1 + (satisfaction_modifier(G) − 1) × damp, damp = 
 **Required evidence**:
 - `tests/unit/satisfaction/global_satisfaction_modifiers_test.gd` — must exist and pass (AC2, AC3, AC4, AC7, AC13, AC14, AC16)
 
-**Status**: [ ] Not yet created
+**Status**: [x] In Review — 2026-08-03
+
+Implemented and verified (37 assertions in `tests/unit/satisfaction/global_satisfaction_modifiers_test.gd`, full suite 2918 passed / 0 failed):
+- Production: `src/systems/satisfaction.gd` gained `satisfaction_modifier(g)` + `visit_length_modifier(g)` (Core Rule 6, TR-SAT-006/007) plus the `damp` config knob (`CONFIG_DAMP` / `DAMP` / `_damp`, read in `_apply_config`). The piecewise-linear formula is exactly `G_c + 0.5` below 0.5 and `2·G_c` above (so `G=0.5 → 1.0` — AC3), the structural floor is 0.5 at G=0 (AC2 anti-spiral), and `visit_length_modifier = 1 + (sm − 1)·damp` with `damp = 0.5` (AC4). Input is defensively clamped to `[0,1]` first; non-finite inputs (NaN/±Inf, e.g. an upstream bug) fall back to the neutral anchor 0.5 so the modifier can never crash or emit NaN (AC16).
+- The global EMA fold (`_fold_global`, α_g = 0.05, init 0.5) landed in SAT-001 and was already wired to `on_member_departed` + the ascending `member_id` roster-diff sort in `on_tick`; story-003 owns the dedicated EMA tests (AC13/AC14) that pin the behavior:
+  - AC13 verified: a multi-departure tick through the real on_tick roster-diff path is BIT-IDENTICAL to an explicit ascending `member_id` fold (0.477875), a descending fold differs (0.4793375 — order is the contract, not commutative), and a fresh rig replay is bit-identical (reproducible).
+  - AC14 verified: 50 empty-roster ticks + 50 no-departure ticks (roster identical, members present) leave `global_satisfaction` bit-for-bit unchanged after a real fold moved it off init.
+- Config override verified: `damp=0.3` re-damps the visit leg (G=0 → 0.85, G=1 → 1.3) without touching `satisfaction_modifier`.
+- No RNG, no serialize surface change (story-004 owns the extended shape TR-SAT-009), no MemberSim wiring (OQ3 closure is a MemberSim-side change — this story only provides the functions).
 
 ---
 
