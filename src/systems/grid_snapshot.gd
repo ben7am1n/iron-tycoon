@@ -113,7 +113,15 @@ func get_placed_instances() -> Array[PlacedInstance]:
 ## [access_cells] to THIS snapshot only. No can_place re-validation (deltas
 ## are pre-validated). Rejects a duplicate instance_id with push_error +
 ## no-op, mirroring commit()'s AC-C7.2 rejection semantics.
-func _commit_in_place(instance_id: int, footprint_cells: Array[Vector2i], access_cells: Array[Vector2i]) -> void:
+##
+## [equipment_id] is an OPTIONAL parameter (default "") so a preview can
+## carry the dragged piece's type — the PlacementDelta format does not
+## include it yet, but preview==commit (ZoneRules AC2, Core Rule 2) requires
+## the speculative instance to score with the same equipment_id the
+## committed instance will have. Existing callers that pass only 3 arguments
+## keep the legacy behavior (equipment_id="" — the pre-zone-rules grid
+## contract, which stores no type by design).
+func _commit_in_place(instance_id: int, footprint_cells: Array[Vector2i], access_cells: Array[Vector2i], equipment_id: String = "") -> void:
 	if _placed_instances.has(instance_id):
 		push_error("GridSnapshot: _commit_in_place() rejected — instance_id %d already present in the snapshot (AC-C7.2 mirror)." % instance_id)
 		return
@@ -122,7 +130,7 @@ func _commit_in_place(instance_id: int, footprint_cells: Array[Vector2i], access
 		_removes.erase(cell)  # an add overrides a prior clear of the same cell
 	var anchor := _min_offset(footprint_cells + access_cells)
 	_placed_instances[instance_id] = PlacedInstance.new(
-		instance_id, "", anchor, 0, footprint_cells, access_cells
+		instance_id, equipment_id, anchor, 0, footprint_cells, access_cells
 	)
 
 

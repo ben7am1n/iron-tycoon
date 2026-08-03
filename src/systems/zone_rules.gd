@@ -16,6 +16,19 @@
 ## (AC2, Story 004) falls out of this purity: a speculative GridSnapshot
 ## scores identically to the committed layout it predicts.
 ##
+## INVALID EQUIPMENT (Story 004, AC15a/15b, GDD Edge Cases): an instance
+## whose equipment_id has no catalog definition (stale/corrupt type id) is an
+## upstream invariant violation, NOT a ZoneRules bug. It contributes
+## comfort=0 and zone_synergy=0 for itself, is excluded from neighbors'
+## n_same (its zone membership is empty), and its spaciousness is still
+## computed geometrically. The anomaly is signaled through an INJECTED
+## channel — config keys CONFIG_STRICT_MODE / CONFIG_ON_INVALID_EQUIPMENT,
+## mirroring EquipmentCatalog's injectable strict_mode pattern — never a
+## bare assert() (a bare assert is a no-op in release and untestable in
+## headless CI). strict_mode=false returns normally with zeroed rows and the
+## callback fired once per offender; strict_mode=true returns a structured
+## error (see _invalid_equipment_error).
+##
 ## EFFECT VOCABULARY (Core Rule 4, TR-ZR-003): exactly one catalog-authored
 ## input tag — `comfort`, read from the def's `effects` container (authored
 ## range [0.0, 1.0]). The other two tags are ZoneRules-computed outputs and
@@ -85,20 +98,51 @@ const ORTHOGONAL_DIRS: Array[Vector2i] = [
 	Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1),
 ]
 
+## Invalid-equipment channel (Story 004, AC15a/15b, GDD Edge Cases — mirrors
+## EquipmentCatalog's injectable strict_mode pattern). evaluate() reads these
+## keys from the optional [config] Dictionary; absent keys keep the
+## pure-function defaults (lenient + silent, exactly the ZR-001..003
+## behavior). No bare assert() anywhere: a bare assert is a no-op in release
+## and cannot be tested in headless CI, so both branches ride the injected
+## channel instead.
+const CONFIG_STRICT_MODE := "strict_mode"
+const CONFIG_ON_INVALID_EQUIPMENT := "on_invalid_equipment"
+
+## Structured-error kind emitted when strict_mode=true aborts evaluation
+## (AC15b). The error shape is a return-type variant (OQ4-sanctioned):
+## {"error": {"kind": ..., "offenders": [{"instance_id", "equipment_id"}, ...]}}
+## — a normal result never carries an "error" key (its keys are int
+## instance_ids), so a test harness can distinguish the two shapes
+## deterministically without stderr capture, exit code, or assert().
+const ERROR_KIND_INVALID_EQUIPMENT := "invalid_equipment"
+
 
 ## Sole entry point — scores every placed instance in [snapshot].
 ##
-## Reads ONLY [snapshot].get_placed_instances() and
-## [catalog].get_definition(id) — no other API (AC13 static-only guarantee:
-## this file references no single-cell occupancy / access lookup and no live
-## data accessor). Both inputs are treated as immutable; the function owns no
-## state, so repeated calls on the same inputs are bit-identical (AC1).
+## Reads ONLY [snapshot].get_placed_instances() and the EquipmentCatalog
+## existence/read pair — [catalog].has_definition(id) (silent invalid-id
+## probe, Story 004) and [catalog].get_definition(id) — no other API (AC13
+## static-only guarantee: this file references no single-cell occupancy /
+## access lookup and no live data accessor). Both inputs are treated as
+## immutable; the function owns no state, so repeated calls on the same
+## inputs are bit-identical (AC1).
 ##
-## [config] is an optional data-driven tuning seam (Story 002, Core Rules
-## 5/6): keys CONFIG_S_MAX / CONFIG_K override the GDD anchors. The default
-## empty Dictionary keeps the pure-function signature backward compatible —
-## existing two-argument callers are unaffected (AC1/AC2 hold for the default
-## config).
+## PREVIEW == COMMIT (Core Rule 2, AC2): the snapshot parameter is typed to
+## the abstract GridStateReader, so evaluate() cannot tell a real committed
+## grid from a speculative GridSnapshot — it scores whichever instance set
+## the snapshot reports. A speculative snapshot containing hypothetical
+## piece X (stable provisional instance_id P, its equipment_id carried
+## through the snapshot) therefore scores bit-identically to the real
+## snapshot after X is committed (same resulting instance set).
+##
+## [config] is an optional data-driven seam (Stories 002+004):
+##   - keys CONFIG_S_MAX / CONFIG_K override the GDD anchors (Story 002);
+##   - key CONFIG_STRICT_MODE (bool, default false) + key
+##     CONFIG_ON_INVALID_EQUIPMENT (Callable(instance_id, equipment_id))
+##     form the injected invalid-equipment channel (Story 004, AC15a/15b).
+## The default empty Dictionary keeps the pure-function signature backward
+## compatible — existing two-argument callers are unaffected (AC1/AC2 hold
+## for the default config).
 func evaluate(snapshot: GridStateReader, catalog: EquipmentCatalog, config: Dictionary = {}) -> Dictionary:
 	var instances: Array[PlacedInstance] = snapshot.get_placed_instances()
 	if instances.is_empty():
@@ -114,6 +158,45 @@ func evaluate(snapshot: GridStateReader, catalog: EquipmentCatalog, config: Dict
 	var s_max: float = float(config.get(CONFIG_S_MAX, S_MAX))
 	var k: float = float(config.get(CONFIG_K, K))
 
+	# Story 004 — invalid-equipment channel (AC15a/15b, GDD Edge Cases). An
+	# instance whose equipment_id has no catalog definition is an upstream
+	# invariant violation (PlacementSystem committed a type not in the
+	# Catalog), not a ZoneRules bug: it contributes comfort=0 and
+	# zone_synergy=0 for itself (empty zone membership → never a same-zone
+	# neighbor), its spaciousness is still computed geometrically, and the
+	# anomaly is signaled through the INJECTED channel — never a bare
+	# assert(). Detection iterates in ascending instance_id order (Core Rule
+	# 8) so the callback fires in a fixed, deterministic sequence.
+	var strict_mode: bool = bool(config.get(CONFIG_STRICT_MODE, false))
+	var on_invalid: Callable = config.get(CONFIG_ON_INVALID_EQUIPMENT, Callable()) as Callable
+	var offenders: Array[Dictionary] = []
+	# Precompute per-equipment validity ONCE: has_definition() is the SILENT
+	# existence probe — get_definition() push_errors on a missing id, which
+	# would leak the anomaly to stderr and defeat the "deterministically
+	# observable without stderr" requirement (AC15b). Detection and the
+	# later catalog reads all consult this table, so the anomaly is
+	# observable ONLY through the injected channel.
+	var valid_equipment := {}
+	for inst in sorted:
+		var valid: bool = catalog.has_definition(inst.equipment_id)
+		valid_equipment[inst.equipment_id] = valid
+		if not valid:
+			offenders.append({
+				"instance_id": inst.instance_id,
+				"equipment_id": inst.equipment_id,
+			})
+			if on_invalid.is_valid():
+				on_invalid.call(inst.instance_id, inst.equipment_id)
+
+	# AC15b — strict_mode=true does NOT return a normal result. The injected
+	# channel captures the structured error via the return-type variant
+	# (OQ4): {"error": {kind, offenders}} — deterministically observable by
+	# a test harness without stderr / exit-code / assert. Lenient mode
+	# (strict_mode absent/false) falls through and returns the normal
+	# per-instance dict with the invalid rows zeroed (AC15a).
+	if strict_mode and not offenders.is_empty():
+		return _invalid_equipment_error(offenders)
+
 	# Precompute the per-instance zone membership and perimeter capacity ONCE:
 	# catalog lookups return deep copies (EquipmentCatalog defensive posture)
 	# and the perimeter scan is O(footprint × 4) — neither belongs in the
@@ -121,12 +204,12 @@ func evaluate(snapshot: GridStateReader, catalog: EquipmentCatalog, config: Dict
 	var zone_membership := {}
 	var n_max := {}
 	for inst in sorted:
-		zone_membership[inst.instance_id] = _read_zone_membership(catalog, inst.equipment_id)
+		zone_membership[inst.instance_id] = _read_zone_membership(catalog, inst.equipment_id, valid_equipment)
 		n_max[inst.instance_id] = _perimeter_cell_count(inst.footprint_cells)
 
 	var result := {}
 	for inst in sorted:
-		var comfort: float = _read_comfort(catalog, inst.equipment_id)
+		var comfort: float = _read_comfort(catalog, inst.equipment_id, valid_equipment)
 		var zone_synergy: float = _compute_zone_synergy(inst, sorted, zone_membership, n_max, s_max, k)
 		# Story 003 owns the spaciousness formula — C_max × (open_adj / total_adj).
 		var spaciousness := _compute_spaciousness(snapshot, inst)
@@ -137,6 +220,23 @@ func evaluate(snapshot: GridStateReader, catalog: EquipmentCatalog, config: Dict
 			"total": comfort + zone_synergy + spaciousness,
 		}
 	return result
+
+
+## Builds the structured-error Dictionary returned by strict_mode=true when
+## at least one instance has an equipment_id with no catalog definition
+## (AC15b). [offenders] is the ascending-instance_id list of
+## {"instance_id", "equipment_id"} pairs. Shape:
+##   {"error": {"kind": "invalid_equipment", "offenders": [...]}}
+## A normal result's keys are int instance_ids, so the "error" string key is
+## unambiguous — a test harness asserts result.has("error") to distinguish
+## the error variant deterministically (OQ4 return-type variant).
+func _invalid_equipment_error(offenders: Array[Dictionary]) -> Dictionary:
+	return {
+		"error": {
+			"kind": ERROR_KIND_INVALID_EQUIPMENT,
+			"offenders": offenders.duplicate(),
+		},
+	}
 
 
 ## Computes the Story 002 zone_synergy for [inst] (Core Rules 5/6,
@@ -219,11 +319,18 @@ func _perimeter_cell_count(footprint_cells: Array[Vector2i]) -> int:
 ## Reads the catalog-authored `zone_membership` for [equipment_id] from the
 ## def (Core Rule 5 — consumed by the synergy formula).
 ##
+## [valid_equipment] is the precomputed per-equipment validity table built by
+## evaluate() (equipment_id -> bool, probed SILENTLY via has_definition).
 ## Returns [] when the id has no catalog definition (stale/corrupt type id —
 ## that instance contributes zone_synergy=0 for itself and, with an empty
-## membership, is never counted as a same-zone neighbor; Story 004 owns the
-## strict_mode reporting channel) or when the def declares no zones.
-func _read_zone_membership(catalog: EquipmentCatalog, equipment_id: String) -> Array:
+## membership, is never counted as a same-zone neighbor; the Story 004
+## strict_mode channel reports it) or when the def declares no zones. The
+## validity check happens BEFORE get_definition() so an invalid id never
+## triggers the catalog's push_error — the anomaly stays observable only
+## through the injected channel (AC15b).
+func _read_zone_membership(catalog: EquipmentCatalog, equipment_id: String, valid_equipment: Dictionary) -> Array:
+	if not valid_equipment.get(equipment_id, false):
+		return []
 	var def: EquipmentDef = catalog.get_definition(equipment_id)
 	if def == null:
 		return []
@@ -233,13 +340,20 @@ func _read_zone_membership(catalog: EquipmentCatalog, equipment_id: String) -> A
 ## Reads the catalog-authored `comfort` magnitude for [equipment_id] from the
 ## def's `effects` container (tag vocabulary owned by ZoneRules, Core Rule 4).
 ##
+## [valid_equipment] is the precomputed per-equipment validity table built by
+## evaluate() (equipment_id -> bool, probed SILENTLY via has_definition).
 ## Returns 0.0 when the id has no catalog definition (stale/corrupt type id —
-## that row contributes comfort=0 and is never negative; Story 004 owns the
-## strict_mode reporting channel) or when the def carries no `comfort` tag (a
-## piece with no comfort simply earns 0). comfort is catalog-validated to
-## [0.0, 1.0] at load time by the equipment-catalog epic; reading never
-## subtracts, so the returned value is non-negative by construction (AC8).
-func _read_comfort(catalog: EquipmentCatalog, equipment_id: String) -> float:
+## that row contributes comfort=0 and is never negative; the Story 004
+## strict_mode channel reports it) or when the def carries no `comfort` tag
+## (a piece with no comfort simply earns 0). The validity check happens
+## BEFORE get_definition() so an invalid id never triggers the catalog's
+## push_error — the anomaly stays observable only through the injected
+## channel (AC15b). comfort is catalog-validated to [0.0, 1.0] at load time
+## by the equipment-catalog epic; reading never subtracts, so the returned
+## value is non-negative by construction (AC8).
+func _read_comfort(catalog: EquipmentCatalog, equipment_id: String, valid_equipment: Dictionary) -> float:
+	if not valid_equipment.get(equipment_id, false):
+		return 0.0
 	var def: EquipmentDef = catalog.get_definition(equipment_id)
 	if def == null:
 		return 0.0
