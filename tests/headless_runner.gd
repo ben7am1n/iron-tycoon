@@ -51,6 +51,7 @@ const TEST_FILES := [
 	"tests/unit/zone_rules/spaciousness_test.gd",
 	"tests/unit/zone_rules/preview_commit_test.gd",
 	"tests/unit/zone_rules/invalid_equipment_test.gd",
+	"tests/unit/satisfaction/use_quality_test.gd",
 	"tests/unit/equipment_catalog/equipment_def_catalog_test.gd",
 	"tests/unit/equipment_catalog/catalog_json_loading_test.gd",
 	"tests/unit/equipment_catalog/catalog_footprint_access_validation_test.gd",
