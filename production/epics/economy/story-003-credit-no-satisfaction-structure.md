@@ -1,7 +1,7 @@
 # Story 003: credit() Interface and No-Satisfaction Structure
 
 > **Epic**: economy
-> **Status**: Complete — 2026-08-03
+> **Status**: Complete — 2026-08-03 (QA 终审 PASS, t_328e95b7)
 > **Layer**: Feature
 > **Type**: Logic
 > **Estimate**: S — 1 session (≤2h)
@@ -89,12 +89,14 @@ func credit(amount: int, reason: String) -> bool:
   - When: revenue accrual called N times
   - Then: never invokes any satisfaction accessor; balance == starting_capital + N × R_visit
   - Edge cases: N = 0, N = 1, N = many — no accessor ever touched
+  - **QA 回填 (2026-08-03)**: PASS — `SatisfactionThrowingDouble`（两个 getter 均递增 reads 计数 + push_error）挂到 orchestrator.satisfaction 槽；N=0/1/101 直接计账 + 第二个 rig 5 次 → reads==0 每次、balance==500+N×12；真实 MemberSim S5 路径（quota-met LEAVING→GONE）端到端 reads==0、balance==512；独立复跑 52/0、0 SCRIPT ERROR
 
 - **AC15**: 永不锁死 (integration, advisory)
   - Given: balance = 0
   - When: one member_completed_visit processed directly
   - Then: balance == R_visit; can_afford(R_visit) returns true
   - Edge cases: after spend to zero; after multiple accruals
+  - **QA 回填 (2026-08-03)**: PASS — balance=0（config starting_capital 0）→ 一次 `on_member_completed_visit` → balance==12；spend-to-zero 后一次计账 → 12；两次计账 → 24。can_afford(12) 子句在 ECON-002（平行 worktree t_a6c7e034）合入前由 has_method 守卫跳过，合并后自动增强
 
 ---
 
