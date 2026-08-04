@@ -22,8 +22,11 @@
 ##   - on_tick(tick_count) -> void  (the orchestrator's fixed dispatch, last)
 ##   - serialize() / deserialize(data, validate_only) two-phase protocol
 ##     (Phase A zero-mutation validate, Phase B commit), returning
-##     StubDeserializeResult — the stub-era payload {counter, balance,
-##     rng_state} is kept so SL-002/SL-003 save blobs round-trip unchanged.
+##     StubDeserializeResult. Story 004 owns the FINAL serialized shape:
+##     {balance} ONLY (GDD Core Rule 7 — no derived state, a trivial exact
+##     round-trip). The stub-era keys {counter, rng_state} are DROPPED from
+##     the payload; deserialize still TOLERATES them when present so old
+##     SL-002/SL-003-era blobs load unchanged.
 ##
 ## REVENUE ARCHITECTURE (ADR-0005 §3): income is signal-driven, NOT applied
 ## in on_tick(). MemberSim emits member_completed_visit (S5) synchronously
@@ -37,8 +40,10 @@
 ## DETERMINISM (GDD Core Rule 1): no RNG draws anywhere in the revenue path.
 ## The "Economy" sub-stream is still REGISTERED in init() because the
 ## save-load AC7 tests read get_rng("Economy") and require its state to
-## round-trip; it simply never advances (serialize/deserialize carry its
-## initial derived state, which restores exactly).
+## round-trip; it simply never advances. TimeSystem.serialize() carries ALL
+## registered streams in per_system_rng_states (Economy included), so the
+## AC7 round-trip is preserved through TimeSystem's payload — Economy's own
+## {balance}-only payload needs no rng_state copy.
 ##
 ## PRE-WIRING COMPATIBILITY PATH (documented, not silent): the SL-002/003
 ## save-load integration tests construct Economy with init(orch, srg) and
@@ -72,10 +77,10 @@ var _orchestrator: SimulationOrchestrator
 ## (ADR-0004 / save-load AC7 contract).
 var _seeded_rng: SeededRNG
 
-## Per-tick progression counter — the stub-era observable, preserved so the
-## serialize payload {counter, balance, rng_state} and the save-load
-## byte-identity contract stay stable. Not gameplay state (the ledger's
-## observable IS balance).
+## Per-tick progression counter — the stub-era observable, preserved as a
+## RUNTIME-ONLY tick counter (the ECON-001 no-decay test reads it). NOT
+## gameplay state and NOT serialized: the ledger's observable IS balance
+## (Story 004 — the serialized payload is {balance} only).
 var counter: int = 0
 
 ## The player's cash — the system's entire gameplay state. int (never float,
@@ -191,18 +196,51 @@ func spend(amount: int) -> bool:
 	return true
 
 
-## Returns the full ledger state as a JSON-safe Dictionary:
-##   { counter: int, balance: int, rng_state: "0x…" }
+## Credit interface (ADR-0006 §1 / Story ECON-003) — the symmetric counterpart
+## to spend(): ADDS [amount] to balance (Path B: SelectionSystem's sell refund,
+## milestone rewards, debug commands — anything that puts money IN).
+##   (a) amount > 0        — rejects zero/negative (symmetric with spend()'s
+##                           gate; prevents the negative-amount exploit where
+##                           credit(-100) would be a hidden deduction)
+##   (b) no affordability gate — credit has no upper bound by design (the
+##       asymmetry in ADR-0006 §2: spend checks affordability because the
+##       player must HAVE the money; credit has no "can this be credited?"
+##       check because balance has no ceiling)
+## On success: balance += amount, emit balance_changed(new, +amount) with a
+## POSITIVE delta (HUD animates direction from the sign). On rejection:
+## push_warning + return false with ZERO mutation and NO signal.
+## [reason] is a debug/audit-only label (e.g. "sell:instance_5") — NO
+## gameplay effect. Economy never computes refunds: the refund formula
+## (floor(0.5 × original_cost), REFUND_RATE = 0.5) belongs to
+## SelectionSystem's sell logic (ADR-0006 §3) — Economy accepts whatever
+## amount the caller provides and never knows equipment prices or fees.
+## Never call spend(-refund) as a credit workaround — spend()'s amount <= 0
+## guard already blocks it (the guard above makes a negative spend a no-op).
+func credit(amount: int, reason: String) -> bool:
+	if not _assert_initialized():
+		return false
+	if amount <= 0:
+		push_warning("Economy.credit() rejected: amount=%d must be > 0 (reason: %s)" % [amount, reason])
+		return false
+	balance += amount
+	balance_changed.emit(balance, +amount)
+	return true
+
+
+## Returns the ENTIRE ledger state as a JSON-safe Dictionary:
+##   { balance: int }
+## GDD Core Rule 7 / Story 004 — serialize ONLY balance: no derived state,
+## a trivial exact round-trip (no reconstruction ambiguity). The stub-era
+## keys {counter, rng_state} are deliberately absent (counter is a runtime
+## tick observable, not gameplay state; the Economy RNG stream never
+## advances and round-trips through TimeSystem's per_system_rng_states).
 ## Pure read — no draws, no mutation (SL-001 AC1 counts serialize calls, so
-## serialize stays side-effect free). The key set is the stub contract — kept
-## so SL-002/SL-003-era blobs load unchanged (Story 004 owns the final shape).
+## serialize stays side-effect free).
 func serialize() -> Dictionary:
 	if not _assert_initialized():
 		return {}
 	return {
-		"counter": counter,
 		"balance": balance,
-		"rng_state": SeededRNG.int64_to_hex(_seeded_rng.get_rng(system_name()).state),
 	}
 
 
@@ -211,22 +249,25 @@ func serialize() -> Dictionary:
 ## Phase A passed. Failures are returned, never push_error'd (corrupt save =
 ## normal outcome). [validate_only] runs Phase A and returns the verdict
 ## without committing (SaveLoad Phase A protocol).
-## Required fields (hard failure, no invented defaults):
-##   counter (int), balance (int), rng_state ("0x" hex string).
+## Required field (hard failure, no invented defaults):
+##   balance (int — or float for JSON ints, see below).
+## The stub-era keys {counter, rng_state} are TOLERATED if present (old
+## SL-002/SL-003-era blobs load unchanged — Story 004 schema change is
+## coordinated with the save-load integration tests), but they are NOT
+## committed: counter is a runtime observable that restarts from 0, and the
+## RNG stream state is owned by TimeSystem's per_system_rng_states.
+## balance accepts int|float: JSON.parse returns integer literals as float
+## in 4.7.1 (verified — the save-load file tests' JSON round-trip), so a
+## saved balance 500 arrives as 500.0. A float with a fractional part is
+## REJECTED (balance is whole currency units — GDD Core Rule 1).
 func deserialize(data: Dictionary, validate_only: bool = false) -> StubDeserializeResult:
 	var result := StubDeserializeResult.new()
 	if not _assert_initialized():
 		return StubDeserializeResult.fail("Economy.deserialize(): called before init()")
 
 	# --- Phase A: validate (zero mutation) ---
-	if not data.has("counter") or typeof(data["counter"]) != TYPE_INT:
-		result.errors.append("Economy: missing or invalid 'counter'")
-	if not data.has("balance") or typeof(data["balance"]) != TYPE_INT:
+	if not data.has("balance") or not _is_valid_balance(data["balance"]):
 		result.errors.append("Economy: missing or invalid 'balance'")
-	if not data.has("rng_state") or not data["rng_state"] is String:
-		result.errors.append("Economy: missing or invalid 'rng_state'")
-	elif not str(data["rng_state"]).begins_with("0x") or not str(data["rng_state"]).is_valid_hex_number(true):
-		result.errors.append("Economy: rng_state must be a 0x hex string")
 
 	if not result.errors.is_empty():
 		return result  # Phase A failed — NOTHING was mutated
@@ -236,7 +277,19 @@ func deserialize(data: Dictionary, validate_only: bool = false) -> StubDeseriali
 		return result  # validated, NOT committed (SaveLoad Phase A)
 
 	# --- Phase B: commit (only if all valid) ---
-	counter = int(data["counter"])
 	balance = int(data["balance"])
-	_seeded_rng.get_rng(system_name()).state = SeededRNG.hex_to_int64(str(data["rng_state"]))
 	return result
+
+
+## True when [v] is a valid balance: an int, or a float that is finite and
+## integral (JSON.parse returns integer literals as float in 4.7.1 — the
+## file round-trip shape). A fractional float (e.g. 12.5) is REJECTED:
+## balance is whole currency units (GDD Core Rule 1) and silently truncating
+## a corrupt save would be an invented value, not a restore.
+func _is_valid_balance(v: Variant) -> bool:
+	if typeof(v) == TYPE_INT:
+		return true
+	if typeof(v) == TYPE_FLOAT:
+		var f := float(v)
+		return is_finite(f) and f == floor(f)
+	return false
