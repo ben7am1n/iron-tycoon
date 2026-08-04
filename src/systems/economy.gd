@@ -191,6 +191,37 @@ func spend(amount: int) -> bool:
 	return true
 
 
+## Credit interface (ADR-0006 §1 / Story ECON-003) — the symmetric counterpart
+## to spend(): ADDS [amount] to balance (Path B: SelectionSystem's sell refund,
+## milestone rewards, debug commands — anything that puts money IN).
+##   (a) amount > 0        — rejects zero/negative (symmetric with spend()'s
+##                           gate; prevents the negative-amount exploit where
+##                           credit(-100) would be a hidden deduction)
+##   (b) no affordability gate — credit has no upper bound by design (the
+##       asymmetry in ADR-0006 §2: spend checks affordability because the
+##       player must HAVE the money; credit has no "can this be credited?"
+##       check because balance has no ceiling)
+## On success: balance += amount, emit balance_changed(new, +amount) with a
+## POSITIVE delta (HUD animates direction from the sign). On rejection:
+## push_warning + return false with ZERO mutation and NO signal.
+## [reason] is a debug/audit-only label (e.g. "sell:instance_5") — NO
+## gameplay effect. Economy never computes refunds: the refund formula
+## (floor(0.5 × original_cost), REFUND_RATE = 0.5) belongs to
+## SelectionSystem's sell logic (ADR-0006 §3) — Economy accepts whatever
+## amount the caller provides and never knows equipment prices or fees.
+## Never call spend(-refund) as a credit workaround — spend()'s amount <= 0
+## guard already blocks it (the guard above makes a negative spend a no-op).
+func credit(amount: int, reason: String) -> bool:
+	if not _assert_initialized():
+		return false
+	if amount <= 0:
+		push_warning("Economy.credit() rejected: amount=%d must be > 0 (reason: %s)" % [amount, reason])
+		return false
+	balance += amount
+	balance_changed.emit(balance, +amount)
+	return true
+
+
 ## Returns the full ledger state as a JSON-safe Dictionary:
 ##   { counter: int, balance: int, rng_state: "0x…" }
 ## Pure read — no draws, no mutation (SL-001 AC1 counts serialize calls, so
