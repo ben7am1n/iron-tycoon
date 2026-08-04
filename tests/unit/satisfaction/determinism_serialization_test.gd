@@ -65,6 +65,7 @@ func run_all() -> Dictionary:
 	_test_ac1_roster_diff_replay()
 	_test_ac15_roundtrip_mid_visit()
 	_test_ac15_roundtrip_departure_boundary()
+	_test_walk_fail_no_recount_after_reload()
 	_test_deserialize_validation()
 
 	print("\n=== DETERMINISM & SERIALIZATION TEST: %d passed, %d failed ===\n" % [_pass, _fail])
@@ -561,6 +562,75 @@ func _test_ac15_roundtrip_departure_boundary() -> void:
 	_check(g_a != 0.5, "AC15 edge: the fold actually moved global (non-vacuous — got %s)" % str(g_a))
 	# m5's S_member: uq 0.0, queue penalty 0.3*1/100 = 0.003 -> S = 0.497.
 	_check_float(g_a, 0.05 * 0.497 + 0.95 * 0.5, "AC15 edge: global == alpha*0.497 + (1-alpha)*0.5 after the fold")
+
+
+# === SAT-001F: no walk-fail RECOUNT across a save-load boundary ===
+
+## A member mid-exit (LEAVING no_candidates) at the save point was counted
+## when it ENTERED LEAVING (SAT-001F per-departure semantics).
+## _rebuild_transient_state() seeds _last_seen[member_id].state from the
+## loaded roster, so the first post-load LEAVING tick must NOT fire
+## on_walk_fail again — without the seeding, prev_state would read "" and
+## every reload would recount the departure.
+func _test_walk_fail_no_recount_after_reload() -> void:
+	print("\n[SAT-001F] save-load: a member mid-exit at the save point is NOT recounted after reload")
+	var cong := FakeCongestion.new()
+	var ms_a := FakeMemberSim.new()
+	var rig_a := _make_rig({}, ms_a, {}, cong)
+	var sat_a: RefCounted = rig_a["sat"]
+
+	# tick 1 — member 50 enters; tick 2 — walk-fails (LEAVING no_candidates,
+	# n_fail == 1 at entry); tick 3 — SAVE while still mid-exit (the 2nd
+	# LEAVING tick keeps n_fail == 1).
+	ms_a.members = [
+		{"member_id": 50, "state": "ENTERING", "exercises_done": 0, "target_equipment_instance_id": -1},
+	]
+	sat_a.call("on_tick", 1)
+	ms_a.members = [
+		{"member_id": 50, "state": "LEAVING", "leaving_reason": "no_candidates", "exercises_done": 0, "target_equipment_instance_id": -1},
+	]
+	sat_a.call("on_tick", 2)
+	ms_a.members = [
+		{"member_id": 50, "state": "LEAVING", "leaving_reason": "no_candidates", "exercises_done": 0, "target_equipment_instance_id": -1},
+	]
+	sat_a.call("on_tick", 3)
+	var acc_before: Dictionary = sat_a.get("member_accumulators")[50]
+	_check(int(acc_before["n_fail"]) == 1, "SAT-001F: at the save point (2 LEAVING ticks) n_fail == 1 (got %d)" % int(acc_before["n_fail"]))
+
+	# Serialize -> JSON -> parse -> deserialize into a fresh rig with the
+	# SAME mid-exit roster (the realistic on-disk round-trip).
+	var payload: Dictionary = sat_a.call("serialize")
+	var parsed: Variant = JSON.parse_string(JSON.stringify(payload, "  ", true, true))
+	var ms_b := FakeMemberSim.new()
+	ms_b.members = [
+		{"member_id": 50, "state": "LEAVING", "leaving_reason": "no_candidates", "exercises_done": 0, "target_equipment_instance_id": -1},
+	]
+	var rig_b := _make_rig({}, ms_b, {}, FakeCongestion.new())
+	var sat_b: RefCounted = rig_b["sat"]
+	var result: RefCounted = sat_b.call("deserialize", parsed)
+	_check(bool(result.get("ok")), "SAT-001F: deserialize of mid-exit payload ok")
+
+	# Post-load LEAVING tick: n_fail must stay 1 — the entry was counted
+	# pre-save and the rebuild seeded _last_seen.state == "LEAVING".
+	ms_b.members = [
+		{"member_id": 50, "state": "LEAVING", "leaving_reason": "no_candidates", "exercises_done": 0, "target_equipment_instance_id": -1},
+	]
+	sat_b.call("on_tick", 4)
+	var acc_after: Dictionary = sat_b.get("member_accumulators")[50]
+	_check(int(acc_after["n_fail"]) == 1, "SAT-001F: post-reload LEAVING tick does NOT recount (n_fail stays 1, got %d)" % int(acc_after["n_fail"]))
+
+	# Departure fold on BOTH paths. A recount on the reload path would fold
+	# n_fail=2 (fail_penalty 0.30 cap) instead of n_fail=1 (0.15), moving
+	# global differently — the bit-identity pin proves the fix.
+	ms_a.members = []
+	sat_a.call("on_tick", 5)
+	ms_b.members = []
+	sat_b.call("on_tick", 5)
+	var g_a: float = float(sat_a.get("global_satisfaction"))
+	var g_b: float = float(sat_b.get("global_satisfaction"))
+	_check(g_a == g_b, "SAT-001F: departure fold after reload bit-identical to uninterrupted (%s == %s)" % [str(g_a), str(g_b)])
+	_check_float(g_a, 0.05 * 0.35 + 0.95 * 0.5, "SAT-001F: global == alpha*0.35 + (1-alpha)*0.5 (n_fail=1 -> fail_penalty 0.15, NOT the 0.30 cap)")
+	_check((sat_b.get("member_accumulators") as Dictionary).is_empty(), "SAT-001F: accumulator consumed after the post-reload departure fold")
 
 
 # === deserialize validation contract ===

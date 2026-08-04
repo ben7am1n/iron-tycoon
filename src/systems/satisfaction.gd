@@ -162,8 +162,11 @@ var member_accumulators: Dictionary = {}
 ## of the serialized accumulator shape (story-004 owns the extended blob).
 var _pending_uses: Dictionary = {}
 
-## Last-seen member state for the roster diff: member_id -> {exercises_done}
-## (state is read live; exercises_done is the use-completion signal).
+## Last-seen member state for the roster diff: member_id -> {exercises_done,
+## state}. exercises_done is the use-completion signal; state is the
+## edge-detect signal for walk-failure — a member is counted ONCE per entry
+## into LEAVING with a failure reason, never per LEAVING tick (SAT-001F:
+## MemberSim keeps a member in LEAVING for the whole exit walk).
 var _last_seen: Dictionary = {}
 
 ## Tuning fields — mirrors of the GDD anchors, overridable via [config].
@@ -277,6 +280,7 @@ func on_tick(tick_count: int) -> void:
 		_sync_member(member_id, roster[member_id])
 		_last_seen[member_id] = {
 			"exercises_done": int(roster[member_id].get("exercises_done", 0)),
+			"state": str(roster[member_id].get("state", "")),
 		}
 
 
@@ -290,6 +294,7 @@ func _sync_member(member_id: int, member: Dictionary) -> void:
 	var state := str(member.get("state", ""))
 	var target := int(member.get("target_equipment_instance_id", -1))
 	var prev: Dictionary = _last_seen.get(member_id, {})
+	var prev_state := str(prev.get("state", ""))
 	var prev_ex := int(prev.get("exercises_done", 0))
 	var ex := int(member.get("exercises_done", 0))
 
@@ -318,9 +323,13 @@ func _sync_member(member_id: int, member: Dictionary) -> void:
 	if _pending_uses.has(member_id) and ex == prev_ex and state != "USING":
 		on_interrupt(member_id)
 
-	# Walk-FAILURE: entering LEAVING with a failure reason (walked in, turned
-	# around / path blocked). quota_met is NOT a failure.
-	if state == "LEAVING":
+	# Walk-FAILURE: ENTERING LEAVING with a failure reason (walked in, turned
+	# around / path blocked). quota_met is NOT a failure. Edge-detected on the
+	# transition into LEAVING (prev_state != "LEAVING") — MemberSim keeps a
+	# member in LEAVING for the whole exit walk (one cell per tick), so a
+	# per-tick check would count ONE departure N times (SAT-001F). Each
+	# walk-failure departure counts exactly once.
+	if state == "LEAVING" and prev_state != "LEAVING":
 		var reason := str(member.get("leaving_reason", ""))
 		if reason == REASON_NO_CANDIDATES or reason == REASON_PATH_BLOCKED:
 			on_walk_fail(member_id)
@@ -721,6 +730,11 @@ func _is_numeric(v: Variant) -> bool:
 ##   _last_seen[member_id].exercises_done = the loaded roster's current
 ##     count — prevents a FALSE use-completion on the first tick after
 ##     load (the member's completed uses already live in S_acc/n_uses).
+##   _last_seen[member_id].state = the loaded roster's current state —
+##     prevents a FALSE walk-failure recount on the first tick after load
+##     (SAT-001F: a member already mid-exit at the save point was counted
+##     when it ENTERED LEAVING; the post-load LEAVING ticks must not fire
+##     on_walk_fail again).
 ##   _pending_uses[member_id] = {instance_id, congestion} for every member
 ##     still USING with a real target — the single Congestion_i(t-1)
 ##     snapshot is RE-taken at the load boundary (the "read t-1 at
@@ -738,10 +752,11 @@ func _rebuild_transient_state() -> void:
 		if not (m is Dictionary) or not m.has("member_id") or not m.has("state"):
 			continue  # legacy state-less roster entries are exempt (on_tick mirror)
 		var member_id := int(m["member_id"])
+		var state := str(m["state"])
 		_last_seen[member_id] = {
 			"exercises_done": int(m.get("exercises_done", 0)),
+			"state": state,
 		}
-		var state := str(m["state"])
 		var target := int(m.get("target_equipment_instance_id", -1))
 		if state == "USING" and target >= 0:
 			_pending_uses[member_id] = {

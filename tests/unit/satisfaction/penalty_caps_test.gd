@@ -58,6 +58,7 @@ func run_all() -> Dictionary:
 	_test_ac12_fail_interrupt_caps()
 	_test_guardrail_noise_never_drowns_signal()
 	_test_on_tick_penalty_wiring()
+	_test_walk_fail_counts_per_departure()
 
 	print("\n=== PENALTY CAPS TEST: %d passed, %d failed ===\n" % [_pass, _fail])
 	return {"pass": _pass, "fail": _fail}
@@ -354,9 +355,11 @@ func _test_on_tick_penalty_wiring() -> void:
 	_check(int(acc10["n_fail"]) == 1, "on_tick: LEAVING no_candidates -> n_fail == 1 (got %d)" % int(acc10["n_fail"]))
 	_check(not sat.call("get_pending_use", 11).is_empty(), "on_tick: member 11 USING -> pending use recorded")
 
-	# Tick 2: member 10 walk-fails again (2nd LEAVING tick -> n_fail 2);
-	# member 11 leaves USING without completing an exercise (quota_met LEAVING,
-	# NOT a failure) -> mid-use interrupt, pending erased.
+	# Tick 2: member 10 still LEAVING no_candidates — the 2nd LEAVING tick
+	# must NOT re-count the same departure (SAT-001F: one walk-fail per
+	# departure, not per LEAVING tick); member 11 leaves USING without
+	# completing an exercise (quota_met LEAVING, NOT a failure) -> mid-use
+	# interrupt, pending erased.
 	ms.members = [
 		{"member_id": 10, "state": "LEAVING", "exercises_done": 0, "target_equipment_instance_id": -1, "leaving_reason": "no_candidates"},
 		{"member_id": 11, "state": "LEAVING", "exercises_done": 0, "target_equipment_instance_id": -1, "leaving_reason": "quota_met"},
@@ -364,7 +367,7 @@ func _test_on_tick_penalty_wiring() -> void:
 	sat.call("on_tick", 2)
 	acc10 = sat.call("get_accumulator", 10)
 	acc11 = sat.call("get_accumulator", 11)
-	_check(int(acc10["n_fail"]) == 2, "on_tick: second LEAVING no_candidates -> n_fail == 2 (got %d)" % int(acc10["n_fail"]))
+	_check(int(acc10["n_fail"]) == 1, "on_tick: 2nd LEAVING no_candidates tick does NOT re-count (n_fail stays 1, got %d)" % int(acc10["n_fail"]))
 	_check(int(acc11["n_interrupt"]) == 1, "on_tick: left USING without exercise -> n_interrupt == 1 (got %d)" % int(acc11["n_interrupt"]))
 	_check(sat.call("get_pending_use", 11).is_empty(), "on_tick: pending use erased on interrupt")
 	_check(int(acc11["n_fail"]) == 0, "on_tick: quota_met LEAVING is NOT a walk-failure (n_fail stays 0)")
@@ -377,10 +380,101 @@ func _test_on_tick_penalty_wiring() -> void:
 	sat.call("on_tick", 3)
 	_check(sat.call("get_accumulator", 11).is_empty(), "on_tick: member 11 accumulator discarded on departure")
 
-	# Tick 4: member 10 departs (n_fail=2 -> cap 0.30) -> S_member 0.5-0.30 ==
-	# 0.2; accumulator discarded; global stays within [0,1] after both folds.
+	# Tick 4: member 10 departs (n_fail=1 -> fail_penalty 0.15, NOT the 0.30
+	# cap — one departure counted once, SAT-001F) -> S_member 0.5-0.15 ==
+	# 0.35; accumulator discarded; global stays within [0,1] after both folds.
 	ms.members = []
 	sat.call("on_tick", 4)
 	_check(sat.call("get_accumulator", 10).is_empty(), "on_tick: member 10 accumulator discarded on departure")
 	var g: float = float(sat.get("global_satisfaction"))
 	_check(g >= 0.0 and g <= 1.0, "on_tick: global_satisfaction within [0,1] after penalty folds (got %s)" % str(g))
+
+
+# === SAT-001F: walk-fail counts ONCE per departure, not per LEAVING tick ===
+
+## Regression for the QA blocking defect (qa_repro_walkfail_overcount.gd):
+## MemberSim keeps a member in LEAVING for the whole exit walk (one cell per
+## tick), so a per-tick check counted ONE walk-failure departure N times.
+## on_walk_fail must fire once per ENTRY into LEAVING with a failure reason.
+func _test_walk_fail_counts_per_departure() -> void:
+	print("\n[SAT-001F] on_walk_fail fires once per ENTRY into LEAVING (failure reason) — never per LEAVING tick")
+	var ms := FakeMemberSim.new()
+	var rig := _make_rig({}, ms)
+	var sat: RefCounted = rig["sat"]
+
+	# Scenario 1 (the QA repro): one departure, 3 consecutive LEAVING ticks.
+	# n_fail must stay exactly 1 — the departure was counted at entry.
+	ms.members = [
+		{"member_id": 20, "state": "ENTERING", "exercises_done": 0, "target_equipment_instance_id": -1},
+	]
+	sat.call("on_tick", 1)
+	ms.members = [
+		{"member_id": 20, "state": "LEAVING", "leaving_reason": "no_candidates", "exercises_done": 0, "target_equipment_instance_id": -1},
+	]
+	sat.call("on_tick", 2)
+	var acc: Dictionary = sat.call("get_accumulator", 20)
+	_check(int(acc["n_fail"]) == 1, "SAT-001F: 1st LEAVING no_candidates tick -> n_fail == 1 (got %d)" % int(acc["n_fail"]))
+	sat.call("on_tick", 3)
+	acc = sat.call("get_accumulator", 20)
+	_check(int(acc["n_fail"]) == 1, "SAT-001F: 2nd consecutive LEAVING tick -> n_fail stays 1 (got %d)" % int(acc["n_fail"]))
+	sat.call("on_tick", 4)
+	acc = sat.call("get_accumulator", 20)
+	_check(int(acc["n_fail"]) == 1, "SAT-001F: 3rd consecutive LEAVING tick -> n_fail stays 1 (got %d)" % int(acc["n_fail"]))
+
+	# Scenario 2: the same member departs (GONE), re-enters, and walk-fails
+	# again (path_blocked). Each departure counts once in its own visit's
+	# accumulator (fresh accumulator starts at 0).
+	ms.members = []
+	sat.call("on_tick", 5)  # member 20 GONE -> departure fold + discard
+	_check(sat.call("get_accumulator", 20).is_empty(), "SAT-001F: member 20 accumulator folded + discarded on departure")
+	ms.members = [
+		{"member_id": 20, "state": "SELECTING_TARGET", "exercises_done": 0, "target_equipment_instance_id": -1},
+	]
+	sat.call("on_tick", 6)  # re-enters for visit 2
+	ms.members = [
+		{"member_id": 20, "state": "LEAVING", "leaving_reason": "path_blocked", "exercises_done": 0, "target_equipment_instance_id": -1},
+	]
+	sat.call("on_tick", 7)
+	acc = sat.call("get_accumulator", 20)
+	_check(int(acc["n_fail"]) == 1, "SAT-001F: 2nd departure (path_blocked, fresh visit) -> n_fail == 1 in the NEW accumulator (got %d)" % int(acc["n_fail"]))
+	sat.call("on_tick", 8)
+	acc = sat.call("get_accumulator", 20)
+	_check(int(acc["n_fail"]) == 1, "SAT-001F: 2nd LEAVING tick of the 2nd departure -> n_fail stays 1 (got %d)" % int(acc["n_fail"]))
+
+	# Scenario 3: first-sight already LEAVING (spawned straight into a
+	# walk-fail departure) still counts exactly once, then stays put.
+	var ms3 := FakeMemberSim.new()
+	var rig3 := _make_rig({}, ms3)
+	var sat3: RefCounted = rig3["sat"]
+	ms3.members = [
+		{"member_id": 30, "state": "LEAVING", "leaving_reason": "no_candidates", "exercises_done": 0, "target_equipment_instance_id": -1},
+	]
+	sat3.call("on_tick", 1)
+	ms3.members = [
+		{"member_id": 30, "state": "LEAVING", "leaving_reason": "no_candidates", "exercises_done": 0, "target_equipment_instance_id": -1},
+	]
+	sat3.call("on_tick", 2)
+	acc = sat3.call("get_accumulator", 30)
+	_check(int(acc["n_fail"]) == 1, "SAT-001F: first-sight LEAVING no_candidates counts once (n_fail 1, got %d)" % int(acc["n_fail"]))
+
+	# Scenario 4 (defensive pin of the edge-detect): LEAVING -> non-LEAVING
+	# -> LEAVING counts per ENTRY, so a second entry counts a second time
+	# (MemberSim cannot actually exit LEAVING except via GONE, but the
+	# per-departure semantic is 'per entry into LEAVING').
+	var ms4 := FakeMemberSim.new()
+	var rig4 := _make_rig({}, ms4)
+	var sat4: RefCounted = rig4["sat"]
+	ms4.members = [
+		{"member_id": 40, "state": "LEAVING", "leaving_reason": "no_candidates", "exercises_done": 0, "target_equipment_instance_id": -1},
+	]
+	sat4.call("on_tick", 1)
+	ms4.members = [
+		{"member_id": 40, "state": "QUEUEING", "exercises_done": 0, "target_equipment_instance_id": -1},
+	]
+	sat4.call("on_tick", 2)
+	ms4.members = [
+		{"member_id": 40, "state": "LEAVING", "leaving_reason": "path_blocked", "exercises_done": 0, "target_equipment_instance_id": -1},
+	]
+	sat4.call("on_tick", 3)
+	acc = sat4.call("get_accumulator", 40)
+	_check(int(acc["n_fail"]) == 2, "SAT-001F: re-entry into LEAVING (after non-LEAVING) counts a 2nd time (n_fail 2, got %d)" % int(acc["n_fail"]))
