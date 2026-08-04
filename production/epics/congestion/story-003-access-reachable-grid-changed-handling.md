@@ -1,7 +1,7 @@
 # Story 003: access_reachable and grid_changed Handling
 
 > **Epic**: congestion
-> **Status**: Ready
+> **Status**: Complete — 2026-08-02
 > **Layer**: Feature
 > **Type**: Logic
 > **Estimate**: M — 1 session (≤3h)
@@ -31,10 +31,10 @@
 
 *From GDD `design/gdd/congestion.md`, scoped to this story:*
 
-- [ ] AC9 GIVEN equipment E has active entries and a `grid_changed` removes E during tick `t`, WHEN tick `t+1` begins, THEN querying E's id returns "not found," never a stale float
-- [ ] AC12 [WB] GIVEN no `grid_changed` fires during tick `t`, WHEN Congestion runs its normal per-tick update, THEN zero `Navigation.get_path` queries occur that tick (call-count spy)
-- [ ] AC13 GIVEN a `grid_changed` severs the only path from `entrance_cell` to E's access cell, WHEN `access_reachable` recomputes, THEN `access_reachable[E] == false`
-- [ ] AC16 GIVEN two `grid_changed` events affecting the same equipment E in one tick, WHEN they are processed, THEN `access_reachable[E]` is recomputed exactly once, against the final post-batch grid state
+- [x] AC9 GIVEN equipment E has active entries and a `grid_changed` removes E during tick `t`, WHEN tick `t+1` begins, THEN querying E's id returns "not found," never a stale float
+- [x] AC12 [WB] GIVEN no `grid_changed` fires during tick `t`, WHEN Congestion runs its normal per-tick update, THEN zero `Navigation.get_path` queries occur that tick (call-count spy)
+- [x] AC13 GIVEN a `grid_changed` severs the only path from `entrance_cell` to E's access cell, WHEN `access_reachable` recomputes, THEN `access_reachable[E] == false`
+- [x] AC16 GIVEN two `grid_changed` events affecting the same equipment E in one tick, WHEN they are processed, THEN `access_reachable[E]` is recomputed exactly once, against the final post-batch grid state
 
 ---
 
@@ -107,7 +107,30 @@
 **Required evidence**:
 - `tests/unit/congestion/access_reachable_test.gd` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Complete — 2026-08-02 (30 assertions, all green)
+
+```
+=== ACCESS_REACHABLE TEST: 30 passed, 0 failed ===
+```
+
+**Verification**:
+- Full headless suite: **2721 passed, 0 failed** (baseline 2691 + 30 new), 0 SCRIPT ERROR, run 3x bit-identical
+- `access_reachable_test.gd` registered in `tests/headless_runner.gd` TEST_FILES
+- Coverage: AC9 (main + remove/re-add same tick + removal without navigation), AC12 (quiet tick + member-movement-only), AC13 (full sever + narrow-corridor edge), AC16 (exactly-once spy: 3 get_path calls not 6, final post-batch state), init one-shot population, unknown-id read defaults
+
+### Deviations / Interpretations (documented, not silent)
+
+1. **Init-time one-shot recompute** (GDD Core Rule 7 allowance): access_reachable is populated once at `init()` when navigation + entrance_cell are supplied — otherwise equipment placed before init would read `false` until the first grid_changed and the overlay would misreport every machine as walled off at boot. Not a per-tick query (AC12 unaffected); matches the GDD's "one-shot recompute on load" escape hatch.
+
+2. **"Affected set" = all current equipment**: on a grid_changed batch, `access_reachable` is recomputed for EVERY currently placed equipment (ascending-id order), because the S1 payload is cells-not-ids and any layout change can sever any path (AC13's corridor case proves a payload-local affected set is insufficient). AC16's "once per affected equipment" is satisfied — one get_path per equipment per batch, never once per event.
+
+3. **AC9 "not found" semantics**: removed equipment's `prev`/`next`/`access_reachable` entries are deleted the same tick (white-box observable: the dicts no longer contain the id). `per_equipment_congestion(id)` returns the documented neutral `0.0` for an absent entry (unchanged CG-001 contract — MemberSim's `_congestion_value` treats 0.0 as "no congestion"); the guarantee is *never a stale float*, i.e. never the pre-removal value.
+
+4. **Reachability source cell**: uses `access_cells[0]` (first access cell) — matching MemberSim's arrival semantics and CG-001's `_nearby_count` anchor, so reachability and density measure the same cell.
+
+5. **Subscription in `_post_init()`** (ADR-0001 Phase 2): the grid_changed subscription lives in `_post_init()` like Navigation's, guarded by `is_connected` (idempotent). Story-001 / pre-wiring rigs never call `_post_init` — reachability stays inert there (no subscription, `access_reachable` empty), preserving the CG-001 contract exactly.
+
+6. **`access_reachable` NOT serialized** (story-004 scope): `serialize()` shape `{counter, rng_state}` unchanged. On load the init one-shot recomputes the flag from the restored grid (deviations #1).
 
 ---
 
