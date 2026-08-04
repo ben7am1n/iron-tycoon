@@ -1,12 +1,12 @@
 # Story 004: Serialization, Determinism and No-Decay
 
 > **Epic**: economy
-> **Status**: Ready
+> **Status**: In Review — 2026-08-04
 > **Layer**: Feature
 > **Type**: Integration
 > **Estimate**: S — 1 session (≤2h)
 > **Manifest Version**: 2026-07-23
-> **Last Updated**: 2026-08-02
+> **Last Updated**: 2026-08-04
 
 ## Context
 
@@ -31,9 +31,9 @@
 
 *From GDD `design/gdd/economy.md`, scoped to this story:*
 
-- [ ] AC6 Deterministic accrual: GIVEN a fixed array of `member_completed_visit` payloads fed directly into `Economy.on_member_completed_visit()`, WHEN processed in two separate Economy instances, THEN both produce the identical balance trace
-- [ ] AC10 No decay / no upkeep: GIVEN a period with zero departures and no `spend` calls, WHEN ticks advance, THEN `balance` is unchanged (never decays)
-- [ ] AC12 Serialization round-trip: GIVEN any `balance`, WHEN serialized and reloaded, THEN the value is identical (int, no reconstruction ambiguity) and the next accrual matches uninterrupted play
+- [x] AC6 Deterministic accrual: GIVEN a fixed array of `member_completed_visit` payloads fed directly into `Economy.on_member_completed_visit()`, WHEN processed in two separate Economy instances, THEN both produce the identical balance trace
+- [x] AC10 No decay / no upkeep: GIVEN a period with zero departures and no `spend` calls, WHEN ticks advance, THEN `balance` is unchanged (never decays)
+- [x] AC12 Serialization round-trip: GIVEN any `balance`, WHEN serialized and reloaded, THEN the value is identical (int, no reconstruction ambiguity) and the next accrual matches uninterrupted play
 
 ---
 
@@ -97,7 +97,13 @@
 **Required evidence**:
 - `tests/unit/economy/serialization_determinism_test.gd` — must exist and pass (AC6, AC10, AC12)
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing — `tests/unit/economy/serialization_determinism_test.gd` (57 asserts, standalone green; registered in `TEST_FILES`). Implements the story QA cases verbatim:
+- **AC6** 确定性记账: two separate Economy instances fed the same fixed `member_completed_visit` payload array → identical balance trace (`[512, 524, …, 620]`); edge: mixed payload order + interleaved spend/credit calls → same final balance (commutative sum), each trace matches its own op order
+- **AC10** 无衰减: 300 idle ticks (zero departures, no spend) → balance unchanged, NO `balance_changed`; edge: pause/resume tick bursts with gaps, and idle ticks after credit+spend
+- **AC12** 序列化往返: balance 0 / 500 / after 25 accruals+spends → serialize → deserialize → identical + re-serialize identical; next accrual after reload matches uninterrupted play (`balance_changed(572, +12)` once on each); JSON round-trip (stringify full_precision → parse → deserialize) coerces 4.7.1 float ints back to int exactly
+- Schema contract (story Exit Conditions): `serialize()` emits ONLY `{balance}` (stub-era `counter`/`rng_state` gone); two-phase validate_only zero-mutation; corrupt payloads (missing/string/fractional/INF balance) fail with zero mutation; stub-era `{counter, balance, rng_state}` blob STILL LOADS with balance committed (save-load integration compat)
+
+**Schema change coordination** (Exit Conditions): `serialize()` now emits `{balance: int}` only. Save-load integration tests (`saveblob_composition` 108/0, `load_orchestration` 87/0, `roundtrip_determinism` 152/0, `file_io_version` 68/0) all green — the roundtrip byte-identity holds because control and restored runs share the same `{balance}` shape, and the "Economy" RNG sub-stream round-trips through TimeSystem's `per_system_rng_states` (AC7 intact).
 
 ---
 

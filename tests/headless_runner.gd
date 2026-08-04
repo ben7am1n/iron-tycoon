@@ -66,6 +66,7 @@ const TEST_FILES := [
 	"tests/unit/economy/revenue_balance_test.gd",
 	"tests/unit/economy/spend_gating_test.gd",
 	"tests/unit/economy/credit_no_satisfaction_test.gd",
+	"tests/unit/economy/serialization_determinism_test.gd",
 	"tests/integration/equipment_catalog/catalog_edge_cases_test.gd",
 	"tests/integration/grid_system/grid_serialization_test.gd",
 	"tests/integration/grid_system/grid_navigation_solidity_test.gd",
