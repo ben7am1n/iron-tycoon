@@ -23,11 +23,11 @@ Engine: Godot 4.7.1
 
 | Epic | Layer | System | GDD | Stories | Status |
 |------|-------|--------|-----|---------|--------|
-| [member-sim](member-sim/EPIC.md) | Feature | MemberSim + MemberActivity/usage | design/gdd/member-sim.md | 5 stories | Ready |
-| [congestion](congestion/EPIC.md) | Feature | Congestion (dynamic member density) | design/gdd/congestion.md | 4 stories | Ready |
-| [zone-rules](zone-rules/EPIC.md) | Feature | ZoneRules (static adjacency/packing, pure fn) | design/gdd/zone-rules.md | 4 stories | Ready |
-| [satisfaction](satisfaction/EPIC.md) | Feature | Satisfaction | design/gdd/satisfaction.md | 4 stories | Ready |
-| [economy](economy/EPIC.md) | Feature | Economy | design/gdd/economy.md | 4 stories | Ready |
+| [member-sim](member-sim/EPIC.md) | Feature | MemberSim + MemberActivity/usage | design/gdd/member-sim.md | 5 stories | Complete |
+| [congestion](congestion/EPIC.md) | Feature | Congestion (dynamic member density) | design/gdd/congestion.md | 4 stories | Complete |
+| [zone-rules](zone-rules/EPIC.md) | Feature | ZoneRules (static adjacency/packing, pure fn) | design/gdd/zone-rules.md | 4 stories | Complete |
+| [satisfaction](satisfaction/EPIC.md) | Feature | Satisfaction | design/gdd/satisfaction.md | 4 stories | Complete |
+| [economy](economy/EPIC.md) | Feature | Economy | design/gdd/economy.md | 4 stories | Complete |
 
 ## Presentation Layer
 

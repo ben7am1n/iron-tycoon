@@ -3,18 +3,18 @@
 > **Layer**: Feature
 > **GDD**: design/gdd/member-sim.md
 > **Architecture Module**: MemberSim — owns member state array, reservation map, `member_id_counter`; exposes `member_completed_visit(member_id)` signal
-> **Status**: Ready
+> **Status**: Complete — 2026-08-05 (all stories Complete)
 > **Stories**: 5 stories created — see below
 
 ## Stories
 
 | # | Story | Type | Status | ADR |
 |---|-------|------|--------|-----|
-| 001 | Lifecycle State Machine Core | Logic | Ready | ADR-0003, ADR-0004, ADR-0005 |
-| 002 | Target Selection and Weighted Pick | Logic | Ready | ADR-0004, ADR-0005 |
-| 003 | Reservation Map and Contention | Logic | Ready | ADR-0003, ADR-0004, ADR-0005 |
-| 004 | Path Invalidation, Patience and Interrupts | Logic | Ready | ADR-0003, ADR-0005 |
-| 005 | Serialization, Determinism and Flow Hypothesis | Integration | Ready | ADR-0002, ADR-0004, ADR-0005 |
+| 001 | Lifecycle State Machine Core | Logic | Complete — 2026-08-05 | ADR-0003, ADR-0004, ADR-0005 |
+| 002 | Target Selection and Weighted Pick | Logic | Complete — 2026-08-05 | ADR-0004, ADR-0005 |
+| 003 | Reservation Map and Contention | Logic | Complete — 2026-08-05 | ADR-0003, ADR-0004, ADR-0005 |
+| 004 | Path Invalidation, Patience and Interrupts | Logic | Complete — 2026-08-05 | ADR-0003, ADR-0005 |
+| 005 | Serialization, Determinism and Flow Hypothesis | Integration | Complete — 2026-08-05 | ADR-0002, ADR-0004, ADR-0005 |
 
 ## Overview
 

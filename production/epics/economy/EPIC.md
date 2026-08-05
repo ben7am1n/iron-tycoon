@@ -3,7 +3,7 @@
 > **Layer**: Feature
 > **GDD**: design/gdd/economy.md
 > **Architecture Module**: Economy — owns `balance: int`; exposes `can_afford(amount)`, `spend(amount)`, `credit(amount, reason)`, `balance_changed(new, delta)` signal
-> **Status**: Ready
+> **Status**: Complete — 2026-08-05 (all stories Complete)
 > **Stories**: 4 stories created — see below
 
 ## Stories
@@ -13,7 +13,7 @@
 | 001 | Balance and Flat-Fee Revenue | Logic | Complete — 2026-08-02 | ADR-0005, ADR-0006 |
 | 002 | spend() and can_afford Triple-Gating | Logic | Complete — 2026-08-03 | ADR-0006 |
 | 003 | credit() Interface and No-Satisfaction Structure | Logic | Complete — 2026-08-03 | ADR-0006 |
-| 004 | Serialization, Determinism and No-Decay | Integration | In Review — 2026-08-04 | ADR-0002, ADR-0005, ADR-0006 |
+| 004 | Serialization, Determinism and No-Decay | Integration | Complete — 2026-08-05 | ADR-0002, ADR-0005, ADR-0006 |
 
 ## Overview
 

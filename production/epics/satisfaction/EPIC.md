@@ -3,17 +3,17 @@
 > **Layer**: Feature
 > **GDD**: design/gdd/satisfaction.md
 > **Architecture Module**: Satisfaction — owns `global_satisfaction` EMA, `member_accumulators`; exposes `global_satisfaction: float`, `satisfaction_modifier: float`
-> **Status**: Ready
+> **Status**: Complete — 2026-08-05 (all stories Complete)
 > **Stories**: 4 stories created — see below
 
 ## Stories
 
 | # | Story | Type | Status | ADR |
 |---|-------|------|--------|-----|
-| 001 | Member Accumulators and use_quality | Logic | Ready | ADR-0003, ADR-0005 |
-| 002 | S_member and Penalty Caps | Logic | Ready | ADR-0005 |
-| 003 | global_satisfaction and Modifiers | Logic | Ready | ADR-0005 |
-| 004 | Serialization, Determinism and Recovery Loop | Integration | Ready | ADR-0002, ADR-0005 |
+| 001 | Member Accumulators and use_quality | Logic | Complete — 2026-08-05 | ADR-0003, ADR-0005 |
+| 002 | S_member and Penalty Caps | Logic | Complete — 2026-08-05 | ADR-0005 |
+| 003 | global_satisfaction and Modifiers | Logic | Complete — 2026-08-05 | ADR-0005 |
+| 004 | Serialization, Determinism and Recovery Loop | Integration | Complete — 2026-08-05 | ADR-0002, ADR-0005 |
 
 ## Overview
 

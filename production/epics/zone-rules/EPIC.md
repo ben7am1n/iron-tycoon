@@ -3,17 +3,17 @@
 > **Layer**: Feature
 > **GDD**: design/gdd/zone-rules.md
 > **Architecture Module**: ZoneRules — stateless pure function; owns nothing; exposes `evaluate(snapshot: GridStateReader) -> Dictionary`
-> **Status**: Ready
+> **Status**: Complete — 2026-08-05 (all stories Complete)
 > **Stories**: 4 stories created — see below
 
 ## Stories
 
 | # | Story | Type | Status | ADR |
 |---|-------|------|--------|-----|
-| 001 | Pure evaluate() and Effect Vocabulary | Logic | Ready | ADR-0003 |
-| 002 | zone_synergy with Perimeter Normalization | Logic | Ready | ADR-0003 |
-| 003 | spaciousness Formula | Logic | Ready | ADR-0003 |
-| 004 | Preview==Commit Equivalence and Invalid Equipment | Logic | Ready | ADR-0001, ADR-0003 |
+| 001 | Pure evaluate() and Effect Vocabulary | Logic | Complete — 2026-08-05 | ADR-0003 |
+| 002 | zone_synergy with Perimeter Normalization | Logic | Complete — 2026-08-05 | ADR-0003 |
+| 003 | spaciousness Formula | Logic | Complete — 2026-08-05 | ADR-0003 |
+| 004 | Preview==Commit Equivalence and Invalid Equipment | Logic | Complete — 2026-08-05 | ADR-0001, ADR-0003 |
 
 ## Overview
 

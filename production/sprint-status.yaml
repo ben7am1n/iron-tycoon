@@ -9,140 +9,220 @@
 #   done           ↔  Complete
 #   blocked        ↔  Blocked
 
-sprint: 3
-goal: "实现 Core 层两个 epic（placement-system 7 story + navigation 6 story），拖放建造 + 确定性寻路闭环落地，解锁 core_loop_test"
+sprint: 4
+goal: "实现 Feature 层 5 个 epic（member-sim 5 + congestion 4 + zone-rules 4 + satisfaction 4 + economy 4 = 21 story），游戏核心循环端到端成形，core_loop_test 完全解锁"
 start: "2026-08-17"
 end: "2026-08-28"
 generated: "2026-08-02"
-updated: "2026-08-02"
+updated: "2026-08-05"
 
 stories:
-  - id: "PL-001"
-    name: "Drag Lifecycle — Start, Preview, Rotation"
-    file: "production/epics/placement-system/story-001-drag-lifecycle-start-preview-rotation.md"
+  - id: "MS-001"
+    name: "Lifecycle State Machine Core"
+    file: "production/epics/member-sim/story-001-lifecycle-state-machine-core.md"
     priority: must-have
     status: done
     owner: ""
     estimate_days: 1.0
     blocker: ""
-    completed: "2026-08-02"
+    completed: "2026-08-03"
 
-  - id: "PL-002"
-    name: "Commit-on-Drop — Success Path"
-    file: "production/epics/placement-system/story-002-commit-on-drop-success-path.md"
+  - id: "MS-002"
+    name: "Target Selection and Weighted Pick"
+    file: "production/epics/member-sim/story-002-target-selection-weighted-pick.md"
     priority: must-have
     status: done
     owner: ""
     estimate_days: 1.0
     blocker: ""
-    completed: "2026-08-02"
+    completed: "2026-08-03"
 
-  - id: "PL-003"
-    name: "Rejected Drop and Silent Cancel"
-    file: "production/epics/placement-system/story-003-rejected-drop-silent-cancel.md"
+  - id: "MS-003"
+    name: "Reservation Map and Contention"
+    file: "production/epics/member-sim/story-003-reservation-map-contention.md"
     priority: must-have
     status: done
     owner: ""
     estimate_days: 1.0
     blocker: ""
-    completed: "2026-08-02"
+    completed: "2026-08-03"
 
-  - id: "PL-004"
-    name: "instance_id Resume After Load"
-    file: "production/epics/placement-system/story-004-instance-id-resume-after-load.md"
-    priority: must-have
-    status: done
-    owner: ""
-    estimate_days: 0.5
-    blocker: ""
-    completed: "2026-08-02"
-
-  - id: "PL-005"
-    name: "Relocate Flow"
-    file: "production/epics/placement-system/story-005-relocate-flow.md"
-    priority: must-have
-    status: done
-    owner: ""
-    estimate_days: 1.5
-    blocker: ""
-    completed: "2026-08-02"
-
-  - id: "PL-006"
-    name: "is_dragging Query and Cost Scope"
-    file: "production/epics/placement-system/story-006-is-dragging-query-cost-scope.md"
-    priority: must-have
-    status: done
-    owner: ""
-    estimate_days: 0.5
-    blocker: ""
-    completed: "2026-08-02"
-
-  - id: "PL-007"
-    name: "Input Bridge and Event Forwarding"
-    file: "production/epics/placement-system/story-007-input-bridge-event-forwarding.md"
+  - id: "MS-004"
+    name: "Path Invalidation, Patience and Interrupts"
+    file: "production/epics/member-sim/story-004-path-invalidation-patience-interrupts.md"
     priority: must-have
     status: done
     owner: ""
     estimate_days: 1.0
     blocker: ""
-    completed: "2026-08-02"
+    completed: "2026-08-03"
 
-  - id: "NV-001"
-    name: "AStarGrid2D Configuration and Basic Paths"
-    file: "production/epics/navigation/story-001-astargrid2d-configuration-basic-paths.md"
+  - id: "MS-005"
+    name: "Serialization, Determinism and Flow Hypothesis"
+    file: "production/epics/member-sim/story-005-serialization-determinism-flow-hypothesis.md"
     priority: must-have
     status: done
     owner: ""
     estimate_days: 1.0
     blocker: ""
-    completed: "2026-08-02"
+    completed: "2026-08-03"
 
-  - id: "NV-002"
-    name: "Diagonal Mode and Corner Clipping Rules"
-    file: "production/epics/navigation/story-002-diagonal-mode-corner-clipping-rules.md"
+  - id: "CG-001"
+    name: "Per-Equipment Congestion Scalar + EMA"
+    file: "production/epics/congestion/story-001-per-equipment-congestion-scalar-ema.md"
     priority: must-have
     status: done
     owner: ""
     estimate_days: 1.0
     blocker: ""
-    completed: "2026-08-02"
+    completed: "2026-08-04"
 
-  - id: "NV-003"
-    name: "Path Query Edge Cases"
-    file: "production/epics/navigation/story-003-path-query-edge-cases.md"
-    priority: must-have
-    status: done
-    owner: ""
-    estimate_days: 0.5
-    blocker: ""
-    completed: "2026-08-02"
-
-  - id: "NV-004"
-    name: "Solidity Sync via grid_changed"
-    file: "production/epics/navigation/story-004-solidity-sync-via-grid-changed.md"
+  - id: "CG-002"
+    name: "Per-Cell Density Field"
+    file: "production/epics/congestion/story-002-per-cell-density-field.md"
     priority: must-have
     status: done
     owner: ""
     estimate_days: 1.0
     blocker: ""
-    completed: "2026-08-02"
+    completed: "2026-08-04"
 
-  - id: "NV-005"
-    name: "Determinism Gate and Congestion Blindness"
-    file: "production/epics/navigation/story-005-determinism-gate-congestion-blindness.md"
+  - id: "CG-003"
+    name: "access_reachable and grid_changed Handling"
+    file: "production/epics/congestion/story-003-access-reachable-grid-changed.md"
     priority: must-have
     status: done
     owner: ""
     estimate_days: 1.0
     blocker: ""
-    completed: "2026-08-02"
+    completed: "2026-08-04"
 
-  - id: "NV-006"
-    name: "Rebuild-on-Load and cell_size Independence"
-    file: "production/epics/navigation/story-006-rebuild-on-load-cell-size-independence.md"
+  - id: "CG-004"
+    name: "Determinism and Serialization"
+    file: "production/epics/congestion/story-004-determinism-serialization.md"
     priority: must-have
     status: done
     owner: ""
     estimate_days: 1.0
     blocker: ""
-    completed: "2026-08-02"
+    completed: "2026-08-04"
+
+  - id: "ZR-001"
+    name: "Pure evaluate() and Effect Vocabulary"
+    file: "production/epics/zone-rules/story-001-pure-evaluate-effect-vocabulary.md"
+    priority: must-have
+    status: done
+    owner: ""
+    estimate_days: 1.0
+    blocker: ""
+    completed: "2026-08-05"
+
+  - id: "ZR-002"
+    name: "zone_synergy with Perimeter Normalization"
+    file: "production/epics/zone-rules/story-002-zone-synergy-perimeter-normalization.md"
+    priority: must-have
+    status: done
+    owner: ""
+    estimate_days: 1.0
+    blocker: ""
+    completed: "2026-08-05"
+
+  - id: "ZR-003"
+    name: "spaciousness Formula"
+    file: "production/epics/zone-rules/story-003-spaciousness-formula.md"
+    priority: must-have
+    status: done
+    owner: ""
+    estimate_days: 1.0
+    blocker: ""
+    completed: "2026-08-05"
+
+  - id: "ZR-004"
+    name: "Preview==Commit Equivalence and Invalid Equipment"
+    file: "production/epics/zone-rules/story-004-preview-commit-equivalence-invalid-equipment.md"
+    priority: must-have
+    status: done
+    owner: ""
+    estimate_days: 1.0
+    blocker: ""
+    completed: "2026-08-05"
+
+  - id: "SAT-001"
+    name: "Member Accumulators and use_quality"
+    file: "production/epics/satisfaction/story-001-member-accumulators-use-quality.md"
+    priority: must-have
+    status: done
+    owner: ""
+    estimate_days: 1.0
+    blocker: ""
+    completed: "2026-08-05"
+
+  - id: "SAT-002"
+    name: "S_member and Penalty Caps"
+    file: "production/epics/satisfaction/story-002-s-member-penalty-caps.md"
+    priority: must-have
+    status: done
+    owner: ""
+    estimate_days: 1.0
+    blocker: ""
+    completed: "2026-08-05"
+
+  - id: "SAT-003"
+    name: "global_satisfaction and Modifiers"
+    file: "production/epics/satisfaction/story-003-global-satisfaction-modifiers.md"
+    priority: must-have
+    status: done
+    owner: ""
+    estimate_days: 1.0
+    blocker: ""
+    completed: "2026-08-05"
+
+  - id: "SAT-004"
+    name: "Serialization, Determinism and Recovery Loop"
+    file: "production/epics/satisfaction/story-004-serialization-determinism-recovery-loop.md"
+    priority: must-have
+    status: done
+    owner: ""
+    estimate_days: 1.0
+    blocker: ""
+    completed: "2026-08-05"
+
+  - id: "ECON-001"
+    name: "Balance and Flat-Fee Revenue"
+    file: "production/epics/economy/story-001-balance-flat-fee-revenue.md"
+    priority: must-have
+    status: done
+    owner: ""
+    estimate_days: 1.0
+    blocker: ""
+    completed: "2026-08-03"
+
+  - id: "ECON-002"
+    name: "spend() and can_afford Triple-Gating"
+    file: "production/epics/economy/story-002-spend-can-afford-triple-gating.md"
+    priority: must-have
+    status: done
+    owner: ""
+    estimate_days: 1.0
+    blocker: ""
+    completed: "2026-08-03"
+
+  - id: "ECON-003"
+    name: "credit() Interface and No-Satisfaction Structure"
+    file: "production/epics/economy/story-003-credit-interface-no-satisfaction-structure.md"
+    priority: must-have
+    status: done
+    owner: ""
+    estimate_days: 1.0
+    blocker: ""
+    completed: "2026-08-04"
+
+  - id: "ECON-004"
+    name: "Serialization, Determinism and No-Decay"
+    file: "production/epics/economy/story-004-serialization-determinism-no-decay.md"
+    priority: must-have
+    status: done
+    owner: ""
+    estimate_days: 1.0
+    blocker: ""
+    completed: "2026-08-05"
