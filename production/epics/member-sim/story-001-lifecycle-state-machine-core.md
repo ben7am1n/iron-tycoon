@@ -123,7 +123,7 @@
 **Required evidence**:
 - `tests/unit/member_sim/lifecycle_state_machine_test.gd` — must exist and pass
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing — `tests/unit/member_sim/lifecycle_state_machine_test.gd` — 40 assertions, 0 failures; full suite 3428/0, exit 0 (2026-08-05)
 
 ---
 
