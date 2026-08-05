@@ -1,7 +1,7 @@
 # Story 001: Lifecycle State Machine Core
 
 > **Epic**: member-sim
-> **Status**: Ready
+> **Status**: Complete — 2026-08-05
 > **Layer**: Feature
 > **Type**: Logic
 > **Estimate**: M — 2 sessions (≤4h)

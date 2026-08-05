@@ -1,7 +1,7 @@
 # Story 001: Member Accumulators and use_quality
 
 > **Epic**: satisfaction
-> **Status**: In Review
+> **Status**: Complete — 2026-08-05
 > **Layer**: Feature
 > **Type**: Logic
 > **Estimate**: M — 2 sessions (≤4h)

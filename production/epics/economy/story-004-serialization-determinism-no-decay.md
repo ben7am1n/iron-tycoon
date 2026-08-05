@@ -1,7 +1,7 @@
 # Story 004: Serialization, Determinism and No-Decay
 
 > **Epic**: economy
-> **Status**: In Review — 2026-08-04
+> **Status**: Complete — 2026-08-05
 > **Layer**: Feature
 > **Type**: Integration
 > **Estimate**: S — 1 session (≤2h)

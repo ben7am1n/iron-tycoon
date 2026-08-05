@@ -1,7 +1,7 @@
 # Story 003: global_satisfaction and Modifiers
 
 > **Epic**: satisfaction
-> **Status**: In Review
+> **Status**: Complete — 2026-08-05
 > **Layer**: Feature
 > **Type**: Logic
 > **Estimate**: M — 2 sessions (≤4h)

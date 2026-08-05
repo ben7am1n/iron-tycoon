@@ -1,7 +1,7 @@
 # Story 002: S_member and Penalty Caps
 
 > **Epic**: satisfaction
-> **Status**: In Review
+> **Status**: Complete — 2026-08-05
 > **Layer**: Feature
 > **Type**: Logic
 > **Estimate**: S — 1 session (≤2h)

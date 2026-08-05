@@ -1,7 +1,7 @@
 # Story 004: Preview==Commit Equivalence and Invalid Equipment
 
 > **Epic**: zone-rules
-> **Status**: In Review
+> **Status**: Complete — 2026-08-05
 > **Layer**: Feature
 > **Type**: Logic
 > **Estimate**: M — 2 sessions (≤4h)

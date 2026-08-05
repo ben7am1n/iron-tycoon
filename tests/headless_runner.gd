@@ -84,6 +84,7 @@ const TEST_FILES := [
 	"tests/integration/save_load/file_io_version_test.gd",
 	"tests/integration/member_sim/flow_hypothesis_test.gd",
 	"tests/integration/satisfaction/recovery_loop_test.gd",
+	"tests/integration/core_loop/core_loop_test.gd",
 ]
 
 # === 隔离的测试文件 ===
@@ -95,11 +96,6 @@ const PENDING_FILES := [
 		"path": "tests/smoke/core_smoke_test.gd",
 		"reason": "从 prototypes/ preload 实现代码，违反 .claude/rules/prototype-code.md；且测的是原型 API，与 src/ 不一致",
 		"unblocked_by": "grid-system story-002(is_solid)/004(can_place)/005(commit·clear)/006(snapshot) + time-system story-003(SeededRNG)",
-	},
-	{
-		"path": "tests/integration/core_loop/core_loop_test.gd",
-		"reason": "preload 路径 res://../../prototypes/... 无法解析，脚本从未加载成功；且测的是原型实现",
-		"unblocked_by": "core 层 epic —— PlacementSystem + Navigation + MemberSim + Congestion 的 src/ 实现",
 	},
 ]
 

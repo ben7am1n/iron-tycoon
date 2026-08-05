@@ -1,7 +1,7 @@
 # Story 004: Serialization, Determinism and Recovery Loop
 
 > **Epic**: satisfaction
-> **Status**: In Review
+> **Status**: Complete — 2026-08-05
 > **Layer**: Feature
 > **Type**: Integration
 > **Estimate**: M — 2 sessions (≤4h)
