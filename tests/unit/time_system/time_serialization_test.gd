@@ -74,6 +74,7 @@ func run_all() -> Dictionary:
 	_test_ac9_multiple_pause_resume_cycles()
 	_test_ac9_speed_change_while_paused()
 	_test_ac10_load_always_paused()
+	_test_ac10_blob_without_last_speed()
 	_test_ac10_edges()
 	_test_ac16_missing_system_rng_state()
 	_test_ac16_empty_states_dict()
@@ -428,6 +429,44 @@ func _test_ac10_load_always_paused() -> void:
 	ts.call("resume")
 	var resumed_at: int = int(ts.call("get_speed_multiplier"))
 	_check(resumed_at == 3, "resume() restores speed 3 (got %d)" % resumed_at)
+
+
+func _test_ac10_blob_without_last_speed() -> void:
+	print("\n[AC10 edge] hand-crafted blob with speed_multiplier=3, paused=false, NO _last_speed key -> _last_speed falls back to 3")
+	var data: Dictionary = {
+		"tick_count": 42,
+		"tick_accumulator": 0.0,
+		"speed_multiplier": 3,
+		"paused": false,
+		# NOTE: '_last_speed' deliberately omitted — the QA AC10 blob is
+		# specified as "save blob with speed_multiplier=3, paused=false";
+		# deserialize must derive _last_speed from the saved speed.
+		"master_seed": _SRG().int64_to_hex(777),
+		"per_system_rng_states": _serialized_states_for(777),
+	}
+	var fresh := _make_rig(1, SYSTEMS_4)
+	var res: RefCounted = fresh["time_system"].call("deserialize", data)
+	_check(bool(res.get("ok")) == true, "deserialize ok (errors: %s)" % str(res.get("errors")))
+	var ts: RefCounted = fresh["time_system"]
+	_check(bool(ts.call("is_paused")) == true, "paused == true immediately after deserialize")
+	_check(int(ts.call("get_speed_multiplier")) == 0, "speed_multiplier == 0 after load")
+	_check(int(ts.get("_last_speed")) == 3, "_last_speed falls back to saved speed 3 (got %d)" % int(ts.get("_last_speed")))
+	ts.call("resume")
+	_check(int(ts.call("get_speed_multiplier")) == 3, "resume() proceeds at speed 3 (got %d)" % int(ts.call("get_speed_multiplier")))
+
+
+## Returns a valid per_system_rng_states dict for a fresh rig of the given
+## seed (each system's RNG at its initial, pre-draw state). Used by the
+## hand-crafted-blob tests that must NOT depend on a prior serialize().
+func _serialized_states_for(master_seed: int) -> Dictionary:
+	var srg: RefCounted = _SRG().new()
+	srg.call("init", master_seed)
+	for name in SYSTEMS_4:
+		srg.call("register_system", name)
+	var states := {}
+	for name in SYSTEMS_4:
+		states[name] = _SRG().int64_to_hex(int((srg.call("get_rng", name) as RandomNumberGenerator).state))
+	return states
 
 
 func _test_ac10_edges() -> void:
