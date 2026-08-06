@@ -12,7 +12,7 @@
 |---|-------|------|--------|-----|
 | 001 | Heatmap Layer (ImageTexture + Shader, 10Hz) | Logic | Ready | ADR-0005 |
 | 002 | Per-Equipment Congestion Glyph | Visual/Feel | Ready | ADR-0005 |
-| 003 | Access-Blocked Layer (Default-Visible) | Logic | Ready | ADR-0005 |
+| 003 | Access-Blocked Layer (Default-Visible) | Logic | Complete — 2026-08-06 | ADR-0005 |
 | 004 | Rejection Tooltip + Layer Priority + Drag Dimming | Visual/Feel | Ready | ADR-0005 |
 
 ## Overview
