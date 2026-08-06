@@ -71,6 +71,7 @@ const TEST_FILES := [
 	"tests/unit/hud/hud_state_binding_test.gd",
 	"tests/unit/hud/hud_layout_test.gd",
 	"tests/unit/hud/money_tween_test.gd",
+	"tests/unit/hud/transport_test.gd",
 	"tests/unit/congestion/per_equipment_scalar_test.gd",
 	"tests/unit/congestion/per_cell_density_test.gd",
 	"tests/unit/congestion/access_reachable_test.gd",

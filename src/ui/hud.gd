@@ -1,25 +1,29 @@
 ## Hud — the always-on top bar (Story HUD-001 layout + state binding; Story
-## HUD-002 money count tween).
+## HUD-002 money count tween; Story HUD-004 pause/speed transport +
+## day/time display).
 ##
 ## Story: production/epics/hud/story-001-top-bar-layout-state-binding.md,
-##        production/epics/hud/story-002-money-count-tween.md
+##        production/epics/hud/story-002-money-count-tween.md,
+##        production/epics/hud/story-004-pause-speed-transport-day-time.md
 ## Req:   TR-HUD-001 (minimal top bar: money / satisfaction / day+time+transport),
 ##        TR-HUD-004 (money count: tween digits old->new over ~0.3s on
 ##        balance_changed; never red flash on spend),
+##        TR-HUD-005 (hotkeys Space/1/2/3 via _unhandled_key_input, focus-independent),
 ##        TR-HUD-006 (read-only + transport only — no popups/toasts/badges),
 ##        TR-HUD-007 (on load renders paused state + loaded values immediately)
 ## ADR:   ADR-0001 (UI systems are scene-tree Nodes, not RefCounted sim systems;
 ##        they receive dependencies via typed init parameters from the
 ##        composition root), ADR-0005 (typed signal connections only;
-##        balance_changed S6 subscription; tick_completed S2 refresh hook)
+##        balance_changed S6 subscription; tick_completed S2 refresh hook;
+##        §5 Input Bridge — keyboard via _unhandled_key_input for dual-focus)
 ##
 ## This is a scene-tree Control hierarchy (NOT a SimSystem). It is the quiet
 ## frame around the gym: it owns NO simulation state, only DISPLAYS what
-## Economy / Satisfaction / TimeSystem expose and (from Story 004) forwards
-## pause/speed input. Story 001 scope is layout + read-only state binding;
-## Story 002 adds the money count-up/down tween. Meter ramp (Story 003) and
-## transport buttons + day/time icon (Story 004) are deliberately NOT
-## implemented here.
+## Economy / Satisfaction / TimeSystem expose and FORWARDS pause/speed input
+## back to TimeSystem (Story 004 — the ONLY simulation mutation the HUD makes,
+## TR-HUD-006). Story 001 scope is layout + read-only state binding; Story 002
+## adds the money count-up/down tween. Meter ramp (Story 003) is deliberately
+## NOT implemented here.
 ##
 ## STATE BINDING (event-driven, never poll):
 ##   - balance_changed(new_balance, delta)   -> money count tween (S6)
@@ -28,8 +32,8 @@
 ##   - get_tick_count()                      -> day + time_of_day derivation
 ##                                              (day = 1 + floor(tc/TICKS_PER_DAY);
 ##                                              time_of_day = (tc mod TICKS_PER_DAY)/TICKS_PER_DAY)
-##   - is_paused()/get_speed_multiplier()    -> transport cluster state labels
-##                                              (buttons are Story 004's scope)
+##   - is_paused()/get_speed_multiplier()    -> transport button active cues
+##                                              (Story 004: PauseButton + 1×/2×/3×)
 ##   - tick_completed (S2, orchestrator)     -> refresh cadence (10 Hz)
 ##
 ## MONEY COUNT TWEEN (Story 002 / TR-HUD-004, GDD Core Rule 3):
@@ -60,12 +64,18 @@
 ## 10 ticks/s); config override key "ticks_per_day".
 ##
 ## READ-ONLY DISCIPLINE (Core Rule 5 / TR-HUD-006): no popups, toasts, or
-## badges anywhere in this tree; the HUD never mutates sim state. Story 001
-## has NO input handling at all (Space/1/2/3 and buttons land in Story 004).
+## badges anywhere in this tree. The HUD never mutates sim state EXCEPT the
+## transport forward (Story 004): Space/1/2/3 and the transport buttons call
+## TimeSystem.pause()/resume()/set_speed() — the only simulation mutation the
+## HUD makes.
 ##
 ## 4.7.1 NOTES: class_name immediately follows extends; typed fields use the
 ## project's global class cache (headless-safe — cache is committed);
 ## locals reading system state use explicit `: Type` (never `:=` on Variant).
+## dual-focus (4.6+): hotkeys arrive via _unhandled_key_input (focus-independent);
+## transport Buttons use focus_mode = FOCUS_NONE so a focused Button never
+## swallows Space/1/2/3 (a focused Button consumes ui_accept — Space would
+## activate the button instead of reaching the hotkey handler).
 class_name Hud extends Control
 
 ## Data-driven config seams (coding standard: gameplay values never hardcoded).
@@ -121,6 +131,21 @@ const COLOR_CHARCOAL := Color("3c3a42")
 const COLOR_SAGE := Color("8fbf9f")
 const COLOR_SKY := Color("8ec5e8")
 
+## Transport cluster (UX spec §4): four small buttons ‖ (pause), 1×, 2×, 3×.
+const PAUSE_BUTTON_LABEL := "‖"
+const SPEED_BUTTON_LABELS: Array[String] = ["1×", "2×", "3×"]
+## Active-cue prefix: filled-dot icon. Paired with the outline stylebox so
+## the active button reads via icon+shape — NEVER color alone (colorblind-safe,
+## UX spec §4 / GDD Core Rule 4).
+const ACTIVE_DOT := "• "
+## Sun/clock-position icon for time-of-day (GDD Core Rule 4 / UX spec §3):
+## a 12-hour clock face whose position reflects the [0,1) day fraction.
+## Icon/shape carries the state — never color alone.
+const TIME_OF_DAY_ICONS: Array[String] = [
+	"🕛", "🕐", "🕑", "🕒", "🕓", "🕔",
+	"🕕", "🕖", "🕗", "🕘", "🕙", "🕚",
+]
+
 # === Injected systems (composition root wires these via init()) ===
 var _economy: Economy
 var _satisfaction: Satisfaction
@@ -151,7 +176,7 @@ var _money_count_duration: float = DEFAULT_MONEY_COUNT_DURATION
 ## Data-driven reduced-motion flag: true = snap, no tween.
 var _reduced_motion: bool = DEFAULT_REDUCED_MOTION
 
-# === Child Controls (built in _init(), named for tests + Story 004) ===
+# === Child Controls (built in _init(), named for tests) ===
 var _top_bar: HBoxContainer
 var _money_group: HBoxContainer
 var _coin_icon: Label
@@ -166,8 +191,11 @@ var _time_group: HBoxContainer
 var _day_label: Label
 var _time_of_day_label: Label
 var _transport_cluster: HBoxContainer
-var _pause_state_label: Label
-var _speed_state_label: Label
+var _pause_button: Button
+var _speed_buttons: Array[Button] = []
+
+## Cached outline stylebox for the active transport button (created lazily).
+var _active_stylebox: StyleBoxFlat = null
 
 var _initialized: bool = false
 
@@ -252,10 +280,15 @@ func _build_ui() -> void:
 	_transport_cluster.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_transport_cluster.add_theme_constant_override("separation", _scaled(6))
 	_time_group.add_child(_transport_cluster)
-	_pause_state_label = _make_label("PauseStateLabel", "PAUSED", COLOR_CHARCOAL)
-	_transport_cluster.add_child(_pause_state_label)
-	_speed_state_label = _make_label("SpeedStateLabel", "—", COLOR_CHARCOAL)
-	_transport_cluster.add_child(_speed_state_label)
+	_pause_button = _make_transport_button("PauseButton", PAUSE_BUTTON_LABEL)
+	_pause_button.pressed.connect(_on_pause_button_pressed)
+	_transport_cluster.add_child(_pause_button)
+	_speed_buttons.clear()
+	for i in SPEED_BUTTON_LABELS.size():
+		var btn := _make_transport_button("SpeedButton%d" % (i + 1), SPEED_BUTTON_LABELS[i])
+		btn.pressed.connect(_on_speed_button_pressed.bind(i + 1))
+		_speed_buttons.append(btn)
+		_transport_cluster.add_child(btn)
 
 
 ## Two-phase init (ADR-0001 for UI Nodes): stores the injected systems,
@@ -440,22 +473,42 @@ func _refresh_satisfaction() -> void:
 
 
 ## Reads tick_count and derives day + time_of_day (GDD Formulas), then
-## re-binds the transport cluster state (pause/speed are read-only here —
-## buttons land in Story 004).
+## re-binds the transport cluster active cues from TimeSystem state
+## (is_paused() / get_speed_multiplier() — buttons read state, never track it).
 func _refresh_time() -> void:
 	var tick_count: int = _time_system.get_tick_count()
 	_displayed_day = derive_day(tick_count, _ticks_per_day)
 	_time_of_day = derive_time_of_day(tick_count, _ticks_per_day)
 	_day_label.text = "Day %d" % _displayed_day
-	_time_of_day_label.text = format_time_of_day(_time_of_day)
+	_time_of_day_label.text = time_of_day_icon(_time_of_day)
+	_refresh_transport()
+
+
+## Re-derives the transport cluster active cues from TimeSystem state (the
+## single source of truth — the HUD never tracks pause/speed itself, GDD
+## States table: "button reflects new state" after every forward). Exactly
+## one speed button is active when running; none when paused; the pause
+## button is active when paused (AC1/AC5). The cue is outline + filled-dot
+## icon — never color alone.
+func _refresh_transport() -> void:
 	var paused: bool = _time_system.is_paused()
 	var speed: int = _time_system.get_speed_multiplier()
-	if paused:
-		_pause_state_label.text = "PAUSED"
-		_speed_state_label.text = "—"
+	_set_button_active(_pause_button, PAUSE_BUTTON_LABEL, paused)
+	for i in _speed_buttons.size():
+		var active: bool = (not paused) and speed == i + 1
+		_set_button_active(_speed_buttons[i], SPEED_BUTTON_LABELS[i], active)
+
+
+## Applies/removes the active cue on one transport button: filled-dot text
+## prefix + outline stylebox. Removing restores the plain label and the
+## theme default — the cue is fully re-derived, so a stale cue can never
+## survive a state change (deterministic, no flicker on same-speed no-op).
+func _set_button_active(button: Button, base_label: String, active: bool) -> void:
+	button.text = (ACTIVE_DOT + base_label) if active else base_label
+	if active:
+		button.add_theme_stylebox_override("normal", _get_active_stylebox())
 	else:
-		_pause_state_label.text = "RUNNING"
-		_speed_state_label.text = "%d×" % speed
+		button.remove_theme_stylebox_override("normal")
 
 
 # === Pure derivation functions (public + statically testable) ===
@@ -504,13 +557,26 @@ static func format_money(balance: int) -> String:
 
 
 ## Formats the [0,1) day fraction as a 24h clock, e.g. 0.5 -> "12:00".
-## Story 004 replaces this text with the sun/clock icon; the mapping stays.
+## Retained as the text-mapping utility (Story-001 tests pin it); the live
+## label shows time_of_day_icon() instead (Story 004 — icon, not text).
 static func format_time_of_day(time_of_day: float) -> String:
 	var fraction: float = clampf(time_of_day, 0.0, 0.999999)
 	var total_minutes: int = floori(fraction * 24.0 * 60.0)
 	var hour: int = total_minutes / 60
 	var minute: int = total_minutes % 60
 	return "%02d:%02d" % [hour, minute]
+
+
+## Sun/clock-position icon for time-of-day (GDD Core Rule 4 / UX spec §3):
+## maps the [0,1) day fraction to a 12-hour clock face, e.g. 0.0 -> "🕛",
+## 0.25 -> "🕕", 0.5 -> "🕛" (noon), 0.75 -> "🕕" (18:00). The icon SHAPE
+## carries the time — never color alone (colorblind-safe). Defensive: a
+## fraction outside [0,1) clamps to the nearest valid band.
+static func time_of_day_icon(time_of_day: float) -> String:
+	var fraction: float = clampf(time_of_day, 0.0, 0.999999)
+	var hour_24: int = floori(fraction * 24.0)
+	var hour_12: int = hour_24 % 12
+	return TIME_OF_DAY_ICONS[hour_12]
 
 
 # === Node-building helpers ===
@@ -542,13 +608,122 @@ func _make_label(label_name: String, text: String, color: Color) -> Label:
 	return label
 
 
+## Builds one transport-cluster Button (Story 004). focus_mode = FOCUS_NONE
+## is deliberate: under Godot 4.6+ dual-focus a focused Button consumes
+## Space (ui_accept) and would never reach _unhandled_key_input — breaking
+## "Space toggles pause regardless of focus". The hotkeys are the keyboard
+## path; the buttons are the mouse path. MOUSE_FILTER_STOP opts the button
+## back into mouse input (the rest of the HUD stays IGNORE — TR-HUD-006).
+func _make_transport_button(button_name: String, label: String) -> Button:
+	var btn := Button.new()
+	btn.name = button_name
+	btn.text = label
+	btn.focus_mode = Control.FOCUS_NONE
+	btn.mouse_filter = Control.MOUSE_FILTER_STOP
+	btn.add_theme_font_size_override("font_size", _scaled(MIN_FONT_SIZE_PX))
+	return btn
+
+
+## Lazily builds the shared active-cue stylebox: a charcoal outline (never
+## color alone — paired with the filled-dot text prefix in _set_button_active).
+func _get_active_stylebox() -> StyleBoxFlat:
+	if _active_stylebox == null:
+		var sb := StyleBoxFlat.new()
+		sb.bg_color = Color(1.0, 1.0, 1.0, 0.0)
+		sb.border_color = COLOR_CHARCOAL
+		sb.set_border_width_all(2)
+		sb.set_corner_radius_all(3)
+		_active_stylebox = sb
+	return _active_stylebox
+
+
 ## Scales a design pixel value by the UI scale (UX spec: scales with the
 ## UI-scale setting; text stays >= 16px @1080p at 1.0×).
 func _scaled(px: int) -> int:
 	return maxi(roundi(float(px) * _ui_scale), 1)
 
 
-# === Public getters (test surface + Story 004 upgrade path) ===
+# === Transport forwarding (Story 004 — the ONLY simulation mutation the HUD makes) ===
+
+## Pause button click → toggle pause. The pause button shows the active cue
+## while paused (AC1); clicking it resumes at the last-used speed (AC4).
+func _on_pause_button_pressed() -> void:
+	if not _initialized:
+		return
+	if _time_system.is_paused():
+		_time_system.resume()
+	else:
+		_time_system.pause()
+	_refresh_transport()
+
+
+## Speed button click (1×/2×/3×) → set speed directly + implicit unpause
+## (one action — AC5). Same-speed while running is a no-op (Core Rule 4).
+func _on_speed_button_pressed(speed: int) -> void:
+	set_speed(speed)
+
+
+## Public transport forward (TR-HUD-005): sets the sim speed. Explicitly
+## unpauses when paused — GDD: "1/2/3 = set speed directly (and implicitly
+## unpause — pressing 2 while paused resumes at 2×, one action not two)".
+## TimeSystem.set_speed() itself does NOT unpause while paused (it only
+## records _last_speed); the resume here is what makes the one-action
+## contract true. Same-speed while running: TimeSystem re-sets the identical
+## multiplier — no state change, no flicker (Core Rule 4 no-op).
+func set_speed(speed: int) -> void:
+	if not _initialized:
+		return
+	assert(speed in [1, 2, 3], "Invalid speed: %d" % speed)
+	_time_system.set_speed(speed)
+	if _time_system.is_paused():
+		_time_system.resume()
+	_refresh_transport()
+
+
+## Public transport forward (TR-HUD-005): pause()/resume() straight to
+## TimeSystem. This is the ONLY pause mutation the HUD makes (TR-HUD-006).
+func set_paused(paused: bool) -> void:
+	if not _initialized:
+		return
+	if paused:
+		_time_system.pause()
+	else:
+		_time_system.resume()
+	_refresh_transport()
+
+
+## Space hotkey: toggle pause. Focus-independent by construction — arrives
+## via _unhandled_key_input (ADR-0005 §5), and the transport buttons are
+## FOCUS_NONE so a focused Button can never swallow it (dual-focus 4.6+).
+func toggle_pause() -> void:
+	set_paused(not _time_system.is_paused())
+
+
+## Keyboard hotkeys (TR-HUD-005): Space = toggle pause; 1/2/3 = set speed
+## directly (implicitly unpausing). Echo repeats are ignored (a held key
+## must not re-fire every frame — same discipline as the input bridges).
+## _unhandled_key_input is focus-independent: it runs after GUI/focusable
+## controls decline the event, so the hotkeys work regardless of which
+## Control has focus (dual-focus 4.6+, ADR-0005 §5).
+func _unhandled_key_input(event: InputEvent) -> void:
+	if not _initialized:
+		return
+	if event is InputEventKey:
+		var key := event as InputEventKey
+		if not key.pressed or key.echo:
+			return
+		match key.keycode:
+			KEY_SPACE:
+				toggle_pause()
+			KEY_1:
+				set_speed(1)
+			KEY_2:
+				set_speed(2)
+			KEY_3:
+				set_speed(3)
+
+
+# === Public getters (test surface) ===
 
 func get_money_label() -> Label:
 	return _money_label
@@ -562,17 +737,23 @@ func get_day_label() -> Label:
 func get_time_of_day_label() -> Label:
 	return _time_of_day_label
 
-func get_pause_state_label() -> Label:
-	return _pause_state_label
+func get_pause_button() -> Button:
+	return _pause_button
 
-func get_speed_state_label() -> Label:
-	return _speed_state_label
+## Returns the speed Button for [speed] (1..3), or null for an invalid index.
+func get_speed_button(speed: int) -> Button:
+	if speed < 1 or speed > _speed_buttons.size():
+		return null
+	return _speed_buttons[speed - 1]
 
 func get_meter() -> ProgressBar:
 	return _meter
 
 func get_top_bar() -> HBoxContainer:
 	return _top_bar
+
+func get_transport_cluster() -> HBoxContainer:
+	return _transport_cluster
 
 func get_ticks_per_day() -> int:
 	return _ticks_per_day
@@ -625,3 +806,13 @@ func is_reduced_motion() -> bool:
 ## Butter mid-spend-ack). Tests assert the ack color is never red.
 func get_coin_icon_color() -> Color:
 	return _coin_icon.get_theme_color("font_color")
+
+## True when the pause button shows the active cue (TimeSystem paused).
+func is_pause_active() -> bool:
+	return _time_system.is_paused()
+
+## The currently active speed (1..3), or 0 when paused / no speed active.
+func get_active_speed() -> int:
+	if _time_system.is_paused():
+		return 0
+	return _time_system.get_speed_multiplier()
