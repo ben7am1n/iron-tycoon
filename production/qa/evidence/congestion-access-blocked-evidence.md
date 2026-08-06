@@ -9,7 +9,7 @@
 
 ## Summary
 
-The always-on access-blocked layer is implemented as `src/ui/access_blocked_layer.gd`
+The always-on access-blocked layer is implemented as `src/presentation/access_blocked_layer.gd`
 (class `AccessBlockedLayer extends Node2D`). It reads the CURRENT
 `Congestion.access_reachable` set on `configure()` and materializes a
 barricade / broken-link glyph for every flag-present-and-false equipment
@@ -25,7 +25,7 @@ machine terminal by construction (AC8).
 
 | Path | Role |
 |------|------|
-| `src/ui/access_blocked_layer.gd` | The always-on layer (Node2D) — icon registry, typed signal connections, fade state machine, `_draw` barricade glyph + hover tooltip, fixed UI-layer scale |
+| `src/presentation/access_blocked_layer.gd` | The always-on layer (Node2D) — icon registry, typed signal connections, fade state machine, `_draw` barricade glyph + hover tooltip, fixed UI-layer scale |
 | `tests/unit/congestion_overlay/access_blocked_layer_test.gd` | Automated coverage — 58 asserts, standalone green + registered in `tests/headless_runner.gd` `TEST_FILES` |
 | `tests/headless_runner.gd` | Test registered (registry-coverage check enforces it) |
 
@@ -79,7 +79,7 @@ Standalone: `godot --headless --script tests/unit/congestion_overlay/access_bloc
 ## Manual Walkthrough Notes (ADVISORY — pending scene assembly)
 
 Story 001 owns the overlay scene root; the layer is scene-ready as a single
-`Node2D` (script `src/ui/access_blocked_layer.gd`) that the overlay scene
+`Node2D` (script `src/presentation/access_blocked_layer.gd`) that the overlay scene
 instantiates and `configure()`s with the wired Congestion + GridStateReader +
 cell size. Visual verification steps to run once the scene exists:
 1. Load a save with a walled-off machine → barricade glyph visible the

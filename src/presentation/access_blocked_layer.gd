@@ -1,4 +1,4 @@
-## src/ui/access_blocked_layer.gd
+## src/presentation/access_blocked_layer.gd
 ## Story CFO-003: Access-Blocked Layer (Default-Visible)
 ## (production/epics/congestion-flow-overlay/story-003-access-blocked-layer.md)
 ## Req:   TR-CFO-001 (access-blocked part), TR-CFO-005, TR-CFO-011 (access-blocked part)

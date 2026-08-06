@@ -40,7 +40,7 @@ const R0 := 0
 const ENTRANCE := Vector2i(0, 0)
 const CELL_SIZE := 32  # must match the layer's anchor math (half cell above center)
 
-const LAYER_SCRIPT_PATH := "res://src/ui/access_blocked_layer.gd"
+const LAYER_SCRIPT_PATH := "res://src/presentation/access_blocked_layer.gd"
 
 var _pass := 0
 var _fail := 0
