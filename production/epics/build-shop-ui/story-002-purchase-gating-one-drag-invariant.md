@@ -1,7 +1,7 @@
 # Story 002: Purchase Gating + One-Drag Invariant + Hover Save-$X
 
 > **Epic**: build-shop-ui
-> **Status**: Ready
+> **Status**: Complete — 2026-08-06
 > **Layer**: Presentation
 > **Type**: Logic
 > **Estimate**: M — 2 sessions (≤4h)
@@ -37,11 +37,11 @@ This is small integration glue fully specified by shop-purchase.md; if a dedicat
 
 *From GDD `design/gdd/build-shop-ui.md`, scoped to this story:*
 
-- [ ] AC4 GIVEN an affordable, unlocked item, WHEN the player mouse-downs it, THEN a PlacementSystem placement drag begins for that `equipment_id` (after `can_purchase` passes)
-- [ ] AC5 GIVEN a purchase drag is in flight, WHEN the player tries to start another purchase, THEN it is blocked (one-drag invariant holds)
-- [ ] AC9 GIVEN a greyed/unaffordable palette item, WHEN the player hovers it, THEN a tooltip or inline label shows "Save $X more" where `X = cost - balance`
-- [ ] Shop Core Rule 1 GIVEN a locked item, WHEN `can_purchase` is queried, THEN it returns false (unlock check first)
-- [ ] Shop Core Rule 2b GIVEN a cost-0 item's drag commits, WHEN the commit resolves, THEN no `Economy.spend(0)` call is made (skipped) — placement completes, money untouched
+- [x] AC4 GIVEN an affordable, unlocked item, WHEN the player mouse-downs it, THEN a PlacementSystem placement drag begins for that `equipment_id` (after `can_purchase` passes)
+- [x] AC5 GIVEN a purchase drag is in flight, WHEN the player tries to start another purchase, THEN it is blocked (one-drag invariant holds)
+- [x] AC9 GIVEN a greyed/unaffordable palette item, WHEN the player hovers it, THEN a tooltip or inline label shows "Save $X more" where `X = cost - balance`
+- [x] Shop Core Rule 1 GIVEN a locked item, WHEN `can_purchase` is queried, THEN it returns false (unlock check first)
+- [x] Shop Core Rule 2b GIVEN a cost-0 item's drag commits, WHEN the commit resolves, THEN no `Economy.spend(0)` call is made (skipped) — placement completes, money untouched
 
 ---
 
@@ -122,7 +122,12 @@ This is small integration glue fully specified by shop-purchase.md; if a dedicat
 **Required evidence**:
 - `tests/unit/build_shop_ui/purchase_gate_test.gd` — must exist and pass (can_purchase gate incl. cost-0 short-circuit, one-drag invariant, spend-on-commit exactly once, hover Save-$X derivation)
 
-**Status**: [ ] Not yet created
+**Status**: [x] Complete — 2026-08-06
+
+`tests/unit/build_shop_ui/purchase_gate_test.gd` (86 assertions) exists,
+passes, and is registered in `tests/headless_runner.gd` TEST_FILES. Full
+headless suite: **3702 passed, 0 failed** (3616 pre-existing + 86 new).
+Evidence: `production/qa/evidence/build-shop-gating-evidence.md`.
 
 ---
 

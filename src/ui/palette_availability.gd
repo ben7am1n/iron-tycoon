@@ -30,3 +30,25 @@ func can_purchase(equipment_id: String) -> bool:
 func is_unlocked(equipment_id: String) -> bool:
 	push_error("PaletteAvailability.is_unlocked() is not implemented — subclass must override")
 	return false
+
+## The drag-start gate (shop-purchase.md Core Rule 2 step 1, Story 002):
+## sets the purchase-in-flight flag when the item is purchasable AND no
+## drag is already in flight, returning whether a PlacementSystem drag may
+## begin. Pure gate with transient flag state — no spend, no signal.
+func begin_purchase_drag(equipment_id: String) -> bool:
+	push_error("PaletteAvailability.begin_purchase_drag() is not implemented — subclass must override")
+	return false
+
+## Silent cancel resolution (shop-purchase.md Core Rule 2 step 3, Story 002):
+## clears the purchase-in-flight flag with zero spend. Called by the palette
+## when it detects a palette-initiated drag ended without a commit/reject
+## signal. Idempotent.
+func notify_silent_cancel() -> void:
+	push_error("PaletteAvailability.notify_silent_cancel() is not implemented — subclass must override")
+
+## Core Rule 4 hover derivation (TR-BSUI-005, Story 002): X = cost - balance
+## for an unlocked item (>= 1 unaffordable, 0 just-affordable); -1 when
+## locked or unknown. The palette formats "Save $X more". Pure query.
+func get_save_more_amount(equipment_id: String) -> int:
+	push_error("PaletteAvailability.get_save_more_amount() is not implemented — subclass must override")
+	return -1
