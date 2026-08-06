@@ -1,7 +1,7 @@
 # Story 001: Heatmap Layer (ImageTexture + Shader, 10Hz)
 
 > **Epic**: congestion-flow-overlay
-> **Status**: Ready
+> **Status**: Complete — 2026-08-06
 > **Layer**: Presentation
 > **Type**: Logic
 > **Estimate**: M — 2 sessions (≤4h)
@@ -30,10 +30,10 @@
 
 *From GDD `design/gdd/congestion-flow-overlay.md`, scoped to this story:*
 
-- [ ] AC9 GIVEN Congestion emits `congestion_updated` with a known `per_cell_density` field, WHEN the overlay refreshes, THEN the heatmap `Image` texels match the field (per-cell), and no refresh occurs on frames without the signal (10 Hz cadence, not per-frame)
-- [ ] AC1 GIVEN a fresh game boot, WHEN the main scene loads, THEN the heatmap is OFF and no legend is on-screen
-- [ ] AC7 GIVEN the player toggles the heatmap on for the first time in a session, WHEN it activates, THEN a one-time contextual tip appears and never recurs after dismissal
-- [ ] Formula GIVEN a per-cell density value, WHEN the heatmap renders, THEN `heat_alpha = smoothstep(low_cut=0.2, high_cut=0.8, density_cell)` mapped to Dusty Rose `#E0A0A0`; below `low_cut` the cell stays transparent
+- [x] AC9 GIVEN Congestion emits `congestion_updated` with a known `per_cell_density` field, WHEN the overlay refreshes, THEN the heatmap `Image` texels match the field (per-cell), and no refresh occurs on frames without the signal (10 Hz cadence, not per-frame)
+- [x] AC1 GIVEN a fresh game boot, WHEN the main scene loads, THEN the heatmap is OFF and no legend is on-screen
+- [x] AC7 GIVEN the player toggles the heatmap on for the first time in a session, WHEN it activates, THEN a one-time contextual tip appears and never recurs after dismissal
+- [x] Formula GIVEN a per-cell density value, WHEN the heatmap renders, THEN `heat_alpha = smoothstep(low_cut=0.2, high_cut=0.8, density_cell)` mapped to Dusty Rose `#E0A0A0`; below `low_cut` the cell stays transparent
 
 ---
 
@@ -109,7 +109,7 @@
 **Required evidence**:
 - `tests/unit/congestion_overlay/heatmap_texture_test.gd` — must exist and pass (texel-vs-field equivalence, 10Hz cadence, density_to_heat mapping)
 
-**Status**: [ ] Not yet created
+**Status**: [x] Complete — 2026-08-06 (58 asserts green; full headless suite 3486/0 PASSED)
 
 ---
 
