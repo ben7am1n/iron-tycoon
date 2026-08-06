@@ -52,3 +52,16 @@ func is_unlocked(equipment_id: String) -> bool:
 	if def == null:
 		return false
 	return def.unlock_requirement == ""
+
+
+## Core Rule 4 hover derivation (Story 002's palette consumes it): X =
+## cost - balance for an unlocked item; -1 when locked/unknown. Same
+## derivation as the real Shop — this placeholder implements the query so
+## story-001 rigs keep working when Story 002's palette formats tooltips.
+func get_save_more_amount(equipment_id: String) -> int:
+	var def := _catalog.get_definition(equipment_id)
+	if def == null:
+		return -1
+	if def.unlock_requirement != "":
+		return -1
+	return def.cost - _economy.balance

@@ -12,7 +12,7 @@
 | # | Story | Type | Status | ADR |
 |---|-------|------|--------|-----|
 | 001 | Shop Palette Rendering | UI | Complete — 2026-08-06 | ADR-0005 |
-| 002 | Purchase Gating + One-Drag Invariant + Hover Save-$X | Logic | Ready | ADR-0005, ADR-0006 |
+| 002 | Purchase Gating + One-Drag Invariant + Hover Save-$X | Logic | Complete — 2026-08-06 | ADR-0005, ADR-0006 |
 | 003 | Build/Select Mode Arbitration | Integration | Ready | ADR-0005 |
 | 004 | Drag Handoff + Purchase Confirm + Silent-Cancel Cue | UI | Ready | ADR-0005 |
 
