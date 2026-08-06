@@ -51,6 +51,14 @@ class_name HeatmapLayer extends ColorRect
 ## system" exclusion).
 signal one_time_tip_requested(tip_text: String)
 
+## Presentation-internal signal (layer → sibling layers): emitted on EVERY
+## toggle with the new enabled state. The congestion-glyph layer (Story
+## CFO-002, GDD Core Rule 1) subscribes to this so ALL per-equipment glyphs
+## show/hide with the heatmap — ONE shared toggle state, the heatmap is the
+## single owner. Also intra-Presentation, deliberately NOT in the ADR-0005
+## Signal Catalog.
+signal flow_overlay_toggled(enabled: bool)
+
 ## Config keys (data-driven per Control Manifest — defaults = GDD anchors).
 const CONFIG_LOW_CUT := "low_cut"
 const CONFIG_HIGH_CUT := "high_cut"
@@ -225,12 +233,15 @@ func density_to_heat(density_cell: float) -> Color:
 ## lives in the HUD epic). Returns the new enabled state. The FIRST toggle
 ## ON in a session emits one_time_tip_requested exactly once (AC7); later
 ## toggles never re-emit (flag is per-instance lifetime, never reset).
+## Emits flow_overlay_toggled on EVERY toggle so the glyph layer (shared
+## toggle, GDD Core Rule 1) follows the same state.
 func toggle_flow_overlay() -> bool:
 	_enabled = not _enabled
 	if _enabled and not _one_time_tip_emitted:
 		_one_time_tip_emitted = true
 		one_time_tip_requested.emit(ONE_TIME_TIP_TEXT)
 	_apply_visibility()
+	flow_overlay_toggled.emit(_enabled)
 	return _enabled
 
 

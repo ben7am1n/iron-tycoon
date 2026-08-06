@@ -1,7 +1,7 @@
 # Story 002: Per-Equipment Congestion Glyph
 
 > **Epic**: congestion-flow-overlay
-> **Status**: Ready
+> **Status**: Complete — 2026-08-06
 > **Layer**: Presentation
 > **Type**: Visual/Feel
 > **Estimate**: S — 1 session (≤2h)
@@ -30,9 +30,9 @@
 
 *From GDD `design/gdd/congestion-flow-overlay.md`, scoped to this story:*
 
-- [ ] AC10 GIVEN an equipment's `per_equipment_congestion` value, WHEN its glyph updates, THEN `fill_fraction` equals that value (clamped `[0,1]`)
-- [ ] Core Rule 4 GIVEN any congestion level, WHEN the glyph renders, THEN the shape/fill is the primary signal (an empty outline fills up as congestion rises) with Dusty Rose tint as secondary reinforcement only — colorblind-safe by construction
-- [ ] AC6 GIVEN colorblind/high-contrast mode is enabled, WHEN congestion renders, THEN it is distinguishable by shape/icon alone with color removed
+- [x] AC10 GIVEN an equipment's `per_equipment_congestion` value, WHEN its glyph updates, THEN `fill_fraction` equals that value (clamped `[0,1]`)
+- [x] Core Rule 4 GIVEN any congestion level, WHEN the glyph renders, THEN the shape/fill is the primary signal (an empty outline fills up as congestion rises) with Dusty Rose tint as secondary reinforcement only — colorblind-safe by construction
+- [x] AC6 GIVEN colorblind/high-contrast mode is enabled, WHEN congestion renders, THEN it is distinguishable by shape/icon alone with color removed
 
 ---
 
@@ -105,7 +105,7 @@
 - `production/qa/evidence/cfo-glyph-evidence.md` — manual walkthrough / sign-off
 - Automated coverage of fill_fraction mapping where practical (e.g. `tests/unit/congestion_overlay/glyph_fill_test.gd`)
 
-**Status**: [ ] Not yet created
+**Status**: [x] Complete — 2026-08-06 (93 asserts green; full headless suite 3579/0 PASSED)
 
 ---
 
