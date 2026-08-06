@@ -1,7 +1,11 @@
-## Hud — the always-on top bar (Story HUD-001: layout + read-only state binding).
+## Hud — the always-on top bar (Story HUD-001 layout + state binding; Story
+## HUD-002 money count tween).
 ##
-## Story: production/epics/hud/story-001-top-bar-layout-state-binding.md
+## Story: production/epics/hud/story-001-top-bar-layout-state-binding.md,
+##        production/epics/hud/story-002-money-count-tween.md
 ## Req:   TR-HUD-001 (minimal top bar: money / satisfaction / day+time+transport),
+##        TR-HUD-004 (money count: tween digits old->new over ~0.3s on
+##        balance_changed; never red flash on spend),
 ##        TR-HUD-006 (read-only + transport only — no popups/toasts/badges),
 ##        TR-HUD-007 (on load renders paused state + loaded values immediately)
 ## ADR:   ADR-0001 (UI systems are scene-tree Nodes, not RefCounted sim systems;
@@ -12,12 +16,13 @@
 ## This is a scene-tree Control hierarchy (NOT a SimSystem). It is the quiet
 ## frame around the gym: it owns NO simulation state, only DISPLAYS what
 ## Economy / Satisfaction / TimeSystem expose and (from Story 004) forwards
-## pause/speed input. Story 001 scope is layout + read-only state binding —
-## money tween (Story 002), meter ramp (Story 003), and transport buttons +
-## day/time icon (Story 004) are deliberately NOT implemented here.
+## pause/speed input. Story 001 scope is layout + read-only state binding;
+## Story 002 adds the money count-up/down tween. Meter ramp (Story 003) and
+## transport buttons + day/time icon (Story 004) are deliberately NOT
+## implemented here.
 ##
 ## STATE BINDING (event-driven, never poll):
-##   - balance_changed(new_balance, delta)   -> money label (S6)
+##   - balance_changed(new_balance, delta)   -> money count tween (S6)
 ##   - global_satisfaction (plain var)       -> % label + meter fill (read on
 ##                                              init + each tick_completed)
 ##   - get_tick_count()                      -> day + time_of_day derivation
@@ -26,6 +31,29 @@
 ##   - is_paused()/get_speed_multiplier()    -> transport cluster state labels
 ##                                              (buttons are Story 004's scope)
 ##   - tick_completed (S2, orchestrator)     -> refresh cadence (10 Hz)
+##
+## MONEY COUNT TWEEN (Story 002 / TR-HUD-004, GDD Core Rule 3):
+##   - On balance_changed(new, delta): tween the DISPLAYED number from its
+##     current value -> new over ~0.3s (data-driven knob "money_count_duration",
+##     GDD safe range 0.2-0.5s), TRANS_QUAD EASE_OUT throughout (calm "Butter"
+##     motion — never a red flash; the easing is monotonic so the count never
+##     overshoots past the target).
+##   - Re-target mid-tween (rapid changes, e.g. multiple departures one tick):
+##     the in-flight tween is killed and a NEW one starts from the CURRENT
+##     displayed value toward the LATEST target — no queue backlog (Edge
+##     Cases). The count visually continues from where it was, not from the
+##     stale target.
+##   - Render-time, independent of sim ticks: the tween is a plain
+##     create_tween() bound to the SceneTree. TimeSystem pause is a SIM flag,
+##     NOT SceneTree.paused — so a sell refund during pause still animates
+##     (Edge Cases; render-time state, not tick-gated).
+##   - Spend acknowledgment (Pillar 2 absolute — never red): on delta < 0 the
+##     Butter coin icon is set to a DESATURATED Butter synchronously
+##     (hue-preserving lerp toward gray — the "brief desaturation" half), then
+##     a settle tween restores full Butter over the same duration. The number
+##     never changes color; nothing ever reads red.
+##   - Reduced-motion: snap to the final value, no tween, no desaturation
+##     (UX spec: "snap under reduced-motion"). Data-driven "reduced_motion".
 ##
 ## TICKS_PER_DAY is NOT defined by TimeSystem (HUD GDD OQ1 — a game-designer
 ## decision). Data-driven provisional default 1800 (~3 real minutes at 1×,
@@ -43,12 +71,40 @@ class_name Hud extends Control
 ## Data-driven config seams (coding standard: gameplay values never hardcoded).
 const CONFIG_TICKS_PER_DAY := "ticks_per_day"
 const CONFIG_UI_SCALE := "ui_scale"
+const CONFIG_MONEY_COUNT_DURATION := "money_count_duration"
+const CONFIG_REDUCED_MOTION := "reduced_motion"
 
 ## Provisional day length (HUD GDD OQ1 — game-designer owns the final value).
 const DEFAULT_TICKS_PER_DAY := 1800
 
 ## UI scale (UX spec: 0.8×–1.5× integer multipliers; 1.0 = art-bible anchor).
 const DEFAULT_UI_SCALE := 1.0
+
+## Money count tween duration (GDD Core Rule 3 / TR-HUD-004): ~0.3s default,
+## safe range 0.2–0.5s (too long = laggy; too short = snap). Data-driven via
+## config["money_count_duration"], clamped to the GDD safe range.
+const DEFAULT_MONEY_COUNT_DURATION := 0.3
+const MONEY_COUNT_DURATION_MIN := 0.2
+const MONEY_COUNT_DURATION_MAX := 0.5
+
+## Reduced-motion: snap to the final value, no tween, no desaturation (UX
+## spec "snap under reduced-motion"). Data-driven via config["reduced_motion"];
+## default OFF until the global reduced-motion setting (accessibility #22)
+## lands — the config seam is where that setting will write.
+const DEFAULT_REDUCED_MOTION := false
+
+## How far the Butter coin desaturates on spend (0..1; 1 = full gray). 0.35 is
+## a visible-but-calm "brief desaturation" — Pillar 2: acknowledgment, never a
+## red flash. Hue is preserved by the lerp-toward-gray (see spend_ack_color()).
+const SPEND_DESATURATE_AMOUNT := 0.35
+
+## Tween easing for the money count (GDD "in Butter throughout"): a calm
+## ease-out that decelerates into the target. TRANS_QUAD/EASE_OUT is monotonic
+## — the count never overshoots past the target (a count that briefly showed
+## MORE money than the player has would read as a bug; EASE_OUT guarantees
+## from <= displayed <= to along the whole curve).
+const MONEY_TWEEN_TRANS := Tween.TRANS_QUAD
+const MONEY_TWEEN_EASE := Tween.EASE_OUT
 
 ## Layout anchors (art-bible / UX spec): text ≥ 16px @1080p; safe margin
 ## ≥ 16px from screen edges at 1.0× UI scale, scaled with UI scale; top bar
@@ -78,6 +134,22 @@ var _ui_scale: float = DEFAULT_UI_SCALE
 # === Derived display state (testable surface) ===
 var _displayed_day: int = 1
 var _time_of_day: float = 0.0
+
+# === Money count tween state (Story 002) ===
+## The value the money label is CURRENTLY showing (mid-tween = the animated
+## value). float so the tween can interpolate smoothly; label rounds to int.
+var _displayed_balance: float = 0.0
+## Target of the current/last money tween — the latest balance_changed value.
+## Tests assert re-target lands on the latest value (no queue backlog).
+var _money_tween_target: int = 0
+## The in-flight count tween (null when none). Killed on every re-target.
+var _money_tween: Tween = null
+## The spend-ack settle tween (restores Butter after the desaturation half).
+var _ack_tween: Tween = null
+## Data-driven count duration (GDD knob, clamped to safe range).
+var _money_count_duration: float = DEFAULT_MONEY_COUNT_DURATION
+## Data-driven reduced-motion flag: true = snap, no tween.
+var _reduced_motion: bool = DEFAULT_REDUCED_MOTION
 
 # === Child Controls (built in _init(), named for tests + Story 004) ===
 var _top_bar: HBoxContainer
@@ -216,6 +288,8 @@ func init(
 
 
 ## Reads [config] into the tuning fields. Missing keys keep the GDD anchors.
+## money_count_duration is clamped to the GDD safe range (0.2–0.5s) so a bad
+## config value can never produce a snap-fast or laggy count.
 func _apply_config(config: Dictionary) -> void:
 	if config.has(CONFIG_TICKS_PER_DAY):
 		_ticks_per_day = int(config[CONFIG_TICKS_PER_DAY])
@@ -225,16 +299,103 @@ func _apply_config(config: Dictionary) -> void:
 		_ui_scale = float(config[CONFIG_UI_SCALE])
 	if _ui_scale <= 0.0:
 		_ui_scale = DEFAULT_UI_SCALE
+	if config.has(CONFIG_MONEY_COUNT_DURATION):
+		_money_count_duration = clampf(
+			float(config[CONFIG_MONEY_COUNT_DURATION]),
+			MONEY_COUNT_DURATION_MIN,
+			MONEY_COUNT_DURATION_MAX
+		)
+	if config.has(CONFIG_REDUCED_MOTION):
+		_reduced_motion = bool(config[CONFIG_REDUCED_MOTION])
 
 
 ## Event-driven refresh on balance mutation (S6). Money is the ONLY label
 ## driven by a signal — it can change on any tick (income) or between ticks
 ## (spend/credit), so it must never wait for the next tick_completed.
-## Story 002 replaces this with the count-up tween; here we set the value.
-func _on_balance_changed(new_balance: int, _delta: int) -> void:
+##
+## Story 002 (TR-HUD-004): the count tween. The displayed number animates
+## current -> new over _money_count_duration (~0.3s), TRANS_QUAD EASE_OUT
+## throughout. Re-targets mid-tween on rapid changes (kill + restart from the
+## CURRENT displayed value toward the LATEST target — no queue backlog).
+## delta < 0 (spend) triggers the desaturation acknowledgment — NEVER red.
+## Reduced-motion snaps directly (no tween, no desaturation).
+func _on_balance_changed(new_balance: int, delta: int) -> void:
 	if not _initialized:
 		return
-	_money_label.text = format_money(new_balance)
+	_money_tween_target = new_balance
+	if _reduced_motion:
+		_snap_money(new_balance)
+		return
+	_start_money_tween(new_balance)
+	if delta < 0:
+		_acknowledge_spend()
+
+
+## Starts a fresh count tween from the CURRENT displayed value toward [target].
+## The in-flight tween (if any) is killed FIRST — this is the re-target
+## contract: rapid balance changes (multiple departures one tick) cancel the
+## old tween and re-anchor at the latest value, with zero queue backlog (GDD
+## Edge Cases). The new tween eases from _displayed_balance (the value the
+## label currently shows, mid-tween = wherever the killed tween had reached),
+## so the count visibly continues from where it was — never snaps back.
+## NOTE: create_tween() works on any Node in 4.7.1 (probe-verified even for
+## nodes never added to a tree), so no in-tree guard is needed — the tween
+## exists and reports is_running() == true immediately, which is what the
+## headless re-target assertions rely on.
+func _start_money_tween(target: int) -> void:
+	_kill_money_tween()
+	var from: float = _displayed_balance
+	_money_tween = create_tween()
+	_money_tween.set_trans(MONEY_TWEEN_TRANS)
+	_money_tween.set_ease(MONEY_TWEEN_EASE)
+	_money_tween.tween_method(_apply_money_display, from, float(target), _money_count_duration)
+
+
+## Tween callback: writes the interpolated value into _displayed_balance and
+## re-renders the label. roundi() keeps the display in whole currency units
+## (GDD Core Rule 1 — int balance) while the underlying float interpolates
+## smoothly. format_money() applies thousands separators, so a mid-count value
+## like 1,234.7 renders as "$1,235" with no separator/icon collision (the coin
+## icon is a separate Label).
+func _apply_money_display(value: float) -> void:
+	_displayed_balance = value
+	_money_label.text = format_money(roundi(value))
+
+
+## Spend acknowledgment (Pillar 2 absolute — NEVER a red flash, GDD Core
+## Rule 3 / TR-HUD-004): the Butter coin icon desaturates briefly then
+## settles back. Desaturation is a hue-preserving lerp toward gray
+## (spend_ack_color()) — the coin reads as muted Butter, never red. The money
+## NUMBER label never changes color on spend. Under reduced-motion the whole
+## acknowledgment is skipped (snap only).
+func _acknowledge_spend() -> void:
+	if _ack_tween != null and _ack_tween.is_valid():
+		_ack_tween.kill()
+	_coin_icon.add_theme_color_override("font_color", spend_ack_color())
+	_ack_tween = create_tween()
+	_ack_tween.set_trans(MONEY_TWEEN_TRANS)
+	_ack_tween.set_ease(MONEY_TWEEN_EASE)
+	_ack_tween.tween_property(_coin_icon, "theme_override_colors/font_color", COLOR_BUTTER, _money_count_duration)
+
+
+## Snaps the money display to [balance] with NO tween and NO desaturation
+## (reduced-motion path). Kills any in-flight tween so a reduced-motion toggle
+## mid-count cannot leave a stale tween animating toward an old target.
+func _snap_money(balance: int) -> void:
+	_kill_money_tween()
+	if _ack_tween != null and _ack_tween.is_valid():
+		_ack_tween.kill()
+	_displayed_balance = float(balance)
+	_money_label.text = format_money(balance)
+	_coin_icon.add_theme_color_override("font_color", COLOR_BUTTER)
+
+
+## Kills the in-flight money tween, if any (safe to call when none exists).
+## The re-target contract depends on this being idempotent.
+func _kill_money_tween() -> void:
+	if _money_tween != null and _money_tween.is_valid():
+		_money_tween.kill()
+	_money_tween = null
 
 
 ## Tick refresh hook (S2 — 10 Hz cadence). Satisfaction folds on member
@@ -251,12 +412,20 @@ func _on_tick_completed(_tick_count: int) -> void:
 ## Renders the ENTIRE current state — money, satisfaction, day/time,
 ## transport — by direct read. Called by init() so a freshly-loaded game
 ## shows its loaded values on the first frame with no stale pre-load values
-## (AC8). Also callable by the composition root after a load.
+## (AC8). Also callable by the composition root after a load. Money snaps to
+## the loaded balance (no tween — a load is not an animation; Story 002's
+## tween only fires on balance_changed).
 func refresh_all() -> void:
 	if not _initialized:
 		return
 	var balance: int = _economy.balance
+	_displayed_balance = float(balance)
+	_money_tween_target = balance
+	_kill_money_tween()
+	if _ack_tween != null and _ack_tween.is_valid():
+		_ack_tween.kill()
 	_money_label.text = format_money(balance)
+	_coin_icon.add_theme_color_override("font_color", COLOR_BUTTER)
 	_refresh_satisfaction()
 	_refresh_time()
 
@@ -290,6 +459,13 @@ func _refresh_time() -> void:
 
 
 # === Pure derivation functions (public + statically testable) ===
+
+## The spend-acknowledgment color: Butter lerped toward neutral gray by
+## SPEND_DESATURATE_AMOUNT. Lerping toward gray PRESERVES hue (probe-verified
+## on 4.7.1: h stays 0.128 = yellow family, saturation drops) — so the coin
+## reads as muted Butter during a spend, NEVER red (Pillar 2 absolute).
+static func spend_ack_color() -> Color:
+	return COLOR_BUTTER.lerp(Color(0.5, 0.5, 0.5), SPEND_DESATURATE_AMOUNT)
 
 ## GDD Formulas: day = 1 + floor(tick_count / TICKS_PER_DAY). day >= 1.
 ## Defensive: a non-positive ticks_per_day (bad config) yields day 1 rather
@@ -409,3 +585,43 @@ func get_displayed_day() -> int:
 
 func get_time_of_day() -> float:
 	return _time_of_day
+
+# === Story 002 test surface ===
+
+## The value the money label currently shows (mid-tween = the animated value,
+## rounded to whole currency units for display). Tests use this to verify a
+## tween is actually in flight (displayed != target) vs settled (== target).
+func get_displayed_balance() -> int:
+	return roundi(_displayed_balance)
+
+## The latest balance_changed target — what the count is animating TOWARD.
+func get_money_tween_target() -> int:
+	return _money_tween_target
+
+## True when a money count tween is currently in flight. A killed/finished
+## tween reports is_valid() == false; a fresh one is_running() == true.
+func is_money_tween_active() -> bool:
+	return _money_tween != null and _money_tween.is_valid() and _money_tween.is_running()
+
+## The in-flight money tween object (null when none). Tests capture the
+## reference BEFORE a re-target and assert the old one is killed
+## (is_valid() == false) — the "no queue backlog" proof.
+func get_money_tween() -> Tween:
+	return _money_tween
+
+## True when the spend-ack settle tween is currently in flight.
+func is_ack_tween_active() -> bool:
+	return _ack_tween != null and _ack_tween.is_valid() and _ack_tween.is_running()
+
+## Data-driven count duration (GDD knob, clamped 0.2–0.5s).
+func get_money_count_duration() -> float:
+	return _money_count_duration
+
+## Data-driven reduced-motion flag.
+func is_reduced_motion() -> bool:
+	return _reduced_motion
+
+## The coin icon's CURRENT font color (theme override — Butter normally, muted
+## Butter mid-spend-ack). Tests assert the ack color is never red.
+func get_coin_icon_color() -> Color:
+	return _coin_icon.get_theme_color("font_color")

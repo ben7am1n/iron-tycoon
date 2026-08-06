@@ -95,7 +95,7 @@
 - `production/qa/evidence/hud-money-tween-evidence.md` — manual walkthrough / sign-off
 - Automated coverage of the re-target logic where practical (e.g. `tests/unit/hud/money_tween_test.gd`)
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created (2026-08-06 — automated coverage green; manual walkthrough pending playable build)
 
 ---
 

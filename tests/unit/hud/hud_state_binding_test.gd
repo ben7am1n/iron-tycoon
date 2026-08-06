@@ -219,19 +219,31 @@ func _test_ac8_no_stale_values_after_refresh() -> void:
 
 # === S6 balance_changed subscription ===
 
+## Story 002 contract: balance_changed no longer snaps the label — it starts a
+## count tween toward the new value. The label text only changes when the
+## tween ticks (frames), so mid-tween it still shows the OLD value and the
+## tween target holds the NEW one. Arity-2 subscription + rejected-spend
+## no-signal behavior are still the assertions here (the tween itself gets
+## dedicated coverage in money_tween_test.gd).
 func _test_balance_changed_updates_money() -> void:
-	print("\n[S6] balance_changed(new, delta) subscription drives the money label")
+	print("\n[S6] balance_changed(new, delta) drives the money count tween")
 	var rig := _make_rig()
 	var econ: RefCounted = rig["econ"]
 	var hud: Control = rig["hud"]
 	var money_label: Label = hud.call("get_money_label")
 	_check(money_label.text == "$500", "init balance $500 (got '%s')" % money_label.text)
+	_check(not bool(hud.call("is_money_tween_active")), "no money tween before any balance change")
 	econ.call("credit", 100, "test:income")
-	_check(money_label.text == "$600", "after credit(100) -> $600 (got '%s')" % money_label.text)
+	_check(bool(hud.call("is_money_tween_active")), "credit(100) starts a money count tween (S6 arity 2)")
+	_check(int(hud.call("get_money_tween_target")) == 600, "tween targets 600 (got %d)" % int(hud.call("get_money_tween_target")))
+	_check(int(hud.call("get_displayed_balance")) == 500, "displayed stays 500 mid-tween — animates, does not snap (got %d)" % int(hud.call("get_displayed_balance")))
+	_check(money_label.text == "$500", "label still $500 until the tween ticks (got '%s')" % money_label.text)
 	econ.call("spend", 250)
-	_check(money_label.text == "$350", "after spend(250) -> $350 (got '%s')" % money_label.text)
+	_check(int(hud.call("get_money_tween_target")) == 350, "spend re-targets tween to 350 (got %d)" % int(hud.call("get_money_tween_target")))
+	_check(bool(hud.call("is_ack_tween_active")), "spend triggers the desaturation acknowledgment (never red)")
 	econ.call("spend", 99999)  # rejected: no signal, no mutation
-	_check(money_label.text == "$350", "rejected overspend leaves label unchanged (got '%s')" % money_label.text)
+	_check(int(hud.call("get_money_tween_target")) == 350, "rejected overspend leaves tween target unchanged (got %d)" % int(hud.call("get_money_tween_target")))
+	_check(money_label.text == "$500", "rejected overspend leaves label unchanged (got '%s')" % money_label.text)
 
 
 # === S2 tick_completed refresh ===
