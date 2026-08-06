@@ -67,6 +67,8 @@ const TEST_FILES := [
 	"tests/unit/economy/spend_gating_test.gd",
 	"tests/unit/economy/credit_no_satisfaction_test.gd",
 	"tests/unit/economy/serialization_determinism_test.gd",
+	"tests/unit/hud/hud_state_binding_test.gd",
+	"tests/unit/hud/hud_layout_test.gd",
 	"tests/unit/congestion/per_equipment_scalar_test.gd",
 	"tests/unit/congestion/per_cell_density_test.gd",
 	"tests/unit/congestion/access_reachable_test.gd",
