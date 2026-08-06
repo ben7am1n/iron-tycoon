@@ -80,7 +80,8 @@ var economy            # Economy — null until its story lands (tick Tier 6)
 var placement_system   # PlacementSystem — constructed in init() Tier 1 once a
                        # grid exists (LevelLoader story pending; tests inject
                        # grid_system before init()). PL-007.
-var selection_system   # SelectionSystem — null until its story lands (Tier 6)
+var selection_system   # SelectionSystem — constructed in init() Tier 6 once a
+                       # placement system exists (SEL-001; bridge = Story 002)
 var navigation         # Navigation — null until its story lands (Tier 2)
 # Tier 2-7 — PlacementSystem, Navigation, MemberSim, ZoneRules, Congestion,
 # Satisfaction, Economy, Shop, SelectionSystem, SaveLoad: null until their
@@ -209,17 +210,24 @@ func _initialize_topology() -> void:
 		placement_system = PlacementSystem.new()
 		placement_system.init(grid_system, equipment_catalog)
 	# navigation    = Navigation.new(); navigation.init(grid_system)  # its story
+	# Tier 6: selection — constructed once placement exists (it subscribes to
+	# placement_committed + grid_changed for the instance mapping, SEL-001;
+	# the input bridge Node is selection-system Story 002).
+	if placement_system != null:
+		selection_system = SelectionSystem.new()
+		selection_system.init(grid_system, placement_system, equipment_catalog)
 	# Tier 2-7: member_sim, zone_rules, congestion, satisfaction, economy,
-	#           shop, selection, save_load (stories not yet implemented)
+	#           shop, save_load (stories not yet implemented)
 	#
 	# When the four tick-driven systems land, populate in the LOCKED order:
 	#   _tick_systems = [member_sim, congestion, satisfaction, economy]
 
 	# --- Phase 2: cross-system wiring (all systems exist) ---
-	# for sys in [time_system, grid_system, ...]:
-	#     sys._post_init()
+	# SelectionSystem is the first system with real _post_init() work (its
+	# mapping subscriptions). More systems join here as their stories land;
 	# SaveLoad hooks tick_completed here (Story 004); bridges attach here.
-	#
+	if selection_system != null:
+		selection_system._post_init()
 	# Placement input bridge (PL-007): created as a child Node by the
 	# composition root, NOT a separate scene, NOT owned by the presentation
 	# layer (TR-PS-011). The orchestrator holds PlacementSystem as a strong
