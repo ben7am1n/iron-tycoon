@@ -1,7 +1,7 @@
 # Story 003: Access-Blocked Layer (Default-Visible)
 
 > **Epic**: congestion-flow-overlay
-> **Status**: Ready
+> **Status**: Complete — 2026-08-06
 > **Layer**: Presentation
 > **Type**: Logic
 > **Estimate**: M — 2 sessions (≤4h)
@@ -30,10 +30,10 @@
 
 *From GDD `design/gdd/congestion-flow-overlay.md`, scoped to this story:*
 
-- [ ] AC2 GIVEN the heatmap is off, WHEN an equipment's `access_reachable` becomes false, THEN its barricade icon appears regardless of toggle state
-- [ ] AC12 GIVEN `access_reachable` for equipment E is false, WHEN the heatmap toggle is OFF, THEN E's barricade icon is still visible (the always-on layer is independent of the toggle)
-- [ ] Core Rule 5 (load-bearing) GIVEN a fresh scene entry / save load with already-unreachable equipment, WHEN the overlay reads the current `access_reachable` set, THEN icons materialize for every `false` entry immediately (default-visible, no event gate, no intervening fade-in-on-false trigger required)
-- [ ] AC8 GIVEN any state in this system renders, WHEN observed over 10 seconds, THEN no element flashes, pulses on a loop, or plays a failure sound
+- [x] AC2 GIVEN the heatmap is off, WHEN an equipment's `access_reachable` becomes false, THEN its barricade icon appears regardless of toggle state
+- [x] AC12 GIVEN `access_reachable` for equipment E is false, WHEN the heatmap toggle is OFF, THEN E's barricade icon is still visible (the always-on layer is independent of the toggle)
+- [x] Core Rule 5 (load-bearing) GIVEN a fresh scene entry / save load with already-unreachable equipment, WHEN the overlay reads the current `access_reachable` set, THEN icons materialize for every `false` entry immediately (default-visible, no event gate, no intervening fade-in-on-false trigger required)
+- [x] AC8 GIVEN any state in this system renders, WHEN observed over 10 seconds, THEN no element flashes, pulses on a loop, or plays a failure sound
 
 ---
 
@@ -110,7 +110,14 @@
 **Required evidence**:
 - `tests/unit/congestion_overlay/access_blocked_layer_test.gd` — must exist and pass (default-visible on entry, toggle-independence, same-frame removal)
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created and passing — `tests/unit/congestion_overlay/access_blocked_layer_test.gd` (58 asserts, standalone green; registered in `TEST_FILES`). Implements the story QA cases verbatim:
+- **Core Rule 5 (load)** 进场默认可见: `AccessBlockedLayer.configure()` reads the current `access_reachable` set and materializes a STATIC full-alpha icon for every flag-present-and-false entry immediately — zero ticks elapsed, no event gate, no fade-in-on-false trigger; edge: multiple walled-off machines → one icon per instance_id, no merge/count/alarm
+- **AC12** 与开关无关: `set_heatmap_enabled(false/true)` leaves the icon and `set_version` untouched (always-on layer independent of the toggle)
+- **AC2** 事件翻转出现: wall commit + one tick → icon fades in ONCE (alpha 0→0.5→1.0) then holds static; 9 s of simulated time after the fade → still static, zero set mutations (no loop pulse / no strobe on quiet ticks)
+- **Dynamics**: `access_reachable` → true → icon removed (S8 reconcile); equipment removed → icon removed SAME FRAME via the `grid_changed` handler before any tick
+- **Extras**: flag-absence semantics (reachability machinery off → zero icons), fixed UI-layer scale under camera zoom, hover tooltip state machine, reconfigure idempotency (no duplicate typed signal connections)
+
+**Evidence**: `production/qa/evidence/congestion-access-blocked-evidence.md` (full run: 3486 passed / 0 failed — 3428 existing + 58 new).
 
 ---
 
