@@ -74,6 +74,7 @@ const TEST_FILES := [
 	"tests/unit/congestion/serialization_test.gd",
 	"tests/unit/congestion_overlay/access_blocked_layer_test.gd",
 	"tests/unit/congestion_overlay/heatmap_texture_test.gd",
+	"tests/unit/build_shop_ui/palette_state_test.gd",
 	"tests/integration/equipment_catalog/catalog_edge_cases_test.gd",
 	"tests/integration/grid_system/grid_serialization_test.gd",
 	"tests/integration/grid_system/grid_navigation_solidity_test.gd",
