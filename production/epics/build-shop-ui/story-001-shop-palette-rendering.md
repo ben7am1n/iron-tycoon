@@ -1,7 +1,7 @@
 # Story 001: Shop Palette Rendering
 
 > **Epic**: build-shop-ui
-> **Status**: Ready
+> **Status**: Complete — 2026-08-06
 > **Layer**: Presentation
 > **Type**: UI
 > **Estimate**: M — 2 sessions (≤4h)
@@ -30,11 +30,11 @@
 
 *From GDD `design/gdd/build-shop-ui.md`, scoped to this story:*
 
-- [ ] AC1 GIVEN an item the player can't afford, WHEN the palette renders, THEN it is greyed (desaturated, no red) and a mouse-down does not start a drag (drag gating is Story 002's logic — the rendering state is here)
-- [ ] AC2 GIVEN the balance rises to meet an item's cost, WHEN `balance_changed` fires, THEN that item becomes full-tint within one frame
-- [ ] AC3 GIVEN a locked item (`unlock_requirement != null`), WHEN the palette renders, THEN it shows a lock icon (shape) 
-- [ ] AC8 GIVEN a colorblind-simulation pass, WHEN viewing the palette, THEN affordable/unaffordable/locked states are each distinguishable by tint-desaturation + lock icon shape, not color alone
-- [ ] Core Rule 1 GIVEN the catalog renders, THEN each item shows icon + name + price in Butter
+- [x] AC1 GIVEN an item the player can't afford, WHEN the palette renders, THEN it is greyed (desaturated, no red) and a mouse-down does not start a drag (drag gating is Story 002's logic — the rendering state is here)
+- [x] AC2 GIVEN the balance rises to meet an item's cost, WHEN `balance_changed` fires, THEN that item becomes full-tint within one frame
+- [x] AC3 GIVEN a locked item (`unlock_requirement != null`), WHEN the palette renders, THEN it shows a lock icon (shape) 
+- [x] AC8 GIVEN a colorblind-simulation pass, WHEN viewing the palette, THEN affordable/unaffordable/locked states are each distinguishable by tint-desaturation + lock icon shape, not color alone
+- [x] Core Rule 1 GIVEN the catalog renders, THEN each item shows icon + name + price in Butter
 
 ---
 
@@ -113,10 +113,15 @@
 
 **Story Type**: UI
 **Required evidence**:
-- `production/qa/evidence/bsui-palette-rendering-evidence.md` — manual walkthrough / sign-off
+- `production/qa/evidence/build-shop-palette-evidence.md` — manual walkthrough / sign-off
 - Automated coverage of grey-state derivation where practical (e.g. `tests/unit/build_shop_ui/palette_state_test.gd`)
 
-**Status**: [ ] Not yet created
+**Status**: [x] Complete — 2026-08-06
+
+`tests/unit/build_shop_ui/palette_state_test.gd` (72 assertions) exists,
+passes, and is registered in `tests/headless_runner.gd` TEST_FILES. Full
+headless suite: **3500 passed, 0 failed** (3428 pre-existing + 72 new).
+Evidence: `production/qa/evidence/build-shop-palette-evidence.md`.
 
 ---
 
