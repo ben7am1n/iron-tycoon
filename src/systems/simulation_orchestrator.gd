@@ -240,3 +240,17 @@ func _initialize_topology() -> void:
 		bridge.name = "PlacementInputBridge"
 		bridge.init(placement_system, grid_system, PLACEMENT_CELL_SIZE)
 		add_child(bridge)
+	# Selection input bridge (SEL-002): created as a child Node by the
+	# composition root, mirroring the placement bridge (TR-SEL-008,
+	# ADR-0005 §5). The bridge converts screen→cell clicks, forwards Esc/Del
+	# via focus-independent _unhandled_key_input (dual-focus 4.6+), and owns
+	# the 2s sell-confirm timer (UI-layer state, never the RefCounted
+	# system). The orchestrator holds SelectionSystem as a strong RefCounted
+	# field, so destroying/recreating this bridge Node never frees the system
+	# (AC bridge — freed-object detection). Placement is injected for the
+	# Move-during-drag guard (story Implementation Notes, AC27).
+	if selection_system != null:
+		var sel_bridge := SelectionInputBridge.new()
+		sel_bridge.name = "SelectionInputBridge"
+		sel_bridge.init(selection_system, grid_system, PLACEMENT_CELL_SIZE, placement_system)
+		add_child(sel_bridge)
