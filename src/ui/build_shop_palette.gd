@@ -19,6 +19,33 @@
 ## ships the rendered states plus is_item_draggable()/get_state() queries the
 ## gate consumes.
 ##
+## STORY 004 (Drag Handoff + Purchase Confirm + Silent-Cancel Cue,
+## TR-BSUI-003 handoff part / TR-BSUI-005 cancel-cue part):
+##   - AC7: the per-frame drag-resolution poll re-enables the palette AND
+##     re-greys every tile against the CURRENT balance whenever a
+##     palette-initiated drag leaves DRAGGING (commit/reject/silent cancel).
+##   - shop-purchase.md Core Rule 4: a purchase-initiated commit triggers a
+##     purchase-confirm cue on placement_committed — NOT on balance_changed
+##     (a cost-0 purchase never fires balance_changed but still deserves the
+##     confirmation feel). The palette tracks _drag_equipment_id locally and
+##     matches the commit's equipment_id — deliberately NOT Shop's flag,
+##     because Shop's own placement_committed listener (connected first in
+##     the composition root) clears the flag inside the same emit, before
+##     this handler runs. Palette-local drag tracking is signal-order
+##     independent and excludes relocate commits (which never pass through
+##     the palette gate).
+##   - AC10: a silent cancel of a STARTED drag (Esc / out-of-bounds /
+##     focus-loss — no signal by design) is detected by the poll via Shop's
+##     still-set _purchase_in_flight flag; the palette notifies Shop
+##     (Core Rule 2 step 3) and shows a lightweight return-to-palette cue so
+##     the drag's resolution is not invisible. (A gate-swallowed attempt —
+##     is_dragging() already true — never sets the flag and never starts a
+##     drag, so it correctly produces NO cue: the item never left idle.)
+##     The cue is a short modulate flash (no Control offset transforms —
+##     4.7's animated-offset API must not break the HBox container layout).
+##   - Cue signals (purchase_confirm_cue / silent_cancel_cue) are the
+##     audio-director hook for the optional audio half of the cues.
+##
 ## Node lifecycle: the palette is a scene-tree Control (NOT a RefCounted sim
 ## system — ADR-0005 "The palette is a Control hierarchy"). Connections to
 ## Economy die with the node; the composition root owns it for the session.
@@ -27,6 +54,19 @@ class_name BuildShopPalette extends HBoxContainer
 ## Fired after every availability re-derive (init and each balance_changed).
 ## Story 002/003 hook this for gating re-evaluation. Arity: 0.
 signal palette_refreshed
+
+## STORY 004 — purchase-confirm cue (shop-purchase.md Core Rule 4): fired
+## exactly once per purchase-initiated commit (placement_committed with a
+## matching palette-initiated drag). Carries the purchased equipment_id.
+## The audio-director hook for the optional soft confirm sound. Arity: 1.
+signal purchase_confirm_cue(equipment_id: String)
+
+## STORY 004 — silent-cancel return cue (GDD AC10, shop-purchase.md Core
+## Rule 4): fired exactly once per detected silent cancel (Esc / OOB /
+## focus-loss — a palette-initiated drag that ended with no commit/reject
+## signal). Carries the equipment_id whose drag was cancelled. The
+## audio-director hook for the optional return sound. Arity: 1.
+signal silent_cancel_cue(equipment_id: String)
 
 ## preload aliases for the NEW sibling classes — the story's documented
 ## headless pattern: "headless 下 cross-script refs via preload aliases"
@@ -52,6 +92,24 @@ const SAVE_MORE_FMT := "Save $%d more"
 ## one-drag invariant — the palette is visibly disabled). Achromatic, calm.
 const DRAG_BLOCKED_MODULATE := Color(0.6, 0.6, 0.6)
 
+## STORY 004 — cue lifetime (seconds). Lightweight and non-intrusive (UX
+## spec: snap-in 120–250 ms; silent-cancel return cue is a soft flash). The
+## cue is a brief modulate flash that decays to idle; tests advance the
+## palette's _process by this duration to observe the decay.
+const CUE_DURATION := 0.4
+
+## STORY 004 — purchase-confirm flash (Core Rule 4): a warm cream/gold tint
+## (art-bible §4 Butter family) for the moment a purchase-initiated drag
+## successfully lands. Applied to the palette's modulate while the confirm
+## cue is active; decays to WHITE. Never touches tile-level state — a greyed
+## item stays greyed underneath (the flash is the whole-rack acknowledgement).
+const CONFIRM_CUE_MODULATE := Color(1.0, 0.97, 0.82)
+
+## STORY 004 — silent-cancel return flash (AC10): a soft warm-white as the
+## item returns to its idle-state visual. Slightly cooler than the confirm
+## flash so the two resolutions read differently at a glance.
+const RETURN_CUE_MODULATE := Color(1.0, 0.99, 0.93)
+
 ## Injected read-only catalog (composition-root owned).
 var _catalog: EquipmentCatalog
 ## Injected balance ledger — the re-grey trigger source.
@@ -75,10 +133,43 @@ var _empty_hint: Label
 var _initialized: bool = false
 ## One-drag invariant (Core Rule 3, AC5): true while a purchase drag started
 ## by THIS palette is in flight. Set after the gate passes + begin_drag;
-## cleared by _sync_drag_state() when PlacementSystem leaves DRAGGING (the
-## poll handles commit, reject, AND silent cancel — notify_silent_cancel is
-## idempotent so calling it after a committed/rejected resolution is a no-op).
+## cleared by _poll_drag_resolution() when PlacementSystem leaves DRAGGING
+## (the poll handles commit, reject, AND silent cancel — notify_silent_cancel
+## is idempotent so calling it after a committed/rejected resolution is a
+## no-op).
 var _drag_in_flight: bool = false
+
+## STORY 004 — the equipment_id of the palette-initiated drag currently in
+## flight ("" when idle). Palette-local purchase tracking: the purchase-confirm
+## handler (Core Rule 4) matches placement_committed's equipment_id against
+## this to decide whether the commit was purchase-initiated — deliberately
+## independent of Shop's _purchase_in_flight flag, whose listener clears it
+## earlier in the same emit (connection order in the composition root).
+## Cleared by _poll_drag_resolution() on any resolution.
+var _drag_equipment_id: String = ""
+
+## STORY 004 — purchase-confirm cue state (shop-purchase.md Core Rule 4):
+## true while the confirm flash is showing. Set by _start_confirm_cue() from
+## the placement_committed handler; cleared by _decay_cues() after
+## CUE_DURATION seconds. Queried by tests via is_confirm_cue_active().
+var _confirm_cue_active: bool = false
+
+## STORY 004 — the equipment_id the active confirm cue acknowledges.
+var _confirm_cue_equipment_id: String = ""
+
+## STORY 004 — silent-cancel return cue state (AC10): true while the
+## return flash is showing. Set by _start_return_cue() from
+## _poll_drag_resolution() when a palette drag ends with no commit/reject
+## signal; cleared by _decay_cues(). Queried via is_return_cue_active().
+var _return_cue_active: bool = false
+
+## STORY 004 — the equipment_id the active return cue acknowledges.
+var _return_cue_equipment_id: String = ""
+
+## STORY 004 — seconds remaining on the currently active cue (0.0 when
+## idle). Decremented in _process; when it hits 0 the cue flags clear and
+## the palette's modulate returns to the non-cue state.
+var _cue_time_remaining: float = 0.0
 
 
 ## Two-phase init (mirrors the SimSystem guard pattern with push_error, not
@@ -107,6 +198,13 @@ func init(p_catalog: EquipmentCatalog, p_economy: Economy, p_availability: Palet
 	_arbitration = p_arbitration
 	_build_ui()
 	_economy.balance_changed.connect(_on_balance_changed)
+	# STORY 004 — S3 placement_committed subscription (typed, Control
+	# Manifest). Only when placement is injected (render-only rigs have no
+	# drags to confirm). The purchase-confirm cue fires HERE, on committed —
+	# NOT on balance_changed — so a cost-0 purchase (which never fires
+	# balance_changed) still gets its confirmation feel (Core Rule 4).
+	if _placement != null:
+		_placement.placement_committed.connect(_on_placement_committed)
 	_refresh_all()
 
 
@@ -151,22 +249,134 @@ func _on_balance_changed(new_balance: int, delta: int) -> void:
 	_refresh_all()
 
 
-## Per-frame drag-resolution poll (one-drag invariant bookkeeping). When a
-## purchase drag started by THIS palette is in flight and PlacementSystem
-## leaves DRAGGING, the drag has resolved — commit (S3), reject (S4), or
-## silent cancel (Esc/OOB/focus-loss, which emits NO signal). For commit/
-## reject, Shop's own listener already cleared its flag, so
-## notify_silent_cancel() is a harmless no-op; for silent cancel it is the
-## ONLY resolution path — the palette must tell Shop (Core Rule 2 step 3).
-## Then the palette re-enables (one-drag invariant released, AC7).
-func _process(_delta: float) -> void:
+## Per-frame palette lifecycle (STORY 004 rework): drag-resolution poll,
+## cue decay, and the single modulate authority.
+##
+## The poll (AC7 + AC10): when a purchase drag started by THIS palette is in
+## flight and PlacementSystem leaves DRAGGING, the drag has resolved —
+## commit (S3), reject (S4), or silent cancel (Esc/OOB/focus-loss, which
+## emits NO signal). For commit/reject, Shop's own listener already cleared
+## its flag, so notify_silent_cancel() is a harmless no-op; for silent cancel
+## it is the ONLY resolution path — the palette must tell Shop (Core Rule 2
+## step 3) AND show the return cue (AC10 — the resolution is not invisible).
+## Then the palette re-enables (one-drag invariant released) and re-greys
+## every tile against the CURRENT balance (AC7 — idempotent: a commit
+## already re-greyed via balance_changed, reject/cancel need the refresh).
+func _process(delta: float) -> void:
 	if not _initialized:
 		return
-	if _drag_in_flight and (_placement == null or not _placement.is_dragging()):
-		if _placement != null:
-			_availability.notify_silent_cancel()
-		_drag_in_flight = false
+	_poll_drag_resolution()
+	_decay_cues(delta)
+	_apply_cue_visual()
+
+
+## STORY 004 — the drag-resolution poll (AC7/AC10, see _process doc).
+## Runs the silent-cancel discriminator BEFORE clearing _drag_in_flight:
+## Shop's flag still set ⟺ no commit/reject signal arrived ⟺ silent cancel.
+func _poll_drag_resolution() -> void:
+	if not _drag_in_flight or _placement == null or _placement.is_dragging():
+		return
+	if _availability.is_purchase_in_flight():
+		# AC10: silent cancel — notify Shop (Core Rule 2 step 3, zero spend)
+		# and show the return cue so the resolution is visible.
+		_availability.notify_silent_cancel()
+		_start_return_cue(_drag_equipment_id)
+	_drag_in_flight = false
+	_drag_equipment_id = ""
+	# AC7: re-grey against the CURRENT balance. Idempotent — after a commit
+	# balance_changed already refreshed the tiles; reject/cancel need this.
+	_refresh_all()
+
+
+## STORY 004 — S3 placement_committed handler (shop-purchase.md Core Rule 4).
+## Fires the purchase-confirm cue when the commit belongs to a drag THIS
+## palette initiated AND the equipment_id matches. Deliberately palette-local:
+## Shop's own listener (connected first in the composition root) clears its
+## flag inside this same emit, so consulting Shop's flag here would miss
+## every purchase — and a cost-0 purchase never fires balance_changed, so
+## the cue MUST live on committed, not on the balance signal. Relocate
+## commits (no palette gate) never match (_drag_in_flight false) — ignored.
+func _on_placement_committed(_instance_id: int, equipment_id: String, _footprint_cells: Array[Vector2i]) -> void:
+	if not _initialized or _placement == null:
+		return
+	if not _drag_in_flight or equipment_id != _drag_equipment_id:
+		return
+	_start_confirm_cue(equipment_id)
+
+
+## STORY 004 — starts the purchase-confirm cue (Core Rule 4): sets the
+## active flag + equipment, arms the decay timer, emits the signal (the
+## audio-director hook), and applies the flash visual immediately so the
+## acknowledgement is not deferred a frame.
+func _start_confirm_cue(equipment_id: String) -> void:
+	_confirm_cue_active = true
+	_confirm_cue_equipment_id = equipment_id
+	_cue_time_remaining = CUE_DURATION
+	purchase_confirm_cue.emit(equipment_id)
+	_apply_cue_visual()
+
+
+## STORY 004 — starts the silent-cancel return cue (AC10): the item returns
+## to its idle-state visual with a lightweight flash. Same mechanics as the
+## confirm cue; distinct signal + modulate so the two resolutions read
+## differently.
+func _start_return_cue(equipment_id: String) -> void:
+	_return_cue_active = true
+	_return_cue_equipment_id = equipment_id
+	_cue_time_remaining = CUE_DURATION
+	silent_cancel_cue.emit(equipment_id)
+	_apply_cue_visual()
+
+
+## STORY 004 — cue decay: counts the active cue down; at 0 the flags clear
+## (and _apply_cue_visual drops back to the non-cue modulate).
+func _decay_cues(delta: float) -> void:
+	if _cue_time_remaining <= 0.0:
+		return
+	_cue_time_remaining = maxf(0.0, _cue_time_remaining - delta)
+	if _cue_time_remaining <= 0.0:
+		_confirm_cue_active = false
+		_confirm_cue_equipment_id = ""
+		_return_cue_active = false
+		_return_cue_equipment_id = ""
+
+
+## STORY 004 — the single modulate authority: confirm flash > return flash >
+## drag dim > idle white. Re-applied every frame so no other code path can
+## leave a stale modulate behind (and the flash is naturally self-limiting).
+func _apply_cue_visual() -> void:
+	if _confirm_cue_active:
+		modulate = CONFIRM_CUE_MODULATE
+	elif _return_cue_active:
+		modulate = RETURN_CUE_MODULATE
+	elif _drag_in_flight:
+		modulate = DRAG_BLOCKED_MODULATE
+	else:
 		modulate = Color.WHITE
+
+
+## STORY 004 — true while the purchase-confirm cue is showing (Core Rule 4).
+## Test/UI query.
+func is_confirm_cue_active() -> bool:
+	return _confirm_cue_active
+
+
+## STORY 004 — the equipment_id the active confirm cue acknowledges ("" when
+## idle). Test/UI query.
+func get_confirm_cue_equipment_id() -> String:
+	return _confirm_cue_equipment_id
+
+
+## STORY 004 — true while the silent-cancel return cue is showing (AC10).
+## Test/UI query.
+func is_return_cue_active() -> bool:
+	return _return_cue_active
+
+
+## STORY 004 — the equipment_id the active return cue acknowledges ("" when
+## idle). Test/UI query.
+func get_return_cue_equipment_id() -> String:
+	return _return_cue_equipment_id
 
 
 ## Control-level input (story-002 engine note: "Control `_input` handles
@@ -215,6 +425,7 @@ func on_tile_mouse_down(equipment_id: String) -> bool:
 		_arbitration.begin_build()  # build takes over: clear selection first (no dual ghost)
 	_placement.begin_drag(equipment_id)
 	_drag_in_flight = true
+	_drag_equipment_id = equipment_id  # STORY 004: palette-local purchase tracking
 	modulate = DRAG_BLOCKED_MODULATE
 	return true
 
