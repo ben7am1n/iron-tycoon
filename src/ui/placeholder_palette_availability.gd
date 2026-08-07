@@ -65,3 +65,10 @@ func get_save_more_amount(equipment_id: String) -> int:
 	if def.unlock_requirement != "":
 		return -1
 	return def.cost - _economy.balance
+
+## Story 004 contract: the placeholder never sets a purchase-in-flight flag
+## (it has no begin_purchase_drag/notify_silent_cancel implementation — the
+## render-only palette never calls those), so this is always false. The real
+## Shop (Story 002) overrides with the transient-flag query.
+func is_purchase_in_flight() -> bool:
+	return false

@@ -1,12 +1,12 @@
 # Story 004: Drag Handoff + Purchase Confirm + Silent-Cancel Cue
 
 > **Epic**: build-shop-ui
-> **Status**: Ready
+> **Status**: Complete — 2026-08-07
 > **Layer**: Presentation
 > **Type**: UI
 > **Estimate**: M — 2 sessions (≤4h)
 > **Manifest Version**: 2026-07-23
-> **Last Updated**: 2026-08-06
+> **Last Updated**: 2026-08-07
 
 ## Context
 
@@ -30,9 +30,9 @@
 
 *From GDD `design/gdd/build-shop-ui.md`, scoped to this story:*
 
-- [ ] AC7 GIVEN a placement drag ends (commit/reject/cancel), WHEN it resolves, THEN the palette re-enables and re-greys against the current balance
-- [ ] AC10 GIVEN a purchase drag that ends in a silent cancel, WHEN the cancel is detected, THEN the palette item returns to its idle-state visual with a lightweight visual/audio return-to-palette cue (resolution is not invisible)
-- [ ] shop-purchase.md Core Rule 4 GIVEN a purchase-initiated drag successfully lands, WHEN `placement_committed` fires with `_purchase_in_flight` set, THEN a purchase-confirm cue triggers (on committed, NOT on balance_changed — a cost-0 purchase never fires balance_changed but still deserves the confirmation feel)
+- [x] AC7 GIVEN a placement drag ends (commit/reject/cancel), WHEN it resolves, THEN the palette re-enables and re-greys against the current balance
+- [x] AC10 GIVEN a purchase drag that ends in a silent cancel, WHEN the cancel is detected, THEN the palette item returns to its idle-state visual with a lightweight visual/audio return-to-palette cue (resolution is not invisible)
+- [x] shop-purchase.md Core Rule 4 GIVEN a purchase-initiated drag successfully lands, WHEN `placement_committed` fires with `_purchase_in_flight` set, THEN a purchase-confirm cue triggers (on committed, NOT on balance_changed — a cost-0 purchase never fires balance_changed but still deserves the confirmation feel)
 
 ---
 
@@ -105,7 +105,16 @@
 - `production/qa/evidence/bsui-drag-handoff-evidence.md` — manual walkthrough / sign-off
 - Automated coverage of confirm/cancel cue triggers where practical (e.g. `tests/unit/build_shop_ui/drag_feedback_test.gd`)
 
-**Status**: [ ] Not yet created
+**Status**: [x] Complete — 2026-08-07
+
+`tests/unit/build_shop_ui/drag_feedback_test.gd` (104 assertions) exists,
+passes, and is registered in `tests/headless_runner.gd` TEST_FILES. It covers
+AC7 (commit/reject/cancel re-enable + re-grey), AC10 (Esc / OOB / focus-loss
+return cue + decay + no-phantom-cue edge), and shop-purchase.md Core Rule 4
+(confirm on committed — including the cost-0 no-balance_changed discriminator,
+relocate no-confirm, reject no-confirm, mismatch guard, balance-alone
+discriminator). Full headless suite: **4193 passed, 0 failed** (4089
+pre-existing + 104 new). Evidence: `production/qa/evidence/build-shop-handoff-evidence.md`.
 
 ---
 

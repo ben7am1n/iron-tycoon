@@ -4,7 +4,7 @@
 > **GDD**: design/gdd/build-shop-ui.md
 > **UX Spec**: design/ux/build-shop-ui.md
 > **Architecture Module**: Build/Shop UI — palette rendering state, mode arbitration; exposes Shop palette, drag gate
-> **Status**: Ready
+> **Status**: Complete — 2026-08-07
 > **Stories**: 4 stories created — see below
 
 ## Stories
@@ -14,7 +14,7 @@
 | 001 | Shop Palette Rendering | UI | Complete — 2026-08-06 | ADR-0005 |
 | 002 | Purchase Gating + One-Drag Invariant + Hover Save-$X | Logic | Complete — 2026-08-06 | ADR-0005, ADR-0006 |
 | 003 | Build/Select Mode Arbitration | Integration | Complete — 2026-08-07 | ADR-0005 |
-| 004 | Drag Handoff + Purchase Confirm + Silent-Cancel Cue | UI | Ready | ADR-0005 |
+| 004 | Drag Handoff + Purchase Confirm + Silent-Cancel Cue | UI | Complete — 2026-08-07 | ADR-0005 |
 
 ## Overview
 

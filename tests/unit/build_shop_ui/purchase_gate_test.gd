@@ -634,7 +634,11 @@ func _test_commit_mismatch_no_spend_flag_untouched() -> void:
 	economy.connect("balance_changed", func(new_balance: int, delta: int) -> void: events.append(delta))
 
 	# Emit a commit carrying the WRONG equipment_id — the defensive branch.
-	placement.emit_signal("placement_committed", 7, "bench_press", [Vector2i(0, 0)])
+	# Typed array: emit_signal passes Variants and a raw Array literal fails
+	# the Array[Vector2i] handler conversion (handler never called — which
+	# would make this test vacuous instead of exercising the mismatch branch).
+	var fp: Array[Vector2i] = [Vector2i(0, 0)]
+	placement.emit_signal("placement_committed", 7, "bench_press", fp)
 
 	_check(events.is_empty(), "zero balance_changed emissions (no spend)")
 	_check(shop.call("get_purchase_equipment_id") == "treadmill_01", "flag UNTOUCHED — still treadmill_01 (got '%s')" % shop.call("get_purchase_equipment_id"))
