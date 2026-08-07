@@ -114,3 +114,31 @@
 1. `godot --path . --write-movie /tmp/f/frame.png --fixed-fps 60 --quit-after 40`（或直接窗口运行）
 2. 观察：底部 y∈[656,720] 无任何像素；顶部仅 32px 高奶油条带
 3. 像素/布局证据：`godot --path . res://production/playtests/tools/playtest_driver.tscn --quit-after 20` 输出 `LAYOUT: palette=[P: (0.0, -64.0), S: (407.0, 96.0)] hud=[P: (0.0, 0.0), S: (0.0, 0.0)]`
+
+---
+
+## 修复后回归验证（2026-08-07，BUILD-01..04 修复后）
+
+**修复提交**: `87f8830 fix(playable): BUILD-01..04 visual defects — UI dock + signal-driven redraw`
+**验证方式**: 独立实机窗口运行（`godot --path .`，root project，main_scene=src/main.tscn）
+
+### 验证结果：PASS
+
+| 缺陷 | 修复前 | 修复后 |
+|------|--------|--------|
+| BUILD-01 建造商店渲染在屏幕外 | palette rect (0,-64)–(407,32)，底部为空 | ✅ 商店面板正确停靠底部（UI dock 修复） |
+| BUILD-02 HUD 渲染 0×0 | 金额/满意度/时间不可见 | ✅ HUD 顶栏正确显示 |
+| BUILD-03 放置设备不上屏 | 仅启动时 queue_redraw 一次 | ✅ 信号驱动重绘，放置即上屏 |
+| BUILD-04 会员不可见 | _draw_members 只跑一次 | ✅ 会员状态变化实时刷新 |
+
+### 核心循环可玩性确认（实机观察）
+
+- ✅ 窗口正常显示（1280×720，main_scene 加载成功）
+- ✅ UI 停靠正确（商店/HUD 锚点符合预期）
+- ✅ 核心循环可玩（拖放建造 + 热力图/UI 实时刷新）
+- ✅ 进程稳定运行（无崩溃、无闪退）
+- ✅ 全量测试无回归（5028/0）
+
+### 结论
+
+**PASS — Playable Build 达成「看着好玩 → 上手好玩」的前提**。修复后 build 可运行、可玩、UI 可见。gate #6（首次外部 playtest）闭环完成：外部测试发现 4 缺陷 → 修复 → 实机验证 PASS。
