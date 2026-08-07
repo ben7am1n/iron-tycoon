@@ -4,7 +4,7 @@
 > **Epic**: selection-system (Presentation layer)
 > **Date**: 2026-08-07
 > **Engine**: Godot 4.7.1 (headless-verified)
-> **QA 终审**: 2026-08-07 PASS (t_ff6dffa5) — independent merged-main re-run 4668/0
+> **QA 终审**: 2026-08-07 PASS (t_ff6dffa5) — independent merged-main re-run 4772/0
 > **Story Type**: Integration — evidence BLOCKING (automated coverage required)
 
 ## Summary
@@ -39,8 +39,9 @@ Automated coverage: `tests/integration/selection_system/bridge_input_test.gd`
 — **102 asserts, 0 failed** (registered in `tests/headless_runner.gd`
 TEST_FILES).
 
-Full suite: **4668 passed, 0 failed** (independent QA re-run on merged main
-@ 0fe002e: baseline 4566 + 102 new; leak profile 218/12 unchanged).
+Full suite: **4772 passed, 0 failed** (independent QA re-run on merged main
+@ e255a78: 4668 + 104 BSUI-004 merged during review; leak profile 218/12
+unchanged).
 
 ## Blocking AC Verification
 

@@ -119,9 +119,9 @@ generation-guarded 2s SceneTreeTimer (`process_always=true`), and exposes
 `SimulationOrchestrator`; `tests/integration/selection_system/
 bridge_input_test.gd` (102 assertions) exists, passes, and is registered in
 `tests/headless_runner.gd` TEST_FILES. Full headless suite (independent QA
-re-run on merged main @ 0fe002e): 4668 passed / 0 failed / exit 0 /
-0 SCRIPT ERROR (baseline 4566 at main tip + 102 new; leak profile 218/12
-unchanged from pre-existing baseline).
+re-run on merged main @ e255a78): 4772 passed / 0 failed / exit 0 /
+0 SCRIPT ERROR (4668 pre-review tip + 104 BSUI-004 merged during review;
+leak profile 218/12 unchanged from pre-existing baseline).
 
 Coverage by AC (exact assert counts, verified against test file):
 - **TR-SEL-008** (26): bridge is a child of SimulationOrchestrator and
