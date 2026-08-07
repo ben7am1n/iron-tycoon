@@ -1,12 +1,12 @@
 # Story 001: Selection Logic Core + Instance Mapping
 
 > **Epic**: selection-system
-> **Status**: In Review
+> **Status**: Complete — 2026-08-07 (QA 终审 PASS, t_bcc85025)
 > **Layer**: Presentation
 > **Type**: Logic
 > **Estimate**: M — 2 sessions (≤4h)
 > **Manifest Version**: 2026-07-23
-> **Last Updated**: 2026-08-06
+> **Last Updated**: 2026-08-07
 
 ## Context
 
@@ -122,36 +122,38 @@
 **Required evidence**:
 - `tests/unit/selection_system/selection_logic_test.gd` — must exist and pass (single-select, swap, no-op, external invalidation, drag suppression, signal arity)
 
-**Status**: [x] In Review — 2026-08-06
+**Status**: [x] Complete — 2026-08-07 (QA 终审 PASS, t_bcc85025)
 
 `src/systems/selection_system.gd` (RefCounted logic object, no scene-tree)
 exists with the instance mapping and select/deselect logic; wired into
 `SimulationOrchestrator` (constructed once PlacementSystem exists, `_post_init`
 subscriptions active). `tests/unit/selection_system/selection_logic_test.gd`
 (75 assertions) exists, passes, and is registered in
-`tests/headless_runner.gd` TEST_FILES. Full headless suite: 3503 passed /
-0 failed (baseline 3428 + 75 new).
+`tests/headless_runner.gd` TEST_FILES. Full headless suite (independent QA
+re-run on merged main @ fb4f235): 4036 passed / 0 failed / exit 0 /
+0 SCRIPT ERROR (baseline 3961 at 5749e4d + 75 new; leak profile 218/12
+unchanged from pre-existing baseline).
 
-Coverage by AC:
-- **AC1** (13): click placed instance → selection resolves + `selection_changed`
+Coverage by AC (exact assert counts, verified against test file):
+- **AC1** (14): click placed instance → selection resolves + `selection_changed`
   (id, def, cell, rotation) fires with the exact payload; any footprint cell of
   a multi-cell piece selects; clicking empty floor with nothing selected →
   no resolution, no signal.
-- **AC2** (8): click empty buildable floor → clears + `selection_changed(null)`;
+- **AC2** (6): click empty buildable floor → clears + `selection_changed(null)`;
   edge: click NON-buildable floor → NO deselect; click empty floor with no
   selection → no-op.
-- **AC9** (5): click a different piece → DIRECT swap, zero intermediate
+- **AC9** (7): click a different piece → DIRECT swap, zero intermediate
   deselect emissions, payload for the new piece.
 - **AC10** (2): re-click the selected piece → no-op, no signal (not a
   toggle-off).
-- **AC11** (6): selected piece removed externally (grid.clear) → clears +
+- **AC11** (5): selected piece removed externally (grid.clear) → clears +
   `selection_changed(null)` exactly once; removal of a NON-selected piece →
   no signal, selection untouched, mapping entry dropped.
 - **AC12** (4): PlacementSystem `is_dragging()` → click does not resolve; after
   drag ends, clicks resolve normally.
 - **Core Rule 1** (3): `on_esc_pressed()` → clears + `selection_changed(null)`;
   second press with no selection → no-op.
-- **TR-SEL-005 mapping** (16): rotation derived from footprint match — R90
+- **TR-SEL-005 mapping** (22): rotation derived from footprint match — R90
   placement reports rotation 90; R180 reports 180 with the min-of-fp∪ac anchor
   convention (AC-D5.2); relocate re-commit updates the entry under the SAME
   instance_id (selection clears at pickup per GDD Core Rule 3, re-resolves at
@@ -160,10 +162,11 @@ Coverage by AC:
 - **Signal arity** (10): select emits EXACTLY FOUR arguments (sentinel-default
   spy: all 4 real values); deselect emits EXACTLY ONE argument, null (the
   TR-SEL-004 `selection_changed(null)` contract — b/c/d stay at the sentinel).
-  Engine semantics probe-verified in 4.7.1: `emit()` dispatches exactly the
-  passed arg count; emitting fewer than declared is legal (missing args become
-  defaults at the callable boundary), emitting more is a runtime error;
-  consumers must declare 1..4-arg handlers with optional params.
+  Engine semantics probe-verified in 4.7.1 (`signal_arity_probe*.gd`): `emit()`
+  dispatches exactly the passed arg count; emitting fewer than declared is
+  legal (missing args become defaults at the callable boundary), emitting more
+  is a runtime error; consumers must declare 1..4-arg handlers with optional
+  params.
 - **Guard** (2): public methods before init() → safe defaults, no crash.
 
 ---
