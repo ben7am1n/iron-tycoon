@@ -15,6 +15,11 @@
 ##   is_in_bounds(cell) (click validation; the bridge must not forward OOB).
 ##   All three are single-cell reads of the same character; the mapping is
 ##   self-maintained and never bulk-reads the grid.
+##   ONE SANCTIONED EXCEPTION — the load-time rebuild (Story 005 / Core
+##   Rule 8 / TR-SEL-006): rebuild_mapping() reads get_placed_instances(),
+##   the GDD's granted "load-time bulk read surface for mapping rebuild".
+##   The runtime maintenance paths never bulk-read; only this one-time load
+##   step does (and it is the mapping's ONLY other input — see below).
 ##
 ## INSTANCE MAPPING (TR-SEL-005 / Core Rule 8) — self-maintained
 ##   instance_id → {equipment_id, anchor, rotation, footprint_cells},
@@ -32,6 +37,16 @@
 ##     selection_changed(null) fires (AC11 external invalidation; also the
 ##     relocate pickup, which per GDD Core Rule 3 clears selection the
 ##     instant Move hands off).
+##   - Load-time rebuild (Story 005 / Core Rule 8 / TR-SEL-006/007): on
+##     load, NO placement_committed or grid_changed fires, so the mapping
+##     is rebuilt by rebuild_mapping() from the loaded grid — scan every
+##     occupied cell (per-cell reads, the same surface as the runtime
+##     path), group by occupant_id, and recover {equipment_id, rotation,
+##     anchor} by matching the transformed footprint against the catalog
+##     (the grid stores only integer occupant_id — TR-GS — so equipment
+##     identity is recovered geometrically; see rebuild_mapping()).
+##     SelectionSystem contributes NOTHING to the save blob (TR-SL-008);
+##     this rebuild is its only load-side restoration.
 ##
 ## SIGNAL (TR-SEL-004 / Core Rule 6 / ADR-0005 S7):
 ##   select:   selection_changed.emit(instance_id, def, anchor_cell, rotation)
@@ -254,6 +269,111 @@ func _on_grid_changed(footprint_cells_changed: Array[Vector2i], access_cells_cha
 		_mapping.erase(instance_id)
 		if instance_id == _selected_instance_id:
 			_clear_selection()
+
+
+## Load-time mapping rebuild (Core Rule 8, TR-SEL-006/007) — the mapping's
+## THIRD input: seeded from the loaded grid instead of runtime signals.
+##
+## Called by SaveLoad.load() Phase B step 3a (TR-SL-003) AFTER
+## GridSystem.deserialize() commit and BEFORE the session unpauses — no
+## placement_committed or grid_changed fires during load, so without this
+## step the mapping would be empty and the first click would fail to
+## resolve (the UX load-robustness AC).
+##
+## Source: GridSystem's LOAD-TIME BULK READ SURFACE — get_placed_instances()
+## (GDD dependency table: "get_occupant_id(cell) + load-time bulk read
+## surface for mapping rebuild (Core Rule 8)"). The DTO carries each
+## restored instance's footprint, access, ANCHOR, and ROTATION — the last
+## two are authoritative (they were written to the PlacementRecord at
+## commit time and round-trip through the save blob verbatim), so the
+## rebuild copies them directly. Only equipment_id needs recovery: the grid
+## stores just integer occupant_id (TR-GS), so identity is matched
+## geometrically against the catalog at the KNOWN rotation.
+##
+## Why the bulk surface and not a per-cell scan: rotation is order-
+## ambiguous from occupied cells alone. The runtime _derive_entry resolves
+## R0 vs R180 for a straight 1×2 by the ARRAY ORDER of placement_committed's
+## footprint (canonical def order preserved at commit); a row-major cell
+## scan loses that order, and the min-offset match would collapse R180 to
+## R0. The save blob stores the rotation, GridSystem restores it, and the
+## bulk surface carries it — so the rebuild reproduces the runtime mapping
+## EXACTLY (TR-SEL-007: "mapping after load equals mapping before save").
+##
+## Idempotent: rebuilds the mapping from scratch — running twice yields the
+## identical mapping (QA idempotency case). Also resets the selection to
+## none (GDD States: "(at load) mapping rebuilt → none selected").
+##
+## TR-SEL-007: SelectionSystem contributes NOTHING to the save blob; this
+## rebuild is its ONLY load-side restoration (derived state).
+##
+## Edge cases:
+## - zero placed pieces → empty mapping, no error
+## - an occupant whose footprint matches NO catalog def → data-consistency
+##   error (shouldn't happen): push_error + skip the entry (the piece stays
+##   on the grid but cannot be selected — loud, never a half-built entry)
+func rebuild_mapping() -> void:
+	if not _assert_initialized():
+		return
+	if _grid == null:
+		push_error("SelectionSystem: rebuild_mapping() called with no grid injected.")
+		return
+	if _catalog == null:
+		push_error("SelectionSystem: rebuild_mapping() called with no catalog injected.")
+		return
+	# Rebuild the mapping from scratch (idempotent) and reset the selection
+	# (GDD States: "(at load) mapping rebuilt → none selected").
+	_mapping = {}
+	_selected_instance_id = -1
+	for placed in _grid.get_placed_instances():
+		var equipment_id := _match_equipment_id(placed)
+		if equipment_id == "":
+			continue  # no catalog match — already push_error'd; skip entry
+		_mapping[placed.instance_id] = {
+			"equipment_id": equipment_id,
+			"anchor": placed.anchor,          # authoritative — restored from the save
+			"rotation": placed.rotation,      # authoritative — restored from the save
+			"footprint_cells": placed.footprint_cells.duplicate(),  # owned copy
+		}
+
+
+## Recovers the equipment_id for one restored PlacedInstance by matching its
+## transformed footprint against the catalog AT THE INSTANCE'S KNOWN
+## ROTATION (the rotation is restored grid data, not derived). Returns ""
+## (after push_error) when no def reproduces the footprint — the caller
+## skips the entry (data-consistency error; should never happen).
+##
+## Matching is ORDER-INDEPENDENT: serialization sorts cells lexicographically
+## (_serialize_cells), so the DTO's footprint order is never the canonical
+## def order. The placement anchor is derived from the MIN-OFFSET
+## relationship (placement_anchor = min(footprint) − min(rotated_offsets))
+## and verified by exact set equality — rotation is a bijection on offsets
+## plus a constant anchor shift, so set equality with equal cardinality is
+## an exact match.
+##
+## Determinism: catalog id order (get_all_ids = file order) — the FIRST
+## match wins, so identical-footprint defs resolve deterministically.
+func _match_equipment_id(placed: PlacedInstance) -> String:
+	var observed: Array[Vector2i] = placed.footprint_cells
+	for equipment_id in _catalog.get_all_ids():
+		var def: EquipmentDef = _catalog.get_definition(equipment_id)
+		if def == null:
+			continue  # catalog lost a def mid-session; try the next id
+		var wh := _declared_bounds(def.footprint_cells, def.access_cells)
+		var w := wh.x
+		var h := wh.y
+		var rotated_offsets: Array[Vector2i] = []
+		for cell in def.footprint_cells:
+			rotated_offsets.append(_rotate_offset(cell.x, cell.y, placed.rotation, w, h))
+		if rotated_offsets.size() != observed.size():
+			continue  # wrong cardinality — cannot match
+		var placement_anchor: Vector2i = _min_offset(observed) - _min_offset(rotated_offsets)
+		if _footprint_matches(def.footprint_cells, observed, placed.rotation, w, h, placement_anchor):
+			return equipment_id
+	# No def reproduces this footprint — data inconsistency (shouldn't
+	# happen: the piece predates the catalog or the catalog changed).
+	# NOTE: %s with a typed Array RHS is treated as an args list — str() wrap.
+	push_error("SelectionSystem: rebuild_mapping() — no catalog definition matches footprint %s." % str(observed))
+	return ""
 
 
 # === Anchor/rotation derivation (the mapping's only other input) ===
