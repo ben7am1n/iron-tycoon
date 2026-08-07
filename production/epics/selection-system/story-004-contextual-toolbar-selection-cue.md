@@ -1,7 +1,7 @@
 # Story 004: Contextual Toolbar + Selection Cue + Move Handoff
 
 > **Epic**: selection-system
-> **Status**: Complete — 2026-08-07 (implementation + headless QA PASS, 5028/0)
+> **Status**: Complete — 2026-08-07 (QA 终审 PASS, t_8ea90d8d)
 > **Layer**: Presentation
 > **Type**: UI
 > **Estimate**: M — 2 sessions (≤4h)
@@ -113,7 +113,7 @@
   - `tests/unit/selection_system/selection_cue_test.gd` — 27 asserts: Core Rule 2 (Soft Charcoal outline, footprint rect, zone-derived tint, corner icon shape), AC8 colorblind (shape+icon, fixed outline color), one ~1.5s breathe cycle + clamp, reduced-motion static, swap/deselect, double-init guard
   - `tests/unit/selection_system/sell_flow_test.gd` — 64 asserts: SEL-003's sale logic ported to the MERGED bridge API (request_sell_confirm/confirm_sell/_on_sell_confirm_timeout(generation)) — the parent branch's on_sell_pressed/on_sell_confirmed naming was never merged; AC5/6/7/13/14/15 + guards
 
-**Status**: Complete — headless suite 5028 passed, 0 failed (4877 pre-existing + 64 sell_flow + 60 toolbar + 27 cue)
+**Status**: [x] Complete — 2026-08-07 (QA 终审 PASS, t_8ea90d8d)
 
 **Composition wiring**: `SimulationOrchestrator` passes `economy` into `SelectionSystem.init(..., economy)` and connects `sel_bridge.sell_confirm_confirmed → selection_system.sell_selected` (typed, Control Manifest). The toolbar/cue are presentation Controls wired by the game scene via `init()` with typed signal connections (the same pattern as Hud/BuildShopPalette); the unit rigs wire them exactly as the composition root does.
 

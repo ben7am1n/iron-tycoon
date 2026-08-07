@@ -169,3 +169,58 @@ registered-file coverage enforced by the runner's registry check).
       assertions + manual walkthrough checklists above
 - [ ] Manual desktop walkthrough (pending interactive session)
 
+## QA Verification (t_8ea90d8d — terminal review PASS, 2026-08-07)
+
+Independent re-run on the merged state (worktree wt/t_8ea90d8d == parent
+impl 1552a5d, clean):
+
+- **Full headless suite**: `godot --headless --script tests/headless_runner.gd`
+  → **5028 passed / 0 failed / RESULT: PASSED / exit 0 / 0 SCRIPT ERROR /
+  0 parse errors** (4877 pre-existing + 151 new: sell_flow 64 + toolbar 60 +
+  cue 27). Leak profile 218 ObjectDB / 12 resources — unchanged from the
+  established baseline (identical numbers in every Sprint-5 QA review); no
+  new leaks introduced by SEL-004.
+- **Standalone**: the three new files ran in-suite at exactly the claimed
+  counts — `sell_flow_test.gd` 64/0, `toolbar_state_test.gd` 60/0,
+  `selection_cue_test.gd` 27/0 (runner's per-file rows confirm; runner's
+  registry check reports zero unregistered test files).
+- **BLOCKING 核对 4/4 (all automated)**:
+  - AC4 Move 交接 — `toolbar_state_test.gd`: selection cleared the INSTANT
+    Move is pressed (`get_selected_instance_id() == -1`, one
+    `selection_changed(null)`), PlacementSystem `is_dragging()` true in the
+    SAME synchronous call (begin_relocate not deferred — "within one frame"
+    holds by construction), relocate holds the picked-up instance id + the
+    piece's def, piece absent from the grid during the relocate, toolbar
+    hidden; edges: Move during an in-flight drag → defensive no-op,
+    Move with no selection → silent no-op.
+  - AC8 色盲可辨 — `selection_cue_test.gd`: outline color is FIXED Soft
+    Charcoal `#3C3A42` (never per-piece — no hue carries selection state);
+    corner icon is a SHAPE glyph (◆, 10px) in the same Charcoal; glow tint
+    (cardio→Sky / strength→Sage / warm fallback) purely decorative under
+    outline+icon; toolbar sell morph carried by TEXT ("Sell" →
+    "Confirm sell +$X"), Butter secondary.
+  - Core Rule 2 选中提示 — `selection_cue_test.gd`: footprint rect covers
+    the selected cells exactly (grid→pixel at cell size); 2px Soft Charcoal
+    outline; zone-derived tint glow; corner icon legibly sized (8–16px);
+    breathe is ONE cycle (tween running on selection, duration in GDD safe
+    range 1.2–2.0s, default 1.5s, config override clamped 0.1 → 1.2s);
+    deselect kills the tween; reduced-motion static.
+  - UX AC 工具栏 Inspect/Move/Sell — `toolbar_state_test.gd`: hidden with
+    no selection / visible with a selection, holds selected id, all three
+    buttons built; anchored near the piece, offset to the free side,
+    clamped to viewport; Move disabled while `is_dragging()` (bridge
+    `is_move_blocked()` per-frame poll — BSUI-004 precedent), re-enabled
+    after the drag resolves; Sell morph with EXACT refund (cost 350 →
+    "+$175"), confirm completes sale, revert restores; Inspect emits
+    `inspect_requested` payload; swap moves directly, Esc hides,
+    reduced-motion instant.
+- **Composition wiring verified**: `SimulationOrchestrator` passes
+  `economy` into `SelectionSystem.init(..., economy)` and connects
+  `sel_bridge.sell_confirm_confirmed → selection_system.sell_selected`
+  (typed, Control Manifest). The toolbar/cue bind the MERGED bridge API
+  (`request_sell_confirm`/`confirm_sell`) — the parent branch's
+  `on_sell_pressed` naming was never merged; the port is correct.
+- **EPIC/story backfill**: story-004 Status + Test Evidence → Complete
+  (QA 终审 PASS); EPIC.md story 004 row → Complete (QA 终审 PASS,
+  t_8ea90d8d).
+
