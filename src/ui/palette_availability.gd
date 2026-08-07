@@ -52,3 +52,13 @@ func notify_silent_cancel() -> void:
 func get_save_more_amount(equipment_id: String) -> int:
 	push_error("PaletteAvailability.get_save_more_amount() is not implemented — subclass must override")
 	return -1
+
+## True while a purchase drag is in flight (the transient flag is set)
+## — Story 004's silent-cancel discriminator (shop-purchase.md Core Rule 2
+## step 3). The palette's per-frame drag-resolution poll reads this to
+## distinguish a silent cancel (flag still set — no commit/reject signal
+## arrived) from a commit/reject (the Shop listener already cleared it).
+## Pure query — no mutation, no signal.
+func is_purchase_in_flight() -> bool:
+	push_error("PaletteAvailability.is_purchase_in_flight() is not implemented — subclass must override")
+	return false
