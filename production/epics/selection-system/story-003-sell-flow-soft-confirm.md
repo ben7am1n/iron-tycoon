@@ -1,7 +1,7 @@
 # Story 003: Sell Flow (Soft-Confirm + Refund)
 
 > **Epic**: selection-system
-> **Status**: Ready
+> **Status**: Complete — 2026-08-07 (implementation + headless QA PASS, 5028/0)
 > **Layer**: Presentation
 > **Type**: Logic
 > **Estimate**: M — 2 sessions (≤4h)
@@ -30,12 +30,12 @@
 
 *From GDD `design/gdd/selection-system.md`, scoped to this story:*
 
-- [ ] AC5 GIVEN a selection, WHEN the player clicks Sell, THEN the button shows "Confirm sell +$X" for 2 s; if clicked again in that window, the piece is removed, Economy is credited `refund`, and selection clears
-- [ ] AC6 GIVEN the sell-confirm window is open, WHEN 2 s elapse with no second click, THEN it reverts to the normal Sell button (no destructive default)
-- [ ] AC7 GIVEN a completed sell of a piece with cost `C`, WHEN it resolves, THEN Economy's balance increases by exactly `int(round(refund_rate × C))` (credit fires once) — integer credit, matching Economy's `int`-based balance
-- [ ] AC13 GIVEN a piece with `cost = 0`, WHEN sold, THEN `refund = 0`, the piece is removed, Economy is credited 0, and `selection_changed(null)` fires — the sale completes cleanly with no money effect
-- [ ] AC15 GIVEN `refund_rate = 0.5` and `cost = 201` (odd value), WHEN the sell resolves, THEN `refund = int(round(100.5)) = 101` — ties round away from zero
-- [ ] AC14 GIVEN an `instance_id` that was sold, WHEN the retired id is queried, THEN it does not resolve (mapping entry removed on sell; ids never reissued within a session)
+- [x] AC5 GIVEN a selection, WHEN the player clicks Sell, THEN the button shows "Confirm sell +$X" for 2 s; if clicked again in that window, the piece is removed, Economy is credited `refund`, and selection clears
+- [x] AC6 GIVEN the sell-confirm window is open, WHEN 2 s elapse with no second click, THEN it reverts to the normal Sell button (no destructive default)
+- [x] AC7 GIVEN a completed sell of a piece with cost `C`, WHEN it resolves, THEN Economy's balance increases by exactly `int(round(refund_rate × C))` (credit fires once) — integer credit, matching Economy's `int`-based balance
+- [x] AC13 GIVEN a piece with `cost = 0`, WHEN sold, THEN `refund = 0`, the piece is removed, Economy is credited 0, and `selection_changed(null)` fires — the sale completes cleanly with no money effect
+- [x] AC15 GIVEN `refund_rate = 0.5` and `cost = 201` (odd value), WHEN the sell resolves, THEN `refund = int(round(100.5)) = 101` — ties round away from zero
+- [x] AC14 GIVEN an `instance_id` that was sold, WHEN the retired id is queried, THEN it does not resolve (mapping entry removed on sell; ids never reissued within a session)
 
 ---
 
@@ -119,9 +119,17 @@
 
 **Story Type**: Logic
 **Required evidence**:
-- `tests/unit/selection_system/sell_flow_test.gd` — must exist and pass (soft-confirm window, refund formula incl. .5 boundary, cost-0, retired-id)
+- [x] `tests/unit/selection_system/sell_flow_test.gd` — 64 asserts, registered in `tests/headless_runner.gd` TEST_FILES:
+  - AC5/AC6 soft-confirm window: request → pending + `sell_confirm_started`; second click → `confirm_sell` → `sell_confirm_confirmed` → `sell_selected` (piece removed, Economy credited EXACTLY once, `selection_changed(null)`); 2s timeout / Esc / click-away → revert, no sale, no balance change, selection stays
+  - AC7 refund formula: C=200 → 100, C=350 → 175, credit-once + reason `"sell:instance_<id>"`, `balance_changed` positive delta once
+  - AC13 cost-0: refund 0, piece removed, `selection_changed(null)`, Economy NOT credited (skip — credit(0) rejected by Economy's amount > 0 gate)
+  - AC14 retired id: after sale the instance_id does not resolve (mapping entry removed via grid_changed reconciliation); a new placement reuses a FUTURE id — no collision
+  - AC15 odd boundary: cost 201 → `int(round(100.5))` = 101 (ties away from zero; explicit `: int` + `int()` cast)
+  - Guards: confirm without pending window = no-op; double-confirm = credit once; sell with no selection = silent no-op; sell without injected Economy = loud wiring error
 
-**Status**: [ ] Not yet created
+**Status**: [x] Complete — headless suite 5028 passed, 0 failed (4877 pre-existing + 64 sell_flow; the SEL-003 port landed inside the SEL-004 implementation commit 1552a5d — the parent branch's `on_sell_pressed`/`on_sell_confirmed` naming was never merged; the port binds the MERGED bridge API `request_sell_confirm`/`confirm_sell`)
+
+**Composition wiring**: `SimulationOrchestrator` passes `economy` into `SelectionSystem.init(..., economy)` and connects `sel_bridge.sell_confirm_confirmed → selection_system.sell_selected` (typed, Control Manifest). The bridge owns the 2s soft-confirm timer (generation-guarded, render-time via `create_timer(duration, true)`); SelectionSystem owns the refund formula (`REFUND_RATE = 0.5`, SelectionSystem-owned per ADR-0006 Key Interfaces), the grid removal (`GridSystem.clear` → grid_changed reconciliation drops the mapping entry — AC14 — and clears the selection — AC5/AC13), and the exactly-once `Economy.credit(refund, "sell:instance_<id>")` (AC7).
 
 ---
 
