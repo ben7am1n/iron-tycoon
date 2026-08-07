@@ -75,7 +75,7 @@ AccessBlockedLayer (walled rig with real Congestion/Navigation) + real Congestio
 **Suite run** (includes this file):
 
 ```
-TOTAL: 4115 passed, 0 failed   (4036 prior + 79 new)
+TOTAL: 4168 passed, 0 failed   (4036 prior + 79 new + 53 BSUI-003 merged from main)
 RESULT: PASSED
 ```
 
