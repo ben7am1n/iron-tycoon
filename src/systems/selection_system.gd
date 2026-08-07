@@ -65,7 +65,27 @@
 ## NO SCENE-TREE / NO AWAIT (TR-SEL-008): this object never receives
 ## _input(), never creates timers via get_tree(), and selection resolution
 ## is pure synchronous logic (no await) — the bridge owns all of that.
+##
+## SELL PATH (Story 003 / TR-SEL-003, ADR-0006): the confirmed sale lives
+## here — refund = int(round(REFUND_RATE × cost)) (AC7/AC15), grid removal
+## via GridSystem.clear() (its grid_changed reconciliation drops the
+## mapping entry — AC14 — and clears the selection — AC5/AC13), and
+## Economy.credit() fires EXACTLY ONCE (AC7). Economy is injected as an
+## OPTIONAL 4th init param (null = no sell support; sell_selected() then
+## fails loudly — the pre-003 selection logic never needs it). The bridge
+## only owns the 2s soft-confirm window (UI-layer state); on confirm it
+## emits sell_confirm_confirmed and the composition root connects that to
+## sell_selected().
 class_name SelectionSystem extends SimSystem
+
+
+## GDD Formulas / ADR-0006 §3 + Key Interfaces — the refund fraction,
+## SelectionSystem-owned (NOT Economy: the ECON-003 structural test pins
+## refund knowledge out of economy.gd; ADR-0006 Key Interfaces row:
+## "REFUND_RATE = 0.5 (constant in SelectionSystem) — SelectionSystem-owned.
+## Not known to Economy."). Provisional 0.5; the economy-designer owns the
+## final value (GDD OQ2), changed via this constant.
+const REFUND_RATE: float = 0.5
 
 
 ## S7 in the ADR-0005 Signal Catalog (arity 4 on select, 1 on deselect —
@@ -84,6 +104,13 @@ var _placement: PlacementSystem
 ## Injected catalog — def lookup for the select payload and for the
 ## rotation/anchor derivation at mapping-build time.
 var _catalog: EquipmentCatalog
+
+## Injected economy — the sell-refund credit target (Story 003, ADR-0006
+## Path B: credit(refund, "sell:instance_<id>")). OPTIONAL (default null):
+## the selection logic core (Story 001) never touches money, so pre-003
+## tests and consumers inject 3 args; sell_selected() fails loudly when
+## null (wiring error — a selection without sell support).
+var _economy: Economy
 
 
 ## Current selection; -1 = none (GridSystem's empty sentinel convention).
@@ -107,12 +134,15 @@ var _mapping: Dictionary = {}
 ## Two-phase init (ADR-0001). Stores the injected dependencies; NO side
 ## effects (signal subscriptions live in _post_init). Exactly once — a
 ## second call is a hard error (SimSystem._mark_initialized guard).
-func init(grid: GridSystem, placement: PlacementSystem, catalog: EquipmentCatalog) -> void:
+## [economy] is optional (null = no sell support) — the pre-003 selection
+## logic never needs it; sell_selected() fails loudly when null.
+func init(grid: GridSystem, placement: PlacementSystem, catalog: EquipmentCatalog, economy: Economy = null) -> void:
 	if not _mark_initialized():
 		return
 	_grid = grid
 	_placement = placement
 	_catalog = catalog
+	_economy = economy
 
 
 func system_name() -> String:
@@ -190,6 +220,89 @@ func clear_selection() -> void:
 	if not _assert_initialized():
 		return
 	_clear_selection()
+
+
+## THE CONFIRMED SALE (Story 003 / TR-SEL-003, ADR-0006) — performs the
+## actual sale of the currently selected piece. Invoked by the composition
+## root's connection from SelectionInputBridge.sell_confirm_confirmed (the
+## bridge owns the 2s soft-confirm window; this is the logic it unblocks).
+## Returns true on a completed sale, false (no-op) otherwise.
+##
+## Steps (order is load-bearing — see each note):
+##   1. Resolve the selected instance through the mapping → equipment_id →
+##      def → cost. Missing mapping entry / catalog def = data-consistency
+##      error: loud, no sale (mirrors _select_instance's treatment).
+##   2. refund = int(round(REFUND_RATE × cost)) — AC7/AC15. The int() cast
+##      is REQUIRED (GDScript round() returns float; Economy.credit() takes
+##      int). GDScript round() rounds .5 ties away from zero (AC15: 100.5 →
+##      101).
+##   3. Occupancy pre-check: the piece must STILL be on the grid (per-cell
+##      read, within the granted surface). A mapping entry without grid
+##      presence is a phantom — loud, no credit (never pay for a ghost).
+##   4. GridSystem.clear(instance_id) — removes the piece. Its grid_changed
+##      fires the mapping reconciliation: the entry is dropped (AC14) and,
+##      since the sold instance was selected, selection clears with
+##      selection_changed(null) (AC5/AC13). This is the SAME external-
+##      invalidation path as AC11 — no duplicate cleanup here.
+##   5. Economy.credit(refund, "sell:instance_<id>") — EXACTLY ONCE (AC7),
+##      synchronous + immediate (ADR-0006). refund == 0 (AC13): SKIP the
+##      call entirely — credit(0) is rejected by Economy's amount > 0 gate
+##      (returns false + push_warning); GDD says "credited 0 harmlessly —
+##      the sale still completes", and skipping is the no-warning way to
+##      complete it.
+##
+## Selling a machine a member is using is ALLOWED (Pillar 2) — MemberSim
+## handles equipment-deleted-mid-use gracefully; no block here.
+func sell_selected() -> bool:
+	if not _assert_initialized():
+		return false
+	if _economy == null:
+		# Wiring error — sell support requires Economy (ADR-0006 Path B).
+		push_error("SelectionSystem.sell_selected() — economy not injected; cannot credit a refund.")
+		return false
+	if _selected_instance_id == -1:
+		return false  # nothing selected — nothing to sell (silent no-op)
+	var instance_id: int = _selected_instance_id
+	if not _mapping.has(instance_id):
+		push_error("SelectionSystem.sell_selected() — selected instance_id %d has no mapping entry (sold already?)." % instance_id)
+		return false
+	var entry: Dictionary = _mapping[instance_id]
+	var equipment_id: String = entry["equipment_id"]
+	var def: EquipmentDef = _catalog.get_definition(equipment_id)
+	if def == null:
+		push_error("SelectionSystem.sell_selected() — catalog lost definition for '%s' (mapping inconsistency)." % equipment_id)
+		return false
+	# AC7/AC15: explicit : int + int() cast — round() returns float.
+	var refund: int = get_sell_refund(def)
+	# Phantom guard: the piece must actually occupy the grid (the mapping is
+	# reconciled on every grid_changed, so a selected entry implies presence —
+	# this is defense against a desync that would otherwise credit a ghost).
+	var anchor_cell: Vector2i = entry["footprint_cells"][0]
+	if _grid.get_occupant_id(anchor_cell) != instance_id:
+		push_error("SelectionSystem.sell_selected() — instance_id %d mapped but absent from the grid at %s (data desync; no sale)." % [instance_id, anchor_cell])
+		return false
+	# Remove the piece. grid_changed fires → reconciliation drops the mapping
+	# entry (AC14) and clears the selection + selection_changed(null)
+	# (AC5/AC13) — exactly the AC11 external-invalidation path.
+	_grid.clear(instance_id)
+	# Credit EXACTLY ONCE (AC7). AC13: refund 0 → skip (credit(0) rejected by
+	# Economy's amount > 0 gate; skipping completes the sale without warning
+	# noise — GDD "credited 0 harmlessly").
+	if refund > 0:
+		_economy.credit(refund, "sell:instance_%d" % instance_id)
+	return true
+
+
+## Refund query for the toolbar's "Confirm sell +$X" morph label (Story
+## 004): refund = int(round(REFUND_RATE × cost)). The int() cast is
+## REQUIRED (round() returns float; the label must show an integer). Pure
+## read — no mutation, no signal. The formula's single source: the toolbar
+## renders it, sell_selected() applies it — both call here.
+func get_sell_refund(def: EquipmentDef) -> int:
+	if def == null:
+		push_error("SelectionSystem.get_sell_refund() — null def.")
+		return 0
+	return int(round(REFUND_RATE * def.cost))
 
 
 ## Current selected instance_id, or -1 when none. 0 is a legal selection —

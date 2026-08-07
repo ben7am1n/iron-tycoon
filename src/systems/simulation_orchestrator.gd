@@ -212,10 +212,13 @@ func _initialize_topology() -> void:
 	# navigation    = Navigation.new(); navigation.init(grid_system)  # its story
 	# Tier 6: selection — constructed once placement exists (it subscribes to
 	# placement_committed + grid_changed for the instance mapping, SEL-001;
-	# the input bridge Node is selection-system Story 002).
+	# the input bridge Node is selection-system Story 002). Economy is passed
+	# through for the sell-refund credit path (SEL-003, ADR-0006 Path B) —
+	# the field may be null until economy's own composition story lands, in
+	# which case sell_selected() fails loudly (no silent partial wiring).
 	if placement_system != null:
 		selection_system = SelectionSystem.new()
-		selection_system.init(grid_system, placement_system, equipment_catalog)
+		selection_system.init(grid_system, placement_system, equipment_catalog, economy)
 	# Tier 2-7: member_sim, zone_rules, congestion, satisfaction, economy,
 	#           shop, save_load (stories not yet implemented)
 	#
@@ -240,17 +243,18 @@ func _initialize_topology() -> void:
 		bridge.name = "PlacementInputBridge"
 		bridge.init(placement_system, grid_system, PLACEMENT_CELL_SIZE)
 		add_child(bridge)
-	# Selection input bridge (SEL-002): created as a child Node by the
-	# composition root, mirroring the placement bridge (TR-SEL-008,
-	# ADR-0005 §5). The bridge converts screen→cell clicks, forwards Esc/Del
-	# via focus-independent _unhandled_key_input (dual-focus 4.6+), and owns
-	# the 2s sell-confirm timer (UI-layer state, never the RefCounted
-	# system). The orchestrator holds SelectionSystem as a strong RefCounted
-	# field, so destroying/recreating this bridge Node never frees the system
-	# (AC bridge — freed-object detection). Placement is injected for the
-	# Move-during-drag guard (story Implementation Notes, AC27).
+	# Selection input bridge (SEL-002): mirrors PlacementInputBridge — a child
+	# Node owned by the composition root that forwards grid clicks + Esc/Del to
+	# the RefCounted SelectionSystem (TR-SEL-008) and owns the 2s sell-confirm
+	# timer (UI-layer state, not simulation state). Also receives PlacementSystem
+	# for the Move-during-drag guard (is_move_blocked, AC27). Only created once
+	# selection exists (which requires placement).
 	if selection_system != null:
 		var sel_bridge := SelectionInputBridge.new()
 		sel_bridge.name = "SelectionInputBridge"
 		sel_bridge.init(selection_system, grid_system, PLACEMENT_CELL_SIZE, placement_system)
+		# SEL-003: the bridge's confirm signal drives the actual sale — typed
+		# signal connection (Control Manifest: typed connections only). The
+		# bridge owns the 2s window (UI state); the system performs the sale.
+		sel_bridge.sell_confirm_confirmed.connect(selection_system.sell_selected)
 		add_child(sel_bridge)

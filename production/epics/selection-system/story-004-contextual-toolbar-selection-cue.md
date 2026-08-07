@@ -1,7 +1,7 @@
 # Story 004: Contextual Toolbar + Selection Cue + Move Handoff
 
 > **Epic**: selection-system
-> **Status**: Ready
+> **Status**: Complete — 2026-08-07 (implementation + headless QA PASS, 5028/0)
 > **Layer**: Presentation
 > **Type**: UI
 > **Estimate**: M — 2 sessions (≤4h)
@@ -30,10 +30,10 @@
 
 *From GDD `design/gdd/selection-system.md`, scoped to this story:*
 
-- [ ] AC4 GIVEN a selection, WHEN the player presses Move, THEN SelectionSystem's cue clears (selection released) and PlacementSystem's relocate-ghost appears at that instance's position within one frame
-- [ ] AC8 GIVEN a colorblind player, WHEN any piece is selected, THEN the selection state is legible from outline shape + icon alone with color desaturated
-- [ ] Core Rule 2 GIVEN a selection, WHEN the cue renders, THEN it shows a Soft Charcoal 2px outline around the selected footprint cells + a subtle glow in the piece's own tint + a small "selected" corner icon; at most one slow ~1.5s breathe cycle — no harsh flash
-- [ ] UX AC GIVEN the toolbar renders, WHEN a piece is selected, THEN Inspect / Move / Sell are visible near the piece; Move is disabled during an active placement drag
+- [x] AC4 GIVEN a selection, WHEN the player presses Move, THEN SelectionSystem's cue clears (selection released) and PlacementSystem's relocate-ghost appears at that instance's position within one frame
+- [x] AC8 GIVEN a colorblind player, WHEN any piece is selected, THEN the selection state is legible from outline shape + icon alone with color desaturated
+- [x] Core Rule 2 GIVEN a selection, WHEN the cue renders, THEN it shows a Soft Charcoal 2px outline around the selected footprint cells + a subtle glow in the piece's own tint + a small "selected" corner icon; at most one slow ~1.5s breathe cycle — no harsh flash
+- [x] UX AC GIVEN the toolbar renders, WHEN a piece is selected, THEN Inspect / Move / Sell are visible near the piece; Move is disabled during an active placement drag
 
 ---
 
@@ -107,10 +107,15 @@
 
 **Story Type**: UI
 **Required evidence**:
-- `production/qa/evidence/selection-toolbar-evidence.md` — manual walkthrough / sign-off
-- Automated coverage of Move-handoff state transitions where practical (e.g. `tests/unit/selection_system/toolbar_state_test.gd`)
+- [x] `production/qa/evidence/selection-toolbar-evidence.md` — manual walkthrough / sign-off
+- [x] Automated coverage of Move-handoff state transitions (AC4) + toolbar/cue state:
+  - `tests/unit/selection_system/toolbar_state_test.gd` — 60 asserts: AC4 Move handoff (selection clears instantly + PlacementSystem DRAGGING/relocate ghost picks up), Move disabled during drag (UX AC, per-frame poll), Sell morph (started label "Confirm sell +$X" with exact refund / confirm completes sale / revert restores "Sell"), Inspect open hook, swap/deselect/reduced-motion, double-init guard
+  - `tests/unit/selection_system/selection_cue_test.gd` — 27 asserts: Core Rule 2 (Soft Charcoal outline, footprint rect, zone-derived tint, corner icon shape), AC8 colorblind (shape+icon, fixed outline color), one ~1.5s breathe cycle + clamp, reduced-motion static, swap/deselect, double-init guard
+  - `tests/unit/selection_system/sell_flow_test.gd` — 64 asserts: SEL-003's sale logic ported to the MERGED bridge API (request_sell_confirm/confirm_sell/_on_sell_confirm_timeout(generation)) — the parent branch's on_sell_pressed/on_sell_confirmed naming was never merged; AC5/6/7/13/14/15 + guards
 
-**Status**: [ ] Not yet created
+**Status**: Complete — headless suite 5028 passed, 0 failed (4877 pre-existing + 64 sell_flow + 60 toolbar + 27 cue)
+
+**Composition wiring**: `SimulationOrchestrator` passes `economy` into `SelectionSystem.init(..., economy)` and connects `sel_bridge.sell_confirm_confirmed → selection_system.sell_selected` (typed, Control Manifest). The toolbar/cue are presentation Controls wired by the game scene via `init()` with typed signal connections (the same pattern as Hud/BuildShopPalette); the unit rigs wire them exactly as the composition root does.
 
 ---
 
