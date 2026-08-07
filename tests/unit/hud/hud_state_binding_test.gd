@@ -188,13 +188,11 @@ func _test_ac8_load_state_binding() -> void:
 	var money_label: Label = hud.call("get_money_label")
 	var sat_label: Label = hud.call("get_satisfaction_label")
 	var day_label: Label = hud.call("get_day_label")
-	var pause_label: Label = hud.call("get_pause_state_label")
-	var speed_label: Label = hud.call("get_speed_state_label")
 	_check(money_label.text == "$1,240", "money label shows loaded $1,240 (got '%s')" % money_label.text)
 	_check(sat_label.text == "77%", "satisfaction label shows loaded 77%% (got '%s')" % sat_label.text)
 	_check(day_label.text == "Day 3", "day label shows loaded Day 3 (got '%s')" % day_label.text)
-	_check(pause_label.text == "PAUSED", "pause state shows PAUSED (TimeSystem loads paused — got '%s')" % pause_label.text)
-	_check(speed_label.text == "—", "speed state shows — while paused (got '%s')" % speed_label.text)
+	_check(bool(hud.call("is_pause_active")), "pause button active on load (TimeSystem loads paused — AC1/AC8)")
+	_check(int(hud.call("get_active_speed")) == 0, "no speed button active on load (got %d)" % int(hud.call("get_active_speed")))
 
 
 func _test_ac8_no_stale_values_after_refresh() -> void:
@@ -291,25 +289,30 @@ func _test_day_rollover_on_tick() -> void:
 # === pause/speed state binding ===
 
 func _test_pause_speed_state_binding() -> void:
-	print("\n[Transport] pause/speed state read-only binding")
+	print("\n[Transport] pause/speed state read-only binding (Story-001 scope)")
 	var rig := _make_rig()
 	var ts: RefCounted = rig["ts"]
 	var orch: Node = rig["orch"]
 	var hud: Control = rig["hud"]
-	var pause_label: Label = hud.call("get_pause_state_label")
-	var speed_label: Label = hud.call("get_speed_state_label")
-	_check(pause_label.text == "PAUSED", "fresh TimeSystem is paused (got '%s')" % pause_label.text)
+	var pause_button: Button = hud.call("get_pause_button")
+	var speed1: Button = hud.call("get_speed_button", 1)
+	var speed3: Button = hud.call("get_speed_button", 3)
+	_check(bool(hud.call("is_pause_active")), "fresh TimeSystem is paused -> pause button active (got %s)" % bool(hud.call("is_pause_active")))
+	_check(int(hud.call("get_active_speed")) == 0, "fresh paused -> no speed active (got %d)" % int(hud.call("get_active_speed")))
 	ts.call("resume")
 	orch.call("_advance_tick")  # refresh cadence
-	_check(pause_label.text == "RUNNING", "after resume -> RUNNING (got '%s')" % pause_label.text)
-	_check(speed_label.text == "1×", "resume defaults to 1× (got '%s')" % speed_label.text)
+	_check(not bool(hud.call("is_pause_active")), "after resume -> pause button inactive")
+	_check(int(hud.call("get_active_speed")) == 1, "resume defaults to 1× (got %d)" % int(hud.call("get_active_speed")))
 	ts.call("set_speed", 3)
 	orch.call("_advance_tick")
-	_check(speed_label.text == "3×", "after set_speed(3) -> 3× (got '%s')" % speed_label.text)
+	_check(int(hud.call("get_active_speed")) == 3, "after set_speed(3) -> 3× (got %d)" % int(hud.call("get_active_speed")))
 	ts.call("pause")
 	orch.call("_advance_tick")  # tick_completed still fires while paused (external drive in test)
-	_check(pause_label.text == "PAUSED", "after pause -> PAUSED (got '%s')" % pause_label.text)
-	_check(speed_label.text == "—", "speed shows — while paused (got '%s')" % speed_label.text)
+	_check(bool(hud.call("is_pause_active")), "after pause -> pause button active")
+	_check(int(hud.call("get_active_speed")) == 0, "paused -> no speed active (got %d)" % int(hud.call("get_active_speed")))
+	# Buttons are the Story-004 surface; Story-001 only binds state via the getters.
+	_check(pause_button is Button, "transport cluster exposes a pause Button")
+	_check(speed1 is Button and speed3 is Button, "transport cluster exposes speed Buttons")
 
 
 # === config ===
@@ -355,7 +358,7 @@ func _test_double_init_guard() -> void:
 # === TR-HUD-006 read-only discipline ===
 
 func _test_read_only_no_mutation() -> void:
-	print("\n[TR-HUD-006] HUD operations never mutate sim state")
+	print("\n[TR-HUD-006] HUD operations never mutate sim state (except the transport forward)")
 	var rig := _make_rig()
 	var orch: Node = rig["orch"]
 	var econ: RefCounted = rig["econ"]
@@ -364,7 +367,6 @@ func _test_read_only_no_mutation() -> void:
 	var hud: Control = rig["hud"]
 	var balance_before: int = int(econ.get("balance"))
 	var tick_before: int = int(orch.call("get_tick_count"))
-	var paused_before: bool = bool(ts.call("is_paused"))
 	var sat_before: float = float(sat.get("global_satisfaction"))
 	# Drive every HUD refresh path + a balance_changed handler run.
 	hud.call("refresh_all")
@@ -372,11 +374,21 @@ func _test_read_only_no_mutation() -> void:
 	hud.call("refresh_all")
 	_check(int(econ.get("balance")) == balance_before, "balance unchanged by HUD operations")
 	_check(int(orch.call("get_tick_count")) == tick_before + 1, "tick_count advanced ONLY by the explicit _advance_tick (not by HUD)")
-	_check(bool(ts.call("is_paused")) == paused_before, "paused state unchanged by HUD")
 	_check(absf(float(sat.get("global_satisfaction")) - sat_before) < 1e-9, "global_satisfaction unchanged by HUD")
-	# The HUD must expose NO sim-mutating entry points in Story 001 scope.
-	_check(not hud.has_method("set_paused"), "no set_paused() on HUD (transport input is Story 004)")
-	_check(not hud.has_method("set_speed"), "no set_speed() on HUD (transport input is Story 004)")
+	# Story 004: the transport forward exists and is the ONLY sim mutation the
+	# HUD makes — pause/speed change TimeSystem state, everything else stays put.
+	var paused_before: bool = bool(ts.call("is_paused"))
+	hud.call("set_paused", not paused_before)
+	_check(bool(ts.call("is_paused")) != paused_before, "set_paused() forwards to TimeSystem (the ONE allowed mutation)")
+	_check(int(econ.get("balance")) == balance_before, "balance unchanged after transport forward")
+	_check(int(orch.call("get_tick_count")) == tick_before + 1, "tick_count unchanged after transport forward")
+	_check(absf(float(sat.get("global_satisfaction")) - sat_before) < 1e-9, "global_satisfaction unchanged after transport forward")
+	_check(hud.has_method("set_paused"), "HUD exposes set_paused() (Story 004 transport surface)")
+	_check(hud.has_method("set_speed"), "HUD exposes set_speed() (Story 004 transport surface)")
+	# No OTHER sim-mutating entry points: the HUD must not expose economy/grid/sat
+	# mutation methods beyond the transport pair.
+	_check(not hud.has_method("credit") and not hud.has_method("spend"), "no economy mutation methods on HUD")
+	_check(not hud.has_method("commit") and not hud.has_method("clear"), "no grid mutation methods on HUD")
 
 
 func _test_no_popup_toast_badge_nodes() -> void:

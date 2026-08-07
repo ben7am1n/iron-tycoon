@@ -155,12 +155,18 @@ func _test_core_rule_1_time_group_transport() -> void:
 	var tod: Label = time_group.get_node("TimeOfDayLabel")
 	var transport: Control = time_group.get_node("TransportCluster")
 	_check(day is Label and day.text.begins_with("Day "), "DayLabel present showing 'Day N' (got '%s')" % day.text)
-	_check(tod is Label, "TimeOfDayLabel present (clock text; icon lands in Story 004)")
+	_check(tod is Label, "TimeOfDayLabel present (clock-position icon, Story 004)")
 	_check(transport is HBoxContainer, "TransportCluster present as a grouped cluster")
-	var pause_state: Label = transport.get_node("PauseStateLabel")
-	var speed_state: Label = transport.get_node("SpeedStateLabel")
-	_check(pause_state is Label, "PauseStateLabel bound (buttons are Story 004's scope)")
-	_check(speed_state is Label, "SpeedStateLabel bound (buttons are Story 004's scope)")
+	_check(transport.get_child_count() == 4, "TransportCluster has exactly 4 buttons (pause + 3 speeds) — got %d" % transport.get_child_count())
+	var pause_btn: Control = transport.get_node("PauseButton")
+	var speed1: Control = transport.get_node("SpeedButton1")
+	var speed2: Control = transport.get_node("SpeedButton2")
+	var speed3: Control = transport.get_node("SpeedButton3")
+	_check(pause_btn is Button, "PauseButton is a Button (Story 004 transport surface)")
+	_check(speed1 is Button and speed2 is Button and speed3 is Button, "SpeedButton1/2/3 are Buttons")
+	_check((pause_btn as Button).text.ends_with("‖"), "PauseButton label is ‖ (with optional active-dot prefix, got '%s')" % (pause_btn as Button).text)
+	_check((speed1 as Button).text.ends_with("1×") and (speed2 as Button).text.ends_with("2×") and (speed3 as Button).text.ends_with("3×"),
+		"speed button labels are 1×/2×/3× (got %s/%s/%s)" % [(speed1 as Button).text, (speed2 as Button).text, (speed3 as Button).text])
 
 
 func _test_no_bottom_bar_no_side_panels() -> void:
@@ -183,14 +189,23 @@ func _test_ac7_font_size_readable() -> void:
 		hud.get_child(0).get_node("SatisfactionGroup/SatisfactionLabel"),
 		hud.get_child(0).get_node("TimeGroup/DayLabel"),
 		hud.get_child(0).get_node("TimeGroup/TimeOfDayLabel"),
-		hud.get_child(0).get_node("TimeGroup/TransportCluster/PauseStateLabel"),
-		hud.get_child(0).get_node("TimeGroup/TransportCluster/SpeedStateLabel"),
 	]
 	var min_seen: int = 99999
 	for label in labels:
 		var size: int = int(label.get_theme_font_size("font_size"))
 		min_seen = mini(min_seen, size)
 	_check(min_seen >= 16, "every HUD label font size >= 16px (min seen %d)" % min_seen)
+	var buttons: Array[Button] = [
+		hud.get_child(0).get_node("TimeGroup/TransportCluster/PauseButton"),
+		hud.get_child(0).get_node("TimeGroup/TransportCluster/SpeedButton1"),
+		hud.get_child(0).get_node("TimeGroup/TransportCluster/SpeedButton2"),
+		hud.get_child(0).get_node("TimeGroup/TransportCluster/SpeedButton3"),
+	]
+	var min_btn: int = 99999
+	for btn in buttons:
+		var size: int = int(btn.get_theme_font_size("font_size"))
+		min_btn = mini(min_btn, size)
+	_check(min_btn >= 16, "every transport button font size >= 16px (min seen %d)" % min_btn)
 
 
 func _test_ac7_top_bar_height_budget() -> void:
@@ -215,19 +230,33 @@ func _test_ac7_safe_margins() -> void:
 
 
 func _test_input_transparent() -> void:
-	print("\n[Read-only] HUD never blocks the play area (input-transparent)")
+	print("\n[Read-only] HUD never blocks the play area (only the 4 transport buttons capture input)")
 	var hud := _make_hud()
 	_check(hud.mouse_filter == Control.MOUSE_FILTER_IGNORE, "HUD root mouse_filter == IGNORE (never steals clicks)")
 	var top_bar: Control = hud.get_child(0)
 	_check(top_bar.mouse_filter == Control.MOUSE_FILTER_IGNORE, "TopBar mouse_filter == IGNORE")
-	# Walk every descendant: nothing may capture input in Story 001 (buttons are Story 004).
+	# Story 004: the 4 transport buttons are MOUSE_FILTER_STOP (clickable) —
+	# the ONLY input-capturing descendants in the tree. Everything else stays IGNORE.
 	var offenders: Array = []
-	_scan_input_offenders(hud, offenders)
-	_check(offenders.is_empty(), "no descendant captures mouse input (offenders: %s)" % str(offenders))
+	var expected_stop: Array[String] = ["PauseButton", "SpeedButton1", "SpeedButton2", "SpeedButton3"]
+	_scan_input_offenders(hud, offenders, expected_stop)
+	_check(offenders.is_empty(), "only the 4 transport buttons capture mouse input (unexpected: %s)" % str(offenders))
+	# Every transport button is STOP, and no other descendant is.
+	var stops: Array = []
+	_scan_all_stops(hud, stops)
+	_check(stops.size() == 4, "exactly 4 STOP controls in the whole HUD tree (got %d: %s)" % [stops.size(), str(stops)])
 
 
-func _scan_input_offenders(node: Node, offenders: Array) -> void:
+func _scan_input_offenders(node: Node, offenders: Array, allowed_stop: Array[String]) -> void:
 	if node is Control and (node as Control).mouse_filter == Control.MOUSE_FILTER_STOP:
-		offenders.append(node.name)
+		if node.name not in allowed_stop:
+			offenders.append(node.name)
 	for child in node.get_children():
-		_scan_input_offenders(child, offenders)
+		_scan_input_offenders(child, offenders, allowed_stop)
+
+
+func _scan_all_stops(node: Node, stops: Array) -> void:
+	if node is Control and (node as Control).mouse_filter == Control.MOUSE_FILTER_STOP:
+		stops.append(node.name)
+	for child in node.get_children():
+		_scan_all_stops(child, stops)
