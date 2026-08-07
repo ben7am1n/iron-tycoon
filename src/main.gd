@@ -56,6 +56,15 @@ const CATALOG_PATH := "res://data/equipment_catalog.json"
 const MASTER_SEED := 20260807
 const SMOKE_FRAMES := 600      # --smoke 运行帧数（headless 帧率不定，600 帧 ≈ 数秒 sim）
 
+## UI 显式停靠（BUILD-01/02 修复）：Main 是 Node2D root，Control 直接子节点
+## 的锚点 preset 会解析到零尺寸父矩形（palette 曾落在 (0,-64)、HUD 0×0）。
+## 改为按 viewport 显式定位/定尺 —— 与 playtest 会话 probe 验证的修复方向一致。
+const UI_VIEWPORT_W := 1280
+const UI_VIEWPORT_H := 720
+## 底部建造商店条带高度 = PaletteTile 最小尺寸 96×96（整块 tile 可见，
+## 不会被 64px 理论条带裁切）。
+const PALETTE_STRIP_H := 96
+
 # === 系统引用（供 UI/presentation 注入，orchestrator 持有所有权） ===
 var _orch
 var _grid
@@ -245,13 +254,23 @@ func _assemble_ui() -> void:
 
 	_palette = BuildShopPaletteScript.new()
 	_palette.init(_catalog, _econ, _shop, placement, _arbitration)
-	_palette.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
-	_palette.offset_top = -64
-	_palette.offset_bottom = 0
+	# BUILD-01 修复：Main 是 Node2D root，BOTTOM_WIDE 锚点 preset 在零尺寸父
+	# 矩形下解析失败（rect 曾为 (0,-64)-(407,32)，屏幕外）。显式停靠到底部：
+	# y = 视口高 - 条带高，铺满全宽。tile 可点击性/拖拽判定走 get_global_rect()，
+	# 与布局无关。
+	_palette.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	_palette.set_position(Vector2(0, UI_VIEWPORT_H - PALETTE_STRIP_H))
+	_palette.set_size(Vector2(UI_VIEWPORT_W, PALETTE_STRIP_H))
 	add_child(_palette)
 
 	_hud = HudScript.new()
 	_hud.init(_econ, _sat, _orch.time_system, _orch)
+	# BUILD-02 修复：同 BUILD-01 —— FULL_RECT 锚点在 Node2D 父级下解析为零尺寸
+	# （HUD root rect 曾为 (0,0,0,0)）。显式铺满视口：HUD 自身 MOUSE_FILTER_IGNORE
+	# 不挡玩法区，其内部 TopBar 按自身 rect 锚定，全宽顶栏由此成立。
+	_hud.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	_hud.set_position(Vector2.ZERO)
+	_hud.set_size(Vector2(UI_VIEWPORT_W, UI_VIEWPORT_H))
 	add_child(_hud)
 
 	_toolbar = SelectionToolbarScript.new()
@@ -261,6 +280,17 @@ func _assemble_ui() -> void:
 	_cue = SelectionCueScript.new()
 	_cue.init(selection, _grid, CELL_SIZE)
 	add_child(_cue)
+
+	# BUILD-03/04 修复：main._draw() 是设备/会员的唯一渲染路径，但此前只在
+	# _initial_layout() 调用过一次 queue_redraw()，放置/出售/会员移动后画面
+	# 永不刷新。信号驱动重绘：
+	#   - grid_changed（place=commit / remove=sell 都会 emit，见 grid_system）
+	#     → 设备上屏/下屏
+	#   - tick_completed（S2，10Hz）→ 会员位置/状态随 tick 移动
+	# queue_redraw() 是幂等合并的（一帧内多次调用只重绘一次），headless 下
+	# 不渲染、调用无害。
+	_grid.grid_changed.connect(func(_fp: Array, _ac: Array) -> void: queue_redraw())
+	_orch.tick_completed.connect(func(_tick: int) -> void: queue_redraw())
 
 
 # === 初始布局：预置设备（clumped，让 congestion 开场即有表现） ===
