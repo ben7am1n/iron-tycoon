@@ -1,7 +1,7 @@
 # Story 003: Build/Select Mode Arbitration
 
 > **Epic**: build-shop-ui
-> **Status**: Complete — 2026-08-07
+> **Status**: Complete — 2026-08-07 (QA 终审 PASS, t_36ee7a0e)
 > **Layer**: Presentation
 > **Type**: Integration
 > **Estimate**: S — 1 session (≤2h)
@@ -98,12 +98,34 @@
 **Required evidence**:
 - `tests/integration/build_shop_ui/mode_arbitration_test.gd` OR interaction test — must exist and pass (suppression on selection, build-takes-over, restore on deselect)
 
-**Status**: [x] Complete — 2026-08-07
+**Status**: [x] Complete — 2026-08-07 (QA 终审 PASS, t_36ee7a0e)
 
 `tests/integration/build_shop_ui/mode_arbitration_test.gd` (53 assertions)
 exists, passes, and is registered in `tests/headless_runner.gd` TEST_FILES.
-Full headless suite: **4089 passed, 0 failed** (4036 pre-existing + 53 new).
+Independent QA re-run on merged BSUI-003 state @ f3755d8: **4089 passed /
+0 failed / exit 0 / 0 SCRIPT ERROR** (4036 pre-existing + 53 new; leak
+profile 218 ObjectDB instances, unchanged from baseline). Post-integration
+re-run on current main tip (ba416a2): **4374 passed / 0 failed** — the
+arbitration's 53 asserts still green after HUD-003 landed. Standalone
+`mode_arbitration_test.gd`: 53/0, exit 0.
 Evidence: `production/qa/evidence/build-shop-arbitration-evidence.md`.
+
+Coverage by AC (exact assert counts, verified against test file):
+- **AC6** (13): selection_changed non-null → ghost SUPPRESSED (5); palette
+  still visible + full-tint (2); deselect via `clear_selection()` → ghost
+  allowed immediately (3); deselect via empty-buildable-floor click (AC2
+  path) → ghost allowed immediately (3).
+- **Core Rule 4** (18): build takes over — selection cleared FIRST,
+  drag in flight, no dual ghost (6); exactly ONE `selection_changed(null)`
+  on takeover, zero selects (2); failed gate (unaffordable) → no drag,
+  selection unchanged (5); locked item → same (5).
+- **Idle** (8): no selection → ghost renders normally during drag (5);
+  full drag → move → drop commits with ghost never suppressed (3).
+- **Pillar 3** (10): build drag suppresses selection via SEL-001 AC12 (4);
+  mid-drag selection_changed emit → suppressed on the fly, released on
+  deselect (6).
+- **Guards** (4): use-before-init safe defaults (3); init twice → logged
+  error, still functional (1).
 
 ---
 

@@ -121,3 +121,25 @@ Full suite: **4089 passed, 0 failed** (4036 pre-existing + 53 new).
 - The palette's build-take-over runs only through `on_tile_mouse_down`; the
   UX spec's keyboard-drag path (Tab/Enter) will route through the same gate
   when it lands (per UX OQ3, MVP leans implicit — no explicit mode toggle).
+
+---
+
+## Independent QA Verification (2026-08-07, qa-tester, t_36ee7a0e)
+
+QA worktree `wt/t_36ee7a0e`; verification against the merged state
+(`f3755d8`, BSUI-003 on main) and then the integrated current-main tip.
+
+| Check | Result |
+|-------|--------|
+| Full headless suite `tests/headless_runner.gd` (merged state `f3755d8` + SEL-001 QA `bb9b372`) | **4089 passed / 0 failed**, RESULT: PASSED, exit 0, 0 SCRIPT ERROR |
+| Baseline delta | 4036 pre-existing + **53 new exactly**, zero regressions |
+| `mode_arbitration_test.gd` standalone | **53 passed / 0 failed**, exit 0 |
+| Assert count audit | 53 `_check` calls verified against test file: AC6 13 / Core Rule 4 18 / Idle 8 / Pillar 3 10 / Guards 4 |
+| Post-integration re-run (current main tip `ba416a2`, incl. HUD-003) | **4374 passed / 0 failed**, RESULT: PASSED, exit 0, 0 SCRIPT ERROR — arbitration 53/0 still green |
+| Leak picture | 218 ObjectDB instances at exit — identical to established baseline, no new leaks |
+| TR-BSUI-004 registry | `docs/architecture/tr-registry.yaml` — active, requirement matches GDD Core Rule 4 |
+| Control Manifest | typed `selection_changed.connect(_on_selection_changed)` only; use-before-init push_error guards (never assert) |
+
+Verdict: **PASS** — all BLOCKING 验收 items (AC6 / Core Rule 4 build-take-over /
+Core Rule 4 idle) verified by code review + independent re-run. Story 003
+marked Complete with QA 终审 PASS (t_36ee7a0e).
