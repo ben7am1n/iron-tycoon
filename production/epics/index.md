@@ -1,6 +1,6 @@
 # Epics Index
 
-Last Updated: 2026-08-06
+Last Updated: 2026-08-07
 Engine: Godot 4.7.1
 
 ## Foundation Layer
@@ -33,7 +33,7 @@ Engine: Godot 4.7.1
 
 | Epic | Layer | System | GDD | Stories | Status |
 |------|-------|--------|-----|---------|--------|
-| [hud](hud/EPIC.md) | Presentation | HUD | design/gdd/hud.md | 4 stories | Ready |
-| [congestion-flow-overlay](congestion-flow-overlay/EPIC.md) | Presentation | Congestion/Flow Overlay | design/gdd/congestion-flow-overlay.md | 4 stories | Ready |
-| [selection-system](selection-system/EPIC.md) | Presentation | SelectionSystem | design/gdd/selection-system.md | 5 stories | Ready |
-| [build-shop-ui](build-shop-ui/EPIC.md) | Presentation | Build/Shop UI | design/gdd/build-shop-ui.md | 4 stories | Ready |
+| [hud](hud/EPIC.md) | Presentation | HUD | design/gdd/hud.md | 4 stories | Complete |
+| [congestion-flow-overlay](congestion-flow-overlay/EPIC.md) | Presentation | Congestion/Flow Overlay | design/gdd/congestion-flow-overlay.md | 4 stories | Complete |
+| [selection-system](selection-system/EPIC.md) | Presentation | SelectionSystem | design/gdd/selection-system.md | 5 stories | Complete |
+| [build-shop-ui](build-shop-ui/EPIC.md) | Presentation | Build/Shop UI | design/gdd/build-shop-ui.md | 4 stories | Complete |

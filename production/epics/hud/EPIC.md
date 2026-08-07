@@ -4,17 +4,17 @@
 > **GDD**: design/gdd/hud.md
 > **UX Spec**: design/ux/hud.md
 > **Architecture Module**: HUD — top-bar Control hierarchy; owns money display, satisfaction meter, day/time display, pause/speed transport
-> **Status**: Ready
+> **Status**: Complete — 2026-08-07 (all 4 stories Complete, Sprint 5 gate PASS)
 > **Stories**: 4 stories created — see below
 
 ## Stories
 
 | # | Story | Type | Status | ADR |
 |---|-------|------|--------|-----|
-| 001 | Top-bar Layout & Read-only State Binding | UI | Ready | ADR-0001, ADR-0005 |
-| 002 | Money Count Tween | Visual/Feel | Ready | ADR-0005 |
-| 003 | Satisfaction Meter | Visual/Feel | Ready | ADR-0005 |
-| 004 | Pause/Speed Transport + Day/Time Display | UI | Ready | ADR-0005 |
+| 001 | Top-bar Layout & Read-only State Binding | UI | Complete — 2026-08-07 (QA 终审 PASS, t_759c1100) | ADR-0001, ADR-0005 |
+| 002 | Money Count Tween | Visual/Feel | Complete — 2026-08-07 (QA 终审 PASS, t_e1297966) | ADR-0005 |
+| 003 | Satisfaction Meter | Visual/Feel | Complete — 2026-08-07 (QA 终审 PASS, t_d4771a34) | ADR-0005 |
+| 004 | Pause/Speed Transport + Day/Time Display | UI | Complete — 2026-08-07 (QA 终审 PASS, t_f606bc09) | ADR-0005 |
 
 ## Overview
 

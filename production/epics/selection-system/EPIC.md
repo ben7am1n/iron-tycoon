@@ -4,7 +4,7 @@
 > **GDD**: design/gdd/selection-system.md
 > **UX Spec**: design/ux/selection-ui.md
 > **Architecture Module**: SelectionSystem — `instance_id → data` mapping, current selection state; exposes `selection_changed(instance_id | null)` signal
-> **Status**: Ready
+> **Status**: Complete — 2026-08-07 (all 5 stories Complete, Sprint 5 gate PASS)
 > **Stories**: 5 stories created — see below
 
 ## Stories

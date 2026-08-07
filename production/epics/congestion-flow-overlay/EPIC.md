@@ -3,7 +3,7 @@
 > **Layer**: Presentation
 > **GDD**: design/gdd/congestion-flow-overlay.md
 > **Architecture Module**: Congestion/Flow Overlay — ImageTexture for heatmap; 10Hz heatmap rendering, access-blocked icons
-> **Status**: Ready
+> **Status**: Complete — 2026-08-07 (all 4 stories Complete, Sprint 5 gate PASS)
 > **Stories**: 4 stories created — see below
 
 ## Stories
