@@ -1,12 +1,12 @@
 # Story 002: Money Count Tween
 
 > **Epic**: hud
-> **Status**: Ready
+> **Status**: Complete — 2026-08-07
 > **Layer**: Presentation
 > **Type**: Visual/Feel
 > **Estimate**: S — 1 session (≤2h)
 > **Manifest Version**: 2026-07-23
-> **Last Updated**: 2026-08-06
+> **Last Updated**: 2026-08-07
 
 ## Context
 
@@ -95,7 +95,17 @@
 - `production/qa/evidence/hud-money-tween-evidence.md` — manual walkthrough / sign-off
 - Automated coverage of the re-target logic where practical (e.g. `tests/unit/hud/money_tween_test.gd`)
 
-**Status**: [x] Created (2026-08-06 — automated coverage green; manual walkthrough pending playable build)
+**Status**: [x] Complete — 2026-08-07 (QA terminal review PASS)
+
+Independent QA re-run (qa-tester, wt/t_e1297966 @ main tip fb4f235): full
+headless suite **4036 passed / 0 failed / exit 0 / 0 SCRIPT ERROR**;
+`money_tween_test.gd` standalone 60/0; `hud_state_binding_test.gd` 71/0
+(Story-002 contract); leak baseline 218 ObjectDB / 12 resources — identical
+to the pre-existing documented baseline. All three BLOCKING items verified:
+AC2 count tween (TRANS_QUAD/EASE_OUT, ~0.3s, spend NEVER red — hue-preserving
+desaturation only), rapid-change mid-tween re-target with zero queue backlog
+(old tween killed, exactly one live), paused-still-animates (render-time,
+zero tick advance). See `production/qa/evidence/hud-money-tween-evidence.md`.
 
 ---
 

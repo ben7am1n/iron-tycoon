@@ -4,7 +4,7 @@
 > **Type**: Visual/Feel (data-binding items automated; visual items manual walkthrough)
 > **Date**: 2026-08-06
 > **Layer**: Presentation | **Engine**: Godot 4.7.1
-> **Status**: Complete — automated coverage green; manual walkthrough pending lead sign-off
+> **Status**: ✅ QA terminal review PASS (2026-08-07, qa-tester t_aee1e56d) — automated coverage verified on main tip 6a87202; manual walkthrough pending playable build (ADVISORY)
 
 ## Deliverables
 
@@ -61,5 +61,24 @@ $ godot --headless --script tests/headless_runner.gd
 TOTAL: 3809 passed, 0 failed
 RESULT: PASSED
 ```
+
+### QA 独立复跑 (2026-08-07, card t_aee1e56d, main tip 6a87202)
+
+```
+$ godot --headless --script tests/unit/congestion_overlay/glyph_fill_test.gd
+=== GLYPH FILL TEST: 93 passed, 0 failed ===
+(exit 0)
+
+$ godot --headless --script tests/headless_runner.gd
+TOTAL: 4036 passed, 0 failed
+RESULT: PASSED
+(exit 0; ObjectDB leak 218 / resources 12 — identical to pre-existing baseline)
+```
+
+BLOCKING 核对（逐项）：
+- **AC10** PASS — `congestion_glyph_fill()` = `clampf(per_equipment_congestion, 0, 1)`；story QA 例 0.69 → 0.69；edges 0 / 1.0 / −0.1 / 1.5 全 clamp；`set_fill` 同范围防御性 clamp；REAL Congestion rig 集成（8 会员堆积 → 0.09 逐位相等，会员离开 EMA 衰减 0.063 精确跟随）
+- **Core Rule 4** PASS — fill rect 高度 = inner_h × fill_fraction 纯函数（0 → 空 outline，1.0 → 满，0.69 → 69%）；0.25/0.5/0.75 单调；形状/颜色解耦 → 去色可读
+- **AC6 / TR-CFO-011** PASS — 高对比 outline 1.0 → 2.0（config 1.5/3.0 验证），fill ratio 保持；颜色从不承载信息
+- 非 BLOCKING 亦 PASS：共享 toggle（真实 HeatmapLayer.toggle_flow_overlay 双向跟随）、10 Hz cadence（refresh_count 仅随 congestion_updated；结构性无 _process）、同帧移除/重放、锚定公式、typed connect 纪律
 
 **Sign-off**: [ ] lead / creative director — manual walkthrough above

@@ -1,7 +1,7 @@
 # Story 001: Top-bar Layout & Read-only State Binding
 
 > **Epic**: hud
-> **Status**: Complete — 2026-08-06
+> **Status**: Complete — 2026-08-06 (QA 终审 PASS, t_759c1100 — 2026-08-07)
 > **Layer**: Presentation
 > **Type**: UI
 > **Estimate**: M — 2 sessions (≤4h)
@@ -81,16 +81,19 @@
   - Setup: run at 1280×720, 1920×1080, 2560×1440 with UI scale 1.5×
   - Verify: text ≥16px @1080p; no HUD element overlaps the play area
   - Pass condition: all three resolutions render the top bar within safe margins with readable text
+  - **QA 回填 (2026-08-07)**: PASS — 自动化 invariants 全绿（hud_layout_test.gd 35/0 standalone）：8 个 HUD label font_size 全部 ≥16px @1080p；TopBar strip 48px + 16px margin ≤ 8% of 1080p；safe margin left/right 均为 16px @1.0×；ui_scale 1.5× 重排确定（margin 24 / bar 72 / font 24）。三分辨率视觉走查步骤已入 evidence §3，待 playable build 后人工签核（主场景组装属后续 story）
 
 - **AC8**: 加载即显示
   - Setup: save a game with known money/satisfaction/day, load it
   - Verify: HUD renders paused state + loaded values immediately on the first frame
   - Pass condition: no stale pre-load values; pause state reflected; values match the save
+  - **QA 回填 (2026-08-07)**: PASS — hud_state_binding_test.gd（71/0 standalone，含 HUD-002 后追加的 tween 断言）：load rig balance $1,240 / satisfaction 77% / tick_count 3600 / paused → 首个 refresh_all() 即渲染 $1,240 / 77% / Day 3 / PAUSED / —（速度占位），无陈旧默认值（默认 rig 为 $500/50%/Day 1 可对照）；refresh_all() 重读 live state 无 label 缓存
 
 - **Core Rule 1**: 布局
   - Setup: fresh boot, HUD first renders
   - Verify: money top-left (Butter, coin icon), satisfaction top-center, day/time + transport top-right
   - Pass condition: all three groups present in the F-pattern positions; nothing else on the HUD
+  - **QA 回填 (2026-08-07)**: PASS — hud_layout_test.gd 35/0：root 恰一个子节点 TopBar（无 bottom bar / side panel）；F-pattern 顺序 MoneyGroup→LeftSpacer→SatisfactionGroup→RightSpacer→TimeGroup（spacer expand-fill 把 time 推到右侧）；MoneyGroup=CoinIcon(🪙 Butter)+MoneyLabel、SatisfactionGroup=FaceIcon+Meter(ProgressBar 0..100)+%Label、TimeGroup=DayLabel+TimeOfDayLabel+TransportCluster(PauseStateLabel+SpeedStateLabel)；HUD root/topbar/全后代 mouse_filter IGNORE（读-only，无输入捕获）；树内无 popup/toast/badge/dialog 节点；HUD 无 set_paused()/set_speed() 方法（transport 输入属 Story 004）；refresh/signal 处理不改变 balance/tick_count/paused/global_satisfaction
 
 ---
 
@@ -115,6 +118,12 @@ Rule 1 structure, AC7 font/margin/height budgets, no bottom/side bars).
 Full headless suite: 3528 passed / 0 failed (baseline 3428 + 100 new),
 no new leaks. Visual walkthrough checklist (AC7/AC8/Core Rule 1) is
 documented in the evidence file, pending the playable build for sign-off.
+
+**QA 独立复跑 (t_759c1100, 2026-08-07, main tip fb4f235 — 含 HUD-001 提交 c918b16)**:
+- `godot --headless --script tests/unit/hud/hud_layout_test.gd` → 35 passed / 0 failed, exit 0
+- `godot --headless --script tests/unit/hud/hud_state_binding_test.gd` → 71 passed / 0 failed, exit 0（HUD-001 原有断言不变；+6 为 HUD-002 追加的 tween 断言）
+- `godot --headless --script tests/headless_runner.gd` 全量 → 4036 passed / 0 failed, exit 0, RESULT: PASSED, 0 SCRIPT ERROR；ObjectDB 泄漏 218 / 资源 12 与既有基线完全一致（无新增）
+- AC7/AC8/Core Rule 1 + 只读纪律逐项核对 PASS（详见上方 QA Test Cases 回填）
 
 ---
 

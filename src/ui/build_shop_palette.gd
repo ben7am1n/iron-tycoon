@@ -34,6 +34,7 @@ signal palette_refreshed
 const PaletteTileScript := preload("res://src/ui/palette_tile.gd")
 const PaletteAvailabilityScript := preload("res://src/ui/palette_availability.gd")
 const PlacementSystemScript := preload("res://src/systems/placement_system.gd")
+const ModeArbitrationScript := preload("res://src/ui/mode_arbitration.gd")
 
 ## Calm empty-catalog hint (GDD Edge Cases: "nothing available yet", no error,
 ## no crash).
@@ -62,6 +63,11 @@ var _availability: PaletteAvailabilityScript
 ## story-001 render-only rigs; when injected, the palette gates mouse-downs
 ## on Shop.begin_purchase_drag and forwards to PlacementSystem.begin_drag.
 var _placement: PlacementSystemScript
+## Injected mode arbitration (Story 003) — the build/select arbiter. Null
+## in story-001/002 rigs (backward compatible); when injected, the palette
+## clears an active selection BEFORE starting a drag (build takes over —
+## GDD Core Rule 4, no dual ghost).
+var _arbitration: ModeArbitrationScript
 ## equipment_id -> PaletteTile. Built once in init() from catalog order.
 var _tiles: Dictionary = {}
 ## "Nothing available yet" label — visible only when the catalog is empty.
@@ -84,7 +90,12 @@ var _drag_in_flight: bool = false
 ## omitted (or null), the palette renders only — no input gating, no drag
 ## initiation. Story 002's wiring injects the real PlacementSystem to enable
 ## the mouse-down → gate → drag pipeline.
-func init(p_catalog: EquipmentCatalog, p_economy: Economy, p_availability: PaletteAvailabilityScript, p_placement: PlacementSystemScript = null) -> void:
+##
+## p_arbitration is OPTIONAL and backward-compatible with story-001/002
+## rigs: when omitted (or null), palette mouse-downs do NOT clear an active
+## selection. Story 003's wiring injects ModeArbitration to enable the
+## build-takes-over handoff (GDD Core Rule 4).
+func init(p_catalog: EquipmentCatalog, p_economy: Economy, p_availability: PaletteAvailabilityScript, p_placement: PlacementSystemScript = null, p_arbitration: ModeArbitrationScript = null) -> void:
 	if _initialized:
 		push_error("BuildShopPalette.init() called twice")
 		return
@@ -93,6 +104,7 @@ func init(p_catalog: EquipmentCatalog, p_economy: Economy, p_availability: Palet
 	_economy = p_economy
 	_availability = p_availability
 	_placement = p_placement
+	_arbitration = p_arbitration
 	_build_ui()
 	_economy.balance_changed.connect(_on_balance_changed)
 	_refresh_all()
@@ -172,7 +184,8 @@ func _input(event: InputEvent) -> void:
 		on_tile_mouse_down(equipment_id)
 
 
-## The Story 002 drag gate (AC4/AC5): a mouse-down on a palette tile.
+## The Story 002 drag gate (AC4/AC5) + Story 003 build-take-over (Core
+## Rule 4): a mouse-down on a palette tile.
 ##
 ## AC4 — affordable, unlocked item: Shop.begin_purchase_drag() passes
 ## (can_purchase AND not is_dragging) → PlacementSystem.begin_drag() starts
@@ -182,6 +195,11 @@ func _input(event: InputEvent) -> void:
 ## returns false before even asking Shop), the item greyed/locked
 ## (begin_purchase_drag false → inert), or PlacementSystem already DRAGGING
 ## (Shop's structural backstop → false). Nothing starts, no flag set.
+## Core Rule 4 — build takes over: after the purchase gate passes and
+## BEFORE begin_drag, the arbitration clears an active selection (no dual
+## ghost). Ordering is deliberate: a FAILED gate (greyed/locked/inert)
+## leaves the selection UNCHANGED (QA edge) — build only takes over once
+## the drag is actually allowed to proceed.
 ##
 ## Returns true iff a PlacementSystem drag actually began. Public so headless
 ## tests drive the gate deterministically (same pattern as
@@ -193,6 +211,8 @@ func on_tile_mouse_down(equipment_id: String) -> bool:
 		return false  # one-drag invariant: palette disabled during a drag (AC5)
 	if not _availability.begin_purchase_drag(equipment_id):
 		return false  # greyed/locked/inert, or Shop's is_dragging() backstop
+	if _arbitration != null:
+		_arbitration.begin_build()  # build takes over: clear selection first (no dual ghost)
 	_placement.begin_drag(equipment_id)
 	_drag_in_flight = true
 	modulate = DRAG_BLOCKED_MODULATE

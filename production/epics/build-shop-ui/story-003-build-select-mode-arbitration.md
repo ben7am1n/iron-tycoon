@@ -1,12 +1,12 @@
 # Story 003: Build/Select Mode Arbitration
 
 > **Epic**: build-shop-ui
-> **Status**: Ready
+> **Status**: Complete — 2026-08-07
 > **Layer**: Presentation
 > **Type**: Integration
 > **Estimate**: S — 1 session (≤2h)
 > **Manifest Version**: 2026-07-23
-> **Last Updated**: 2026-08-06
+> **Last Updated**: 2026-08-07
 
 ## Context
 
@@ -30,9 +30,9 @@
 
 *From GDD `design/gdd/build-shop-ui.md`, scoped to this story:*
 
-- [ ] AC6 GIVEN a piece is selected (`selection_changed` non-null), WHEN the player is in the gym, THEN the new-placement ghost is suppressed (no dual ghost)
-- [ ] Core Rule 4 GIVEN a placement drag starts while a piece is selected, WHEN the drag begins, THEN the selection is cleared first (build takes over) — no dual ghosts
-- [ ] Core Rule 4 GIVEN no selection, WHEN the player drags, THEN the placement ghost renders normally
+- [x] AC6 GIVEN a piece is selected (`selection_changed` non-null), WHEN the player is in the gym, THEN the new-placement ghost is suppressed (no dual ghost)
+- [x] Core Rule 4 GIVEN a placement drag starts while a piece is selected, WHEN the drag begins, THEN the selection is cleared first (build takes over) — no dual ghosts
+- [x] Core Rule 4 GIVEN no selection, WHEN the player drags, THEN the placement ghost renders normally
 
 ---
 
@@ -98,7 +98,12 @@
 **Required evidence**:
 - `tests/integration/build_shop_ui/mode_arbitration_test.gd` OR interaction test — must exist and pass (suppression on selection, build-takes-over, restore on deselect)
 
-**Status**: [ ] Not yet created
+**Status**: [x] Complete — 2026-08-07
+
+`tests/integration/build_shop_ui/mode_arbitration_test.gd` (53 assertions)
+exists, passes, and is registered in `tests/headless_runner.gd` TEST_FILES.
+Full headless suite: **4089 passed, 0 failed** (4036 pre-existing + 53 new).
+Evidence: `production/qa/evidence/build-shop-arbitration-evidence.md`.
 
 ---
 
