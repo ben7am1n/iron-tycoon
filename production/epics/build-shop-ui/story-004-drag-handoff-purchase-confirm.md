@@ -113,8 +113,9 @@ AC7 (commit/reject/cancel re-enable + re-grey), AC10 (Esc / OOB / focus-loss
 return cue + decay + no-phantom-cue edge), and shop-purchase.md Core Rule 4
 (confirm on committed — including the cost-0 no-balance_changed discriminator,
 relocate no-confirm, reject no-confirm, mismatch guard, balance-alone
-discriminator). Full headless suite: **4193 passed, 0 failed** (4089
-pre-existing + 104 new). Evidence: `production/qa/evidence/build-shop-handoff-evidence.md`.
+discriminator). Full headless suite (independent QA re-run on the merged state, e255a78):
+**4670 passed, 0 failed** (4566 pre-existing + 104 new), exit 0, 0 SCRIPT
+ERROR. Evidence: `production/qa/evidence/build-shop-handoff-evidence.md`.
 
 ---
 

@@ -46,7 +46,9 @@ the optional audio half of the cues.
 Automated coverage: `tests/unit/build_shop_ui/drag_feedback_test.gd` — **104
 asserts, 0 failed** (registered in `tests/headless_runner.gd` TEST_FILES).
 
-Full suite: **4193 passed, 0 failed** (4089 pre-existing + 104 new).
+Full suite (independent QA re-run on the merged state, e255a78): **4670
+passed, 0 failed** (4566 pre-existing + 104 new), exit 0, 0 SCRIPT ERROR,
+leak profile 218/12 unchanged.
 
 ## Blocking AC Verification
 
@@ -150,3 +152,43 @@ Full suite: **4193 passed, 0 failed** (4089 pre-existing + 104 new).
   exist yet.
 - The UX spec's keyboard-drag path (Tab/Enter/R/Esc) still routes through
   the same gate when it lands (UX OQ3 — MVP leans implicit).
+
+---
+
+## QA Verification (t_b755220f — terminal review PASS, 2026-08-07)
+
+Independent re-run on the merged state (main == e255a78, worktree
+wt/t_b755220f, clean):
+
+- **Full headless suite**: `godot --headless --script tests/headless_runner.gd`
+  → **4670 passed / 0 failed / RESULT: PASSED / exit 0 / 0 SCRIPT ERROR**
+  (4566 pre-existing + 104 new). Leak profile 218 ObjectDB / 12 resources —
+  unchanged from baseline (same numbers in the CFO-004/HUD-004/BSUI-003
+  reviews); no new leaks introduced by BSUI-004.
+- **Standalone**: `drag_feedback_test.gd` → **104 passed, 0 failed, exit 0**
+  (the full suite's drag_feedback row confirms 104/0 under the runner too).
+- **Sibling-suite regression**: `palette_state_test` 72/0, `purchase_gate_test`
+  86/0 (includes the typed-array mismatch-branch fix), `mode_arbitration_test`
+  53/0 — all green in the merged state.
+- **BLOCKING ACs (all automated in drag_feedback_test, 104 asserts)**:
+  - AC7 — commit / reject / silent-cancel each re-enable the palette and
+    re-grey against the CURRENT balance (`_poll_drag_resolution` →
+    `_refresh_all`; commit re-greys via `balance_changed` idempotently).
+  - AC10 — Esc / OOB-drop / focus-loss silent cancels each fire the
+    return-to-palette cue exactly once (signal + modulate flash), zero spend,
+    Shop flag cleared via `notify_silent_cancel`; cue self-limits to idle
+    after `CUE_DURATION`; gate-swallowed attempt produces no phantom cue.
+  - shop-purchase.md Core Rule 4 — paid and cost-0 commits fire the
+    purchase-confirm cue on `placement_committed` (not `balance_changed`);
+    SpendSpyEconomy proves zero `spend()` calls for the free item; relocate
+    commit / reject / mismatch / balance-change-alone all produce no confirm
+    cue.
+- **Contract/back-compat**: `PaletteAvailability.is_purchase_in_flight()`
+  implemented by both subclasses (Shop real flag, Placeholder false);
+  palette init signature unchanged; render-only rig (`_process` + cue
+  queries) safe.
+- **Doc-accuracy**: corrected stale suite counts (4193/4089 → 4670/4566)
+  in story Test Evidence + this evidence file to match the merged-state run.
+
+Verdict: **PASS** — all BLOCKING acceptance checks verified by independent
+re-run; no blocking defects found. Story 004 + EPIC.md remain Complete.
