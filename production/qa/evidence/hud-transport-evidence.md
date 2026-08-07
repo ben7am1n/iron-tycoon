@@ -3,20 +3,21 @@
 **Story**: `production/epics/hud/story-004-pause-speed-transport-day-time.md`
 **Story Type**: UI (evidence ADVISORY — manual walkthrough + automated hotkey/state logic)
 **Engine**: Godot 4.7.1 (GDScript) | **Date**: 2026-08-06
-**Status**: Automated coverage ✅ — visual walkthrough pending playable build
+**Status**: ✅ QA terminal review PASS (2026-08-07, qa-tester card t_f606bc09) — automated coverage verified on merged main; visual walkthrough pending playable build (ADVISORY)
 
 ---
 
 ## 1. Automated Coverage (verified headless)
 
-`godot --headless --script tests/headless_runner.gd` → **4149 passed / 0 failed**
-(Story HUD-004 adds +113 assertions over the main-tip baseline of 4036; no new
+`godot --headless --script tests/headless_runner.gd` → **4487 passed / 0 failed**
+(QA re-run at merged main, 2026-08-07: story HUD-004 adds +113 assertions over the
+main-tip baseline of 4374 = 4036 + BSUI-003 (53) + HUD-003 (285); no new
 ObjectDB/resource leaks — identical 218/12 pre-existing baseline counts).
 
 | File | Assertions | Covers |
 |------|-----------|--------|
 | `tests/unit/hud/transport_test.gd` | 100 (new) | AC1 fresh-boot paused/no-speed, AC4 Space → resume at last-used speed, AC5 1/2/3 immediate speed + implicit unpause, Core Rule 4 same-speed no-op, hotkey→TimeSystem forwarding via `_unhandled_key_input` (echo/release/other-key hygiene), button-click forwarding, dual-focus FOCUS_NONE buttons, exactly-one-active invariant, active-cue visual (outline + filled-dot, never color alone), `time_of_day_icon()` derivation, day/time label updates + rollover on tick_completed, TR-HUD-006 transport-only mutation |
-| `tests/unit/hud/hud_state_binding_test.gd` | 73 (was 65) | Updated to the Story-004 transport surface: pause/speed state binding via `get_pause_button()`/`get_speed_button()`/`is_pause_active()`/`get_active_speed()`; read-only discipline now asserts transport is the ONLY allowed mutation (`set_paused`/`set_speed` exist, no economy/grid mutation methods) |
+| `tests/unit/hud/hud_state_binding_test.gd` | 82 (incl. HUD-003 additions; HUD-004 +8) | Updated to the Story-004 transport surface: pause/speed state binding via `get_pause_button()`/`get_speed_button()`/`is_pause_active()`/`get_active_speed()`; read-only discipline now asserts transport is the ONLY allowed mutation (`set_paused`/`set_speed` exist, no economy/grid mutation methods) |
 | `tests/unit/hud/hud_layout_test.gd` | 40 (was 35) | TransportCluster is now 4 Buttons (`PauseButton` + `SpeedButton1/2/3`); exactly 4 input-capturing (STOP) controls in the tree; button font ≥ 16px |
 
 ### Key automated facts (all passing)
@@ -44,6 +45,46 @@ ObjectDB/resource leaks — identical 218/12 pre-existing baseline counts).
   over exactly at TICKS_PER_DAY (1800, data-driven `config["ticks_per_day"]`).
 - **TR-HUD-006**: transport forwards touch ONLY TimeSystem pause/speed; balance,
   tick_count, global_satisfaction verified unchanged after hotkey chains.
+
+### QA 独立复跑 (2026-08-07, card t_f606bc09, merged main)
+
+```
+$ godot --headless --script tests/unit/hud/transport_test.gd
+=== HUD TRANSPORT TEST: 100 passed, 0 failed ===
+(exit 0)
+
+$ godot --headless --script tests/headless_runner.gd
+TOTAL: 4487 passed, 0 failed
+RESULT: PASSED
+(exit 0; ObjectDB leak 218 / resources 12 — identical to pre-existing baseline;
+ in-suite: transport_test 100/0, hud_state_binding 82/0, hud_layout 40/0,
+ satisfaction_meter 282/0 — HUD-003 + HUD-004 coexist cleanly after merge)
+```
+
+BLOCKING 核对（逐项）：
+- **AC1** PASS — fresh boot: TimeSystem starts paused → PauseButton shows filled-dot
+  prefix + outline stylebox override (`is_pause_active()` true), `get_active_speed()==0`,
+  0 speed buttons highlighted (`_test_ac1_fresh_boot_paused_no_speed`)
+- **AC4** PASS — paused + Space → `resume()` at the LAST-USED speed: fresh rig 1×;
+  select 3× while paused → re-pause → Space resumes at 3× not 1×; matching button
+  highlighted; exactly one speed active (`_test_ac4_space_resumes_at_last_speed` +
+  button-click path)
+- **AC5** PASS — 1/2/3 hotkeys change speed immediately; digit while paused unpauses
+  in the SAME action (one action not two: `set_speed()` records `_last_speed` then
+  `resume()` applies it); exactly-one-active invariant held across a 10-action chain
+  (`_test_ac5_*`, `_test_exactly_one_speed_active_invariant`)
+- **Core Rule 4** PASS — re-press already-active speed: speed/pause/tick_count all
+  unchanged, button text byte-identical (no cue flicker), still unpaused, still
+  exactly one active (`_test_core_rule_4_same_speed_noop`)
+- **TR-HUD-006** PASS — transport is the ONLY sim mutation: balance/tick_count/
+  global_satisfaction unchanged after hotkey chains; only `set_paused`/`set_speed`
+  mutation methods exposed, no economy/grid mutation methods (`_test_transport_only_mutation`,
+  `_test_read_only_no_mutation`)
+- 非 BLOCKING 亦 PASS：hotkey echo/release/other-key hygiene、FOCUS_NONE dual-focus
+  结构（4 按钮均 FOCUS_NONE）、active cue 视觉（outline + dot，非纯色）、
+  `time_of_day_icon()` 12 小时钟面映射（0/0.25/0.5/0.75/0.999 + 防御 clamp）、
+  Day N 随 tick_completed 更新 + TICKS_PER_DAY(1800) 边界回卷、恰好 4 个
+  MOUSE_FILTER_STOP 控件（其余全 IGNORE）
 
 ## 2. Transport Cluster Structure (verified headless, structural)
 

@@ -110,7 +110,7 @@
 **Story Type**: UI
 **Required evidence**:
 - `production/qa/evidence/hud-transport-evidence.md` — ✅ created 2026-08-06 (automated coverage complete; manual walkthrough checklist pending the playable build, ADVISORY by design)
-- Automated coverage of hotkey→TimeSystem forwarding + day/time derivation — `tests/unit/hud/transport_test.gd` (100 asserts), registered in `headless_runner.gd` TEST_FILES; full suite 3922 passed / 0 failed
+- Automated coverage of hotkey→TimeSystem forwarding + day/time derivation — `tests/unit/hud/transport_test.gd` (100 asserts), registered in `headless_runner.gd` TEST_FILES; QA 独立复跑 merged-main full suite 4487 passed / 0 failed (HUD-004 +113 over baseline 4374)
 
 **Status**: [x] Complete — 2026-08-06
 
