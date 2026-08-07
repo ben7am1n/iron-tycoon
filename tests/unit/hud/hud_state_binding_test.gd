@@ -249,17 +249,28 @@ func _test_balance_changed_updates_money() -> void:
 # === S2 tick_completed refresh ===
 
 func _test_satisfaction_read_on_tick() -> void:
-	print("\n[S2] satisfaction % re-read on tick_completed (10 Hz cadence)")
+	print("\n[S2] satisfaction target re-read on tick_completed (10 Hz cadence; Story 003 animates)")
 	var rig := _make_rig()
 	var sat: RefCounted = rig["sat"]
 	var orch: Node = rig["orch"]
 	var hud: Control = rig["hud"]
 	var sat_label: Label = hud.call("get_satisfaction_label")
-	sat.set("global_satisfaction", 0.66)
-	orch.call("_advance_tick")  # fires tick_completed -> _refresh_satisfaction
-	_check(sat_label.text == "66%", "satisfaction label updated to 66%% after tick (got '%s')" % sat_label.text)
 	var meter: ProgressBar = hud.call("get_meter")
-	_check(absf(float(meter.value) - 66.0) < 1e-6, "meter value == 66.0 (got %s)" % meter.value)
+	# Init snapped to S_BASE 0.5 (load path).
+	_check(sat_label.text == "50%", "init label 50%% (S_BASE) (got '%s')" % sat_label.text)
+	sat.set("global_satisfaction", 0.66)
+	orch.call("_advance_tick")  # fires tick_completed -> _refresh_satisfaction (animated)
+	# Story 003 contract: the tick registers the NEW target and starts an ease;
+	# the displayed value catches up over ~1 s. Headless has no frames, so the
+	# label/meter still show the pre-change value while the tween is mid-flight.
+	_check(bool(hud.call("is_meter_animating")), "meter is animating after tick (Story 003 ease)")
+	_check(absf(float(hud.call("get_meter_tween_target")) - 66.0) < 1e-6,
+		"tween target == 66.0 (got %s)" % hud.call("get_meter_tween_target"))
+	# Drive the tween's display callback to the target — same path the tween
+	# takes each frame — and verify the AC3 lockstep result.
+	hud.call("apply_satisfaction_display", 0.66)
+	_check(sat_label.text == "66%", "satisfaction label updated to 66%% after display(0.66) (got '%s')" % sat_label.text)
+	_check(absf(float(meter.value) - 66.0) < 1e-6, "meter value == 66.0 after display(0.66) (got %s)" % meter.value)
 
 
 func _test_day_rollover_on_tick() -> void:

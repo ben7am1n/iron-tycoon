@@ -1,11 +1,16 @@
 ## Hud — the always-on top bar (Story HUD-001 layout + state binding; Story
-## HUD-002 money count tween).
+## HUD-002 money count tween; Story HUD-003 calm satisfaction meter).
 ##
 ## Story: production/epics/hud/story-001-top-bar-layout-state-binding.md,
-##        production/epics/hud/story-002-money-count-tween.md
+##        production/epics/hud/story-002-money-count-tween.md,
+##        production/epics/hud/story-003-satisfaction-meter.md
 ## Req:   TR-HUD-001 (minimal top bar: money / satisfaction / day+time+transport),
 ##        TR-HUD-004 (money count: tween digits old->new over ~0.3s on
 ##        balance_changed; never red flash on spend),
+##        TR-HUD-002 (satisfaction meter: Sage -> warm neutral -> soft muted
+##        Dusty Rose only at the very low end; NEVER saturated red, NEVER pulse),
+##        TR-HUD-003 (meter paired with numeric % AND shape-changing face icon —
+##        filled vs outline — so state is readable without color),
 ##        TR-HUD-006 (read-only + transport only — no popups/toasts/badges),
 ##        TR-HUD-007 (on load renders paused state + loaded values immediately)
 ## ADR:   ADR-0001 (UI systems are scene-tree Nodes, not RefCounted sim systems;
@@ -17,14 +22,18 @@
 ## frame around the gym: it owns NO simulation state, only DISPLAYS what
 ## Economy / Satisfaction / TimeSystem expose and (from Story 004) forwards
 ## pause/speed input. Story 001 scope is layout + read-only state binding;
-## Story 002 adds the money count-up/down tween. Meter ramp (Story 003) and
-## transport buttons + day/time icon (Story 004) are deliberately NOT
-## implemented here.
+## Story 002 adds the money count-up/down tween. Story 003 adds the calm
+## satisfaction meter: the fill RAMP (Sage high -> warm neutral mid -> muted
+## Dusty Rose very low end, never saturated red), the shape-changing face icon
+## (filled vs outline — colorblind-safe), the ~1 s ease on global_satisfaction
+## change (re-targets mid-tween, no queue backlog — same posture as the money
+## tween), and the reduced-motion static fill. Transport buttons + day/time
+## icon (Story 004) are deliberately NOT implemented here.
 ##
 ## STATE BINDING (event-driven, never poll):
 ##   - balance_changed(new_balance, delta)   -> money count tween (S6)
-##   - global_satisfaction (plain var)       -> % label + meter fill (read on
-##                                              init + each tick_completed)
+##   - global_satisfaction (plain var)       -> % label + meter fill + icon
+##                                              (read on init + each tick_completed)
 ##   - get_tick_count()                      -> day + time_of_day derivation
 ##                                              (day = 1 + floor(tc/TICKS_PER_DAY);
 ##                                              time_of_day = (tc mod TICKS_PER_DAY)/TICKS_PER_DAY)
@@ -55,6 +64,27 @@
 ##   - Reduced-motion: snap to the final value, no tween, no desaturation
 ##     (UX spec: "snap under reduced-motion"). Data-driven "reduced_motion".
 ##
+## SATISFACTION METER (Story 003) — calm, never an alarm (TR-HUD-002/003):
+##   - Short horizontal ProgressBar (NOT a "health bar" metaphor — 8px tall,
+##     rounded fill, calm colors). Fill ramps:
+##       sat >= 0.66                 -> Sage (#8FBF9F, art bible)
+##       0.33 <= sat < 0.66          -> warm neutral -> Sage lerp
+##       sat < 0.33                  -> Dusty Rose (#E0A0A0) -> warm neutral lerp
+##     Every ramp color is muted (saturation < 0.4) — never saturated red.
+##   - Colorblind-safe: the % label ALWAYS shows the value, and the face icon
+##     SHAPE carries state (filled = sat >= 0.33, outline = sat < 0.33) — the
+##     glyphs are ☺ (high), 🙂 (mid), ☹ (very low).
+##   - Ease: global_satisfaction change -> tween_method drives meter.value +
+##     % label + icon + fill color from the current displayed value to the new
+##     target over `satisfaction_ease_duration` (GDD knob 1.0 s, safe range
+##     0.5–1.5 s). Re-targets mid-tween (kill + new tween from the current
+##     displayed value) — no queue backlog. A tick that re-reads the SAME
+##     target does NOT restart the tween (10 Hz cadence no-op).
+##   - Reduced-motion (`config["reduced_motion"]` or the OS accessibility
+##     setting when available): STATIC fill — value, % and icon snap, no tween.
+##   - Load path (refresh_all / init) always SNAPS (AC8 — loaded values render
+##     immediately, no stale pre-load values); only live tick changes ease.
+##
 ## TICKS_PER_DAY is NOT defined by TimeSystem (HUD GDD OQ1 — a game-designer
 ## decision). Data-driven provisional default 1800 (~3 real minutes at 1×,
 ## 10 ticks/s); config override key "ticks_per_day".
@@ -66,12 +96,19 @@
 ## 4.7.1 NOTES: class_name immediately follows extends; typed fields use the
 ## project's global class cache (headless-safe — cache is committed);
 ## locals reading system state use explicit `: Type` (never `:=` on Variant).
+## Tween: 4.7.1 has NO `loops` property and NO `get_total_duration()`; the
+## meter tween is created with the default loop count (plays once — no pulse)
+## and the configured duration is tracked on the HUD for tests. `custom_step()`
+## does not advance a scene-tree-bound running tween, so headless tests verify
+## the tween's target/duration via getters and drive the display callback
+## directly (see satisfaction_meter_test.gd).
 class_name Hud extends Control
 
 ## Data-driven config seams (coding standard: gameplay values never hardcoded).
 const CONFIG_TICKS_PER_DAY := "ticks_per_day"
 const CONFIG_UI_SCALE := "ui_scale"
 const CONFIG_MONEY_COUNT_DURATION := "money_count_duration"
+const CONFIG_SATISFACTION_EASE_DURATION := "satisfaction_ease_duration"
 const CONFIG_REDUCED_MOTION := "reduced_motion"
 
 ## Provisional day length (HUD GDD OQ1 — game-designer owns the final value).
@@ -106,6 +143,31 @@ const SPEND_DESATURATE_AMOUNT := 0.35
 const MONEY_TWEEN_TRANS := Tween.TRANS_QUAD
 const MONEY_TWEEN_EASE := Tween.EASE_OUT
 
+## Satisfaction ease duration (GDD tuning knob: default 1.0 s, safe range
+## 0.5–1.5 s — reinforces "this moves slowly, don't panic").
+const DEFAULT_SATISFACTION_EASE_DURATION := 1.0
+const SATISFACTION_EASE_MIN := 0.5
+const SATISFACTION_EASE_MAX := 1.5
+
+## Ramp zone thresholds on the [0,1] satisfaction scale (Story 003).
+## sat >= HIGH_ZONE -> Sage; MID_ZONE..HIGH_ZONE -> warm-neutral->Sage lerp;
+## < MID_ZONE -> Dusty-Rose->warm-neutral lerp (Dusty Rose only at the very
+## low end — Pillar 2 absolute: never saturated red).
+const SAT_HIGH_ZONE := 0.66
+const SAT_MID_ZONE := 0.33
+
+## Meter palette (Story 003 ramp anchors; art-bible palette throughout).
+const COLOR_SAGE := Color("8fbf9f")
+const COLOR_WARM_NEUTRAL := Color("c9a87c")   ## warm sand — the "mid" anchor
+const COLOR_DUSTY_ROSE := Color("e0a0a0")     ## art-bible Dusty Rose (muted)
+
+## Face icon glyphs — SHAPE carries state (colorblind-safe, TR-HUD-003).
+const ICON_HIGH := "☺"      ## filled, high satisfaction
+const ICON_MID := "🙂"      ## filled, mid satisfaction
+const ICON_LOW := "☹"       ## outline, very low satisfaction
+const SHAPE_FILLED := "filled"
+const SHAPE_OUTLINE := "outline"
+
 ## Layout anchors (art-bible / UX spec): text ≥ 16px @1080p; safe margin
 ## ≥ 16px from screen edges at 1.0× UI scale, scaled with UI scale; top bar
 ## ≤ ~8% of vertical screen height at 1080p (48px + 16px margin = 64px strip).
@@ -114,11 +176,11 @@ const TOP_BAR_HEIGHT_PX := 48
 const MIN_FONT_SIZE_PX := 16
 const METER_WIDTH_PX := 80
 const METER_HEIGHT_PX := 8
+const METER_CORNER_RADIUS_PX := 2  ## rounded fill — reads as a gauge, not a bar
 
 ## Art-bible palette (design/art/art-bible.md §4).
 const COLOR_BUTTER := Color("f5d97b")
 const COLOR_CHARCOAL := Color("3c3a42")
-const COLOR_SAGE := Color("8fbf9f")
 const COLOR_SKY := Color("8ec5e8")
 
 # === Injected systems (composition root wires these via init()) ===
@@ -130,6 +192,7 @@ var _orchestrator: SimulationOrchestrator
 # === Configuration ===
 var _ticks_per_day: int = DEFAULT_TICKS_PER_DAY
 var _ui_scale: float = DEFAULT_UI_SCALE
+var _satisfaction_ease_duration: float = DEFAULT_SATISFACTION_EASE_DURATION
 
 # === Derived display state (testable surface) ===
 var _displayed_day: int = 1
@@ -150,6 +213,20 @@ var _ack_tween: Tween = null
 var _money_count_duration: float = DEFAULT_MONEY_COUNT_DURATION
 ## Data-driven reduced-motion flag: true = snap, no tween.
 var _reduced_motion: bool = DEFAULT_REDUCED_MOTION
+
+# === Story 003 meter animation state ===
+## The [0,1] satisfaction value currently rendered (during an ease this lags
+## the target; after completion it equals the target). Drives the meter fill,
+## % label, icon glyph and fill color in lockstep via _apply_satisfaction_display.
+var _displayed_satisfaction: float = 0.0
+## The fill fraction (0..100) the active ease is heading toward — the HUD's
+## own record of the tween target (4.7.1 Tween exposes no target getter).
+var _meter_tween_target: float = 0.0
+## The active meter ease (null when static: reduced-motion, load snap, or idle).
+var _meter_tween: Tween = null
+## StyleBoxFlat overriding the ProgressBar "fill" — recolored per ramp value
+## so the meter fill itself carries the calm Sage->neutral->Dusty Rose ramp.
+var _meter_fill_style: StyleBoxFlat = null
 
 # === Child Controls (built in _init(), named for tests + Story 004) ===
 var _top_bar: HBoxContainer
@@ -221,7 +298,7 @@ func _build_ui() -> void:
 	_satisfaction_group = _make_group("SatisfactionGroup")
 	_top_bar.add_child(_satisfaction_group)
 
-	_face_icon = _make_label("FaceIcon", "🙂", COLOR_CHARCOAL)
+	_face_icon = _make_label("FaceIcon", ICON_MID, COLOR_CHARCOAL)
 	_satisfaction_group.add_child(_face_icon)
 	_meter = ProgressBar.new()
 	_meter.name = "Meter"
@@ -232,6 +309,13 @@ func _build_ui() -> void:
 	_meter.mouse_filter = Control.MOUSE_FILTER_IGNORE  # display-only in Story 001
 	_meter.custom_minimum_size = Vector2(_scaled(METER_WIDTH_PX), _scaled(METER_HEIGHT_PX))
 	_meter.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	# Story 003: rounded fill stylebox — the calm gauge fill. Recolored per ramp
+	# value in _apply_satisfaction_display (Sage high -> warm neutral mid ->
+	# muted Dusty Rose very low end; never saturated red — TR-HUD-002).
+	_meter_fill_style = StyleBoxFlat.new()
+	_meter_fill_style.bg_color = satisfaction_fill_color(0.5)
+	_meter_fill_style.set_corner_radius_all(_scaled(METER_CORNER_RADIUS_PX))
+	_meter.add_theme_stylebox_override("fill", _meter_fill_style)
 	_satisfaction_group.add_child(_meter)
 	_satisfaction_label = _make_label("SatisfactionLabel", "0%", COLOR_CHARCOAL)
 	_satisfaction_group.add_child(_satisfaction_label)
@@ -305,8 +389,16 @@ func _apply_config(config: Dictionary) -> void:
 			MONEY_COUNT_DURATION_MIN,
 			MONEY_COUNT_DURATION_MAX
 		)
+	if config.has(CONFIG_SATISFACTION_EASE_DURATION):
+		_satisfaction_ease_duration = clampf(
+			float(config[CONFIG_SATISFACTION_EASE_DURATION]),
+			SATISFACTION_EASE_MIN,
+			SATISFACTION_EASE_MAX
+		)
 	if config.has(CONFIG_REDUCED_MOTION):
 		_reduced_motion = bool(config[CONFIG_REDUCED_MOTION])
+	else:
+		_reduced_motion = _detect_reduced_motion()
 
 
 ## Event-driven refresh on balance mutation (S6). Money is the ONLY label
@@ -414,7 +506,8 @@ func _on_tick_completed(_tick_count: int) -> void:
 ## shows its loaded values on the first frame with no stale pre-load values
 ## (AC8). Also callable by the composition root after a load. Money snaps to
 ## the loaded balance (no tween — a load is not an animation; Story 002's
-## tween only fires on balance_changed).
+## tween only fires on balance_changed). The satisfaction portion SNAPS (load
+## path — no ease); only live tick changes ease (Story 003).
 func refresh_all() -> void:
 	if not _initialized:
 		return
@@ -426,17 +519,80 @@ func refresh_all() -> void:
 		_ack_tween.kill()
 	_money_label.text = format_money(balance)
 	_coin_icon.add_theme_color_override("font_color", COLOR_BUTTER)
-	_refresh_satisfaction()
+	_snap_satisfaction()
 	_refresh_time()
 
 
-## Reads global_satisfaction (a plain var — no signal exists) into the %
-## label and the meter fill. Meter ramp + icon shape + ~1s ease are Story
-## 003's scope; Story 001 binds the raw value.
+## Load-path satisfaction render: read global_satisfaction (a plain var — no
+## signal exists) and apply it IMMEDIATELY — meter fill, % label, icon shape
+## and fill color all snap to the loaded value (AC8: no stale pre-load values,
+## no ease on load). Kills any in-flight tween so a refresh_all during an
+## ease settles at the loaded value.
+func _snap_satisfaction() -> void:
+	if not _initialized:
+		return
+	var sat: float = clampf(float(_satisfaction.global_satisfaction), 0.0, 1.0)
+	_kill_meter_tween()
+	_meter_tween_target = sat * 100.0
+	_apply_satisfaction_display(sat)
+
+
+## Tick-path satisfaction render (S2, 10 Hz cadence). On a target change the
+## meter EASES to the new fill over `_satisfaction_ease_duration` (~1 s),
+## with the % label + icon + fill color driven in lockstep by the tween.
+## Re-targets mid-tween (kill + new tween from the CURRENT displayed value —
+## no queue backlog, GDD Edge Cases). A tick that re-reads the SAME target is
+## a no-op (does NOT restart the tween). Reduced-motion: static fill (no ease).
 func _refresh_satisfaction() -> void:
-	var sat: float = _satisfaction.global_satisfaction
-	_meter.value = clampf(sat, 0.0, 1.0) * 100.0
-	_satisfaction_label.text = "%d%%" % roundi(clampf(sat, 0.0, 1.0) * 100.0)
+	if not _initialized:
+		return
+	var sat: float = clampf(float(_satisfaction.global_satisfaction), 0.0, 1.0)
+	var target: float = sat * 100.0
+	if _reduced_motion:
+		_snap_satisfaction()
+		return
+	# 10 Hz no-op: same target already applied or already being eased to.
+	if is_equal_approx(target, _meter_tween_target):
+		return
+	_kill_meter_tween()
+	_meter_tween_target = target
+	_meter_tween = create_tween()
+	_meter_tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	_meter_tween.tween_method(
+		_apply_satisfaction_display,
+		_displayed_satisfaction,
+		sat,
+		_satisfaction_ease_duration
+	)
+
+
+## Single choke point for rendering ONE satisfaction value: meter fill (0..100),
+## % label, face icon shape, and fill color all derive from [value] ∈ [0,1].
+## The meter tween calls this every step, so the icon + % update WITH the fill
+## (AC3) and no element can drift from the others. Also called by the snap path.
+func _apply_satisfaction_display(value: float) -> void:
+	var v: float = clampf(value, 0.0, 1.0)
+	_displayed_satisfaction = v
+	_meter.value = v * 100.0
+	_satisfaction_label.text = "%d%%" % roundi(v * 100.0)
+	_face_icon.text = satisfaction_icon(v)
+	_meter_fill_style.bg_color = satisfaction_fill_color(v)
+
+
+## Kills and clears the active meter tween, if any.
+func _kill_meter_tween() -> void:
+	if _meter_tween != null and _meter_tween.is_valid():
+		_meter_tween.kill()
+	_meter_tween = null
+
+
+## Reduced-motion detection: the OS accessibility preference when the engine
+## exposes it (4.7.1: DisplayServer.accessibility_should_reduce_animation(),
+## 1 = yes), else false. Config `reduced_motion` overrides this in _apply_config.
+func _detect_reduced_motion() -> bool:
+	if not DisplayServer.has_method("accessibility_should_reduce_animation"):
+		return false
+	return int(DisplayServer.accessibility_should_reduce_animation()) == 1
 
 
 ## Reads tick_count and derives day + time_of_day (GDD Formulas), then
@@ -511,6 +667,49 @@ static func format_time_of_day(time_of_day: float) -> String:
 	var hour: int = total_minutes / 60
 	var minute: int = total_minutes % 60
 	return "%02d:%02d" % [hour, minute]
+
+
+# === Story 003: satisfaction meter pure derivation functions ===
+
+## TR-HUD-002 fill ramp: Sage (high) -> warm neutral (mid) -> soft muted
+## Dusty Rose ONLY at the very low end. Piecewise-linear between three anchors
+## on the [0,1] satisfaction scale:
+##   sat >= SAT_HIGH_ZONE (0.66)          -> Sage (#8FBF9F)
+##   SAT_MID_ZONE..SAT_HIGH_ZONE (0.33-0.66) -> lerp(warm neutral -> Sage)
+##   sat < SAT_MID_ZONE (0.33)            -> lerp(Dusty Rose -> warm neutral)
+## Every ramp color is muted by construction (all three anchors have
+## saturation < 0.4) — NEVER saturated red, NEVER reads as an alarm (Pillar 2
+## absolute). Pure static — no state, no animation, no pulse.
+static func satisfaction_fill_color(sat: float) -> Color:
+	var s := clampf(sat, 0.0, 1.0)
+	if s >= SAT_HIGH_ZONE:
+		return COLOR_SAGE
+	if s >= SAT_MID_ZONE:
+		var t: float = (s - SAT_MID_ZONE) / (SAT_HIGH_ZONE - SAT_MID_ZONE)
+		return COLOR_WARM_NEUTRAL.lerp(COLOR_SAGE, t)
+	var t_low: float = s / SAT_MID_ZONE
+	return COLOR_DUSTY_ROSE.lerp(COLOR_WARM_NEUTRAL, t_low)
+
+
+## TR-HUD-003 face icon GLYPH: ☺ (high, filled), 🙂 (mid, filled),
+## ☹ (very low, outline). Zone boundaries match the fill ramp so the icon
+## changes exactly when the color ramp changes zone.
+static func satisfaction_icon(sat: float) -> String:
+	var s := clampf(sat, 0.0, 1.0)
+	if s >= SAT_HIGH_ZONE:
+		return ICON_HIGH
+	if s >= SAT_MID_ZONE:
+		return ICON_MID
+	return ICON_LOW
+
+
+## TR-HUD-003 icon SHAPE state: "filled" for sat >= SAT_MID_ZONE, "outline"
+## below. This is the colorblind-safe channel — the state is readable from
+## shape alone (a filled face vs an outline face), independent of the ramp
+## color. The % label + the glyph carry the exact zone.
+static func satisfaction_icon_shape(sat: float) -> String:
+	var s := clampf(sat, 0.0, 1.0)
+	return SHAPE_FILLED if s >= SAT_MID_ZONE else SHAPE_OUTLINE
 
 
 # === Node-building helpers ===
@@ -625,3 +824,43 @@ func is_reduced_motion() -> bool:
 ## Butter mid-spend-ack). Tests assert the ack color is never red.
 func get_coin_icon_color() -> Color:
 	return _coin_icon.get_theme_color("font_color")
+
+# === Story 003 meter getters (test surface) ===
+
+## True while the satisfaction meter is easing (a live tween exists and is
+## valid). False under reduced-motion / load snap / idle.
+func is_meter_animating() -> bool:
+	return _meter_tween != null and _meter_tween.is_valid()
+
+## The active meter tween (null when static). Exposed so tests can assert the
+## tween plays ONCE (loops_left == 1 — no pulse) and stays a single tween.
+func get_meter_tween() -> Tween:
+	return _meter_tween
+
+## The fill fraction (0..100) the active ease is heading toward.
+func get_meter_tween_target() -> float:
+	return _meter_tween_target
+
+## The configured ease duration in seconds (GDD knob, default 1.0).
+func get_satisfaction_ease_duration() -> float:
+	return _satisfaction_ease_duration
+
+## The [0,1] satisfaction value currently rendered (lags target mid-ease).
+func get_displayed_satisfaction() -> float:
+	return _displayed_satisfaction
+
+## True when the static-fill (no ease) accessibility mode is active.
+func get_reduced_motion() -> bool:
+	return _reduced_motion
+
+## Story 003 test seam: applies one satisfaction display value directly —
+## the same callback the meter tween drives every step. Lets headless tests
+## verify the AC3 lockstep contract (meter value + % + icon + fill color all
+## derive from the same value) without advancing a scene-tree tween.
+func apply_satisfaction_display(value: float) -> void:
+	_apply_satisfaction_display(value)
+
+## Story 003 test seam: force reduced-motion on/off at runtime (config
+## `reduced_motion` sets it at init; this lets tests flip it live).
+func set_reduced_motion(enabled: bool) -> void:
+	_reduced_motion = enabled
