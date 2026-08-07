@@ -7,6 +7,15 @@ config_version=5
 
 config/name="GymManager"
 config/features=PackedStringArray("4.7", "Forward Plus")
+run/main_scene="res://src/main.tscn"
+
+[display]
+
+; Playable build window: 1280x720 matches the UI layer's default viewport
+; (SelectionToolbar/HUD use 1280x720 as the presentation viewport).
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/stretch/mode="canvas_items"
 
 [rendering]
 

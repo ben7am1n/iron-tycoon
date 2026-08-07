@@ -1,0 +1,60 @@
+{
+  "equipment": [
+    {
+      "id": "treadmill",
+      "display_name": "Treadmill",
+      "zone_membership": ["cardio"],
+      "footprint_cells": [{"x": 0, "y": 0}, {"x": 1, "y": 0}],
+      "access_cells": [{"x": 0, "y": 1}],
+      "cost": 200,
+      "unlock_requirement": "",
+      "effects": [{"tag": "cardio", "magnitude": 1.0}],
+      "use_duration_mean_ticks": 200,
+      "use_duration_stddev_ticks": 35,
+      "use_duration_min_ticks": 100,
+      "use_duration_max_ticks": 300
+    },
+    {
+      "id": "bike",
+      "display_name": "Stationary Bike",
+      "zone_membership": ["cardio"],
+      "footprint_cells": [{"x": 0, "y": 0}],
+      "access_cells": [{"x": 1, "y": 0}],
+      "cost": 220,
+      "unlock_requirement": "",
+      "effects": [{"tag": "cardio", "magnitude": 0.8}],
+      "use_duration_mean_ticks": 180,
+      "use_duration_stddev_ticks": 30,
+      "use_duration_min_ticks": 90,
+      "use_duration_max_ticks": 270
+    },
+    {
+      "id": "bench_press",
+      "display_name": "Bench Press",
+      "zone_membership": ["strength"],
+      "footprint_cells": [{"x": 0, "y": 0}, {"x": 1, "y": 0}, {"x": 0, "y": 1}, {"x": 1, "y": 1}],
+      "access_cells": [{"x": 2, "y": 1}],
+      "cost": 350,
+      "unlock_requirement": "",
+      "effects": [{"tag": "strength", "magnitude": 0.5}],
+      "use_duration_mean_ticks": 250,
+      "use_duration_stddev_ticks": 40,
+      "use_duration_min_ticks": 125,
+      "use_duration_max_ticks": 375
+    },
+    {
+      "id": "yoga_mat",
+      "display_name": "Yoga Mat",
+      "zone_membership": ["flex"],
+      "footprint_cells": [{"x": 0, "y": 0}],
+      "access_cells": [{"x": 1, "y": 0}],
+      "cost": 120,
+      "unlock_requirement": "",
+      "effects": [],
+      "use_duration_mean_ticks": 150,
+      "use_duration_stddev_ticks": 15,
+      "use_duration_min_ticks": 75,
+      "use_duration_max_ticks": 225
+    }
+  ]
+}
