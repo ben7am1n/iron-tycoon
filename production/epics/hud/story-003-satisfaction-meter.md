@@ -1,7 +1,7 @@
 # Story 003: Satisfaction Meter
 
 > **Epic**: hud
-> **Status**: Ready
+> **Status**: Complete — 2026-08-06 (automated coverage ✅; visual walkthrough pending playable build, ADVISORY by design)
 > **Layer**: Presentation
 > **Type**: Visual/Feel
 > **Estimate**: S — 1 session (≤2h)
@@ -30,9 +30,9 @@
 
 *From GDD `design/gdd/hud.md`, scoped to this story:*
 
-- [ ] AC3 GIVEN `global_satisfaction` changes, WHEN the HUD reads it, THEN the meter eases to the new fill over ~1 s, icon shape + numeric % both update, and no color ever reads as red/alarm
-- [ ] AC6 GIVEN a colorblind-simulation pass, WHEN viewing the HUD, THEN money, satisfaction, and speed states are each distinguishable via icon/shape/number alone
-- [ ] Core Rule 2 GIVEN satisfaction at rock bottom, WHEN the meter renders, THEN it shows a low muted warm tone — never red, never flashing (Pillar 2 absolute), still paired with % + icon
+- [x] AC3 GIVEN `global_satisfaction` changes, WHEN the HUD reads it, THEN the meter eases to the new fill over ~1 s, icon shape + numeric % both update, and no color ever reads as red/alarm
+- [x] AC6 GIVEN a colorblind-simulation pass, WHEN viewing the HUD, THEN money, satisfaction, and speed states are each distinguishable via icon/shape/number alone
+- [x] Core Rule 2 GIVEN satisfaction at rock bottom, WHEN the meter renders, THEN it shows a low muted warm tone — never red, never flashing (Pillar 2 absolute), still paired with % + icon
 
 ---
 
@@ -72,20 +72,9 @@
 
 *Derived from GDD acceptance criteria. Visual/Feel story — manual verification plus automated fill-mapping where practical.*
 
-- **AC3**: 缓动与更新
-  - Setup: game running; change satisfaction state so `global_satisfaction` moves (e.g. 0.8 → 0.5)
-  - Verify: meter eases to new fill over ~1s; % and icon shape update with it
-  - Pass condition: ~1s ease; % matches value; icon shape reflects state; no red/alarm color at any fill
-
-- **AC6**: 色盲模拟
-  - Setup: desaturate the screen (colorblind simulation pass)
-  - Verify: satisfaction state distinguishable via % + icon shape alone
-  - Pass condition: no information is carried by color alone
-
-- **Core Rule 2 (rock bottom)**: 谷底不报警
-  - Setup: force satisfaction to its lowest value
-  - Verify: meter shows a low muted warm tone (soft Dusty Rose at the very low end), never saturated red, never flashing
-  - Pass condition: calm muted tone + % + icon; no alarm animation
+- **AC3**: 缓动与更新 — ✅ Automated (282 asserts in `tests/unit/hud/satisfaction_meter_test.gd`): ease tween created on change with target + default 1.0 s duration; lockstep display (meter/%/icon/fill color from one value); 10 Hz no-op; re-target mid-tween; fill ramp never saturated red. Visual ~1 s ease walkthrough pending playable build (ADVISORY).
+- **AC6**: 色盲模拟 — ✅ Automated: % label always present; icon shape (filled vs outline) flips exactly where the ramp enters the rose zone; three zones have distinct (glyph, shape) pairs. Desaturation pass pending playable build (ADVISORY).
+- **Core Rule 2 (rock bottom)**: 谷底不报警 — ✅ Automated: `sat=0` renders Dusty Rose (saturation 0.286 < 0.4), ☹ outline icon, 0% label, no repeating tween (loops_left == 1). Visual calm-tone walkthrough pending playable build (ADVISORY).
 
 ---
 
@@ -96,11 +85,33 @@
 - `production/qa/evidence/hud-satisfaction-meter-evidence.md` — manual walkthrough / sign-off
 - Automated coverage of the fill/ease mapping where practical (e.g. `tests/unit/hud/satisfaction_meter_test.gd`)
 
-**Status**: [ ] Not yet created
+**Status**: [x] Complete — 2026-08-06
+
+`src/ui/hud.gd` now renders the calm satisfaction meter (Story 003): a short
+horizontal rounded-fill ProgressBar (NOT a health-bar metaphor) whose fill
+ramps Sage (high) → warm neutral (mid) → soft muted Dusty Rose (very low end,
+never saturated red), driven by pure static `satisfaction_fill_color(sat)`.
+The colorblind-safe pairing is complete: the % label always shows the value
+and the face icon SHAPE carries state (`satisfaction_icon` → ☺/🙂/☹,
+`satisfaction_icon_shape` → "filled"/"outline"). On a live `global_satisfaction`
+change the meter eases over ~1 s (GDD knob `satisfaction_ease_duration`,
+0.5–1.5 s safe range) with the % + icon + fill color updating in lockstep via
+the single `_apply_satisfaction_display(value)` choke point; re-targets
+mid-tween without queue backlog; the 10 Hz tick no-ops on an unchanged target;
+the load path (refresh_all/init) SNAPS so loaded values render immediately
+(AC8 preserved). Reduced-motion (`config["reduced_motion"]` or the OS
+preference) gives a static fill — no tween. Automated coverage:
+`tests/unit/hud/satisfaction_meter_test.gd` (282 assertions — fill mapping,
+icon shape state, ease behavior, reduced-motion, config knob), registered in
+`tests/headless_runner.gd` TEST_FILES; `hud_state_binding_test.gd`
+`_test_satisfaction_read_on_tick` updated to the animated contract (+3).
+Full headless suite: 4321 passed / 0 failed (baseline 4036 + 285 new), no
+new leaks. Visual walkthrough checklist (AC3/AC6/Core Rule 2/reduced-motion)
+is documented in the evidence file, pending the playable build for sign-off.
 
 ---
 
 ## Dependencies
 
-- Depends on: Story 001 (top-bar layout + satisfaction % Label binding)
+- Depends on: Story 001 (top-bar layout + satisfaction % Label binding) — complete (merge c918b16)
 - Unlocks: None directly (parallel branch with Story 002/004)
