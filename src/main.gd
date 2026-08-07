@@ -45,6 +45,7 @@ const RejectionTooltipScript := preload("res://src/ui/rejection_tooltip.gd")
 const CongestionOverlayControllerScript := preload("res://src/ui/congestion_overlay_controller.gd")
 const SelectionToolbarScript := preload("res://src/ui/selection_toolbar.gd")
 const SelectionCueScript := preload("res://src/ui/selection_cue.gd")
+const Palette := preload("res://src/palette.gd")
 
 # === 场景级常量（组装参数，非玩法数值） ===
 const GRID_W := 13
@@ -330,18 +331,30 @@ func _process(delta: float) -> void:
 func _draw() -> void:
 	if _grid == null or _cong == null:
 		return
+	_draw_floor_zones()
 	_draw_grid_lines()
 	_draw_equipment()
 	_draw_members()
 
 
+## 地板三区域色块（art-bible §6：功能区用色块 + 柔和描边区分，分区一眼可读）。
+## 数据源：palette.gd ZONE_RECTS / ZONE_COLORS（单一来源，Phase B/C 复用）。
+## 画在最底层（先于网格线/设备/会员），不遮挡任何上层元素。
+func _draw_floor_zones() -> void:
+	for zone: String in Palette.ZONE_RECTS:
+		var rect: Rect2i = Palette.ZONE_RECTS[zone]
+		var px_rect := Rect2i(rect.position * CELL_SIZE, rect.size * CELL_SIZE)
+		draw_rect(px_rect, Palette.ZONE_COLORS[zone], true)
+		draw_rect(px_rect, Palette.ZONE_BORDER, false, 1.0)
+
+
 func _draw_grid_lines() -> void:
 	for x in GRID_W + 1:
 		draw_line(Vector2(x * CELL_SIZE, 0), Vector2(x * CELL_SIZE, GRID_H * CELL_SIZE),
-			Color(0.25, 0.25, 0.3), 1.0)
+			Palette.GRID_LINE, 1.0)
 	for y in GRID_H + 1:
 		draw_line(Vector2(0, y * CELL_SIZE), Vector2(GRID_W * CELL_SIZE, y * CELL_SIZE),
-			Color(0.25, 0.25, 0.3), 1.0)
+			Palette.GRID_LINE, 1.0)
 
 
 func _draw_equipment() -> void:

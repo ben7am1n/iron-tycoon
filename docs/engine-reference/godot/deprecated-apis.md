@@ -41,3 +41,10 @@ with the "Use Instead" column.
 | `Texture2D` in shader parameters | `Texture` base type | Changed in 4.4 |
 | Manual post-process viewport chains | `Compositor` + `CompositorEffect` | Structured post-processing (4.3+) |
 | GodotPhysics3D for new projects | Jolt Physics 3D | Default since 4.6; better stability |
+
+## Enums & Constants
+
+| Deprecated | Use Instead | Since | Notes |
+|------------|-------------|-------|-------|
+| `Performance.MONITOR_TIME_FPS` | `Performance.TIME_FPS` | 4.7 | `MONITOR_` prefix removed from the `Monitor` enum (verified 4.7.1 via ClassDB) |
+| `Performance.MONITOR_RENDER_TOTAL_DRAW_CALLS_IN_FRAME` | `Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME` | 4.7 | Same prefix removal; use for draw-call budget checks |

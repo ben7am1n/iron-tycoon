@@ -24,6 +24,10 @@ renderer/rendering_method.mobile="forward_plus"
 ; (art-bible §8 — 2D 像素锐利靠导入设置的 Nearest 保证；4.7 最近邻视口缩放仅作用于 3D)
 textures/canvas_textures/default_texture_filter=0
 textures/canvas_textures/default_texture_mipmap_mode=0
+; Phase A (art-bible §4): 默认黑底 → Warm Cream #F4E9D8。地板/背景底，
+; 与 src/palette.gd CREAM_BG 同值（引擎级配置无法引用脚本常量，绘制层一律走
+; palette.gd；此处仅做引擎清屏底色）。
+environment/defaults/default_clear_color=Color(0.956863, 0.913725, 0.847059, 1)
 
 [input]
 
