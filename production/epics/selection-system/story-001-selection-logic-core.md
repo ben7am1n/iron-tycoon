@@ -1,7 +1,7 @@
 # Story 001: Selection Logic Core + Instance Mapping
 
 > **Epic**: selection-system
-> **Status**: Ready
+> **Status**: In Review
 > **Layer**: Presentation
 > **Type**: Logic
 > **Estimate**: M — 2 sessions (≤4h)
@@ -30,13 +30,13 @@
 
 *From GDD `design/gdd/selection-system.md`, scoped to this story:*
 
-- [ ] AC1 GIVEN nothing selected, WHEN the player clicks a placed instance, THEN the outline+icon+toolbar appear within one frame and `selection_changed(instance_id, …)` fires
-- [ ] AC2 GIVEN a selection, WHEN the player clicks empty buildable floor, THEN selection clears, the toolbar disappears, and `selection_changed(null)` fires
-- [ ] AC9 GIVEN a selected piece A, WHEN the player clicks a different placed piece B, THEN selection swaps directly to B (no intermediate deselect)
-- [ ] AC10 GIVEN a selected piece A, WHEN the player clicks A again, THEN it is a no-op — selection stays on A, no signal fires, no toolbar flicker
-- [ ] AC11 GIVEN a selected piece, WHEN the piece is removed externally, THEN selection clears and `selection_changed(null)` fires
-- [ ] AC12 GIVEN a placement drag is active (PlacementSystem `is_dragging()` true), WHEN the player clicks on the grid, THEN SelectionSystem does not resolve a new selection
-- [ ] Core Rule 1 GIVEN the player presses Esc, WHEN no sell-confirm is pending, THEN selection clears (keyboard wiring lands in Story 002; the deselect logic itself lives here)
+- [x] AC1 GIVEN nothing selected, WHEN the player clicks a placed instance, THEN the outline+icon+toolbar appear within one frame and `selection_changed(instance_id, …)` fires
+- [x] AC2 GIVEN a selection, WHEN the player clicks empty buildable floor, THEN selection clears, the toolbar disappears, and `selection_changed(null)` fires
+- [x] AC9 GIVEN a selected piece A, WHEN the player clicks a different placed piece B, THEN selection swaps directly to B (no intermediate deselect)
+- [x] AC10 GIVEN a selected piece A, WHEN the player clicks A again, THEN it is a no-op — selection stays on A, no signal fires, no toolbar flicker
+- [x] AC11 GIVEN a selected piece, WHEN the piece is removed externally, THEN selection clears and `selection_changed(null)` fires
+- [x] AC12 GIVEN a placement drag is active (PlacementSystem `is_dragging()` true), WHEN the player clicks on the grid, THEN SelectionSystem does not resolve a new selection
+- [x] Core Rule 1 GIVEN the player presses Esc, WHEN no sell-confirm is pending, THEN selection clears (keyboard wiring lands in Story 002; the deselect logic itself lives here)
 
 ---
 
@@ -122,7 +122,49 @@
 **Required evidence**:
 - `tests/unit/selection_system/selection_logic_test.gd` — must exist and pass (single-select, swap, no-op, external invalidation, drag suppression, signal arity)
 
-**Status**: [ ] Not yet created
+**Status**: [x] In Review — 2026-08-06
+
+`src/systems/selection_system.gd` (RefCounted logic object, no scene-tree)
+exists with the instance mapping and select/deselect logic; wired into
+`SimulationOrchestrator` (constructed once PlacementSystem exists, `_post_init`
+subscriptions active). `tests/unit/selection_system/selection_logic_test.gd`
+(75 assertions) exists, passes, and is registered in
+`tests/headless_runner.gd` TEST_FILES. Full headless suite: 3503 passed /
+0 failed (baseline 3428 + 75 new).
+
+Coverage by AC:
+- **AC1** (13): click placed instance → selection resolves + `selection_changed`
+  (id, def, cell, rotation) fires with the exact payload; any footprint cell of
+  a multi-cell piece selects; clicking empty floor with nothing selected →
+  no resolution, no signal.
+- **AC2** (8): click empty buildable floor → clears + `selection_changed(null)`;
+  edge: click NON-buildable floor → NO deselect; click empty floor with no
+  selection → no-op.
+- **AC9** (5): click a different piece → DIRECT swap, zero intermediate
+  deselect emissions, payload for the new piece.
+- **AC10** (2): re-click the selected piece → no-op, no signal (not a
+  toggle-off).
+- **AC11** (6): selected piece removed externally (grid.clear) → clears +
+  `selection_changed(null)` exactly once; removal of a NON-selected piece →
+  no signal, selection untouched, mapping entry dropped.
+- **AC12** (4): PlacementSystem `is_dragging()` → click does not resolve; after
+  drag ends, clicks resolve normally.
+- **Core Rule 1** (3): `on_esc_pressed()` → clears + `selection_changed(null)`;
+  second press with no selection → no-op.
+- **TR-SEL-005 mapping** (16): rotation derived from footprint match — R90
+  placement reports rotation 90; R180 reports 180 with the min-of-fp∪ac anchor
+  convention (AC-D5.2); relocate re-commit updates the entry under the SAME
+  instance_id (selection clears at pickup per GDD Core Rule 3, re-resolves at
+  the new position with the new rotation); click resolving an instance with no
+  mapping entry → loud no-op (data-consistency guard).
+- **Signal arity** (10): select emits EXACTLY FOUR arguments (sentinel-default
+  spy: all 4 real values); deselect emits EXACTLY ONE argument, null (the
+  TR-SEL-004 `selection_changed(null)` contract — b/c/d stay at the sentinel).
+  Engine semantics probe-verified in 4.7.1: `emit()` dispatches exactly the
+  passed arg count; emitting fewer than declared is legal (missing args become
+  defaults at the callable boundary), emitting more is a runtime error;
+  consumers must declare 1..4-arg handlers with optional params.
+- **Guard** (2): public methods before init() → safe defaults, no crash.
 
 ---
 
