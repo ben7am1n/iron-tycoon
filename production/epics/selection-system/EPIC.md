@@ -12,7 +12,7 @@
 | # | Story | Type | Status | ADR |
 |---|-------|------|--------|-----|
 | 001 | Selection Logic Core + Instance Mapping | Logic | Complete — 2026-08-07 (QA 终审 PASS, t_bcc85025) | ADR-0005, ADR-0006 |
-| 002 | Input Bridge Node + Keyboard Handling | Integration | Ready | ADR-0005 |
+| 002 | Input Bridge Node + Keyboard Handling | Integration | Complete — 2026-08-07 (QA 终审 PASS, t_ff6dffa5) | ADR-0005 |
 | 003 | Sell Flow (Soft-Confirm + Refund) | Logic | Ready | ADR-0005, ADR-0006 |
 | 004 | Contextual Toolbar + Selection Cue + Move Handoff | UI | Ready | ADR-0005 |
 | 005 | Load-Time Mapping Rebuild | Integration | Ready | ADR-0005 |

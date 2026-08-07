@@ -1,7 +1,7 @@
 # Story 002: Input Bridge Node + Keyboard Handling
 
 > **Epic**: selection-system
-> **Status**: Ready
+> **Status**: Complete — 2026-08-07 (QA 终审 PASS, t_ff6dffa5)
 > **Layer**: Presentation
 > **Type**: Integration
 > **Estimate**: M — 2 sessions (≤4h)
@@ -107,7 +107,52 @@
 **Required evidence**:
 - `tests/integration/selection_system/bridge_input_test.gd` OR interaction test — must exist and pass (bridge forwarding, Esc/Del semantics, timer revert)
 
-**Status**: [ ] Not yet created
+**Status**: [x] Complete — 2026-08-07 (QA 终审 PASS, t_ff6dffa5)
+
+`src/systems/selection_input_bridge.gd` (bridge Node, 367 lines) exists,
+owned by `SimulationOrchestrator` (Phase 2, mirrors the placement bridge);
+forwards screen→cell clicks via `GridSystem.world_to_grid()` (OOB ignored),
+handles Esc/Del via `_unhandled_key_input` (dual-focus 4.6+), owns the
+generation-guarded 2s SceneTreeTimer (`process_always=true`), and exposes
+`request_sell_confirm()` / `confirm_sell()` / `is_move_blocked()` plus
+`sell_confirm_started/reverted/confirmed` signals. Wired into
+`SimulationOrchestrator`; `tests/integration/selection_system/
+bridge_input_test.gd` (102 assertions) exists, passes, and is registered in
+`tests/headless_runner.gd` TEST_FILES. Full headless suite (independent QA
+re-run on merged main @ e255a78): 4772 passed / 0 failed / exit 0 /
+0 SCRIPT ERROR (4668 pre-review tip + 104 BSUI-004 merged during review;
+leak profile 218/12 unchanged from pre-existing baseline).
+
+Coverage by AC (exact assert counts, verified against test file):
+- **TR-SEL-008** (26): bridge is a child of SimulationOrchestrator and
+  forwards to the same SelectionSystem instance; synthetic click at P →
+  `world_to_grid(P)` exactly once → `on_cell_clicked(world_to_grid(P))`,
+  raw pixels never reach the system; OOB clicks ignored; real place+click
+  selects with full payload; empty-floor click deselects; no `_process`
+- **AC3** (14): Esc deselects + `selection_changed(null)` fires once; Esc
+  no-selection no-op; Esc during pending sell-confirm = revert only
+  (selection stays per GDD states table), second Esc deselects
+- **Core Rule 5** (11): Del opens the same soft-confirm as Sell
+  (`sell_confirm_started` once, NO `sell_confirm_confirmed` — keyboard never
+  bypasses the confirm); Del no-selection no-op; Del during pending no
+  double-morph
+- **Timer** (22): 2s timeout reverts, no sale, selection stays; confirm
+  within window → confirmed fires once, stale timeout after is a no-op;
+  stale timeout from cancelled window cannot kill a newer window
+  (generation guard); `create_timer(duration, true)` render-time wiring
+  (fires while paused)
+- **Keyboard hygiene** (5): unrelated keys ignored; Esc/Del echo repeats and
+  key releases ignored (dual-focus hotkeys)
+- **Click-away** (5): grid click while pending reverts then resolves
+  normally
+- **Move guard** (4): `is_move_blocked()` true while PlacementSystem is
+  DRAGGING (AC27), false idle/after
+- **External invalidation** (6): piece removed by another path while pending
+  → revert, no sale (AC11 via `selection_changed` subscription)
+- **Ownership** (5): bridge Node destroyed → SelectionSystem NOT freed,
+  selection state + composition-root reference survive
+- **Config** (4): `sell_confirm_duration` data-driven, clamped to GDD safe
+  range (default 2.0 / 10.0→3.0 / 0.1→1.5 / 1.8→1.8)
 
 ---
 
