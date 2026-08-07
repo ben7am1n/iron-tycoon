@@ -1,7 +1,7 @@
 # Story 004: Rejection Tooltip + Layer Priority + Drag Dimming
 
 > **Epic**: congestion-flow-overlay
-> **Status**: Complete — 2026-08-07
+> **Status**: Complete — 2026-08-07 (QA 终审 PASS, t_43138dbd)
 > **Layer**: Presentation
 > **Type**: Visual/Feel
 > **Estimate**: M — 2 sessions (≤4h)
@@ -107,9 +107,9 @@
 **Story Type**: Visual/Feel
 **Required evidence**:
 - `production/qa/evidence/cfo-feedback-evidence.md` — manual walkthrough / sign-off
-- Automated coverage of the fail-code→bucket mapping: `tests/unit/congestion_overlay/rejection_bucket_test.gd` (31 asserts) + `tests/unit/congestion_overlay/drag_dim_priority_test.gd` (47 asserts — AC3 drag-dim + Core Rule 7 priority + controller wiring)
+- Automated coverage of the fail-code→bucket mapping: `tests/unit/congestion_overlay/rejection_bucket_test.gd` (31 asserts) + `tests/unit/congestion_overlay/drag_dim_priority_test.gd` (48 asserts — AC3 drag-dim + Core Rule 7 priority + controller wiring)
 
-**Status**: [x] Created — 78/0 passing (registered in `tests/headless_runner.gd` TEST_FILES; full suite 3605/0 green 2026-08-06)
+**Status**: [x] Complete — 2026-08-07 (QA 终审 PASS, t_43138dbd: 79/0 passing, registered in `tests/headless_runner.gd` TEST_FILES; full suite 4566/0 green on merged main 2026-08-07)
 
 ---
 

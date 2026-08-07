@@ -17,7 +17,7 @@
 ##      text is drawn in _draw() via CanvasItem.draw_string (4.7.1
 ##      signature: Font first, font_size before color; ThemeDB.fallback_font
 ##      guarded under headless).
-##   2. DRAG DIMMING (Core Rule 8, AC3). Polls PlacementSystem.is_dragging()
+##   2. DRAG DIMMING (Core Rule 7 / AC3). Polls PlacementSystem.is_dragging()
 ##      per frame (a cheap bool read — the story's sanctioned observation
 ##      mechanism; there is no drag-start signal in the ADR-0005 catalog)
 ##      and drives HeatmapLayer.set_drag_active() on the edges: drag begins
@@ -122,7 +122,7 @@ func _post_init() -> void:
 			_placement.preview_validity_changed.connect(_on_preview_validity_changed)
 
 
-## Per-frame drag observation (AC3 / Core Rule 8): polls
+## Per-frame drag observation (AC3 / Core Rule 7): polls
 ## PlacementSystem.is_dragging() — the story-mandated mechanism, a pure
 ## O(1) state read (TR-PS-010), NOT the TR-PS-012 no-polling rule (which
 ## forbids per-frame can_place/world_to_grid preview work). On edges:

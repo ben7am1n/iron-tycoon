@@ -6,7 +6,7 @@
 #   AC3  placement drag begins (is_dragging true) -> heatmap tweens to
 #        ≤20% effective opacity; drag end -> restores (ON -> prior
 #        opacity, OFF -> hidden)
-#   Core Rule 8 edge  toggling mid-drag: toggle sets the target opacity;
+#   Core Rule 7 edge  toggling mid-drag: toggle sets the target opacity;
 #        the drag-dim still overrides to ≤20% until drag end, then the
 #        toggled state applies (ON -> full after drag; OFF -> hidden)
 #   Core Rule 7  layering priority: access-blocked (full opacity, never
@@ -341,10 +341,10 @@ func _test_ac3_off_at_drag_start_stays_hidden() -> void:
 		"AC3-edge: toggle ON mid-drag -> dimmed ≤20%, visible (override wins)")
 
 
-# === Core Rule 8 edge: toggling mid-drag ===
+# === Core Rule 7 edge: toggling mid-drag ===
 
 func _test_ac3_toggle_off_mid_drag() -> void:
-	print("\n[CR8 edge] toggle OFF mid-drag -> drag-dim overrides to ≤20% until drag end, then hidden")
+	print("\n[CR7 edge] toggle OFF mid-drag -> drag-dim overrides to ≤20% until drag end, then hidden")
 	var gs := _make_grid([])
 	var heatmap := _make_heatmap(gs)
 	heatmap.call("toggle_flow_overlay")  # ON
@@ -352,29 +352,29 @@ func _test_ac3_toggle_off_mid_drag() -> void:
 
 	heatmap.call("toggle_flow_overlay")  # toggle OFF mid-drag
 	var effective: float = float(heatmap.get("modulate").a) * 0.6
-	_check(not heatmap.call("is_heatmap_on"), "CR8-edge: toggle state is now OFF")
+	_check(not heatmap.call("is_heatmap_on"), "CR7-edge: toggle state is now OFF")
 	_check(effective <= 0.2 + EPS and heatmap.get("visible") == true,
-		"CR8-edge: during drag, layer STILL shows at ≤20% (drag-dim overrides the toggle)")
+		"CR7-edge: during drag, layer STILL shows at ≤20% (drag-dim overrides the toggle)")
 
 	heatmap.call("set_drag_active", false)  # drag ends
-	_check_float(float(heatmap.get("modulate").a), 0.0, "CR8-edge: after drag end -> hidden (OFF state applies)")
-	_check(heatmap.get("visible") == false, "CR8-edge: after drag end -> not visible")
+	_check_float(float(heatmap.get("modulate").a), 0.0, "CR7-edge: after drag end -> hidden (OFF state applies)")
+	_check(heatmap.get("visible") == false, "CR7-edge: after drag end -> not visible")
 
 
 func _test_ac3_toggle_on_mid_drag() -> void:
-	print("\n[CR8 edge] toggle ON mid-drag -> drag-dim overrides to ≤20% until drag end, then full ON")
+	print("\n[CR7 edge] toggle ON mid-drag -> drag-dim overrides to ≤20% until drag end, then full ON")
 	var gs := _make_grid([])
 	var heatmap := _make_heatmap(gs)
 	# OFF at start.
 	heatmap.call("set_drag_active", true)
 	heatmap.call("toggle_flow_overlay")  # toggle ON mid-drag
 	var effective: float = float(heatmap.get("modulate").a) * 0.6
-	_check(heatmap.call("is_heatmap_on"), "CR8-edge: toggle state is now ON")
-	_check(effective <= 0.2 + EPS, "CR8-edge: during drag — dimmed ≤20%")
+	_check(heatmap.call("is_heatmap_on"), "CR7-edge: toggle state is now ON")
+	_check(effective <= 0.2 + EPS, "CR7-edge: during drag — dimmed ≤20%")
 
 	heatmap.call("set_drag_active", false)
-	_check_float(float(heatmap.get("modulate").a), 1.0, "CR8-edge: after drag end -> full ON opacity")
-	_check(heatmap.get("visible") == true, "CR8-edge: after drag end -> visible")
+	_check_float(float(heatmap.get("modulate").a), 1.0, "CR7-edge: after drag end -> full ON opacity")
+	_check(heatmap.get("visible") == true, "CR7-edge: after drag end -> visible")
 
 
 # === Config knob ===

@@ -70,7 +70,7 @@ const CONFIG_TIP_DURATION_S := "onetime_tip_duration_s"
 ## Pillar 2). RGB is fixed; only alpha varies with density.
 const DUSTY_ROSE := Color("e0a0a0")
 
-## Drag-dim effective layer opacity (GDD Core Rule 8 / AC3): the heatmap
+## Drag-dim effective layer opacity (GDD Core Rule 7 / AC3): the heatmap
 ## yields to the placement ghost during a drag by dropping to ≤20% opacity
 ## (knob 0.1–0.3, default 0.2). The modulate target is derived as
 ## drag_dim_opacity / heatmap_layer_opacity because the layer opacity is
@@ -117,7 +117,7 @@ var _enabled: bool = false
 var _one_time_tip_emitted: bool = false
 var _initialized: bool = false
 
-## Drag-dim state (GDD Core Rule 8 / AC3). True while a placement drag is
+## Drag-dim state (GDD Core Rule 7 / AC3). True while a placement drag is
 ## active (observed by the overlay controller via PlacementSystem.is_dragging).
 ## While true, the effective layer opacity yields to ≤20% (the placement
 ## ghost reads clearly — Core Rule 7: ambient context yields to active
@@ -125,7 +125,7 @@ var _initialized: bool = false
 ## dim/restore contract.
 var _drag_active: bool = false
 
-## Whether the heatmap was in its ON state when the drag began (Core Rule 8
+## Whether the heatmap was in its ON state when the drag began (Core Rule 7
 ## edge: "toggling mid-drag sets target opacity; drag-dim still overrides
 ## to ≤20% until drag end"). Captured at set_drag_active(true). While a
 ## drag is active the layer shows at the drag target iff it was ON at drag
@@ -267,7 +267,7 @@ func density_to_heat(density_cell: float) -> Color:
 ## Emits flow_overlay_toggled on EVERY toggle so the glyph layer (shared
 ## toggle, GDD Core Rule 1) follows the same state.
 ##
-## Core Rule 8 edge ("toggling mid-drag"): while a drag is active the
+## Core Rule 7 edge ("toggling mid-drag"): while a drag is active the
 ## toggle changes the TARGET state but does NOT take effect visually — the
 ## drag-dim override keeps the layer at ≤20% until the drag ends, then the
 ## toggled state applies (set_drag_active(false) resolves it).
@@ -287,7 +287,7 @@ func is_heatmap_on() -> bool:
 	return _enabled
 
 
-## AC3 / GDD Core Rule 8 — drag-dim entry point, called by the overlay
+## AC3 / GDD Core Rule 7 — drag-dim entry point, called by the overlay
 ## controller on PlacementSystem drag-state transitions (is_dragging()).
 ##
 ## On drag begin ([active]=true): the heatmap tweens to ≤20% effective
@@ -320,7 +320,7 @@ func is_drag_active() -> bool:
 ## the tree (headless tests) the endpoint state is applied directly so
 ## assertions are synchronous.
 ##
-## Drag override (Core Rule 8): while a drag is active the layer shows at
+## Drag override (Core Rule 7): while a drag is active the layer shows at
 ## the drag target iff it was ON at drag start OR was toggled ON mid-drag.
 ## Toggling OFF mid-drag keeps the drag target until drag end (the override
 ## wins), then the OFF state hides the layer.

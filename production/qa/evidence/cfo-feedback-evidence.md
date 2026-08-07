@@ -22,7 +22,7 @@ Story 004 completes the congestion/flow overlay epic. Three contracts landed:
    and hides when the cursor moves to a valid cell or the drag ends. No sound (Pillar 2 — structural
    source check).
 
-2. **Drag dimming (Core Rule 8, AC3)** — `src/presentation/heatmap_layer.gd` gained
+2. **Drag dimming (Core Rule 7 / AC3)** — `src/presentation/heatmap_layer.gd` gained
    `set_drag_active()` / `is_drag_active()` / `drag_dim_target()`. On drag begin the heatmap tweens to
    ≤20% effective opacity (knob `drag_dim_opacity`, default 0.2); on drag end it restores to the toggled
    state (ON → prior full opacity, OFF → hidden). Toggling mid-drag sets the target but the drag-dim
@@ -64,7 +64,7 @@ AccessBlockedLayer (walled rig with real Congestion/Navigation) + real Congestio
 | **AC3** — drag begins → `drag_dim_target` 0.2/0.6, effective opacity ≤20%, layer visible | 7 | ✅ |
 | **AC3 restore** — drag end → ON heatmap restored to full opacity | 3 | ✅ |
 | **AC3 edge** — OFF at drag start stays hidden; toggle ON mid-drag → dimmed (override wins) | 5 | ✅ |
-| **Core Rule 8 edge** — toggle OFF mid-drag → ≤20% until drag end, then hidden; toggle ON mid-drag → ≤20% then full ON | 8 | ✅ |
+| **Core Rule 7 edge** — toggle OFF mid-drag → ≤20% until drag end, then hidden; toggle ON mid-drag → ≤20% then full ON | 8 | ✅ |
 | **Config** — drag_dim_opacity 0.2 default / 0.1 override | 2 | ✅ |
 | **Core Rule 7 structural** — access layer has no set_drag_active / modulate / drag state; only the AC12 no-op symmetry method | 5 | ✅ |
 | **Core Rule 7 behavioral** — walled E icon STATIC at opacity 1.0 before AND after a drag begins (never dimmed); icon count unchanged | 4 | ✅ |
@@ -72,10 +72,10 @@ AccessBlockedLayer (walled rig with real Congestion/Navigation) + real Congestio
 | **Controller wiring** — real S4 signal → tooltip pending + bucket message; hold timeout → visible; valid-cell preview dismisses | 5 | ✅ |
 | **Controller wiring** — `_poll_drag_state` drives heatmap dim on is_dragging edges; quiet poll idempotent | 6 | ✅ |
 
-**Suite run** (includes this file):
+**Suite run** (QA independent re-run on merged main @ t_43138dbd):
 
 ```
-TOTAL: 4168 passed, 0 failed   (4036 prior + 79 new + 53 BSUI-003 merged from main)
+TOTAL: 4566 passed, 0 failed   (main 4487 + 79 CFO-004)
 RESULT: PASSED
 ```
 
@@ -91,4 +91,4 @@ RESULT: PASSED
 | Drag with a walled-off machine visible → barricade icon stays full opacity | Access-blocked never dims | ✅ |
 | No rejection sound | Silence (Pillar 2) | ✅ (structural) |
 
-**Status**: [x] Created — 2026-08-07 (79 automated asserts + manual walkthrough; full suite 4115/0 PASSED)
+**Status**: [x] Complete — 2026-08-07 (QA 终审 PASS, t_43138dbd: 79 automated asserts + manual walkthrough; full suite 4566/0 on merged main)
