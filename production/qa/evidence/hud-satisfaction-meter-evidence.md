@@ -51,6 +51,25 @@ merge (SEL-001's `selection_logic_test.gd` entry kept). Independent re-run on
 | Baseline (main tip `fb4f235`, pre-change) | 4036 passed / 0 failed → delta **+285 exactly** (282 meter + 3 state-binding contract), zero regressions |
 | Leak picture | 218 ObjectDB / 12 resources — identical to baseline, no new leaks |
 
+### Independent QA re-run (2026-08-07, t_d4771a34 — terminal review)
+
+QA worktree `wt/t_d4771a34` = current main tip `6a87202` + merge of the
+re-delivered implementation (`wt/t_f400b3c7` @ `df5a371`); merge was clean
+(no overlapping files between the two sides). Re-run by the QA gate:
+
+| Check | Result |
+|-------|--------|
+| `tests/unit/hud/satisfaction_meter_test.gd` standalone | **282 passed / 0 failed**, exit 0 |
+| Full headless suite `tests/headless_runner.gd` | **4321 passed / 0 failed**, RESULT: PASSED, exit 0, **0 SCRIPT ERROR** |
+| `tests/unit/hud/hud_state_binding_test.gd` | **74 passed / 0 failed** (in suite) |
+| `tests/unit/hud/hud_layout_test.gd` | **35 passed / 0 failed** (in suite — HUD-001 unaffected) |
+| `tests/unit/hud/money_tween_test.gd` | **60 passed / 0 failed** (in suite — HUD-002 unaffected) |
+| Leak picture | 218 ObjectDB / 12 resources — identical to established baseline, no new leaks |
+| Unregistered-test scan | none (runner self-check clean) |
+
+Verdict: **PASS** — all BLOCKING 验收 items (AC3 / AC6 / Core Rule 2) verified.
+Story 003 marked Complete with QA 终审 PASS + QA 回填 evidence.
+
 ---
 
 ## 1. Automated Coverage (verified headless)

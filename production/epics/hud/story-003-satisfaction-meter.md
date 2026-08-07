@@ -1,7 +1,7 @@
 # Story 003: Satisfaction Meter
 
 > **Epic**: hud
-> **Status**: Complete — 2026-08-06 (automated coverage ✅; visual walkthrough pending playable build, ADVISORY by design)
+> **Status**: Complete — 2026-08-06 (QA 终审 PASS, t_d4771a34 — 2026-08-07; automated coverage ✅; visual walkthrough pending playable build, ADVISORY by design)
 > **Layer**: Presentation
 > **Type**: Visual/Feel
 > **Estimate**: S — 1 session (≤2h)
@@ -73,8 +73,11 @@
 *Derived from GDD acceptance criteria. Visual/Feel story — manual verification plus automated fill-mapping where practical.*
 
 - **AC3**: 缓动与更新 — ✅ Automated (282 asserts in `tests/unit/hud/satisfaction_meter_test.gd`): ease tween created on change with target + default 1.0 s duration; lockstep display (meter/%/icon/fill color from one value); 10 Hz no-op; re-target mid-tween; fill ramp never saturated red. Visual ~1 s ease walkthrough pending playable build (ADVISORY).
+  - **QA 回填 (2026-08-07)**: PASS — satisfaction_meter_test.gd standalone 282/0 exit 0；headless 全量 4321/0 / exit 0 / 0 SCRIPT ERROR；tween 单发（loops_left == 1）、同 target 10 Hz no-op 不重启、re-target 自当前显示值起跳、ramp 全区间最坏饱和度 0.383 < 0.4 永不报警色
 - **AC6**: 色盲模拟 — ✅ Automated: % label always present; icon shape (filled vs outline) flips exactly where the ramp enters the rose zone; three zones have distinct (glyph, shape) pairs. Desaturation pass pending playable build (ADVISORY).
+  - **QA 回填 (2026-08-07)**: PASS — % label 恒在；shape 恰在 ramp 进入 rose 区（sat<0.33）翻转为 outline；三区 (glyph,shape) 对互异（☺filled / 🙂filled / ☹outline），101 样本逐点核对 shape 与 ramp 区一致——状态不依赖颜色
 - **Core Rule 2 (rock bottom)**: 谷底不报警 — ✅ Automated: `sat=0` renders Dusty Rose (saturation 0.286 < 0.4), ☹ outline icon, 0% label, no repeating tween (loops_left == 1). Visual calm-tone walkthrough pending playable build (ADVISORY).
+  - **QA 回填 (2026-08-07)**: PASS — sat=0 → Dusty Rose #E0A0A0（饱和度 0.286<0.4，r 0.878<0.95 非纯红）+ ☹ outline + 0% label；load-snap 路径无动画；live 路径单次 ease（loops_left==1）无脉动/闪烁
 
 ---
 
