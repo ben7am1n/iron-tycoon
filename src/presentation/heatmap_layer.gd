@@ -63,11 +63,21 @@ signal flow_overlay_toggled(enabled: bool)
 const CONFIG_LOW_CUT := "low_cut"
 const CONFIG_HIGH_CUT := "high_cut"
 const CONFIG_LAYER_OPACITY := "heatmap_layer_opacity"
+const CONFIG_DRAG_DIM_OPACITY := "drag_dim_opacity"
 const CONFIG_TIP_DURATION_S := "onetime_tip_duration_s"
 
 ## GDD Formula: output color = Dusty Rose #E0A0A0 (soft, never harsh red —
 ## Pillar 2). RGB is fixed; only alpha varies with density.
 const DUSTY_ROSE := Color("e0a0a0")
+
+## Drag-dim effective layer opacity (GDD Core Rule 8 / AC3): the heatmap
+## yields to the placement ghost during a drag by dropping to ≤20% opacity
+## (knob 0.1–0.3, default 0.2). The modulate target is derived as
+## drag_dim_opacity / heatmap_layer_opacity because the layer opacity is
+## BAKED into the texel alpha (density_to_heat) — the modulate multiplier
+## must be the ratio so the EFFECTIVE rendered alpha lands at
+## heat_alpha × drag_dim_opacity (the GDD's "≤0.2 during drag" variable).
+const DEFAULT_DRAG_DIM_OPACITY := 0.2
 
 ## MVP placeholder copy for the one-time contextual tip (final wording is
 ## OQ4 / /ux-design; shape kept localization-ready).
@@ -99,12 +109,32 @@ var _cell_size: int = 32
 var _low_cut: float = 0.2
 var _high_cut: float = 0.8
 var _layer_opacity: float = 0.6
+var _drag_dim_opacity: float = DEFAULT_DRAG_DIM_OPACITY
 var _tip_duration_s: float = 4.0
 
 # === State ===
 var _enabled: bool = false
 var _one_time_tip_emitted: bool = false
 var _initialized: bool = false
+
+## Drag-dim state (GDD Core Rule 8 / AC3). True while a placement drag is
+## active (observed by the overlay controller via PlacementSystem.is_dragging).
+## While true, the effective layer opacity yields to ≤20% (the placement
+## ghost reads clearly — Core Rule 7: ambient context yields to active
+## decisions). Exposed as a white-box observable so tests can assert the
+## dim/restore contract.
+var _drag_active: bool = false
+
+## Whether the heatmap was in its ON state when the drag began (Core Rule 8
+## edge: "toggling mid-drag sets target opacity; drag-dim still overrides
+## to ≤20% until drag end"). Captured at set_drag_active(true). While a
+## drag is active the layer shows at the drag target iff it was ON at drag
+## start OR the player toggles it ON mid-drag — toggling OFF mid-drag does
+## NOT hide it immediately (drag-dim overrides until drag end, then the
+## toggled state applies). An OFF-at-drag-start layer with no mid-drag
+## toggle stays hidden (the GDD states table defines no Hidden→Dimmed
+## transition).
+var _drag_visible_base: bool = false
 
 # === Texture state (exposed for white-box tests, matching the codebase's
 # observable-state convention — Congestion exposes prev/next/density_cells) ===
@@ -164,6 +194,7 @@ func _apply_config(config: Dictionary) -> void:
 	_low_cut = low
 	_high_cut = high
 	_layer_opacity = clampf(float(config.get(CONFIG_LAYER_OPACITY, _layer_opacity)), 0.0, 1.0)
+	_drag_dim_opacity = clampf(float(config.get(CONFIG_DRAG_DIM_OPACITY, _drag_dim_opacity)), 0.0, 1.0)
 	_tip_duration_s = maxf(float(config.get(CONFIG_TIP_DURATION_S, _tip_duration_s)), 0.1)
 
 
@@ -235,6 +266,11 @@ func density_to_heat(density_cell: float) -> Color:
 ## toggles never re-emit (flag is per-instance lifetime, never reset).
 ## Emits flow_overlay_toggled on EVERY toggle so the glyph layer (shared
 ## toggle, GDD Core Rule 1) follows the same state.
+##
+## Core Rule 8 edge ("toggling mid-drag"): while a drag is active the
+## toggle changes the TARGET state but does NOT take effect visually — the
+## drag-dim override keeps the layer at ≤20% until the drag ends, then the
+## toggled state applies (set_drag_active(false) resolves it).
 func toggle_flow_overlay() -> bool:
 	_enabled = not _enabled
 	if _enabled and not _one_time_tip_emitted:
@@ -251,16 +287,68 @@ func is_heatmap_on() -> bool:
 	return _enabled
 
 
+## AC3 / GDD Core Rule 8 — drag-dim entry point, called by the overlay
+## controller on PlacementSystem drag-state transitions (is_dragging()).
+##
+## On drag begin ([active]=true): the heatmap tweens to ≤20% effective
+## opacity (knob drag_dim_opacity, default 0.2) so the placement ghost
+## reads clearly (Core Rule 7: ambient context yields to active decisions).
+## On drag end ([active]=false): restores to the toggled state — ON → prior
+## full opacity, OFF → hidden (AC3 "restores on drag end").
+##
+## Toggling mid-drag: the toggle sets the target opacity; the drag-dim
+## still overrides to ≤20% until drag end, then the toggled state applies.
+## An OFF-at-drag-start layer with no mid-drag toggle stays hidden (the GDD
+## states table defines no Hidden→Dimmed transition).
+func set_drag_active(active: bool) -> void:
+	if _drag_active == active:
+		return
+	_drag_active = active
+	if active:
+		_drag_visible_base = _enabled
+	_apply_visibility()
+
+
+## True while a placement drag is dimming this layer (white-box observable
+## for tests; the controller mirrors PlacementSystem.is_dragging()).
+func is_drag_active() -> bool:
+	return _drag_active
+
+
 ## Applies the enabled state: ON → visible + fade in; OFF → fade out then
 ## hide. The fade is a tween when the layer is in the scene tree; outside
 ## the tree (headless tests) the endpoint state is applied directly so
 ## assertions are synchronous.
+##
+## Drag override (Core Rule 8): while a drag is active the layer shows at
+## the drag target iff it was ON at drag start OR was toggled ON mid-drag.
+## Toggling OFF mid-drag keeps the drag target until drag end (the override
+## wins), then the OFF state hides the layer.
 func _apply_visibility() -> void:
+	if _drag_active:
+		if _enabled or _drag_visible_base:
+			visible = true
+			_fade_modulate_to(drag_dim_target())
+		else:
+			_fade_modulate_to(0.0)
+		return
 	if _enabled:
 		visible = true
 		_fade_modulate_to(1.0)
 	else:
 		_fade_modulate_to(0.0)
+
+
+## The modulate.a target that yields the drag-dim EFFECTIVE opacity: the
+## texel alpha already encodes heat_alpha × heatmap_layer_opacity (0.6 by
+## default), so the modulate multiplier must be drag_dim_opacity /
+## layer_opacity for the rendered alpha to land at heat_alpha ×
+## drag_dim_opacity (the GDD's "≤0.2 during drag"). Guarded against a
+## zero layer opacity (target 0.0 = invisible during drag).
+func drag_dim_target() -> float:
+	if _layer_opacity <= 0.0:
+		return 0.0
+	return clampf(_drag_dim_opacity / _layer_opacity, 0.0, 1.0)
 
 
 ## Tweens modulate:a to [target] when in the tree; outside the tree sets it

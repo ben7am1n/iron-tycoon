@@ -1,12 +1,12 @@
 # Story 004: Rejection Tooltip + Layer Priority + Drag Dimming
 
 > **Epic**: congestion-flow-overlay
-> **Status**: Ready
+> **Status**: Complete — 2026-08-07
 > **Layer**: Presentation
 > **Type**: Visual/Feel
 > **Estimate**: M — 2 sessions (≤4h)
 > **Manifest Version**: 2026-07-23
-> **Last Updated**: 2026-08-06
+> **Last Updated**: 2026-08-07
 
 ## Context
 
@@ -30,10 +30,10 @@
 
 *From GDD `design/gdd/congestion-flow-overlay.md`, scoped to this story:*
 
-- [ ] AC4 GIVEN a rejected drop with a footprint-bucket fail code, WHEN the cursor holds 400 ms, THEN the tooltip reads "Won't fit here," never a raw fail-code string
-- [ ] AC5 GIVEN a rejected drop with an access-bucket fail code, WHEN the cursor holds 400 ms, THEN the tooltip reads "Blocks the path in."
-- [ ] AC3 GIVEN a placement drag begins, WHEN the heatmap was on, THEN it tweens to ≤20% opacity within one drag-frame and restores on drag end
-- [ ] Core Rule 7 GIVEN multiple layers compete, WHEN a drag is active, THEN layering priority holds: access-blocked (full opacity, never dimmed) > placement ghost (full) > congestion glyph (visible) > heatmap (dims to ≤20%)
+- [x] AC4 GIVEN a rejected drop with a footprint-bucket fail code, WHEN the cursor holds 400 ms, THEN the tooltip reads "Won't fit here," never a raw fail-code string
+- [x] AC5 GIVEN a rejected drop with an access-bucket fail code, WHEN the cursor holds 400 ms, THEN the tooltip reads "Blocks the path in."
+- [x] AC3 GIVEN a placement drag begins, WHEN the heatmap was on, THEN it tweens to ≤20% opacity within one drag-frame and restores on drag end
+- [x] Core Rule 7 GIVEN multiple layers compete, WHEN a drag is active, THEN layering priority holds: access-blocked (full opacity, never dimmed) > placement ghost (full) > congestion glyph (visible) > heatmap (dims to ≤20%)
 
 ---
 
@@ -107,13 +107,13 @@
 **Story Type**: Visual/Feel
 **Required evidence**:
 - `production/qa/evidence/cfo-feedback-evidence.md` — manual walkthrough / sign-off
-- Automated coverage of the fail-code→bucket mapping where practical (e.g. `tests/unit/congestion_overlay/rejection_bucket_test.gd`)
+- Automated coverage of the fail-code→bucket mapping: `tests/unit/congestion_overlay/rejection_bucket_test.gd` (31 asserts) + `tests/unit/congestion_overlay/drag_dim_priority_test.gd` (47 asserts — AC3 drag-dim + Core Rule 7 priority + controller wiring)
 
-**Status**: [ ] Not yet created
+**Status**: [x] Created — 78/0 passing (registered in `tests/headless_runner.gd` TEST_FILES; full suite 3605/0 green 2026-08-06)
 
 ---
 
 ## Dependencies
 
 - Depends on: Story 001 (heatmap layer — this story dims it), Story 003 (access-blocked layer — this story prioritizes it); PlacementSystem (`placement_rejected`, `is_dragging` — both exist)
-- Unlocks: None (completes the overlay epic)
+- Unlocks: None (completes the overlay epic) — but the overlay controller here (`src/ui/congestion_overlay_controller.gd`) is the natural wiring point for Story 002's glyph and the HUD's toggle/H-key input.

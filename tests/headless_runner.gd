@@ -80,6 +80,8 @@ const TEST_FILES := [
 	"tests/unit/congestion_overlay/access_blocked_layer_test.gd",
 	"tests/unit/congestion_overlay/heatmap_texture_test.gd",
 	"tests/unit/congestion_overlay/glyph_fill_test.gd",
+	"tests/unit/congestion_overlay/rejection_bucket_test.gd",
+	"tests/unit/congestion_overlay/drag_dim_priority_test.gd",
 	"tests/unit/build_shop_ui/palette_state_test.gd",
 	"tests/unit/build_shop_ui/purchase_gate_test.gd",
 	"tests/integration/build_shop_ui/mode_arbitration_test.gd",
