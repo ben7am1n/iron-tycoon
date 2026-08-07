@@ -9,8 +9,8 @@
 
 ## 1. Automated Coverage (verified headless)
 
-`godot --headless --script tests/headless_runner.gd` → **3922 passed / 0 failed**
-(Story HUD-004 adds +113 assertions over the Sprint baseline of 3809; no new
+`godot --headless --script tests/headless_runner.gd` → **4149 passed / 0 failed**
+(Story HUD-004 adds +113 assertions over the main-tip baseline of 4036; no new
 ObjectDB/resource leaks — identical 218/12 pre-existing baseline counts).
 
 | File | Assertions | Covers |
