@@ -70,6 +70,13 @@ re-delivered implementation (`wt/t_f400b3c7` @ `df5a371`); merge was clean
 Verdict: **PASS** — all BLOCKING 验收 items (AC3 / AC6 / Core Rule 2) verified.
 Story 003 marked Complete with QA 终审 PASS + QA 回填 evidence.
 
+**Final merged-main state** (2026-08-07, after BSUI-003 `f3755d8` + SEL-001 QA
+`bb9b372` landed on main): full suite on main `7a45e08` = **4374 passed / 0
+failed** (baseline 4089 + HUD-003's +285 exactly), exit 0, 0 SCRIPT ERROR,
+leak picture 218/12 unchanged. The 4321/0 figure above is the QA-worktree
+run (baseline 4036); both runs confirm the same +285 delta with zero
+regressions.
+
 ---
 
 ## 1. Automated Coverage (verified headless)
