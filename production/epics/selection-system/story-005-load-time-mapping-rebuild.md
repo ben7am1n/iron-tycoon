@@ -1,12 +1,12 @@
 # Story 005: Load-Time Mapping Rebuild
 
 > **Epic**: selection-system
-> **Status**: Ready
+> **Status**: Complete — 2026-08-07 (QA 终审 PASS, t_72129a26)
 > **Layer**: Presentation
 > **Type**: Integration
 > **Estimate**: S — 1 session (≤2h)
 > **Manifest Version**: 2026-07-23
-> **Last Updated**: 2026-08-06
+> **Last Updated**: 2026-08-07
 
 ## Context
 
@@ -96,7 +96,50 @@
 **Required evidence**:
 - `tests/integration/selection_system/load_rebuild_test.gd` — must exist and pass (load-order slot, mapping reconstruction, no-blob-contribution)
 
-**Status**: [ ] Not yet created
+**Status**: [x] Complete — 2026-08-07 (QA 终审 PASS, t_72129a26)
+
+`SelectionSystem.rebuild_mapping()` exists (src/systems/selection_system.gd,
+120 lines added) and seeds the instance mapping from the loaded grid via
+`GridSystem.get_placed_instances()` (the GDD-granted load-time bulk read
+surface), recovering `equipment_id` by order-independent footprint matching
+at the stored rotation (min-offset anchor + set equality, first catalog
+match wins). The load-order slot pre-existed in SaveLoad Phase B step 3a
+(null-guarded) and now fires the real rebuild after `GridSystem.deserialize`
+commit, before MemberSim. SelectionSystem contributes NOTHING to the save
+blob (TR-SEL-007 — `selection_system` absent from CONTRIBUTING_KEYS).
+Automated coverage:
+- `tests/unit/selection_system/load_rebuild_unit_test.gd` — **76 asserts, 0 failed**
+- `tests/integration/selection_system/load_rebuild_test.gd` — **29 asserts, 0 failed** (real SaveLoad round-trip, load-order slot, no-blob, zero-pieces edge)
+
+Both registered in `tests/headless_runner.gd` TEST_FILES. Full headless
+suite (independent QA re-run on merged main @ da67aac): **4877 passed /
+0 failed / exit 0 / 0 SCRIPT ERROR** (main tip baseline 4772 + 105 new;
+leak profile 218/12 unchanged from pre-existing baseline).
+
+Coverage by AC (exact assert counts, verified against test files):
+- **Core Rule 8 / TR-SEL-006** (unit 76 + integration 29): mapping rebuilt
+  from the loaded grid before any click — pre-rebuild click does NOT
+  resolve, post-rebuild first click selects with the correct
+  `{instance_id, equipment_id, anchor, rotation}` payload; rotation
+  recovery R0/R90/R180/R270; multi-cell footprints grouped by occupant_id
+  (ANY footprint cell selects; direct swap stays distinct); zero placed
+  pieces → empty mapping, no error; unmatched footprint → push_error +
+  entry skipped (loud data-consistency guard)
+- **TR-SEL-007** (integration): save blob has NO `selection_system` key and
+  exactly the 8 CONTRIBUTING_KEYS; mapping after load equals mapping
+  before save (runtime-equivalence unit test: rebuild payloads identical to
+  runtime placement payloads); R90 bench round-trips rotation 90 (the
+  order-ambiguity trap a naive per-cell scan would collapse)
+- **UX AC** (unit + integration): first click on a placed piece after load
+  emits the correct 4-arg selection payload (mapping rebuilt)
+- **QA idempotency case** (unit): `rebuild_mapping()` twice → identical
+  mapping, every payload equal, R90 bench still resolves identically
+- **Load-order slot** (integration): real SelectionSystem.rebuild_mapping()
+  logged AFTER `GridSystem.deserialize:commit` and BEFORE
+  `MemberSim.deserialize:commit`, called exactly once
+
+See `production/qa/evidence/selection-load-rebuild-evidence.md` for the full
+design rationale (bulk-surface decision, anchor/rotation authority).
 
 ---
 

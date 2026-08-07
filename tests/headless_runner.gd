@@ -33,6 +33,8 @@ const TEST_FILES := [
 	"tests/unit/placement_system/relocate_flow_test.gd",
 	"tests/unit/placement_system/is_dragging_cost_scope_test.gd",
 	"tests/unit/selection_system/selection_logic_test.gd",
+	"tests/unit/selection_system/load_rebuild_unit_test.gd",
+	"tests/integration/selection_system/load_rebuild_test.gd",
 	"tests/integration/selection_system/bridge_input_test.gd",
 	"tests/unit/member_sim/lifecycle_state_machine_test.gd",
 	"tests/unit/member_sim/target_selection_weight_test.gd",
