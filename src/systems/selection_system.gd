@@ -162,6 +162,21 @@ func on_esc_pressed() -> void:
 	_clear_selection()
 
 
+## Programmatic deselect — the build/select arbitration's build-take-over
+## entry (build-shop-ui GDD Core Rule 4, story BSUI-003): the palette
+## clears an active selection BEFORE starting a placement drag, so the
+## placement ghost and the selection outline can never coexist (no dual
+## ghost). Semantically identical to on_esc_pressed() (same _clear_selection
+## + selection_changed(null) emission, no-op when nothing is selected)
+## without the key-event connotation — the UI calls this when build takes
+## over, not when the player presses Esc. ModeArbitration invokes it via
+## its begin_build() handoff.
+func clear_selection() -> void:
+	if not _assert_initialized():
+		return
+	_clear_selection()
+
+
 ## Current selected instance_id, or -1 when none. 0 is a legal selection —
 ## compare explicitly, never truthiness. Before-init safe default: -1
 ## (Control Manifest guard contract).
