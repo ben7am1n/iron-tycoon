@@ -3,7 +3,7 @@
 **Story**: `production/epics/hud/story-002-money-count-tween.md`
 **Story Type**: Visual/Feel (evidence ADVISORY — manual walkthrough + automated tween-logic)
 **Engine**: Godot 4.7.1 (GDScript) | **Date**: 2026-08-06
-**Status**: Automated coverage ✅ — visual walkthrough pending playable build
+**Status**: ✅ QA terminal review PASS (2026-08-07, qa-tester) — automated coverage verified; visual walkthrough pending playable build (ADVISORY)
 
 ---
 
@@ -15,6 +15,13 @@ assertions in `hud_state_binding_test.gd` to the Story-002 contract — the S6
 handler no longer snaps the label synchronously, it starts a tween; baseline
 was 3809 at main tip; no new ObjectDB/resource leaks — identical 218/12
 pre-existing baseline counts).
+
+**Independent QA re-run (2026-08-07, qa-tester @ main tip fb4f235)**:
+`godot --headless --script tests/headless_runner.gd` → **4036 passed / 0
+failed / exit 0 / 0 SCRIPT ERROR**. `money_tween_test.gd` standalone 60/0
+exit 0; `hud_state_binding_test.gd` 71/0; `hud_layout_test.gd` 35/0. Leak
+baseline at exit: 218 ObjectDB / 12 resources — identical to the documented
+pre-existing baseline, no new leaks.
 
 | File | Assertions | Covers |
 |------|-----------|--------|
