@@ -24,7 +24,7 @@ Automated coverage:
 - `tests/unit/selection_system/load_rebuild_unit_test.gd` — **76 asserts, 0 failed**
 - `tests/integration/selection_system/load_rebuild_test.gd` — **29 asserts, 0 failed**
 
-Full suite: **4141 passed, 0 failed** (existing 3428+ baseline green; both new files registered in `tests/headless_runner.gd` TEST_FILES).
+Full suite: **4877 passed, 0 failed** (independent QA re-run on merged main @ da67aac; main tip baseline 4772 + 105 new; both new files registered in `tests/headless_runner.gd` TEST_FILES; leak profile 218/12 unchanged).
 
 ## Key Design Decision: the load-time bulk read surface
 
