@@ -84,10 +84,77 @@ const METAL_DARK := Color("5B6470")
 ## 金属冷色高光（25d §2 材质概括：金属 = 少量冷色高光）：Sky 系提亮，非纯白大面积。
 const METAL_HIGHLIGHT := Color("B7D4EC")
 ## 设备脚下大暗面（25d §2 阴影：大块明暗色块，不追求物理写实）：半透明深色块，替代旧纯灰。
-const EQUIP_SHADOW := Color(0.09, 0.08, 0.07, 0.35)
+## V3 §6/§7：阴影偏冷、偏蓝灰 —— EQUIP_SHADOW 改为冷蓝灰（0.05,0.09,0.14）。
+const EQUIP_SHADOW := Color(0.05, 0.09, 0.14, 0.38)
 ## 放置预览合法：柔和高亮（art-bible §7）—— 半透明白/Sage tint，绝不刺眼。
 const PLACEMENT_OK_TINT := Color(0.96, 0.98, 0.94, 0.30)
 ## 放置预览非法：Dusty Rose #E0A0A0 柔和警示（art-bible §7，绝不刺眼红）——复用 ROSE 但显式声明 alpha。
 const PLACEMENT_BAD_TINT := Color("E0A0A0", 0.35)
 ## 吸附「咔哒」视觉反馈（art-bible §7 动效手感）：Butter 脉冲环。
 const SNAP_PULSE_COLOR := BUTTER
+
+# === V3 §7 色彩体系（Phase 5：暖环境 + 冷阴影 + 高饱和重点色） ===
+#
+# V3 视觉重制 Phase 5 新增色域（visual-remaster-spec-v3.md §7）：
+#   背景基底：暖灰、奶油灰、低饱和棕
+#   阴影：深蓝灰、青灰
+#   器械：炭灰、深蓝灰、浅灰金属
+#   木材：暖橙棕
+#   植物：中等饱和绿
+#   Accent：黄、橙、青蓝（只用于设备屏幕/互动提示/重要道具/小型装饰）
+# 色值单一来源（项目约定）：绘制层一律引用本文件，禁止硬编码。
+
+## 顶墙基底：暖灰奶油灰（V3 §3 墙壁）。
+const WALL_BASE := Color("8B8378")
+## 顶墙踢脚/明暗块：低饱和棕（比墙基底深一档）。
+const WALL_DARK := Color("6E675C")
+## 墙裙线：暖灰更亮一档（装饰压条）。
+const WALL_TRIM := Color("9C948A")
+## 窗玻璃：冷青灰蓝（V3 §7 阴影系青灰；窗户斜向自然光的载体）。
+const WINDOW_GLASS := Color("9FB4C8")
+## 窗框：炭灰暖调（非纯黑，25d §3）。
+const WINDOW_FRAME := Color("57534A")
+
+## 地板材质 —— 力量区深灰橡胶地垫（V3 §1/§7 炭灰深蓝灰系）。
+const FLOOR_STRENGTH_BASE := Color("4B4F57")
+const FLOOR_STRENGTH_BLOCK := Color("454952")   # 略有色差的橡胶块
+const FLOOR_STRENGTH_SEAM := Color("3C4047")    # 接缝
+const FLOOR_STRENGTH_WEAR := Color("5A5F68")    # 磨损/高光
+const FLOOR_STRENGTH_STAIN := Color("383C44")   # 汗渍
+## 地板材质 —— 有氧区偏暖灰/蓝灰地面。
+const FLOOR_CARDIO_BASE := Color("7C8288")
+const FLOOR_CARDIO_DOT := Color("71777D")       # 细小重复纹理
+const FLOOR_CARDIO_EDGE := Color("666C72")      # 边缘压条
+## 地板材质 —— 瑜伽区暖色木地板（V3 §7 木材暖橙棕）。
+const FLOOR_FLEX_BASE := Color("A9744C")
+const FLOOR_FLEX_PLANK := Color("96653F")       # 木板分隔
+const FLOOR_FLEX_GRAIN := Color("8F5F3B")       # 像素化木纹
+## 地板材质 —— 公共通道浅灰/暖灰瓷砖（比训练区亮，有砖缝）。
+const FLOOR_WALK_BASE := Color("D3CBB9")
+const FLOOR_WALK_GROUT := Color("BDB4A0")
+
+## 植物叶色：中等饱和绿（V3 §7；比旧 Sage 更深更实，脱离 pastel）。
+const PLANT_GREEN := Color("4E8A5A")
+const PLANT_GREEN_DARK := Color("3E7048")
+const PLANT_GREEN_LIGHT := Color("6BA575")
+## 陶盆：低饱和暖棕。
+const PLANT_POT := Color("9C5A3C")
+
+## Accent 高饱和色（V3 §7 —— 只用于设备屏幕/小型装饰/UI 提示）。
+const ACCENT_YELLOW := Color("F2C94C")
+const ACCENT_ORANGE := Color("E07A3F")
+const ACCENT_CYAN := Color("45C4D8")
+## 设备屏幕 emissive（V3 §6：青蓝/绿局部 emissive pixels）。
+const EMISSIVE_CYAN := Color("4FD8E8")
+const EMISSIVE_GREEN := Color("58E08A")
+## 高光：暖黄/奶白（V3 §6 高光暖黄色/奶白色；金属高光仍用 METAL_HIGHLIGHT）。
+const HIGHLIGHT_WARM := Color("F5E6C8")
+
+## 顶部暖白主光（V3 §6 统一室内主光）：暖白，低 alpha 叠加在世界上层。
+const LIGHT_TOP_WARM := Color(1.0, 0.95, 0.83, 0.06)
+## 窗口斜向自然光（V3 §6）：暖白偏暖，比顶部主光略强。
+const LIGHT_WINDOW := Color(1.0, 0.92, 0.75, 0.10)
+## 墙边暗角（V3 §6 墙边比中心区域稍暗）：冷蓝灰，低 alpha。
+const LIGHT_EDGE_SHADOW := Color(0.10, 0.14, 0.22, 0.16)
+## 中心暗角加强（空间纵深：中心比墙边略亮 → 墙边深、中心亮）。
+const LIGHT_CORNER_SHADOW := Color(0.10, 0.14, 0.22, 0.10)

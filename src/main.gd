@@ -54,6 +54,10 @@ const EquipmentArtScript := preload("res://src/presentation/equipment_art.gd")
 const SnapPulseScript := preload("res://src/presentation/snap_pulse.gd")
 const WorldCanvasScript := preload("res://src/presentation/world_canvas.gd")
 const WorldScale := preload("res://src/presentation/world_scale.gd")
+const FloorArtScript := preload("res://src/presentation/floor_art.gd")
+const EnvironmentArtScript := preload("res://src/presentation/environment_art.gd")
+const LightingLayerScript := preload("res://src/presentation/lighting_layer.gd")
+const AmbientFxScript := preload("res://src/presentation/ambient_fx.gd")
 const Palette := preload("res://src/palette.gd")
 
 # === 场景级常量（组装参数，非玩法数值） ===
@@ -122,6 +126,10 @@ var _cue
 var _member_sprites
 var _equip_art
 var _snap_pulse
+var _floor_art
+var _env_art
+var _lighting
+var _ambient_fx
 
 # === V3 §2 低分辨率世界管线引用 ===
 var _world_viewport   # SubViewport：低分辨率世界画布（426×240）
@@ -263,6 +271,10 @@ func _zone_reader() -> Callable:
 func _assemble_presentation() -> void:
 	_member_sprites = MemberSpriteScript.new()
 	_equip_art = EquipmentArtScript.new()
+	# Phase 5：V3 §1 地板材质 + V3 §12 环境装饰（单一来源 world_layout.gd）。
+	_floor_art = FloorArtScript.new()
+	_floor_art.init(GRID_W, GRID_H, CELL_SIZE)
+	_env_art = EnvironmentArtScript.new()
 
 	# ModeArbitration（build/select 仲裁，GDD Core Rule 4）在 WorldCanvas 之前
 	# 构造 —— WorldCanvas 的幽灵渲染需要 is_ghost_suppressed()（见 init 注入）。
@@ -292,8 +304,27 @@ func _assemble_presentation() -> void:
 	_world_canvas.name = "WorldCanvas"
 	_world_canvas.init(_grid, _catalog, _member, _member_sprites, _equip_art,
 		_orch.placement_system, _arbitration, _resolver(),
-		func() -> int: return _orch.get_tick_count(), CELL_SIZE)
+		func() -> int: return _orch.get_tick_count(), CELL_SIZE,
+		_floor_art, _env_art)
 	_world_root.add_child(_world_canvas)
+
+	# Phase 5：V3 §6 方向光 + 氛围层（世界像素空间，画在 WorldCanvas 之上）。
+	# 热光池 / 墙边暗角 / 窗口斜向光 / 设备屏幕 emissive 辉光 —— 确定性烘焙
+	# 像素叠加，不做真实 3D PBR（V3 §6 IMPORTANT）。
+	_lighting = LightingLayerScript.new()
+	_lighting.name = "LightingLayer"
+	_lighting.z_index = 1
+	_lighting.init(_grid, _resolver(),
+		func() -> int: return _orch.get_tick_count())
+	_world_root.add_child(_lighting)
+
+	# Phase 5：V3 §9 微型动态（光尘/汗滴/传送带/飞轮/杯闪）—— 克制数量。
+	_ambient_fx = AmbientFxScript.new()
+	_ambient_fx.name = "AmbientFx"
+	_ambient_fx.z_index = 2
+	_ambient_fx.init(_member, _grid, _resolver(),
+		func() -> int: return _orch.get_tick_count())
+	_world_root.add_child(_ambient_fx)
 
 	# WORLD 层 presentation 节点（统一低分辨率 pixel space，随 WorldRoot 缩放）。
 	_heatmap = HeatmapLayerScript.new()
@@ -399,12 +430,20 @@ func _assemble_ui() -> void:
 
 	# BUILD-03/04 修复：世界绘制已迁至 WorldCanvas（V3 §2）。重绘信号：
 	#   - grid_changed（place=commit / remove=sell）→ WorldCanvas 内部已接
-	#   - tick_completed（S2，10Hz）→ 会员位置/状态随 tick 移动
+	#   - tick_completed（S2，10Hz）→ 会员位置/状态随 tick 移动；Phase 5 的
+	#     LightingLayer（发光闪烁）与 AmbientFx（光尘/传送带/飞轮/汗滴）也
+	#     由 tick 驱动 —— 一并 queue_redraw（幂等合并，headless 下无害）。
 	#   - preview_validity_changed → 幽灵合法/非法 tint 跟随拖拽
-	# queue_redraw() 是幂等合并的（一帧内多次调用只重绘一次），headless 下
-	# 不渲染、调用无害。
 	_orch.tick_completed.connect(
 		func(_tick: int) -> void: _world_canvas.queue_redraw())
+	_orch.tick_completed.connect(
+		func(_tick: int) -> void:
+			if _lighting != null:
+				_lighting.queue_redraw())
+	_orch.tick_completed.connect(
+		func(_tick: int) -> void:
+			if _ambient_fx != null:
+				_ambient_fx.queue_redraw())
 	placement.preview_validity_changed.connect(
 		func(_valid: bool) -> void: _world_canvas.queue_redraw())
 
@@ -516,7 +555,10 @@ func _smoke_report() -> void:
 		_palette.get_tile_count(),
 	])
 	print("  member_states=%s" % [str(state_counts)])
-	print("  sprites_ready=%s" % [_member_sprites != null])
+	print("  sprites_ready=%s floor_art=%s env_art=%s" % [
+		_member_sprites != null, _floor_art != null, _env_art != null,
+	])
+	print("  lighting=%s ambient_fx=%s" % [_lighting != null, _ambient_fx != null])
 	print("  hud_initialized=%s shop_initialized=%s arbitration=%s toolbar=%s cue=%s" % [
 		_hud != null, _shop != null, _arbitration != null, _toolbar != null, _cue != null,
 	])

@@ -7,8 +7,10 @@
 ## TextureRect nearest 放大到窗口 —— 世界元素（地板/网格/设备/会员/幽灵）全部
 ## 属于同一个低分辨率 pixel space（V3 §2：WORLD 统一低分辨率，UI 高分辨率）。
 ##
-## 绘制顺序（2.5D 空间层级，art-bible-25d §1）：地板 → 网格线 → 会员中景 →
-## 设备前景 → 放置幽灵（活动决策预览，Core Rule 7 优先级最高）。
+## 绘制顺序（2.5D 空间层级，art-bible-25d §1 + V3 §4 三层空间）：
+##   地板材质（FloorArt 烘焙贴图，V3 §1）→ 环境背景（墙/窗/海报/装饰，V3 §3/
+##   §12 BACKGROUND 低对比）→ 网格线 → 会员中景 → 设备前景 → 环境前景（大
+##   植物，V3 §4 FOREGROUND 可轻微遮挡）→ 放置幽灵（活动决策预览优先级最高）。
 ##
 ## GRID 可见性（V3 §14 可读性）：正常经营模式完全隐藏 tile grid；仅 placement
 ## mode（PlacementSystem.is_dragging()）显示。默认隐藏；_process 轮询
@@ -21,11 +23,13 @@
 ##
 ## headless 可靠性：class_name 仅作编辑器便利，跨脚本引用一律 preload alias
 ## （项目约定，见 src/main.gd 头部注释）；tick 经 tick_provider Callable 注入，
-## 不直接依赖 orchestrator 类型。
+## 不直接依赖 orchestrator 类型。floor_art / env_art 为 Phase 5 可选注入
+## （null 时回退到旧色块地板 / 不画环境装饰 —— 保持既有测试构造兼容）。
 class_name WorldCanvas extends Node2D
 
 const Palette := preload("res://src/palette.gd")
 const WorldScale := preload("res://src/presentation/world_scale.gd")
+const WorldLayout := preload("res://src/presentation/world_layout.gd")
 
 ## 默认网格可见性（V3 §14）：正常经营模式完全隐藏 grid。
 const DEFAULT_GRID_VISIBLE := false
@@ -41,6 +45,8 @@ var _arbitration = null       # ModeArbitration：is_ghost_suppressed（Core Rul
 var _resolver: Callable = Callable()      # instance_id -> equipment_id
 var _tick_provider: Callable = Callable() # -> int（会员动画 tick）
 var _cell_size: int = 32
+var _floor_art = null         # FloorArt：V3 §1 地板材质烘焙贴图（Phase 5，可空）
+var _env_art = null           # EnvironmentArt：V3 §12 环境装饰精灵工厂（Phase 5，可空）
 
 ## 当前网格可见性（V3 §14）。默认 false；仅 placement mode 为 true。
 var _grid_visible: bool = DEFAULT_GRID_VISIBLE
@@ -57,6 +63,8 @@ var _initialized: bool = false
 ## tick_completed S2 / preview_validity_changed —— 与旧 main.gd 的 BUILD-03/04
 ## 信号驱动重绘约定一致；queue_redraw 幂等合并，headless 下调用无害）。
 ## [resolver] instance_id -> equipment_id；[tick_provider] -> int（动画 tick）。
+## [floor_art] FloorArt（V3 §1 地板材质，Phase 5；null 时回退旧色块地板）。
+## [env_art] EnvironmentArt（V3 §12 环境装饰，Phase 5；null 时不画装饰）。
 func init(
 	grid,
 	catalog,
@@ -67,7 +75,9 @@ func init(
 	arbitration,
 	resolver: Callable,
 	tick_provider: Callable,
-	cell_size: int
+	cell_size: int,
+	floor_art = null,
+	env_art = null
 ) -> void:
 	if _initialized:
 		push_error("WorldCanvas.init(): called twice")
@@ -83,6 +93,8 @@ func init(
 	_resolver = resolver
 	_tick_provider = tick_provider
 	_cell_size = maxi(cell_size, 1)
+	_floor_art = floor_art
+	_env_art = env_art
 	_grid_visible = DEFAULT_GRID_VISIBLE
 
 	# 信号驱动重绘（typed connections only，Control Manifest Presentation 规则）：
@@ -140,27 +152,139 @@ func _draw() -> void:
 	if _grid == null:
 		return
 	_draw_floor_zones()
+	_draw_environment_background()
 	if _grid_visible:
 		_draw_grid_lines()
-	# 2.5D 空间层级（art-bible-25d §1）：会员中景 / 设备前景 —— 设备画在会员
-	# 之后（前景层），幽灵画在最上（活动决策预览，Core Rule 7 优先级最高）。
+	# 2.5D 空间层级（art-bible-25d §1 + V3 §4）：环境背景 → 会员中景 → 设备
+	# 前景 → 环境前景（大植物可轻微遮挡）→ 幽灵（活动决策预览优先级最高）。
 	_draw_members()
 	_draw_equipment()
+	_draw_environment_foreground()
 	_draw_placement_ghost()
 
 
-## 地板三区域色块（art-bible §6：功能区用色块 + 柔和描边区分，分区一眼可读）。
-## 数据源：palette.gd ZONE_RECTS / ZONE_COLORS（单一来源）。画在最底层（先于
-## 网格线/设备/会员），不遮挡任何上层元素。V3 后续 Phase（环境材质）将替换为
-## 分区地面材质；本 Phase 只做低分辨率管线迁移，色块语义不变。
-## 描边宽度乘 STROKE_COMPENSATION：WorldRoot scale 0.75 下 1px 描边会消失
-## （4.7.1 pitfall，见 world_scale.gd）。
+## 地板：Phase 5 使用 FloorArt 烘焙的材质贴图（V3 §1 区域地面材质 ——
+## 力量区深灰橡胶、有氧区暖灰、瑜伽区木地板、通道瓷砖；单次 draw_texture_rect，
+## 替代旧色块 + 描边）。floor_art 未注入时回退旧色块（保持既有测试兼容）。
 func _draw_floor_zones() -> void:
+	if _floor_art != null:
+		var tex: ImageTexture = _floor_art.texture()
+		if tex != null:
+			draw_texture_rect(tex, Rect2(Vector2.ZERO, Vector2(
+				WorldLayout.WORLD_W, WorldLayout.WORLD_H)), false)
+			return
 	for zone: String in Palette.ZONE_RECTS:
 		var rect: Rect2i = Palette.ZONE_RECTS[zone]
 		var px_rect := Rect2i(rect.position * _cell_size, rect.size * _cell_size)
 		draw_rect(px_rect, Palette.ZONE_COLORS[zone], true)
 		draw_rect(px_rect, Palette.ZONE_BORDER, false, 1.0 * WorldScale.STROKE_COMPENSATION)
+
+
+## 环境背景（V3 §3 永久环境结构 + §12 场景 storytelling，BACKGROUND 低对比）：
+## 顶墙 + 侧墙（V3 §3 墙壁/窗户）→ 墙上挂饰（海报/计时器/招牌）→ 地面装饰
+## （水瓶/毛巾/配重/粉笔盒/植物/音箱/卷垫/风扇/水杯架/饮水机/垃圾桶/消防栓）。
+## 画在网格线/会员/设备之前 —— 属于空间 BACKGROUND 层（V3 §4）。
+func _draw_environment_background() -> void:
+	_draw_walls()
+	_draw_wall_decor()
+	_draw_floor_decor()
+
+
+## 顶墙 + 左右侧墙（V3 §3 墙壁）：暖灰基底 + 墙裙压条 + 窗户。
+func _draw_walls() -> void:
+	# 顶墙
+	draw_rect(WorldLayout.WALL_TOP_RECT, Palette.WALL_BASE, true)
+	draw_rect(Rect2i(0, WorldLayout.WALL_TRIM_Y, WorldLayout.WORLD_W, 4), Palette.WALL_DARK, true)
+	# 侧墙
+	draw_rect(WorldLayout.WALL_LEFT_RECT, Palette.WALL_BASE, true)
+	draw_rect(WorldLayout.WALL_RIGHT_RECT, Palette.WALL_BASE, true)
+	# 窗户（V3 §6 窗口斜向自然光载体）：窗框 + 冷青灰玻璃
+	for window_rect in WorldLayout.WINDOWS:
+		draw_rect(window_rect, Palette.WINDOW_FRAME, true)
+		var glass: Rect2i = (window_rect as Rect2i).grow(-2)
+		draw_rect(glass, Palette.WINDOW_GLASS, true)
+		# 玻璃高光斜线（冷色高光，V3 §6）
+		draw_line(
+			Vector2(glass.position.x + 4, glass.position.y + 2),
+			Vector2(glass.position.x + 14, glass.position.y + glass.size.y - 2),
+			Palette.METAL_HIGHLIGHT, 2.0 * WorldScale.STROKE_COMPENSATION)
+
+
+## 墙上挂饰（V3 §12 海报/计时器/招牌）：EnvironmentArt 精灵（0.5x 缩放
+## 贴合 24px 顶墙 —— 墙不是 cell 空间，挂饰按墙高缩放）。
+## 电视屏幕内容按 tick 切换（V3 §9 电视画面变化）：在挂饰上叠 3 帧画面色。
+func _draw_wall_decor() -> void:
+	if _env_art == null:
+		return
+	var tick: int = 0
+	if _tick_provider.is_valid():
+		tick = _tick_provider.call()
+	for prop_id: String in WorldLayout.WALL_DECOR:
+		var pos: Vector2i = WorldLayout.WALL_DECOR[prop_id]
+		_draw_decor_prop(prop_id, pos, 0.5)
+		if prop_id == "tv":
+			_draw_tv_screen(pos, tick)
+
+
+## 电视画面变化（V3 §9）：屏幕区域叠 3 帧（青蓝/绿/黄轮换，确定性 tick 驱动）。
+func _draw_tv_screen(pos: Vector2i, tick: int) -> void:
+	var screen_rect := Rect2(pos + Vector2i(3, 3), Vector2i(10, 6))
+	var frame := (tick / 20) % 3
+	var col: Color
+	match frame:
+		0:
+			col = Palette.EMISSIVE_CYAN
+		1:
+			col = Palette.EMISSIVE_GREEN
+		_:
+			col = Palette.ACCENT_YELLOW
+	col.a = 0.95
+	draw_rect(screen_rect, col, true)
+
+
+## 地面装饰（V3 §12 场景 storytelling）：水瓶/毛巾/配重/粉笔盒/植物/音箱/
+## 卷垫/风扇/水杯架/饮水机/垃圾桶/消防栓。植物轻微摆动（V3 §9）。
+func _draw_floor_decor() -> void:
+	if _env_art == null:
+		return
+	var tick: int = 0
+	if _tick_provider.is_valid():
+		tick = _tick_provider.call()
+	for prop_id: String in WorldLayout.DECOR:
+		var pos: Vector2i = WorldLayout.DECOR[prop_id]
+		var sway := Vector2.ZERO
+		if prop_id.begins_with("plant"):
+			# 植物轻微摆动（V3 §9）：±1px 确定性正弦。
+			var phase := float(prop_id.hash() % 100) * 0.13
+			sway.x = round(sin(tick * 0.08 + phase))
+		_draw_decor_prop(prop_id, pos + Vector2i(sway))
+
+
+## 环境前景（V3 §4 FOREGROUND：大型植物，可轻微遮挡角色）—— 画在设备之后。
+func _draw_environment_foreground() -> void:
+	if _env_art == null:
+		return
+	var tick: int = 0
+	if _tick_provider.is_valid():
+		tick = _tick_provider.call()
+	for prop_id: String in ["plant_fore_1", "plant_fore_2"]:
+		if not WorldLayout.DECOR.has(prop_id):
+			continue
+		var pos: Vector2i = WorldLayout.DECOR[prop_id]
+		var sway := Vector2(round(sin(tick * 0.08 + float(prop_id.hash() % 100) * 0.13)), 0)
+		_draw_decor_prop(prop_id, pos + Vector2i(sway))
+
+
+## 绘制单个装饰精灵（纹理存在才画；未知 prop 兜底不画，绝不崩溃）。
+## [scale] 可选缩放（墙挂饰用 0.5 贴合墙高；地面装饰默认 1.0）。
+func _draw_decor_prop(prop_id: String, pos: Vector2i, scale: float = 1.0) -> void:
+	if _env_art == null:
+		return
+	var tex: ImageTexture = _env_art.texture_for(prop_id)
+	if tex == null:
+		return
+	var size: Vector2i = _env_art.texture_size(prop_id)
+	draw_texture_rect(tex, Rect2(pos, Vector2(size) * scale), false)
 
 
 ## 网格线（V3 §14：仅 placement mode 显示，正常经营模式完全隐藏）。

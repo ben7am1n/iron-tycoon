@@ -31,6 +31,7 @@ const ART_SCALE := 4
 ## Map 图例：
 ##   . 透明 | O 描边(CHARCOAL) | Z 区域主色 | D 区域暗色 | L 区域亮色
 ##   M 金属暗面 | H 金属高光 | B Butter 锚点
+##   C 青蓝 emissive 屏幕（V3 §6）| G 绿 emissive 屏幕（V3 §6）
 ##
 ## 造型 = 手工归纳的顶视角剪影（先剪影后补关键特征，§2）：
 ##   - treadmill 2×1：左侧 console（屏幕 H + 金属机身）+ 右侧立柱；履带两端滚轮
@@ -38,19 +39,22 @@ const ART_SCALE := 4
 ##   - bench_press 2×2：杠铃片(M) 两端 + 杠 + 立柱 + 卧推凳(Z)
 ##   - yoga_mat 1×1：垫子卷边(L/D) + 垫面(Z)
 const ART_MAPS := {
+	# 跑步机（V3 §6：控制台青蓝 emissive 屏幕）：左侧 console（屏幕 C +
+	# 金属机身）+ 右侧立柱；履带两端滚轮。
 	"treadmill": [
 		"OOOO..........OO",
-		"OZHHZO......OZHO",
-		"OZMMZO......OZZO",
+		"OZCCHZO......OZHO",
+		"OZCCZO.......OZZO",
 		"OZMMZOO....OZZZO",
 		"OOZZZZZZZZZZZZZO",
 		".OZDDMMDDDDMMDZO",
 		".OZDDDDDDDDDDDZO",
 		"..OZZZZZZZZZZZZO",
 	],
+	# 自行车（V3 §6：显示屏绿色 emissive）：车把(H) + 飞轮(M) + 座椅(B)
 	"bike": [
 		"..OOOO..",
-		".OZHHZO.",
+		".OZGGZO.",
 		".OZMMZO.",
 		"OZMMMMZO",
 		"OZMMMMZO",
@@ -194,5 +198,9 @@ func _color_for(ch: String, zone: Color, dark: Color, light: Color) -> Color:
 			return Palette.METAL_HIGHLIGHT
 		"B":
 			return Palette.BUTTER
+		"C":
+			return Palette.EMISSIVE_CYAN
+		"G":
+			return Palette.EMISSIVE_GREEN
 		_:
 			return Color(0, 0, 0, 0)
