@@ -97,7 +97,7 @@
 **Required evidence**:
 - `tests/unit/economy/serialization_determinism_test.gd` — must exist and pass (AC6, AC10, AC12)
 
-**Status**: [x] Created and passing — `tests/unit/economy/serialization_determinism_test.gd` (57 asserts, standalone green; registered in `TEST_FILES`). Implements the story QA cases verbatim:
+**Status**: [x] Complete — 2026-08-05 (QA 终审 PASS, t_ade1d1b6)
 - **AC6** 确定性记账: two separate Economy instances fed the same fixed `member_completed_visit` payload array → identical balance trace (`[512, 524, …, 620]`); edge: mixed payload order + interleaved spend/credit calls → same final balance (commutative sum), each trace matches its own op order
 - **AC10** 无衰减: 300 idle ticks (zero departures, no spend) → balance unchanged, NO `balance_changed`; edge: pause/resume tick bursts with gaps, and idle ticks after credit+spend
 - **AC12** 序列化往返: balance 0 / 500 / after 25 accruals+spends → serialize → deserialize → identical + re-serialize identical; next accrual after reload matches uninterrupted play (`balance_changed(572, +12)` once on each); JSON round-trip (stringify full_precision → parse → deserialize) coerces 4.7.1 float ints back to int exactly

@@ -101,7 +101,7 @@
 - `tests/unit/zone_rules/preview_commit_test.gd` — AC2 (must exist and pass)
 - `tests/unit/zone_rules/invalid_equipment_test.gd` — AC15a/AC15b (must exist and pass)
 
-**Status**: [x] Created — `tests/unit/zone_rules/preview_commit_test.gd` (AC2, 22 asserts) + `tests/unit/zone_rules/invalid_equipment_test.gd` (AC15a/15b + static guards, 30 asserts), both registered in TEST_FILES; full headless suite 2812 passed / 0 failed.
+**Status**: [x] Complete — 2026-08-05 (QA 终审 PASS, t_92b04b14)
 
 ---
 
