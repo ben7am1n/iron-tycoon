@@ -173,33 +173,41 @@ func _verify_world_content(img: Image) -> void:
 	])
 
 
-## 像素 stair-step（Exit 条件 1）：世界 x=64（sprite 左缘）处的屏幕横向 6px：
-##   312/313/314（Sage 地板）逐像素 IDENTICAL；315/316/317（Charcoal 描边）
-##   逐像素 IDENTICAL；两组之间硬切（无抗锯齿中间色）—— 最近邻放大证据。
+## 像素 stair-step（Exit 条件 1）：treadmill(2,2) sprite 右缘（Charcoal 描边 →
+## Sky 甲板）处的屏幕横向 6px：331/332/333（Charcoal 描边）逐像素 IDENTICAL；
+## 334/335/336（Sky 甲板）逐像素 IDENTICAL；两组之间硬切（无抗锯齿中间色）
+## —— 最近邻放大证据。Phase 2 地面材质为深灰橡胶，旧采样点（世界 x=64 地板
+## 侧）已不可用，改采 sprite 本体边缘（设备材质不受地面影响）。
 func _verify_stair_step(img: Image) -> void:
 	var y := 180
-	var a: Array = [img.get_pixel(312, y), img.get_pixel(313, y), img.get_pixel(314, y)]
-	var b: Array = [img.get_pixel(315, y), img.get_pixel(316, y), img.get_pixel(317, y)]
-	_ok(_identical(a), "STAIR left block (312..314) identical nearest-run: %s" % a[0].to_html(false))
-	_ok(_identical(b), "STAIR right block (315..317) identical nearest-run: %s" % b[0].to_html(false))
-	_ok(not _near(a[0], b[0], 0.10), "STAIR hard edge 314/315 (no bilinear blend): %s vs %s" % [
+	var a: Array = [img.get_pixel(331, y), img.get_pixel(332, y), img.get_pixel(333, y)]
+	var b: Array = [img.get_pixel(334, y), img.get_pixel(335, y), img.get_pixel(336, y)]
+	_ok(_identical(a), "STAIR left block (331..333) identical nearest-run: %s" % a[0].to_html(false))
+	_ok(_identical(b), "STAIR right block (334..336) identical nearest-run: %s" % b[0].to_html(false))
+	_ok(not _near(a[0], b[0], 0.10), "STAIR hard edge 333/334 (no bilinear blend): %s vs %s" % [
 		a[0].to_html(false), b[0].to_html(false)
 	])
 
 
-## V3 §14：正常经营模式 grid 完全隐藏 —— 世界 x=64 网格线位置无 Charcoal 线。
-## 采样窗口 305..325（含水平网格线 y=200 → screen 450 与垂直网格线 x=64 →
-## screen ~312..315 的 ±2 viewport px 栅格化偏移容差）。
+## V3 §14：正常经营模式 grid 完全隐藏 —— 世界 (390,160)（walkway 列 12 瓷砖
+## 面）处无 Charcoal 线。采样窗口 x 1044..1066 @ y 357..360（水平网格线
+## world y=160 → screen ≈358，±2 viewport px 栅格化容差；窗口落在亮瓷砖面
+## 内，无结构/设备遮挡）。Phase 2 地面材质后旧采样点（力量区深灰橡胶）与
+## Charcoal 无法区分，迁移至亮区。
 func _verify_grid_hidden(img: Image) -> void:
 	var min_lum := 1.0
 	var max_lum := 0.0
-	for x in range(305, 326):
-		var c := img.get_pixel(x, 450)
-		min_lum = minf(min_lum, _luminance(c))
-		max_lum = maxf(max_lum, _luminance(c))
-	# 网格线（Charcoal）未画 → 窗口内全部是地板 Sage（高亮度、平坦）。
-	_ok(min_lum > 0.55, "GRID hidden: no charcoal in window 305..325 @450 (min lum %.3f)" % min_lum)
-	_ok(max_lum - min_lum < 0.05, "GRID hidden: flat floor window (spread %.3f)" % (max_lum - min_lum))
+	for x in range(1044, 1067):
+		for y in range(357, 361):
+			var c := img.get_pixel(x, y)
+			min_lum = minf(min_lum, _luminance(c))
+			max_lum = maxf(max_lum, _luminance(c))
+	# 网格线（Charcoal）未画 → 窗口内全部是亮瓷砖面（高亮度、平坦）。
+	# 主断言是 min_lum（无暗线）；spread 为次级平坦检查 —— 瓷砖面 + 砖缝行
+	# 本身有 ~0.1 亮度差（材质地板，非旧纯色 Sage），Phase 5 地板砖缝 + 光照
+	# 叠加 ~0.16，放宽至 0.20（仅作平坦性参考，不承载 grid 隐藏判定）。
+	_ok(min_lum > 0.55, "GRID hidden: no charcoal in window 1044..1066 @357..360 (min lum %.3f)" % min_lum)
+	_ok(max_lum - min_lum < 0.20, "GRID hidden: flat tile window (spread %.3f)" % (max_lum - min_lum))
 
 
 ## UI 高分辨率层（Exit 条件 3）：palette 条带（底部 96px 深色面板）在
@@ -213,14 +221,15 @@ func _verify_ui_layer(img: Image) -> void:
 	])
 
 
-## placement mode（拖拽中）：网格线出现 —— 世界 x=64 / y=200 处窗口 305..325
-## 内存在 Charcoal 暗线（水平线整行 + 垂直线块，相对地板 Sage 显著更暗）。
+## placement mode（拖拽中）：网格线出现 —— 世界 (390,160) 亮瓷砖窗口内出现
+## Charcoal 暗线（水平网格线 world y=160 → screen ≈358；相对瓷砖面显著更暗）。
 func _verify_grid_visible(img: Image) -> void:
 	var min_lum := 1.0
-	for x in range(305, 326):
-		var c := img.get_pixel(x, 450)
-		min_lum = minf(min_lum, _luminance(c))
-	_ok(min_lum < 0.45, "GRID visible: charcoal line in window 305..325 @450 during drag (min lum %.3f)" % min_lum)
+	for x in range(1044, 1067):
+		for y in range(357, 361):
+			var c := img.get_pixel(x, y)
+			min_lum = minf(min_lum, _luminance(c))
+	_ok(min_lum < 0.45, "GRID visible: charcoal line in window 1044..1066 @357..360 during drag (min lum %.3f)" % min_lum)
 
 
 func _verify_perf() -> void:

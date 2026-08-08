@@ -9,9 +9,12 @@
 ##
 ## 绘制顺序（2.5D 空间层级，art-bible-25d §1 + V3 §4 三层空间 + Phase 4 双层会员）：
 ##   地板材质（FloorArt 烘焙贴图，V3 §1）→ 环境背景（墙/窗/海报/装饰，V3 §3/
-##   §12 BACKGROUND 低对比）→ 网格线 → 会员中景（walk/idle/tired/satisfied）→
-##   设备前景 → 使用中的会员（叠加在设备上 —— V3 §8 与设备互动姿态）→ 环境
-##   前景（大植物，V3 §4 FOREGROUND 可轻微遮挡）→ 放置幽灵（活动决策预览优先级最高）。
+##   §12 BACKGROUND 低对比）→ 结构层 BACKGROUND（储物柜/镜子/空调/墙钟/
+##   通风口/门/踢脚线/电线槽/管道，V3 §3/§4 低对比，画在墙面上方）→ 网格线 →
+##   结构层 GAMEPLAY（前台）→ 会员中景（walk/idle/tired/satisfied）→ 设备前景 →
+##   使用中的会员（叠加在设备上 —— V3 §8 与设备互动姿态）→ 结构层 FOREGROUND
+##   （立柱/吊灯，V3 §4 可轻微遮挡）→ 环境前景（大植物，V3 §4 FOREGROUND 可
+##   轻微遮挡）→ 放置幽灵（活动决策预览优先级最高）。
 ## Phase 4（V3 §8）：会员是画面视觉主体 —— sprite 48×48（>cell 32），脚底
 ## 锚定 cell 底部、头部向上越出 cell；USING 成员锚定到设备 footprint 上
 ## （跑带/卧推凳/车座/垫面），叠加在设备之上（先画设备、后画使用会员）。
@@ -34,6 +37,7 @@ class_name WorldCanvas extends Node2D
 const Palette := preload("res://src/palette.gd")
 const WorldScale := preload("res://src/presentation/world_scale.gd")
 const WorldLayout := preload("res://src/presentation/world_layout.gd")
+const StructureArt := preload("res://src/presentation/structure_art.gd")
 
 ## 默认网格可见性（V3 §14）：正常经营模式完全隐藏 grid。
 const DEFAULT_GRID_VISIBLE := false
@@ -51,6 +55,7 @@ var _tick_provider: Callable = Callable() # -> int（会员动画 tick）
 var _cell_size: int = 32
 var _floor_art = null         # FloorArt：V3 §1 地板材质烘焙贴图（Phase 5，可空）
 var _env_art = null           # EnvironmentArt：V3 §12 环境装饰精灵工厂（Phase 5，可空）
+var _structure_art = null     # StructureArt：V3 §3/§4/§13 结构层（Phase 2，可空）
 
 ## 当前网格可见性（V3 §14）。默认 false；仅 placement mode 为 true。
 var _grid_visible: bool = DEFAULT_GRID_VISIBLE
@@ -69,6 +74,7 @@ var _initialized: bool = false
 ## [resolver] instance_id -> equipment_id；[tick_provider] -> int（动画 tick）。
 ## [floor_art] FloorArt（V3 §1 地板材质，Phase 5；null 时回退旧色块地板）。
 ## [env_art] EnvironmentArt（V3 §12 环境装饰，Phase 5；null 时不画装饰）。
+## [structure_art] StructureArt（V3 §3/§4/§13 结构层，Phase 2；null 时不画结构）。
 func init(
 	grid,
 	catalog,
@@ -81,7 +87,8 @@ func init(
 	tick_provider: Callable,
 	cell_size: int,
 	floor_art = null,
-	env_art = null
+	env_art = null,
+	structure_art = null
 ) -> void:
 	if _initialized:
 		push_error("WorldCanvas.init(): called twice")
@@ -99,6 +106,7 @@ func init(
 	_cell_size = maxi(cell_size, 1)
 	_floor_art = floor_art
 	_env_art = env_art
+	_structure_art = structure_art
 	_grid_visible = DEFAULT_GRID_VISIBLE
 
 	# 信号驱动重绘（typed connections only，Control Manifest Presentation 规则）：
@@ -156,16 +164,26 @@ func _draw() -> void:
 	if _grid == null:
 		return
 	_draw_floor_zones()
+	# Phase 5 环境背景（墙/窗/海报/装饰，V3 §3/§12）先画 —— 结构层 BACKGROUND
+	# （储物柜/镜子/空调/墙钟/通风口/门/踢脚线/电线槽/管道）画在墙面上方。
 	_draw_environment_background()
+	if _structure_art != null:
+		_draw_structure_layer(StructureArt.LAYER_BACKGROUND)
 	if _grid_visible:
 		_draw_grid_lines()
 	# 2.5D 空间层级（art-bible-25d §1 + V3 §4 三层 + Phase 4 双层会员）：
-	# 环境背景 → 会员中景（walk/idle/tired/satisfied）→ 设备前景 → 使用中的
-	# 会员叠加在设备上（V3 §8 与设备互动姿态）→ 环境前景（大植物可轻微遮挡）
-	# → 幽灵（活动决策预览，Core Rule 7 优先级最高）。
+	# 环境背景 → 结构层 GAMEPLAY（前台，Phase 2）→ 会员中景
+	# （walk/idle/tired/satisfied）→ 设备前景 → 使用中的会员叠加在设备上
+	# （V3 §8 与设备互动姿态）→ 结构层 FOREGROUND（立柱/吊灯，Phase 2，
+	# V3 §4 可轻微遮挡）→ 环境前景（大植物可轻微遮挡）→ 幽灵（活动决策
+	# 预览，Core Rule 7 优先级最高）。
+	if _structure_art != null:
+		_draw_structure_layer(StructureArt.LAYER_GAMEPLAY)
 	_draw_members(false)
 	_draw_equipment()
 	_draw_members(true)
+	if _structure_art != null:
+		_draw_structure_layer(StructureArt.LAYER_FOREGROUND)
 	_draw_environment_foreground()
 	_draw_placement_ghost()
 
@@ -195,6 +213,17 @@ func _draw_environment_background() -> void:
 	_draw_walls()
 	_draw_wall_decor()
 	_draw_floor_decor()
+
+
+## 结构层（V3 §3/§4/§13，Phase 2 StructureArt）：单次 draw_texture_rect 烘焙
+## 贴图。BACKGROUND 低对比（降对比降饱和）、GAMEPLAY 前台原色鲜艳、FOREGROUND
+## 立柱/吊灯允许轻微遮挡 —— 顺序由 _draw() 控制（见文件头注释）。
+func _draw_structure_layer(layer: String) -> void:
+	var tex: ImageTexture = _structure_art.layer_texture(layer)
+	if tex == null:
+		return
+	draw_texture_rect(tex, Rect2(Vector2.ZERO, Vector2(
+		WorldLayout.WORLD_W, WorldLayout.WORLD_H)), false)
 
 
 ## 顶墙 + 左右侧墙（V3 §3 墙壁）：暖灰基底 + 墙裙压条 + 窗户。
