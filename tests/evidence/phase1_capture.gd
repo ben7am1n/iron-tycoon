@@ -177,15 +177,16 @@ func _verify_world_content(img: Image) -> void:
 
 
 ## 像素 stair-step（Exit 条件 1）：世界 x=68（sprite 左缘，treadmill 16×16 art
-## 的 art col2 = EQUIP_BODY_LIGHT）处的屏幕横向 6px：321/322/323（接触阴影
-## 色）逐像素 IDENTICAL；325/326/327（EQUIP_BODY_LIGHT）逐像素 IDENTICAL；
-## 两组之间硬切（无抗锯齿中间色）—— 最近邻放大证据（NEAREST 光栅化实测：
-## x=324 仍为阴影色，sprite 左缘起于 x=325）。
+## 的 art col2 = EQUIP_BODY_LIGHT）处的屏幕横向 6px：322/323/324（接触阴影
+## 色，Phase 5 光照叠加后 #3F4449）逐像素 IDENTICAL；325/326/327
+## （EQUIP_BODY_LIGHT + 光照）逐像素 IDENTICAL；两组之间硬切（无抗锯齿
+## 中间色）—— 最近邻放大证据。NEAREST 光栅化 + Phase 5 光照实测：
+## sprite 左缘起于 x=325。
 func _verify_stair_step(img: Image) -> void:
 	var y := 180
-	var a: Array = [img.get_pixel(321, y), img.get_pixel(322, y), img.get_pixel(323, y)]
+	var a: Array = [img.get_pixel(322, y), img.get_pixel(323, y), img.get_pixel(324, y)]
 	var b: Array = [img.get_pixel(325, y), img.get_pixel(326, y), img.get_pixel(327, y)]
-	_ok(_identical(a), "STAIR left block (321..323) identical nearest-run: %s" % a[0].to_html(false))
+	_ok(_identical(a), "STAIR left block (322..324) identical nearest-run: %s" % a[0].to_html(false))
 	_ok(_identical(b), "STAIR right block (325..327) identical nearest-run: %s" % b[0].to_html(false))
 	_ok(not _near(a[0], b[0], 0.10), "STAIR hard edge 324/325 (no bilinear blend): %s vs %s" % [
 		a[0].to_html(false), b[0].to_html(false)

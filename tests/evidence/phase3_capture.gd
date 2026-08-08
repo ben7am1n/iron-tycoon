@@ -171,9 +171,12 @@ func _verify_world_equipment() -> void:
 	_ok(front, "WORLD treadmill front (console) has cyan display — orientation (V3 §5)")
 	_ok(not back, "WORLD treadmill back has no cyan — front/back distinct (V3 §5)")
 	# contact shadow（§6）：treadmill(2,2) fp (64,64,64,32) 下方 contact shadow
-	# 核心区（世界 (76,98)）vs 同区域地板（世界 (140,98)）—— 世界坐标 → 屏幕。
-	var shadow_p := world_to_screen(Vector2(76, 98))
-	var floor_p := world_to_screen(Vector2(140, 98))
+	# 核心区（世界 (110,99)，fp 下缘核心阴影）vs 同区域地板（世界 (160,99)，
+	# Phase 2/5 合入后实测 lum 0.304 < 0.653）—— 世界坐标 → 屏幕。
+	# 注意：Phase 5 光照层会在窗口附近叠加斜向自然光，旧采样点 (76,98) 落在
+	# 窗光增亮区被污染（lum 反超），改采 shadow 核心 vs 远离窗光的右侧地板。
+	var shadow_p := world_to_screen(Vector2(110, 99))
+	var floor_p := world_to_screen(Vector2(160, 99))
 	var shadow_col := img.get_pixel(shadow_p.x, shadow_p.y)
 	var floor_col := img.get_pixel(floor_p.x, floor_p.y)
 	var shadow_ok := _luminance(shadow_col) < _luminance(floor_col) - 0.03

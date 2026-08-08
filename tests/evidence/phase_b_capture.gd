@@ -65,9 +65,11 @@ const SAMPLE_POINTS := {
 	"yoga_main": {"pos": Vector2(304, 80), "expect": Color("F2B486"), "tol": 0.15},
 	"shadow_px": {"pos": Vector2(130, 80), "expect": null, "tol": 0.0},
 	"floor_px": {"pos": Vector2(138, 80), "expect": null, "tol": 0.0},
-	# 非法幽灵描边：rect 顶边 y=96（Godot 2px stroke 以边界为中心，95..97），
-	# 采样 y=96 命中 ROSE 0.9-over-Charcoal ≈ #D19899，距 #E0A0A0 约 0.07。
-	"illegal_ghost": {"pos": Vector2(200, 96), "expect": Color("E0A0A0"), "tol": 0.18},
+	# 非法幽灵描边：rect 顶边 y=96（Godot 2px stroke 以边界为中心，95..97）。
+	# Phase 5 光照层会在幽灵 console 处叠加 emissive 辉光（采样点若落在屏幕
+	# 位置会被污染），改采左上角内侧 stroke (193,97) ≈ ROSE 0.9-over-Charcoal
+	# #D69A9B，距 #E0A0A0 约 0.05。
+	"illegal_ghost": {"pos": Vector2(193, 97), "expect": Color("E0A0A0"), "tol": 0.18},
 }
 
 
