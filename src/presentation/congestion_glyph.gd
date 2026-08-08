@@ -19,6 +19,9 @@
 ## `var x := expr` on Variant returns; draw_rect takes Rect2/Color/bool/float.
 class_name CongestionGlyph extends Node2D
 
+## V3 §2 世界缩放（描边宽度补偿 —— 亚像素描边消失 pitfall，见 world_scale.gd）。
+const WorldScale := preload("res://src/presentation/world_scale.gd")
+
 ## Dusty Rose — the soft congestion tint (art bible: congestion/needs-
 ## attention semantic, never harsh red). Secondary channel only.
 const DUSTY_ROSE := Color("e0a0a0")
@@ -72,8 +75,12 @@ func fill_rect() -> Rect2:
 ## Renders the glyph: Soft Charcoal outline + Dusty Rose fill whose alpha
 ## ramps with fill_fraction (secondary reinforcement — the height carries
 ## the signal). Never pulses/loops (Pillar 2); one static shape.
+## Outline width × STROKE_COMPENSATION：WorldRoot scale 0.75 下亚像素描边
+## 消失（4.7.1 pitfall，world_scale.gd）—— 数据值（outline_width，测试契约）
+## 保持 1.0，绘制时补偿到 ≥1.0 viewport px。
 func _draw() -> void:
-	draw_rect(Rect2(Vector2.ZERO, glyph_size), SOFT_CHARCOAL, false, outline_width)
+	draw_rect(Rect2(Vector2.ZERO, glyph_size), SOFT_CHARCOAL, false,
+		outline_width * WorldScale.STROKE_COMPENSATION)
 	var fr := fill_rect()
 	if fr.size.y > 0.0:
 		draw_rect(fr, Color(DUSTY_ROSE.r, DUSTY_ROSE.g, DUSTY_ROSE.b, fill_fraction))

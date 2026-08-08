@@ -23,8 +23,10 @@ const DURATION := 0.22
 const START_RADIUS := 6.0
 ## 脉冲环终止半径（px）。
 const END_RADIUS := 18.0
-## 环线宽（px）。
-const RING_WIDTH := 2.0
+## 环线宽（px）。3.0 world px → 2.25 viewport px：WorldRoot scale 0.75 下
+## 亚像素描边消失（4.7.1 pitfall，world_scale.gd），2.0 的旧值（1.5 vp）处于
+## 消失临界；3.0 稳定渲染且符合粗颗粒像素风。
+const RING_WIDTH := 3.0
 
 var _active: bool = false
 var _elapsed: float = 0.0

@@ -96,7 +96,10 @@ var _selection: SelectionSystemScript
 var _bridge: SelectionInputBridgeScript
 var _placement: PlacementSystemScript
 var _grid: GridSystemScript
-var _cell_size: int = 32
+## 屏幕空间 cell 尺寸（V3 §2：世界已进 SubViewport + nearest 放大，UI 层
+## 锚定用的 cell_size 是「世界 cell 的屏幕像素尺寸」，float 以保留精确换算
+## ≈72.11px；单位测试/旧调用注入 32 时行为不变）。
+var _cell_size: float = 32.0
 var _grid_origin: Vector2 = Vector2.ZERO
 var _viewport_size: Vector2 = Vector2(1280, 720)
 var _reduced_motion: bool = false
@@ -138,7 +141,7 @@ func init(
 	bridge: SelectionInputBridgeScript,
 	placement: PlacementSystemScript,
 	grid: GridSystemScript,
-	cell_size: int,
+	cell_size: float,
 	config: Dictionary = {},
 	grid_origin: Vector2 = Vector2.ZERO,
 	viewport_size: Vector2 = Vector2(1280, 720)

@@ -101,6 +101,12 @@ var _grid: GridSystem
 ## composition root so GridSystem keeps its "never hardcoded" contract.
 var _cell_size: int = 32
 
+## V3 §2 低分辨率管线：屏幕坐标 → 世界坐标的映射 Callable。世界已进
+## SubViewport + 缩放，输入事件（根 viewport 屏幕坐标）必须先经此映射再
+## world_to_grid()。未注入（Callable 无效）时退化为恒等映射 —— 单位测试
+## 直接喂世界坐标时行为不变。
+var _screen_to_world: Callable = Callable()
+
 ## PlacementSystem — injected for the Move-during-drag guard
 ## (story Implementation Notes): the toolbar must disable Move while
 ## PlacementSystem.is_dragging() is true (AC27). Optional (default null) so
@@ -156,6 +162,12 @@ func init(
 	# see. Guarded against double-connect for re-init safety.
 	if _system != null and not _system.selection_changed.is_connected(_on_selection_changed):
 		_system.selection_changed.connect(_on_selection_changed)
+
+
+## V3 §2 注入 screen→world 映射（composition root 调用）。未设置时保持
+## 恒等映射（_screen_to_world 无效 Callable → 输入即世界坐标）。
+func set_screen_to_world(cb: Callable) -> void:
+	_screen_to_world = cb
 
 
 ## Applies data-driven config values (Control Manifest: gameplay values are
@@ -283,7 +295,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		if mb.button_index == MOUSE_BUTTON_LEFT and mb.pressed:
 			if _system == null or _grid == null:
 				return
-			var cell: Vector2i = _grid.world_to_grid(mb.position, _cell_size)
+			var world_pos: Vector2 = mb.position if not _screen_to_world.is_valid() else _screen_to_world.call(mb.position)
+			var cell: Vector2i = _grid.world_to_grid(world_pos, _cell_size)
 			if not _grid.is_in_bounds(cell):
 				return  # OOB — ignore silently (bridge never forwards OOB)
 			on_cell_clicked(cell)

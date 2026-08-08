@@ -66,6 +66,9 @@
 ##     art-bible / GDD anchors)
 class_name AccessBlockedLayer extends Node2D
 
+## V3 §2 世界缩放（描边宽度补偿 —— 亚像素描边消失 pitfall，见 world_scale.gd）。
+const WorldScale := preload("res://src/presentation/world_scale.gd")
+
 ## One-line hover tooltip — the fixed copy (GDD Core Rule 5). Never "ERROR" or
 ## exclamation iconography. Public so tests and future localization tooling can
 ## reference the exact string.
@@ -367,7 +370,10 @@ func _draw() -> void:
 	if s < 1.0:
 		return
 	var half := s * 0.5
-	var outline_w: float = maxf(_outline_width_px * glyph_scale(), 1.0)
+	# 描边宽度 × STROKE_COMPENSATION：WorldRoot scale 0.75 下亚像素描边消失
+	# （4.7.1 pitfall，world_scale.gd）—— 1.5 数据值补偿后 ≈2.0 world px =
+	# 1.5 viewport px，稳定渲染。
+	var outline_w: float = maxf(_outline_width_px, 1.0) * WorldScale.STROKE_COMPENSATION * glyph_scale()
 	for id in icons.keys():
 		var entry: Dictionary = icons[id]
 		var alpha: float = float(entry["alpha"])
