@@ -158,3 +158,59 @@ const LIGHT_WINDOW := Color(1.0, 0.92, 0.75, 0.10)
 const LIGHT_EDGE_SHADOW := Color(0.10, 0.14, 0.22, 0.16)
 ## 中心暗角加强（空间纵深：中心比墙边略亮 → 墙边深、中心亮）。
 const LIGHT_CORNER_SHADOW := Color(0.10, 0.14, 0.22, 0.10)
+
+# === Phase 2 结构层色域（V3 §3/§4 —— 立柱/前台/储物柜/镜子/空调/墙钟/
+# 通风口/吊灯/管道/踢脚线/电线槽/毛巾架/门/门垫） ===
+# 供 src/presentation/structure_art.gd 使用。BACKGROUND 层绘制时统一
+# 降对比降饱和（V3 §4），色值仍是本文件单一来源。
+
+## 门：深木色（入口/出口门板）。
+const DOOR_COLOR := Color("7E6F5A")
+## 门框：深暖灰。
+const DOOR_FRAME := Color("5C5447")
+## 门口地垫：深暖灰。
+const DOOR_MAT := Color("6B655A")
+## 前台台面：暖木色（GAMEPLAY 层，V3 §4 原色）。
+const DESK_WOOD := Color("A87E4F")
+## 前台台面亮部。
+const DESK_TOP := Color("C09A66")
+## 储物柜：蓝灰柜体（BACKGROUND 层，降饱和后仍冷调）。
+const LOCKER_COLOR := Color("7C8A94")
+## 储物柜暗部/柜门缝。
+const LOCKER_DARK := Color("64707A")
+## 储物柜把手：暖金（小面积 accent，V3 §7）。
+const LOCKER_HANDLE := Color("C9A24B")
+## 镜子：冷蓝灰镜面（BACKGROUND，V3 §6 冷调）。
+const MIRROR_COLOR := Color("AFC4D2")
+## 镜子高光：斜向亮线。
+const MIRROR_HI := Color("D6E4EC")
+## 空调机身：暖白（BACKGROUND）。
+const AC_BODY := Color("E4E0D6")
+## 空调出风口：中灰（V3 §9 出风细节）。
+const AC_VENT := Color("B4AFA2")
+## 墙钟表盘：暖米白。
+const CLOCK_FACE := Color("E8E2D4")
+## 墙钟指针/刻度：深暖灰。
+const CLOCK_HAND := Color("4A443C")
+## 管道：中暖灰（BACKGROUND）。
+const PIPE_COLOR := Color("8F8A7E")
+## 管道法兰/接头：深一档。
+const PIPE_DARK := Color("777267")
+## 电线槽：浅暖灰细条（V3 §3）。
+const CABLE_DUCT := Color("B0AA9C")
+## 立柱：暖灰（FOREGROUND，允许遮挡）。
+const COLUMN_COLOR := Color("A59E90")
+## 立柱暗部。
+const COLUMN_DARK := Color("877F70")
+## 吊灯灯罩：深暖灰（FOREGROUND，悬于上方）。
+const LAMP_SHADE := Color("4A443C")
+## 吊灯暖光晕：半透明暖黄（V3 §6 顶部暖白灯）。
+const LAMP_GLOW := Color(1.0, 0.92, 0.68, 0.30)
+## 消防栓：低饱和红（小面积 accent，V3 §7 高饱和仅小范围）。
+const HYDRANT := Color("B0483C")
+## 饮水机：暖白机身。
+const FOUNTAIN := Color("D8D4C8")
+## 垃圾桶：深暖灰。
+const TRASH := Color("5E5A52")
+## 毛巾：暖橙（小面积 accent）。
+const TOWEL := Color("C98E6E")

@@ -56,6 +56,7 @@ const WorldCanvasScript := preload("res://src/presentation/world_canvas.gd")
 const WorldScale := preload("res://src/presentation/world_scale.gd")
 const FloorArtScript := preload("res://src/presentation/floor_art.gd")
 const EnvironmentArtScript := preload("res://src/presentation/environment_art.gd")
+const StructureArtScript := preload("res://src/presentation/structure_art.gd")
 const LightingLayerScript := preload("res://src/presentation/lighting_layer.gd")
 const AmbientFxScript := preload("res://src/presentation/ambient_fx.gd")
 const Palette := preload("res://src/palette.gd")
@@ -128,6 +129,7 @@ var _equip_art
 var _snap_pulse
 var _floor_art
 var _env_art
+var _structure_art
 var _lighting
 var _ambient_fx
 
@@ -275,6 +277,10 @@ func _assemble_presentation() -> void:
 	_floor_art = FloorArtScript.new()
 	_floor_art.init(GRID_W, GRID_H, CELL_SIZE)
 	_env_art = EnvironmentArtScript.new()
+	# Phase 2：V3 §3/§4/§13 结构层（立柱/前台/储物柜/镜子/空调/墙钟/通风口/
+	# 吊灯/管道/踢脚线/电线槽/毛巾架 —— 与 Phase 5 装饰并存，STRUCTURES 表
+	# 提供 §13 密度分类）。
+	_structure_art = StructureArtScript.new()
 
 	# ModeArbitration（build/select 仲裁，GDD Core Rule 4）在 WorldCanvas 之前
 	# 构造 —— WorldCanvas 的幽灵渲染需要 is_ghost_suppressed()（见 init 注入）。
@@ -305,7 +311,7 @@ func _assemble_presentation() -> void:
 	_world_canvas.init(_grid, _catalog, _member, _member_sprites, _equip_art,
 		_orch.placement_system, _arbitration, _resolver(),
 		func() -> int: return _orch.get_tick_count(), CELL_SIZE,
-		_floor_art, _env_art)
+		_floor_art, _env_art, _structure_art)
 	_world_root.add_child(_world_canvas)
 
 	# Phase 5：V3 §6 方向光 + 氛围层（世界像素空间，画在 WorldCanvas 之上）。
@@ -555,8 +561,8 @@ func _smoke_report() -> void:
 		_palette.get_tile_count(),
 	])
 	print("  member_states=%s" % [str(state_counts)])
-	print("  sprites_ready=%s floor_art=%s env_art=%s" % [
-		_member_sprites != null, _floor_art != null, _env_art != null,
+	print("  sprites_ready=%s floor_art=%s env_art=%s structure_art=%s" % [
+		_member_sprites != null, _floor_art != null, _env_art != null, _structure_art != null,
 	])
 	print("  lighting=%s ambient_fx=%s" % [_lighting != null, _ambient_fx != null])
 	print("  hud_initialized=%s shop_initialized=%s arbitration=%s toolbar=%s cue=%s" % [
