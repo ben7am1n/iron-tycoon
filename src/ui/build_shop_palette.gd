@@ -110,6 +110,12 @@ const CONFIRM_CUE_MODULATE := Color(1.0, 0.97, 0.82)
 ## flash so the two resolutions read differently at a glance.
 const RETURN_CUE_MODULATE := Color(1.0, 0.99, 0.93)
 
+## Phase D v2 现代 UI 皮肤（art-bible-25d-style §1/§2）—— 建造商店条带 =
+## 深色半透明面板 + Butter 亮色描边（_draw() 绘制，不新增子节点）。
+const UiTheme := preload("res://src/ui/ui_theme.gd")
+## 条带面板 stylebox（_draw() 使用；UiTheme 单一来源）。
+var _strip_style: StyleBoxFlat = null
+
 ## Injected read-only catalog (composition-root owned).
 var _catalog: EquipmentCatalog
 ## Injected balance ledger — the re-grey trigger source.
@@ -450,6 +456,9 @@ func _hit_test_tile(pos: Vector2) -> String:
 ## Builds the rack: one PaletteTile per catalog id (loader insertion order),
 ## plus the always-present empty hint (visible only when there are no tiles).
 func _build_ui() -> void:
+	# 节点命名（与 HUD 的 `name = "Hud"` 同约定）：证据捕获/调试按名定位。
+	name = "BuildShopPalette"
+	_strip_style = UiTheme.make_panel_style(UiTheme.panel_border(), 10, 2)
 	for id in _catalog.get_all_ids():
 		var def := _catalog.get_definition(id)
 		var tile: PaletteTileScript = PaletteTileScript.new()
@@ -461,9 +470,21 @@ func _build_ui() -> void:
 	_empty_hint.text = EMPTY_HINT_TEXT
 	_empty_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_empty_hint.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_empty_hint.add_theme_font_size_override("font_size", 16)
+	# Phase D v2: 浅色正文 + 粗字体（深色面板可读）。
+	_empty_hint.add_theme_color_override("font_color", UiTheme.text_light())
+	_empty_hint.add_theme_font_override("font", UiTheme.bold_font())
+	_empty_hint.add_theme_font_size_override("font_size", UiTheme.FONT_BODY)
 	_empty_hint.visible = _tiles.is_empty()
 	add_child(_empty_hint)
+	queue_redraw()
+
+
+## Phase D v2: 建造商店条带背景 —— 深色半透明 + Butter 亮色描边。在条带
+## root 的 _draw() 里绘制（不新增子节点，HBox 布局与 hit-test 不受影响）。
+func _draw() -> void:
+	if _strip_style == null:
+		return
+	draw_style_box(_strip_style, Rect2(4, 4, size.x - 8, size.y - 8))
 
 
 ## Re-derives every tile's state through the injected query layer, then

@@ -75,10 +75,13 @@ const SELL_CONFIRM_PREFIX := "Confirm sell +$"
 
 ## Art-bible palette (design/art/art-bible.md §4): Butter = money/highlight
 ## (the sell-confirm morph — GDD Core Rule 4: warm Butter, never alarm-red);
-## Soft Charcoal = text/outline; Warm Cream = toolbar background.
+## Soft Charcoal = text/outline; Warm Cream = light text on dark panels.
 const COLOR_BUTTER := Color("f5d97b")
-const COLOR_CHARCOAL := Color("3c3a42")
 const COLOR_WARM_CREAM := Color("f4e9d8")
+
+## Phase D v2 现代 UI 皮肤（art-bible-25d-style §1/§2）—— 工具栏面板 =
+## 深色半透明 + Butter 亮色描边 + 粗字体按钮。
+const UiTheme := preload("res://src/ui/ui_theme.gd")
 
 ## Gap (px) between the piece's footprint edge and the toolbar.
 const ANCHOR_GAP_PX := 12
@@ -195,6 +198,9 @@ func _build_buttons() -> void:
 	_inspect_button.name = "InspectButton"
 	_inspect_button.text = LABEL_INSPECT
 	_inspect_button.focus_mode = Control.FOCUS_ALL
+	# Phase D v2: 粗字体 + 浅色文字 + 深色半透明按钮皮肤（主题级）。
+	UiTheme.style_button(_inspect_button)
+	_inspect_button.add_theme_color_override("font_color", COLOR_WARM_CREAM)
 	_inspect_button.pressed.connect(_on_inspect_pressed)
 	row.add_child(_inspect_button)
 
@@ -202,6 +208,8 @@ func _build_buttons() -> void:
 	_move_button.name = "MoveButton"
 	_move_button.text = LABEL_MOVE
 	_move_button.focus_mode = Control.FOCUS_ALL
+	UiTheme.style_button(_move_button)
+	_move_button.add_theme_color_override("font_color", COLOR_WARM_CREAM)
 	_move_button.pressed.connect(_on_move_pressed)
 	row.add_child(_move_button)
 
@@ -209,11 +217,13 @@ func _build_buttons() -> void:
 	_sell_button.name = "SellButton"
 	_sell_button.text = LABEL_SELL
 	_sell_button.focus_mode = Control.FOCUS_ALL
+	UiTheme.style_button(_sell_button)
+	_sell_button.add_theme_color_override("font_color", COLOR_WARM_CREAM)
 	_sell_button.pressed.connect(_on_sell_pressed)
 	row.add_child(_sell_button)
 
-	# Background: Warm Cream panel so the toolbar reads as a surface near the
-	# piece (not floating glyphs). Charcoal text on cream — AA contrast.
+	# Background: Phase D v2 深色半透明面板 + Butter 亮色描边 —— 工具栏
+	# 读作贴近器械的现代信息面板（art-bible-25d §1 UI 行），非暖色木框。
 	add_theme_stylebox_override("panel", _make_background_style())
 	# Size the panel to its content (the button row) so anchoring math works
 	# even headless / before a layout pass.
@@ -221,11 +231,7 @@ func _build_buttons() -> void:
 
 
 func _make_background_style() -> StyleBoxFlat:
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = COLOR_WARM_CREAM
-	sb.border_color = COLOR_CHARCOAL
-	sb.set_border_width_all(1)
-	sb.set_corner_radius_all(4)
+	var sb := UiTheme.make_panel_style(UiTheme.panel_border(), 6, 1)
 	sb.content_margin_left = 8.0
 	sb.content_margin_right = 8.0
 	sb.content_margin_top = 6.0
