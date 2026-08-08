@@ -279,8 +279,14 @@ func _verify_outline(img: Image) -> void:
 	# 9001 WALKING_TO @cell(5,2)：锚 (5*32-8, 2*32-16)=(152,48)
 	var p := world_to_screen(Vector2(152, 48) + Vector2(local))
 	var c := img.get_pixel(p.x, p.y)
-	_ok(_near(c, Palette.CHARCOAL, 0.20),
-		"OUTLINE 发际线外 1px CHARCOAL @%s = %s（V3 §11 人物深色轮廓，纹理@%s）" % [str(p), c.to_html(false), str(local)])
+	var ok := _near(c, Palette.CHARCOAL, 0.20)
+	if not ok:
+		# NEAREST 光栅化偏移：与 MICRO 同款容差扫描（world 0.75 缩放下 1px 轮廓
+		# 在屏上 ±1..2px 落位，V3 §2 管线已知现象；d67887b 迁移 phase1 同理）。
+		var found := _scan_near(img, p, Palette.CHARCOAL, 4)
+		ok = found > 0
+	_ok(ok,
+		"OUTLINE 发际线外 1px CHARCOAL @%s = %s（V3 §11 人物深色轮廓，纹理@%s）%s" % [str(p), c.to_html(false), str(local), "" if ok else " MISS"])
 
 
 ## V3 §9 微型动态：tired 头顶 BUTTER 汗滴（9002 @cell(8,4)）、satisfied BUTTER

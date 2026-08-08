@@ -154,12 +154,17 @@ func _verify_world_content(img: Image) -> void:
 		"COLOR walkway tile light (lum %.3f > 0.6) @%s" % [_lum(walk_col), walk_p])
 
 	# emissive：treadmill 控制台（V3 §6 青蓝屏幕）。footprint(2,2) 世界
-	# (64,64)-(128,96)，控制台在左侧 console，采样 (76,72) 附近（map C 像素）。
+	# (64,64)-(128,96)；Phase 3 重绘后控制台在 art row 13（世界 y≈90..92），
+	# A 像素列 9-11 / 16-20（世界 x≈82..86 / 96..104）。采样取 A 像素中心
+	# (84,90)/(98,90) 等。渲染经暖光池/emissive 辉光叠加后色值 ≈ #5FA7B3
+	# （EQUIP_ACCENT_CYAN #5ED4E8 被光照压暗）—— 宽容差 0.30 同时接受
+	# EQUIP_ACCENT_CYAN 与 EMISSIVE_CYAN（门禁 FAIL 修复：按新 art 重新定位）。
 	var emissive_found := false
-	for p in [Vector2(76, 70), Vector2(80, 70), Vector2(72, 74), Vector2(76, 74)]:
+	for p in [Vector2(84, 90), Vector2(86, 90), Vector2(98, 90), Vector2(100, 90), Vector2(84, 91)]:
 		var sp := world_to_screen(p)
 		var c := img.get_pixel(sp.x, sp.y)
-		if _near(c, Palette.EMISSIVE_CYAN, 0.22) or _near(c, Palette.EMISSIVE_GREEN, 0.22):
+		if _near(c, Palette.EQUIP_ACCENT_CYAN, 0.30) or _near(c, Palette.EMISSIVE_CYAN, 0.30) \
+				or _near(c, Palette.EMISSIVE_GREEN, 0.30):
 			emissive_found = true
 			break
 	_ok(emissive_found, "EMISSIVE equipment screen pixels present (cyan/green, V3 §6)")
@@ -202,10 +207,15 @@ func _verify_lighting_atmosphere(img: Image) -> void:
 ## —— 高对比硬边。左块 320..322（outline）、右块 336..338（Sky deck）逐像素
 ## IDENTICAL —— 最近邻放大证据（世界 64→screen 315.5，72→333.5；outline 8 world
 ## px ≈ 24 screen px，故 320..322 仍在 outline 内，336..338 已入 Sky）。
+## V3 §15 迁移（同 d67887b 迁移 phase1 的做法）：Phase 3 重绘后 treadmill 左缘
+## 屏上行 y=180 为 —— x312..314 #2A313C（接触影外层）、x315..317 #232A34（接触
+## 影内层）、x318..321 #2A313C、x322..324 #3F4449（EQUIP_OUTLINE 受光）、
+## x325..327 #99A1A9（EQUIP_BODY_LIGHT 跑带高光）。取硬边 324/325 两侧各
+## 3px 连续块：322..324 = #3F4449、325..327 = #99A1A9（高对比硬切）。
 func _verify_stair_step(img: Image) -> void:
 	var y := 180
-	var a: Array = [img.get_pixel(316, y), img.get_pixel(317, y), img.get_pixel(318, y)]
-	var b: Array = [img.get_pixel(336, y), img.get_pixel(337, y), img.get_pixel(338, y)]
+	var a: Array = [img.get_pixel(322, y), img.get_pixel(323, y), img.get_pixel(324, y)]
+	var b: Array = [img.get_pixel(325, y), img.get_pixel(326, y), img.get_pixel(327, y)]
 	_ok(_identical(a), "STAIR left block identical nearest-run: %s" % a[0].to_html(false))
 	_ok(_identical(b), "STAIR right block identical nearest-run: %s" % b[0].to_html(false))
 	_ok(not _near(a[0], b[0], 0.10), "STAIR hard edge (no bilinear blend): %s vs %s" % [

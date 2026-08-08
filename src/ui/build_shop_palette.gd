@@ -466,7 +466,11 @@ func _hit_test_tile(pos: Vector2) -> String:
 func _build_ui() -> void:
 	# 节点命名（与 HUD 的 `name = "Hud"` 同约定）：证据捕获/调试按名定位。
 	name = "BuildShopPalette"
-	_strip_style = UiTheme.make_panel_style(UiTheme.panel_border(), 10, 2)
+	# V3 §15（P0-2 UI 降权）：radius 10→2、border 2→3 —— 底部购买栏改像素
+	# 面板语言（2-3px 明确描边、非圆角），避免 HTML/CSS dashboard 观感
+	# （门禁 FAIL）。条带高度同步收紧：PALETTE_STRIP_H 96→88，顶部 HUD
+	# 48→44 —— 减小常驻 UI 占幅，露出更多世界内容。
+	_strip_style = UiTheme.make_panel_style(UiTheme.panel_border(), 2, 3)
 	for id in _catalog.get_all_ids():
 		var def := _catalog.get_definition(id)
 		var tile: PaletteTileScript = PaletteTileScript.new()

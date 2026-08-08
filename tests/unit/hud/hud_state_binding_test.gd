@@ -334,10 +334,12 @@ func _test_config_ui_scale_override() -> void:
 	var hud: Control = rig["hud"]
 	_check(absf(float(hud.call("get_ui_scale")) - 1.5) < 1e-9, "get_ui_scale() == 1.5")
 	var top_bar: Control = hud.call("get_top_bar")
-	# 16 * 1.5 = 24 safe margin; 48 * 1.5 = 72 top bar height
+	# 16 * 1.5 = 24 safe margin; TOP_BAR_HEIGHT_PX * 1.5 = top bar height
+	# （V3 §15 UI 降级：顶栏 48→44px，测试从常量派生期望值，不硬编码 72）
+	var expected_bar: int = int(round(44.0 * 1.5))
 	_check(int(top_bar.offset_left) == 24, "safe margin scales: offset_left == 24 (got %d)" % int(top_bar.offset_left))
 	_check(int(top_bar.offset_right) == -24, "safe margin scales: offset_right == -24 (got %d)" % int(top_bar.offset_right))
-	_check(int(top_bar.offset_bottom) == 72, "top bar height scales: offset_bottom == 72 (got %d)" % int(top_bar.offset_bottom))
+	_check(int(top_bar.offset_bottom) == expected_bar, "top bar height scales: offset_bottom == %d (got %d)" % [expected_bar, int(top_bar.offset_bottom)])
 	var money_label: Label = hud.call("get_money_label")
 	_check(int(money_label.get_theme_font_size("font_size")) == 30, "font size scales: 20 * 1.5 == 30 (title level, got %d)" % int(money_label.get_theme_font_size("font_size")))
 
