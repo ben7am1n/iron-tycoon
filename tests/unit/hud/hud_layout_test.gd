@@ -126,7 +126,7 @@ func _test_core_rule_1_money_group() -> void:
 	_check(money_group.get_child_count() == 2, "MoneyGroup has exactly 2 children (coin icon + label)")
 	var coin: Label = money_group.get_node("CoinIcon")
 	var value: Label = money_group.get_node("MoneyLabel")
-	_check(coin is Label and coin.text == "🪙", "CoinIcon present with the coin glyph (got '%s')" % coin.text)
+	_check(coin is Label and coin.text == "●", "CoinIcon present with the coin glyph (got '%s')" % coin.text)
 	_check(value is Label, "MoneyLabel present")
 	_check(int(value.get_theme_font_size("font_size")) >= 16, "money text >= 16px @1080p")
 
@@ -155,7 +155,7 @@ func _test_core_rule_1_time_group_transport() -> void:
 	var tod: Label = time_group.get_node("TimeOfDayLabel")
 	var transport: Control = time_group.get_node("TransportCluster")
 	_check(day is Label and day.text.begins_with("Day "), "DayLabel present showing 'Day N' (got '%s')" % day.text)
-	_check(tod is Label, "TimeOfDayLabel present (clock-position icon, Story 004)")
+	_check(tod is Label, "TimeOfDayLabel present (HH:MM time text, Story 004)")
 	_check(transport is HBoxContainer, "TransportCluster present as a grouped cluster")
 	_check(transport.get_child_count() == 4, "TransportCluster has exactly 4 buttons (pause + 3 speeds) — got %d" % transport.get_child_count())
 	var pause_btn: Control = transport.get_node("PauseButton")

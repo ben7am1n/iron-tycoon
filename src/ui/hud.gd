@@ -76,7 +76,8 @@
 ##     Every ramp color is muted (saturation < 0.4) — never saturated red.
 ##   - Colorblind-safe: the % label ALWAYS shows the value, and the face icon
 ##     SHAPE carries state (filled = sat >= 0.33, outline = sat < 0.33) — the
-##     glyphs are ☺ (high), 🙂 (mid), ☹ (very low).
+##     glyphs are :) (high), :| (mid), :( (very low) (monochrome ASCII —
+##     PHASED-F: macOS 彩色 emoji 忽略 font_color，见 ICON_HIGH 注释)。
 ##   - Ease: global_satisfaction change -> tween_method drives meter.value +
 ##     % label + icon + fill color from the current displayed value to the new
 ##     target over `satisfaction_ease_duration` (GDD knob 1.0 s, safe range
@@ -178,9 +179,13 @@ const COLOR_WARM_NEUTRAL := Color("c9a87c")   ## warm sand — the "mid" anchor
 const COLOR_DUSTY_ROSE := Color("e0a0a0")     ## art-bible Dusty Rose (muted)
 
 ## Face icon glyphs — SHAPE carries state (colorblind-safe, TR-HUD-003).
-const ICON_HIGH := "☺"      ## filled, high satisfaction
-const ICON_MID := "🙂"      ## filled, mid satisfaction
-const ICON_LOW := "☹"       ## outline, very low satisfaction
+## PHASED-F 修复（qa t_3f33ed6e attempt 3 复验）：macOS 彩色 emoji
+## （☺/🙂/☹）忽略 font_color、以系统 emoji 固有颜色渲染，语义色通道失效。
+## 改为受 font_color 控制的 ASCII 单色表情（:)/:|/:( —— 纯文本呈现，
+## 渲染颜色 = font_color = Sage，色盲双通道恢复；字形仍有表情形状差异）。
+const ICON_HIGH := ":)"      ## filled, high satisfaction
+const ICON_MID := ":|"       ## filled, mid satisfaction
+const ICON_LOW := ":("       ## outline, very low satisfaction
 const SHAPE_FILLED := "filled"
 const SHAPE_OUTLINE := "outline"
 
@@ -223,6 +228,10 @@ const ACTIVE_DOT := "• "
 ## Sun/clock-position icon for time-of-day (GDD Core Rule 4 / UX spec §3):
 ## a 12-hour clock face whose position reflects the [0,1) day fraction.
 ## Icon/shape carries the state — never color alone.
+## PHASED-F 注意：这些是彩色 emoji 码点 —— macOS 上 Label 渲染会忽略
+## font_color、以系统 emoji 固有颜色绘制（语义色通道失效，qa 复验确认）。
+## 实时标签改走 format_time_of_day() 的 HH:MM 文本（单色、受 font_color
+## 控制 = Sky）；本数组保留为 12 时钟位形通道的文档化映射，禁止直接渲染。
 const TIME_OF_DAY_ICONS: Array[String] = [
 	"🕛", "🕐", "🕑", "🕒", "🕓", "🕔",
 	"🕕", "🕖", "🕗", "🕘", "🕙", "🕚",
@@ -335,8 +344,10 @@ func _build_ui() -> void:
 	_money_group = _make_group("MoneyGroup")
 	_top_bar.add_child(_money_group)
 
-	_coin_icon = _make_label("CoinIcon", "🪙", COLOR_BUTTER, UiTheme.FONT_TITLE)
+	_coin_icon = _make_label("CoinIcon", "●", COLOR_BUTTER, UiTheme.FONT_TITLE)
 	# Phase D v2: 描边填充式图标（art-bible §7）—— 金钱→Butter，亮色描边。
+	# PHASED-F: 字形从彩色 emoji 🪙 改为单色 ●（U+25CF，文本呈现，渲染颜色
+	# = font_color = Butter；macOS 彩色 emoji 忽略 font_color，qa 复验确认）。
 	UiTheme.apply_outlined_fill(_coin_icon, COLOR_BUTTER, COLOR_BUTTER, 1)
 	_money_group.add_child(_coin_icon)
 	# Phase D v2: 金钱数字 = 标题级（最大数字）+ 浅 Cream 正文，深色面板可读。
@@ -350,6 +361,7 @@ func _build_ui() -> void:
 	_top_bar.add_child(_satisfaction_group)
 
 	# Phase D v2: 满意度图标 → Sage 语义色 + 描边（satisfaction→Sage）。
+	# PHASED-F: 字形为单色 ASCII 表情（:)/:|/:(，受 font_color 控制 = Sage）。
 	_face_icon = _make_label("FaceIcon", ICON_MID, UiTheme.icon_satisfaction(), UiTheme.FONT_BODY)
 	UiTheme.apply_outlined_fill(_face_icon, UiTheme.icon_satisfaction(), UiTheme.icon_satisfaction(), 1)
 	_satisfaction_group.add_child(_face_icon)
@@ -388,6 +400,8 @@ func _build_ui() -> void:
 	_day_label = _make_label("DayLabel", "Day 1", COLOR_TEXT_LIGHT, UiTheme.FONT_BODY)
 	_time_group.add_child(_day_label)
 	# Phase D v2: 时间图标 → Sky 语义色 + 描边（time→Sky，保持 art-bible 原色）。
+	# PHASED-F: 实时显示 HH:MM 文本（format_time_of_day，单色、受 font_color
+	# 控制 = Sky；macOS 彩色时钟 emoji 忽略 font_color，见 time_of_day_icon）。
 	_time_of_day_label = _make_label("TimeOfDayLabel", "00:00", COLOR_SKY, UiTheme.FONT_BODY)
 	UiTheme.apply_outlined_fill(_time_of_day_label, COLOR_SKY, COLOR_SKY, 1)
 	_time_group.add_child(_time_of_day_label)
@@ -739,7 +753,9 @@ func _refresh_time() -> void:
 	_displayed_day = derive_day(tick_count, _ticks_per_day)
 	_time_of_day = derive_time_of_day(tick_count, _ticks_per_day)
 	_day_label.text = "Day %d" % _displayed_day
-	_time_of_day_label.text = time_of_day_icon(_time_of_day)
+	# PHASED-F: HH:MM 文本（format_time_of_day）—— 单色字形受 font_color
+	# 控制（= Sky）；彩色时钟 emoji 在 macOS 忽略 font_color，见 time_of_day_icon。
+	_time_of_day_label.text = format_time_of_day(_time_of_day)
 	_refresh_transport()
 
 
@@ -816,8 +832,10 @@ static func format_money(balance: int) -> String:
 
 
 ## Formats the [0,1) day fraction as a 24h clock, e.g. 0.5 -> "12:00".
-## Retained as the text-mapping utility (Story-001 tests pin it); the live
-## label shows time_of_day_icon() instead (Story 004 — icon, not text).
+## PHASED-F: 这是 TimeOfDayLabel 的实时文本源（单色 ASCII，受 font_color
+## 控制 = Sky）。Story-001 tests pin the mapping; Story 004 的 12 时钟位形
+## 图标映射见 time_of_day_icon()（emoji 码点，禁止直接渲染 —— macOS 彩色
+## emoji 忽略 font_color，qa 复验确认）。
 static func format_time_of_day(time_of_day: float) -> String:
 	var fraction: float = clampf(time_of_day, 0.0, 0.999999)
 	var total_minutes: int = floori(fraction * 24.0 * 60.0)
@@ -848,9 +866,10 @@ static func satisfaction_fill_color(sat: float) -> Color:
 	return COLOR_DUSTY_ROSE.lerp(COLOR_WARM_NEUTRAL, t_low)
 
 
-## TR-HUD-003 face icon GLYPH: ☺ (high, filled), 🙂 (mid, filled),
-## ☹ (very low, outline). Zone boundaries match the fill ramp so the icon
-## changes exactly when the color ramp changes zone.
+## TR-HUD-003 face icon GLYPH: ":)" (high), ":|" (mid), ":(" (very low).
+## Zone boundaries match the fill ramp so the icon changes exactly when the
+## color ramp changes zone. Glyphs are monochrome ASCII (PHASED-F: macOS
+## 彩色 emoji 忽略 font_color，语义色通道失效 —— 见 ICON_HIGH 注释)。
 static func satisfaction_icon(sat: float) -> String:
 	var s := clampf(sat, 0.0, 1.0)
 	if s >= SAT_HIGH_ZONE:
@@ -873,6 +892,10 @@ static func satisfaction_icon_shape(sat: float) -> String:
 ## 0.25 -> "🕕", 0.5 -> "🕛" (noon), 0.75 -> "🕕" (18:00). The icon SHAPE
 ## carries the time — never color alone (colorblind-safe). Defensive: a
 ## fraction outside [0,1) clamps to the nearest valid band.
+## PHASED-F 注意：返回的是彩色 emoji 码点。实时标签**禁止**直接渲染本函数
+## 结果 —— macOS 上 Label 渲染彩色 emoji 会忽略 font_color（语义色通道失效，
+## qa t_3f33ed6e attempt 3 复验确认）；实时路径用 format_time_of_day() 的
+## HH:MM 文本（单色、= Sky）。本函数保留为 12 时钟位形通道的文档化映射。
 static func time_of_day_icon(time_of_day: float) -> String:
 	var fraction: float = clampf(time_of_day, 0.0, 0.999999)
 	var hour_24: int = floori(fraction * 24.0)

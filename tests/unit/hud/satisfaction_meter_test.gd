@@ -9,7 +9,8 @@
 #     ramp has saturation < 0.4 and never reads as red/alarm.
 #   - TR-HUD-003 colorblind-safe pairing: % label + shape-changing face icon
 #     (filled vs outline) carry the state, never color alone. Pure static
-#     `satisfaction_icon(sat)` (☺/🙂/☹) + `satisfaction_icon_shape(sat)`
+#     `satisfaction_icon(sat)` (":)"/":|"/":(" — monochrome ASCII, PHASED-F:
+#     macOS 彩色 emoji 忽略 font_color) + `satisfaction_icon_shape(sat)`
 #     ("filled"/"outline").
 #   - AC3: global_satisfaction change -> meter eases to new fill over ~1 s;
 #     % + icon update WITH the fill (lockstep via _apply_satisfaction_display);
@@ -195,14 +196,14 @@ func _test_fill_ramp_deterministic_no_pulse() -> void:
 # === TR-HUD-003: icon + shape (colorblind-safe) ===
 
 func _test_icon_glyph_zones() -> void:
-	print("\n[TR-HUD-003] face icon glyphs: ☺ high / 🙂 mid / ☹ very low")
-	_check(_icon(1.0) == "☺", "icon(1.0) == ☺ (high, filled)")
-	_check(_icon(0.66) == "☺", "icon(0.66) == ☺ (boundary inclusive)")
-	_check(_icon(0.65) == "🙂", "icon(0.65) == 🙂 (mid)")
-	_check(_icon(0.5) == "🙂", "icon(0.5) == 🙂 (mid)")
-	_check(_icon(0.33) == "🙂", "icon(0.33) == 🙂 (mid boundary inclusive)")
-	_check(_icon(0.32) == "☹", "icon(0.32) == ☹ (very low)")
-	_check(_icon(0.0) == "☹", "icon(0.0) == ☹ (very low)")
+	print("\n[TR-HUD-003] face icon glyphs: :) high / :| mid / :( very low")
+	_check(_icon(1.0) == ":)", "icon(1.0) == :) (high, filled)")
+	_check(_icon(0.66) == ":)", "icon(0.66) == :) (boundary inclusive)")
+	_check(_icon(0.65) == ":|", "icon(0.65) == :| (mid)")
+	_check(_icon(0.5) == ":|", "icon(0.5) == :| (mid)")
+	_check(_icon(0.33) == ":|", "icon(0.33) == :| (mid boundary inclusive)")
+	_check(_icon(0.32) == ":(", "icon(0.32) == :( (very low)")
+	_check(_icon(0.0) == ":(", "icon(0.0) == :( (very low)")
 
 
 func _test_icon_shape_colorblind_pairing() -> void:
@@ -270,7 +271,7 @@ func _test_ac3_lockstep_display() -> void:
 	hud.call("apply_satisfaction_display", 0.8)
 	_check(absf(float(meter.value) - 80.0) < 1e-6, "meter.value == 80.0 after display(0.8)")
 	_check(label.text == "80%", "%% label == 80%% (got '%s')" % label.text)
-	_check(face.text == "☺", "icon == ☺ at 0.8 (got '%s')" % face.text)
+	_check(face.text == ":)", "icon == :) at 0.8 (got '%s')" % face.text)
 	var fill_style: StyleBoxFlat = meter.get_theme_stylebox("fill")
 	_check(fill_style != null, "meter has a fill stylebox override")
 	if fill_style != null:
@@ -279,7 +280,7 @@ func _test_ac3_lockstep_display() -> void:
 	# Mid value: icon + color change together.
 	hud.call("apply_satisfaction_display", 0.5)
 	_check(label.text == "50%", "label == 50%% at 0.5 (got '%s')" % label.text)
-	_check(face.text == "🙂", "icon == 🙂 at 0.5 (got '%s')" % face.text)
+	_check(face.text == ":|", "icon == :| at 0.5 (got '%s')" % face.text)
 	if fill_style != null:
 		_check(fill_style.bg_color.is_equal_approx(_fill_color(0.5)),
 			"fill color == ramp(0.5) at 0.5 (got %s)" % fill_style.bg_color)
@@ -336,8 +337,8 @@ func _test_core_rule_2_rock_bottom_calm() -> void:
 	_check(bottom.is_equal_approx(rose), "rock bottom fill == Dusty Rose (muted warm) — got %s" % bottom)
 	_check(_sat(bottom) < 0.4, "rock bottom saturation %.3f < 0.4 — muted, not alarm red" % _sat(bottom))
 	_check(bottom.r < 0.95, "rock bottom r %.3f < 0.95 — no pure red" % bottom.r)
-	_check(_icon(0.0) == "☹" and _shape(0.0) == "outline",
-		"rock bottom icon is ☹ outline — state readable without color")
+	_check(_icon(0.0) == ":(" and _shape(0.0) == "outline",
+		"rock bottom icon is :( outline — state readable without color")
 	# Still paired with % + icon on the live HUD.
 	var rig := _make_rig()
 	var sat: RefCounted = rig["sat"]
@@ -348,7 +349,7 @@ func _test_core_rule_2_rock_bottom_calm() -> void:
 	hud.call("refresh_all")  # load-snap path (also what a rock-bottom save shows)
 	_check(hud.call("get_satisfaction_label").text == "0%", "rock bottom %% label == 0%% (got '%s')" % hud.call("get_satisfaction_label").text)
 	_check(absf(float(meter.value)) < 1e-6, "rock bottom meter == 0.0")
-	_check(face.text == "☹", "rock bottom icon == ☹ (got '%s')" % face.text)
+	_check(face.text == ":(", "rock bottom icon == :( (got '%s')" % face.text)
 	_check(not bool(hud.call("is_meter_animating")), "rock bottom load-snap: no animation/pulse")
 	# No pulse even on the live path: a single change creates ONE finite tween
 	# (default loop count = plays once; 4.7.1 exposes get_loops_left()).
@@ -379,7 +380,7 @@ func _test_reduced_motion_static_fill() -> void:
 	_check(not bool(hud.call("is_meter_animating")), "tick with reduced-motion: NO tween created (static fill)")
 	_check(absf(float(meter.value) - 77.0) < 1e-6, "meter snapped to 77.0 immediately (got %s)" % meter.value)
 	_check(hud.call("get_satisfaction_label").text == "77%", "%% label snapped to 77%% (got '%s')" % hud.call("get_satisfaction_label").text)
-	_check(hud.get_node("TopBar/SatisfactionGroup/FaceIcon").text == "☺", "icon snapped to ☺ at 0.77")
+	_check(hud.get_node("TopBar/SatisfactionGroup/FaceIcon").text == ":)", "icon snapped to :) at 0.77")
 
 
 func _test_reduced_motion_config_and_setter() -> void:

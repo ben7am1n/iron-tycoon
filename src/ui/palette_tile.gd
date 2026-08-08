@@ -40,7 +40,10 @@ const COLOR_GREYED_MODULATE := Color(0.55, 0.55, 0.55)  # achromatic — no hue
 
 ## Lock icon placeholder glyph (shape-first). Art pass replaces with a
 ## texture; the node/visibility contract stays.
-const LOCK_GLYPH := "🔒"
+## PHASED-F: 从彩色 emoji 🔒 改为单色 ▣（U+25A3，文本呈现、受 font_color
+## 控制 = COLOR_WARM_CREAM；macOS 彩色 emoji 忽略 font_color —— 与 HUD
+## 图标同一 bug 类，qa 复验确认）。视觉读作「闭合方盒」= 锁定。
+const LOCK_GLYPH := "▣"
 
 ## Stable catalog id this tile renders.
 var equipment_id: String = ""
@@ -125,7 +128,7 @@ func _build_children(p_display_name: String, p_cost: int) -> void:
 	_icon_label.text = _placeholder_glyph(p_display_name)
 	UiTheme.apply_outlined_fill(_icon_label, UiTheme.icon_shop(), UiTheme.icon_shop(), 1)
 	_icon_label.add_theme_font_override("font", UiTheme.bold_font())
-	_icon_label.add_theme_font_size_override("font_size", 28)
+	_icon_label.add_theme_font_size_override("font_size", UiTheme.FONT_ICON)
 	stack.add_child(_icon_label)
 
 	_name_label = Label.new()

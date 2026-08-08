@@ -86,9 +86,12 @@ static func text_light() -> Color:
 ##   FONT_TITLE — HUD 金钱计数（最醒目数字）
 ##   FONT_BODY  — HUD 标签 / 按钮 / 面板价格
 ##   FONT_AUX   — 次要说明（tile 名称 / 提示）
+## 图标槽字号（PHASED-F：palette_tile icon 28px 硬编码收敛到本常量）：
+##   FONT_ICON  — 描边填充式图标字形（商店 tile 首字母）
 const FONT_TITLE := 20
 const FONT_BODY := 16
 const FONT_AUX := 14
+const FONT_ICON := 28
 
 # === 粗字体（Godot 默认粗体 / 系统粗字体，4.7.1 SystemFont） ===
 

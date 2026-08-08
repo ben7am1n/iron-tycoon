@@ -10,7 +10,10 @@
 # 验收对照（art-bible-25d-style §1/§2 + 任务 Exit 条件 6）：
 #   - 面板 ≈ 深色半透明（HUD 顶栏 / 建造商店条带内部）
 #   - 描边 ≈ Butter #F5D97B 亮色（面板边缘）
-#   - 图标 4 个可辨（金钱 Butter / 满意度 Sage / 时间 Sky / 商店 Peach）
+#   - 图标 4 个可辨 + 像素级语义色（PHASED-F Exit 1）：直接对渲染截图采样
+#     每个图标的实际主色，断言 CoinIcon≈BUTTER / FaceIcon≈SAGE /
+#     TimeOfDay≈SKY / Shop≈PEACH —— 结构性 theme 值断言存在自报 PASS 盲区
+#     （macOS 彩色 emoji 忽略 font_color，以系统固有颜色渲染）。
 #   - 字体三级（标题 20 / 正文 16 / 辅助 14）
 #   - draw calls < 200（Performance monitor，4.7.1 枚举名
 #     RENDER_TOTAL_DRAW_CALLS_IN_FRAME —— 见 deprecated-apis.md）
@@ -23,6 +26,18 @@ const CAPTURE_FRAME := 30
 
 var _frame := 0
 var _captured := false
+
+## 图标语义色期望值（art-bible §4 / UiTheme 单一来源；Exit 条件 1）。
+## PHASED-F：断言渲染后像素 ≈ 期望色 —— theme 值本身可被彩色 emoji 绕过。
+const SEMANTIC_ICONS := {
+	"CoinIcon": Color("f5d97b"),       # BUTTER（金钱）
+	"FaceIcon": Color("8fbf9f"),       # SAGE（满意度）
+	"TimeOfDayLabel": Color("8ec5e8"), # SKY（时间）
+	"ShopTileIcon": Color("f2b486"),   # PEACH（商店）
+}
+## 主色与期望色的最大欧氏距离（RGBA 空间，max ≈ 1.73）。实心字形主色距
+## 期望 < 0.05；bug 场景（emoji 灰/黄/白）距期望 > 0.3，取 0.25 稳判。
+const ICON_COLOR_TOLERANCE := 0.25
 
 # 采样点（像素坐标，1280×720 视口）：
 #   hud_panel   (640, 24) — HUD 顶栏面板内部（左右 spacer 区，无文字遮挡）
@@ -92,6 +107,34 @@ func _capture_and_report() -> void:
 	var icons_ok: bool = money_icon and sat_icon and time_icon and shop_icon
 	print("CHECK icons_4=%s (money=%s sat=%s time=%s shop=%s)" % [icons_ok, money_icon, sat_icon, time_icon, shop_icon])
 
+	# === 图标像素级语义色（PHASED-F Exit 1 / qa 复验判据）===
+	# 结构性 theme 值断言有自报 PASS 盲区（macOS 彩色 emoji 忽略
+	# font_color）；这里对渲染截图直接采样每个图标的实际主色，断言 ≈ 语义色。
+	var icon_labels := _icon_labels()
+	var icons_pixel_ok: bool = true
+	for icon_name in SEMANTIC_ICONS:
+		var want: Color = SEMANTIC_ICONS[icon_name]
+		if not icon_labels.has(icon_name):
+			print("ICONPIX %-12s MISSING label node" % icon_name)
+			icons_pixel_ok = false
+			continue
+		var label := icon_labels[icon_name] as Label
+		var res := _dominant_icon_color(img, label)
+		var got: Color = res[0]
+		var px: int = res[1]
+		# 4.7.1 无 Color.distance_to() —— 手算 RGBA 欧氏距离（max ≈ 1.73）。
+		var d_r: float = got.r - want.r
+		var d_g: float = got.g - want.g
+		var d_b: float = got.b - want.b
+		var dist: float = sqrt(d_r * d_r + d_g * d_g + d_b * d_b)
+		var ok: bool = px > 0 and dist <= ICON_COLOR_TOLERANCE
+		print("ICONPIX %-12s rect=%s dominant=#%s want=#%s dist=%.3f px=%d %s" % [
+			icon_name, label.get_global_rect(), got.to_html(false),
+			want.to_html(false), dist, px, "OK" if ok else "FAIL",
+		])
+		icons_pixel_ok = icons_pixel_ok and ok
+	print("CHECK icons_pixel_semantic=%s" % str(icons_pixel_ok))
+
 	# === 字体三级（Exit 6 / 任务 3）===
 	var sizes := _collect_font_sizes()
 	sizes.sort()
@@ -106,31 +149,29 @@ func _capture_and_report() -> void:
 	var fps := Performance.get_monitor(Performance.TIME_FPS)
 	print("PERF draw_calls=%d fps=%.1f budget_ok=%s" % [draw_calls, fps, str(draw_calls < 200)])
 
-	var all_ok: bool = dark_ok and translucent_ok and butter_ok and icons_ok and fonts_ok and draw_calls < 200
+	var all_ok: bool = dark_ok and translucent_ok and butter_ok and icons_ok and icons_pixel_ok and fonts_ok and draw_calls < 200
 	print("RESULT: %s" % ("PASS" if all_ok else "CHECK"))
 	get_tree().quit(0 if all_ok else 1)
 
 
-## 从 UI 树收集 4 个语义图标：[name, glyph, fill_color_str, outline_size]。
-## 结构化（非像素）验证 —— 图标字形渲染依赖系统字体，headless/窗口行为
-## 不同；字形 + 语义色 + 描边三通道存在即可辨（art-bible §7 双通道）。
-func _collect_icons() -> Array:
-	var out: Array = []
+## 收集 4 个语义图标的 Label 节点：name -> Label（找不到则不包含）。
+## CoinIcon/FaceIcon/TimeOfDayLabel 在 HUD 顶栏固定路径；ShopTileIcon =
+## 建造面板第一个 tile 的描边 icon（Peach 首字母，递归 find_children）。
+func _icon_labels() -> Dictionary:
+	var out := {}
 	var hud := get_tree().root.find_child("Hud", true, false)
 	if hud != null:
 		var coin := hud.get_node_or_null("TopBar/MoneyGroup/CoinIcon")
 		if coin != null and coin is Label:
-			out.append(["CoinIcon", (coin as Label).text, str((coin as Label).get_theme_color("font_color")), (coin as Label).get_theme_constant("outline_size")])
+			out["CoinIcon"] = coin
 		var face := hud.get_node_or_null("TopBar/SatisfactionGroup/FaceIcon")
 		if face != null and face is Label:
-			out.append(["FaceIcon", (face as Label).text, str((face as Label).get_theme_color("font_color")), (face as Label).get_theme_constant("outline_size")])
+			out["FaceIcon"] = face
 		var tod := hud.get_node_or_null("TopBar/TimeGroup/TimeOfDayLabel")
 		if tod != null and tod is Label:
-			out.append(["TimeOfDayLabel", (tod as Label).text, str((tod as Label).get_theme_color("font_color")), (tod as Label).get_theme_constant("outline_size")])
+			out["TimeOfDayLabel"] = tod
 	var palette := get_tree().root.find_child("BuildShopPalette", true, false)
 	if palette != null and palette.get_child_count() > 0:
-		# 商店图标 = 建造面板第一个 tile 的 icon（Peach 描边填充式，商店→Peach）。
-		# icon 在 tile 的 VBox 内，需递归 find_children。
 		var tile := palette.get_child(0)
 		var icon_label: Label = null
 		for label in tile.find_children("*", "Label", true, false):
@@ -139,7 +180,54 @@ func _collect_icons() -> Array:
 				icon_label = l
 				break
 		if icon_label != null:
-			out.append(["ShopTileIcon", icon_label.text, str(icon_label.get_theme_color("font_color")), icon_label.get_theme_constant("outline_size")])
+			out["ShopTileIcon"] = icon_label
+	return out
+
+
+## 在 [label] 的全局矩形内统计字形主色：跳过面板深色底（亮度 < 0.45），
+## 剩余像素按 16 级量化桶计数，返回最高频桶的均值颜色 + 桶内像素数。
+## 实心字形（● / 首字母 / 文本）主色 ≈ 其 font_color；macOS 彩色 emoji
+## 渲染的是系统固有颜色，会落在完全不同的桶（自报 PASS 盲区由此被戳穿）。
+func _dominant_icon_color(img: Image, label: Label) -> Array:
+	var rect: Rect2 = label.get_global_rect()
+	var counts := {}
+	var sums := {}
+	var x0 := maxi(0, int(floor(rect.position.x)))
+	var y0 := maxi(0, int(floor(rect.position.y)))
+	var x1 := mini(img.get_width() - 1, int(ceil(rect.end.x)) - 1)
+	var y1 := mini(img.get_height() - 1, int(ceil(rect.end.y)) - 1)
+	for y in range(y0, y1 + 1):
+		for x in range(x0, x1 + 1):
+			var c: Color = img.get_pixel(x, y)
+			if c.r + c.g + c.b < 0.45 * 3.0:
+				continue
+			var key := "%d_%d_%d" % [int(c.r * 15.999), int(c.g * 15.999), int(c.b * 15.999)]
+			counts[key] = int(counts.get(key, 0)) + 1
+			if not sums.has(key):
+				sums[key] = Vector3.ZERO
+			sums[key] += Vector3(c.r, c.g, c.b)
+	var best_key := ""
+	var best_count := 0
+	for key in counts:
+		if int(counts[key]) > best_count:
+			best_count = int(counts[key])
+			best_key = key
+	if best_key == "":
+		return [Color.BLACK, 0]
+	var sumv: Vector3 = sums[best_key]
+	return [Color(sumv.x / float(best_count), sumv.y / float(best_count), sumv.z / float(best_count)), best_count]
+
+
+## 从 UI 树收集 4 个语义图标：[name, glyph, fill_color_str, outline_size]。
+## 结构化（非像素）验证 —— 图标字形渲染依赖系统字体，headless/窗口行为
+## 不同；字形 + 语义色 + 描边三通道存在即可辨（art-bible §7 双通道）。
+## 像素级语义色断言见 _capture_and_report 的 ICONPIX 段（PHASED-F Exit 1）。
+func _collect_icons() -> Array:
+	var out: Array = []
+	var labels := _icon_labels()
+	for name in labels:
+		var label := labels[name] as Label
+		out.append([name, label.text, str(label.get_theme_color("font_color")), label.get_theme_constant("outline_size")])
 	return out
 
 

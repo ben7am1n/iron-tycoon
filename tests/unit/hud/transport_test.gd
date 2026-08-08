@@ -385,18 +385,18 @@ func _test_day_time_label_updates_on_tick() -> void:
 	var day_label: Label = hud.call("get_day_label")
 	var tod_label: Label = hud.call("get_time_of_day_label")
 	_check(day_label.text == "Day 1", "boot: Day 1 (got '%s')" % day_label.text)
-	_check(tod_label.text == str(_HUD().call("time_of_day_icon", 0.0)), "boot: midnight icon (got '%s')" % tod_label.text)
+	_check(tod_label.text == str(_HUD().call("format_time_of_day", 0.0)), "boot: 00:00 (got '%s')" % tod_label.text)
 	orch.call("_restore_tick_count", 900)  # half a day: time_of_day == 0.5
 	hud.call("refresh_all")
 	_check(day_label.text == "Day 1", "tick 900 still Day 1 (got '%s')" % day_label.text)
-	_check(tod_label.text == "🕛", "tick 900 -> noon icon 🕛 (got '%s')" % tod_label.text)
+	_check(tod_label.text == "12:00", "tick 900 -> 12:00 (got '%s')" % tod_label.text)
 	orch.call("_restore_tick_count", 450)  # quarter day: 06:00
 	hud.call("refresh_all")
-	_check(tod_label.text == "🕕", "tick 450 -> 06:00 icon 🕕 (got '%s')" % tod_label.text)
+	_check(tod_label.text == "06:00", "tick 450 -> 06:00 (got '%s')" % tod_label.text)
 
 
 func _test_day_rollover_boundary() -> void:
-	print("\n[S2] day rolls over exactly at TICKS_PER_DAY (icon wraps with it)")
+	print("\n[S2] day rolls over exactly at TICKS_PER_DAY (time text wraps with it)")
 	var rig := _make_rig()
 	var orch: Node = rig["orch"]
 	var hud: Control = rig["hud"]
@@ -407,7 +407,7 @@ func _test_day_rollover_boundary() -> void:
 	_check(day_label.text == "Day 1", "tick 1799 -> Day 1 (got '%s')" % day_label.text)
 	orch.call("_advance_tick")  # -> 1800
 	_check(day_label.text == "Day 2", "tick 1800 -> Day 2 (got '%s')" % day_label.text)
-	_check(tod_label.text == str(_HUD().call("time_of_day_icon", 0.0)), "new day starts at midnight icon (got '%s')" % tod_label.text)
+	_check(tod_label.text == str(_HUD().call("format_time_of_day", 0.0)), "new day starts at 00:00 (got '%s')" % tod_label.text)
 
 
 # === TR-HUD-006: transport is the ONLY sim mutation ===
