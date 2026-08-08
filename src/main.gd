@@ -45,6 +45,8 @@ const RejectionTooltipScript := preload("res://src/ui/rejection_tooltip.gd")
 const CongestionOverlayControllerScript := preload("res://src/ui/congestion_overlay_controller.gd")
 const SelectionToolbarScript := preload("res://src/ui/selection_toolbar.gd")
 const SelectionCueScript := preload("res://src/ui/selection_cue.gd")
+const EquipmentArtScript := preload("res://src/presentation/equipment_art.gd")
+const SnapPulseScript := preload("res://src/presentation/snap_pulse.gd")
 const Palette := preload("res://src/palette.gd")
 
 # === 场景级常量（组装参数，非玩法数值） ===
@@ -90,11 +92,17 @@ var _tooltip
 var _overlay_ctrl
 var _toolbar
 var _cue
+var _equip_art
+var _snap_pulse
 
 # === 组装状态 ===
 var _instance_defs: Dictionary = {}  # instance_id -> equipment_id（resolver 数据源）
 var _smoke := false
 var _smoke_frame := 0
+
+## 吸附「咔哒」去重：记录最近一次脉冲的 anchor cell，防止同一格反复触发
+## preview_validity_changed(true) 时脉冲重放（视觉噪声，art-bible §9 无闪烁）。
+var _last_snap_cell := Vector2i(-999, -999)
 
 
 func _ready() -> void:
@@ -239,6 +247,11 @@ func _assemble_presentation() -> void:
 	_overlay_ctrl._post_init()
 	add_child(_overlay_ctrl)
 
+	# Phase B v2：设备像素精灵工厂（前景主体）+ 吸附「咔哒」脉冲节点。
+	_equip_art = EquipmentArtScript.new()
+	_snap_pulse = SnapPulseScript.new()
+	add_child(_snap_pulse)
+
 
 # === 第 3 层：UI（HUD / 建造商店 / 选择工具） ===
 
@@ -293,6 +306,11 @@ func _assemble_ui() -> void:
 	_grid.grid_changed.connect(func(_fp: Array, _ac: Array) -> void: queue_redraw())
 	_orch.tick_completed.connect(func(_tick: int) -> void: queue_redraw())
 
+	# Phase B v2：吸附「咔哒」触发 + 幽灵/脉冲重绘。
+	# preview_validity_changed(valid=true) 且 anchor 变化 → 合法格吸附脉冲。
+	# 同 anchor 重复触发不重放（_last_snap_cell 去重，art-bible §9 无闪烁）。
+	placement.preview_validity_changed.connect(_on_preview_validity_changed)
+
 
 # === 初始布局：预置设备（clumped，让 congestion 开场即有表现） ===
 
@@ -302,7 +320,27 @@ func _initial_layout() -> void:
 	_drag_drop(placement, "treadmill", Vector2i(2, 2))
 	_drag_drop(placement, "bike", Vector2i(2, 5))
 	_drag_drop(placement, "treadmill", Vector2i(6, 3))
+	_drag_drop(placement, "bench_press", Vector2i(1, 7))
+	_drag_drop(placement, "yoga_mat", Vector2i(9, 2))
 	queue_redraw()
+
+
+## preview_validity_changed handler（S 扩展，Phase B v2）：
+##   - valid=true 且 anchor 是新的 → 吸附「咔哒」脉冲（视觉，无音频）
+##   - 任意 validity 变化 → queue_redraw（幽灵合法/非法 tint 跟随拖拽）
+func _on_preview_validity_changed(valid: bool) -> void:
+	queue_redraw()
+	if not valid:
+		return
+	var placement = _orch.placement_system
+	if placement == null or not placement.is_dragging():
+		return
+	var anchor: Vector2i = placement.get_drag_anchor()
+	if anchor == _last_snap_cell:
+		return
+	_last_snap_cell = anchor
+	if _snap_pulse != null:
+		_snap_pulse.pulse_at(_grid.grid_to_world_center(anchor, CELL_SIZE))
 
 
 ## 通过 PlacementSystem 完整拖放流程放置一台设备（走真实信号链：
@@ -333,8 +371,11 @@ func _draw() -> void:
 		return
 	_draw_floor_zones()
 	_draw_grid_lines()
-	_draw_equipment()
+	# 2.5D 空间层级（art-bible-25d §1）：会员中景 / 设备前景 —— 设备画在会员
+	# 之后（前景层），幽灵画在最上（活动决策预览，Core Rule 7 优先级最高）。
 	_draw_members()
+	_draw_equipment()
+	_draw_placement_ghost()
 
 
 ## 地板三区域色块（art-bible §6：功能区用色块 + 柔和描边区分，分区一眼可读）。
@@ -357,14 +398,141 @@ func _draw_grid_lines() -> void:
 			Palette.GRID_LINE, 1.0)
 
 
+## 设备渲染（Phase B v2）—— 前景像素主体（art-bible-25d §2）。
+##
+## 每台设备：
+##   1. 脚下大暗面（EQUIP_SHADOW 半透明深色块，替代旧纯灰 footprint；25d §2 阴影）
+##   2. 像素精灵纹理（EquipmentArt 程序化 ImageTexture，32×32/cell，Nearest 全局）
+##   3. access cell 用 Butter 高亮（art-bible §7 拖放反馈；§4 Butter 锚点 ~10%）
+##
+## 语义色：equipment_id → def.zone_membership → ZONE_COLORS（cardio→Sky /
+## strength→Sage / flex→Peach），描边 Soft Charcoal（art-bible §4）。纹理按
+## (id, zone, rotation) 全量缓存，运行时零重建。
 func _draw_equipment() -> void:
 	for inst in _grid.get_placed_instances():
-		for c in inst.footprint_cells:
-			draw_rect(Rect2i(c * CELL_SIZE, Vector2i(CELL_SIZE, CELL_SIZE)),
-				Color(0.5, 0.5, 0.55))
+		var fp_rect := _footprint_rect(inst.footprint_cells)
+		if fp_rect.size.x <= 0 or fp_rect.size.y <= 0:
+			continue
+		# 1) 脚下大暗面（半透明深色块；偏移 2px 向下，读作地板阴影而非轮廓）。
+		var shadow_rect := fp_rect.grow(3)
+		shadow_rect.position.y += 2
+		draw_rect(shadow_rect, Palette.EQUIP_SHADOW, true)
+
+		# 2) 像素精灵（前景主体）。
+		var eq_id: String = str(_instance_defs.get(inst.instance_id, ""))
+		var zone: String = _zone_of(eq_id)
+		var tex: ImageTexture = _equip_art.texture_for(eq_id, zone, inst.rotation)
+		if tex != null:
+			draw_texture_rect(tex, Rect2(fp_rect), false)
+		else:
+			# 兜底（未知 equipment_id）：画 Soft Charcoal 剪影块，绝不崩溃。
+			draw_rect(fp_rect, Palette.CHARCOAL, false, 2.0)
+
+		# 3) access cell：Butter 高亮（柔和填充 + 描边，非刺眼）。
 		for c in inst.access_cells:
-			draw_rect(Rect2i(c * CELL_SIZE, Vector2i(CELL_SIZE, CELL_SIZE)),
-				Color(0.8, 0.6, 0.2))
+			_draw_access_cell(c)
+
+
+## access cell 高亮：半透明 Butter 填充 + Butter 描边 + 中央实心 Butter 菱形。
+## art-bible §7「合法位置柔和高亮」的静态版本 —— 柔和，不刺眼，无闪烁；
+## 菱形是「图标+颜色双通道」的色盲安全形状（accessibility 通道，不单靠颜色）。
+func _draw_access_cell(c: Vector2i) -> void:
+	var rect := Rect2i(c * CELL_SIZE, Vector2i(CELL_SIZE, CELL_SIZE))
+	var fill := Palette.BUTTER
+	fill.a = 0.25
+	draw_rect(rect, fill, true)
+	var border := Palette.BUTTER
+	border.a = 0.85
+	draw_rect(rect, border, false, 1.0)
+	# 实心菱形（Butter，半径 ~5px）：采样点稳定命中，读作「可用」锚点。
+	var diamond := Palette.BUTTER
+	diamond.a = 0.95
+	var cx := rect.position.x + CELL_SIZE / 2.0
+	var cy := rect.position.y + CELL_SIZE / 2.0
+	var r := 5.0
+	var pts := PackedVector2Array([
+		Vector2(cx, cy - r),
+		Vector2(cx + r, cy),
+		Vector2(cx, cy + r),
+		Vector2(cx - r, cy),
+	])
+	draw_colored_polygon(pts, diamond)
+
+
+## 放置预览幽灵（art-bible §7 拖放反馈）：
+##   - 合法位置：柔和高亮（PLACEMENT_OK_TINT 半透明白/Sage）+ Butter 网格吸附描边
+##   - 非法位置：Dusty Rose #E0A0A0 柔和警示（PLACEMENT_BAD_TINT，绝不刺眼红）
+## 画在最上（活动决策预览，Core Rule 7）；无 drag 时无开销（is_dragging O(1)）。
+func _draw_placement_ghost() -> void:
+	if _orch == null or _orch.placement_system == null:
+		return
+	var placement = _orch.placement_system
+	if not placement.is_dragging():
+		return
+	# 双幽灵抑制（GDD Core Rule 4 / ModeArbitration）：有选中物时不画新放置幽灵。
+	if _arbitration != null and _arbitration.is_ghost_suppressed():
+		return
+	if not placement.get_drag_has_previewed():
+		return  # 尚未进入任何格 —— 不画 ZERO 幽灵
+	var eq_id: String = placement.get_drag_equipment_id()
+	if eq_id == "":
+		return
+	var def = _catalog.get_definition(eq_id)
+	if def == null:
+		return
+	var anchor: Vector2i = placement.get_drag_anchor()
+	var rotation: int = placement.get_drag_rotation()
+	var tf = _grid.get_transformed_cells(def.footprint_cells, def.access_cells, anchor, rotation)
+	var rect := _cells_rect(tf.footprint_cells)
+	if rect.size.x <= 0 or rect.size.y <= 0:
+		return
+	var valid: bool = placement.get_drag_preview_valid()
+	var tint: Color = Palette.PLACEMENT_OK_TINT if valid else Palette.PLACEMENT_BAD_TINT
+	draw_rect(rect, tint, true)
+	# 精灵本体（半透明幽灵，让玩家看清要放什么）——先于描边，描边永远可读。
+	var zone: String = _zone_of(eq_id)
+	var tex: ImageTexture = _equip_art.texture_for(eq_id, zone, rotation)
+	if tex != null:
+		var ghost_col := Color(1, 1, 1, 0.65)
+		draw_texture_rect(tex, Rect2(rect), false, ghost_col)
+	# 网格吸附描边（画在最上，覆盖幽灵本体）：合法 → Butter（锚点高亮）；
+	# 非法 → Dusty Rose（柔和警示，绝不刺眼红）。
+	var edge: Color = Palette.BUTTER if valid else Palette.ROSE
+	edge.a = 0.9
+	draw_rect(rect, edge, false, 2.0)
+	for c in tf.access_cells:
+		_draw_access_cell(c)
+
+
+## footprint 单元格集合 → 像素 Rect2i（min cell × CELL_SIZE，size = bbox）。
+func _footprint_rect(cells: Array) -> Rect2i:
+	return _cells_rect(cells)
+
+
+## 任意网格 cell 集合 → 像素 Rect2i（空集合返回零尺寸）。
+func _cells_rect(cells: Array) -> Rect2i:
+	if cells.is_empty():
+		return Rect2i()
+	var min_c := Vector2i(cells[0])
+	var max_c := Vector2i(cells[0])
+	for c in cells:
+		min_c.x = min(min_c.x, c.x)
+		min_c.y = min(min_c.y, c.y)
+		max_c.x = max(max_c.x, c.x)
+		max_c.y = max(max_c.y, c.y)
+	var size := (max_c - min_c + Vector2i.ONE) * CELL_SIZE
+	return Rect2i(min_c * CELL_SIZE, size)
+
+
+## equipment_id → zone_membership[0]（语义色键，与 palette.ZONE_COLORS 对齐）。
+## 未知 id 返回 ""（EquipmentArt 兜底 FALLBACK_ZONE）。
+func _zone_of(eq_id: String) -> String:
+	if eq_id == "":
+		return ""
+	var def = _catalog.get_definition(eq_id)
+	if def == null or def.zone_membership.is_empty():
+		return ""
+	return str(def.zone_membership[0])
 
 
 func _draw_members() -> void:
