@@ -7,10 +7,14 @@
 ## TextureRect nearest 放大到窗口 —— 世界元素（地板/网格/设备/会员/幽灵）全部
 ## 属于同一个低分辨率 pixel space（V3 §2：WORLD 统一低分辨率，UI 高分辨率）。
 ##
-## 绘制顺序（2.5D 空间层级，art-bible-25d §1 + V3 §4 三层空间）：
+## 绘制顺序（2.5D 空间层级，art-bible-25d §1 + V3 §4 三层空间 + Phase 4 双层会员）：
 ##   地板材质（FloorArt 烘焙贴图，V3 §1）→ 环境背景（墙/窗/海报/装饰，V3 §3/
-##   §12 BACKGROUND 低对比）→ 网格线 → 会员中景 → 设备前景 → 环境前景（大
-##   植物，V3 §4 FOREGROUND 可轻微遮挡）→ 放置幽灵（活动决策预览优先级最高）。
+##   §12 BACKGROUND 低对比）→ 网格线 → 会员中景（walk/idle/tired/satisfied）→
+##   设备前景 → 使用中的会员（叠加在设备上 —— V3 §8 与设备互动姿态）→ 环境
+##   前景（大植物，V3 §4 FOREGROUND 可轻微遮挡）→ 放置幽灵（活动决策预览优先级最高）。
+## Phase 4（V3 §8）：会员是画面视觉主体 —— sprite 48×48（>cell 32），脚底
+## 锚定 cell 底部、头部向上越出 cell；USING 成员锚定到设备 footprint 上
+## （跑带/卧推凳/车座/垫面），叠加在设备之上（先画设备、后画使用会员）。
 ##
 ## GRID 可见性（V3 §14 可读性）：正常经营模式完全隐藏 tile grid；仅 placement
 ## mode（PlacementSystem.is_dragging()）显示。默认隐藏；_process 轮询
@@ -155,10 +159,13 @@ func _draw() -> void:
 	_draw_environment_background()
 	if _grid_visible:
 		_draw_grid_lines()
-	# 2.5D 空间层级（art-bible-25d §1 + V3 §4）：环境背景 → 会员中景 → 设备
-	# 前景 → 环境前景（大植物可轻微遮挡）→ 幽灵（活动决策预览优先级最高）。
-	_draw_members()
+	# 2.5D 空间层级（art-bible-25d §1 + V3 §4 三层 + Phase 4 双层会员）：
+	# 环境背景 → 会员中景（walk/idle/tired/satisfied）→ 设备前景 → 使用中的
+	# 会员叠加在设备上（V3 §8 与设备互动姿态）→ 环境前景（大植物可轻微遮挡）
+	# → 幽灵（活动决策预览，Core Rule 7 优先级最高）。
+	_draw_members(false)
 	_draw_equipment()
+	_draw_members(true)
 	_draw_environment_foreground()
 	_draw_placement_ghost()
 
@@ -396,14 +403,27 @@ func _draw_placement_ghost() -> void:
 		_draw_access_cell(c)
 
 
-## 会员渲染（Phase C v2）：2.5D 像素小人（32×32，1:1 绘制，状态双通道）。
-func _draw_members() -> void:
+## 会员渲染（Phase 4 / V3 §8）：2.5D 像素小人（48×48，>cell 32 —— 画面视觉
+## 主体），状态双通道（颜色通道衬衫色 + 形状通道姿态）。
+##
+## [foreground] 双层绘制：
+##   false = 中景：walk/idle/tired/satisfied 会员，脚底锚定自身 cell 底部
+##           （sprite 头部向上越出 cell —— 2.5D 人物高于占用格）。
+##   true  = 前景：USING 会员叠加在目标设备 footprint 上（跑带/卧推凳/车座/
+##           垫面 —— V3 §8 与设备互动姿态），由 _equipment_anchor 计算锚点。
+## 设备上下文（equipment_id / leaving_reason / use_ticks_remaining / member_id）
+## 经 ctx 传入 texture_for —— 使用姿态与外观变体据此解析。
+func _draw_members(foreground: bool) -> void:
 	if _member == null or _member_sprites == null:
 		return
 	var tick: int = 0
 	if _tick_provider.is_valid():
 		tick = _tick_provider.call()
 	var alive: Dictionary = {}
+	# USING 成员 → 设备 footprint 锚点查找表（本帧构建一次，O(placed)）。
+	var equip_anchors: Dictionary = {}
+	if foreground:
+		equip_anchors = _build_equipment_anchors()
 	for m in _member.members:
 		if not (m is Dictionary) or not m.has("cell") or not m.has("state"):
 			continue
@@ -413,15 +433,100 @@ func _draw_members() -> void:
 		var state := str(m["state"])
 		if _member_sprites.state_channel(state) == "":
 			continue  # GONE / 被动成员 —— 不渲染
+		var is_using := state == "USING"
+		if is_using != foreground:
+			continue  # 双层各画一半
 		var cell: Vector2i = m["cell"]
 		var facing_left := _update_facing(member_id, cell)
-		var tex: ImageTexture = _member_sprites.texture_for(state, tick, facing_left)
-		draw_texture(tex, Vector2(cell.x * _cell_size, cell.y * _cell_size))
+		var ctx := _member_ctx(m, state)
+		var tex: ImageTexture = _member_sprites.texture_for(state, tick, facing_left, ctx)
+		if is_using:
+			# 前景：锚定设备 footprint（V3 §8 使用姿态叠加在设备上）。
+			var anchor: Vector2 = equip_anchors.get(
+				int(m.get("target_equipment_instance_id", -1)), Vector2.INF)
+			if anchor == Vector2.INF:
+				anchor = _cell_anchor(cell)  # 设备丢失兜底：锚定自身 cell
+			draw_texture(tex, anchor)
+		else:
+			draw_texture(tex, _cell_anchor(cell))
 	# 清理已离场成员的朝向缓存（防止字典无限增长）
 	for member_id in _member_facing.keys():
 		if not alive.has(member_id):
 			_member_facing.erase(member_id)
 			_member_last_cell.erase(member_id)
+
+
+## 构建 instance_id → 设备使用锚点（USING 前景层）。footprint 左上角 +
+## 设备类型偏移：跑带居中、卧推凳在凳面、车座居中、垫面居中。锚点是
+## 48×48 sprite 的左上角（脚底/接触点对齐设备）。
+## [footprint_rect] 世界像素 Rect2i；返回 sprite 左上角 Vector2。
+func _build_equipment_anchors() -> Dictionary:
+	var anchors: Dictionary = {}
+	if _grid == null or _equip_art == null:
+		return anchors
+	for inst in _grid.get_placed_instances():
+		var rect := _footprint_rect(inst.footprint_cells)
+		if rect.size.x <= 0 or rect.size.y <= 0:
+			continue
+		var eq_id := ""
+		if _resolver.is_valid():
+			eq_id = str(_resolver.call(inst.instance_id))
+		anchors[inst.instance_id] = _equipment_anchor(eq_id, rect)
+	return anchors
+
+
+## 设备使用锚点：sprite 左上角（48×48），使成员"落在"设备上。
+## 基准：脚底接触点 = 设备 footprint 底边中点（+ 设备类型微调）。
+func _equipment_anchor(eq_id: String, rect: Rect2i) -> Vector2:
+	var center_x := rect.position.x + rect.size.x / 2.0
+	var feet_y := rect.position.y + rect.size.y
+	var sprite_w := float(_member_sprites.SIZE) if _member_sprites != null else 48.0
+	match eq_id:
+		"treadmill":
+			# 跑带居中：脚在 footprint 底边（跑带下沿），身体微前倾已由姿态表达
+			return Vector2(center_x - sprite_w / 2.0, feet_y - sprite_w)
+		"bench_press":
+			# 卧推凳：身体横躺 —— 头在左、躯干向右，锚在 footprint 左上角 +
+			# 下移 26px 让横躺身体（纹理 18..33 行）落在凳面（pad 中段）
+			return Vector2(rect.position.x + 2, rect.position.y + 26)
+		"bike":
+			# 车座居中：脚在车架中部（略高于底边），身体坐姿
+			return Vector2(center_x - sprite_w / 2.0, rect.position.y + rect.size.y - 16 - sprite_w * 0.5)
+		"yoga_mat":
+			# 垫面居中：脚在垫面底边（盘坐）
+			return Vector2(center_x - sprite_w / 2.0, feet_y - sprite_w * 0.62)
+		_:
+			# 未知设备兜底：锚定 footprint 底边居中
+			return Vector2(center_x - sprite_w / 2.0, feet_y - sprite_w)
+
+
+## 普通（非 USING）会员的 cell 锚点：sprite 左上角 = cell 左上角 +
+## 水平居中偏移 + 脚底对齐 cell 底部（头部越出 cell 上方 16px）。
+func _cell_anchor(cell: Vector2i) -> Vector2:
+	var sprite_w := float(_member_sprites.SIZE) if _member_sprites != null else 48.0
+	var x := cell.x * _cell_size + (_cell_size - sprite_w) / 2.0
+	var y := cell.y * _cell_size + _cell_size - sprite_w
+	return Vector2(x, y)
+
+
+## 会员绘制上下文（V3 §8 设备互动 + §9 微型动态 + 每人外观）：
+##   equipment_id       USING 成员的目标设备（经 resolver）
+##   leaving_reason     LEAVING 成员的离场原因（quota_met → satisfied 满意）
+##   use_ticks_remaining  USING 剩余 tick（bench 结束坐起窗口）
+##   member_id          外观变体（每人清晰发型/皮肤色块）
+func _member_ctx(m: Dictionary, state: String) -> Dictionary:
+	var ctx := {
+		"member_id": int(m.get("member_id", -1)),
+	}
+	if state == "USING":
+		var target := int(m.get("target_equipment_instance_id", -1))
+		if target >= 0 and _resolver.is_valid():
+			ctx["equipment_id"] = str(_resolver.call(target))
+		if m.has("use_ticks_remaining"):
+			ctx["use_ticks_remaining"] = int(m["use_ticks_remaining"])
+	if state == "LEAVING":
+		ctx["leaving_reason"] = str(m.get("leaving_reason", ""))
+	return ctx
 
 
 ## 由 cell 移动推断朝向（presentation 层，纯绘制用；横向位移为 0 时保持上次
