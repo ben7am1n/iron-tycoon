@@ -132,6 +132,11 @@ var _placement: PlacementSystemScript
 ## clears an active selection BEFORE starting a drag (build takes over —
 ## GDD Core Rule 4, no dual ghost).
 var _arbitration: ModeArbitrationScript
+## V3 §10 — equipment pixel-sprite thumbnail source (OPTIONAL, default null):
+## when injected, every tile renders the equipment's scene-object sprite as
+## its icon (non-placeholder, V3 §10 底部购买栏缩略图). Story-001/002 rigs
+## pass null and keep the placeholder glyph path (tests unaffected).
+var _equip_art = null
 ## equipment_id -> PaletteTile. Built once in init() from catalog order.
 var _tiles: Dictionary = {}
 ## "Nothing available yet" label — visible only when the catalog is empty.
@@ -192,7 +197,7 @@ var _cue_time_remaining: float = 0.0
 ## rigs: when omitted (or null), palette mouse-downs do NOT clear an active
 ## selection. Story 003's wiring injects ModeArbitration to enable the
 ## build-takes-over handoff (GDD Core Rule 4).
-func init(p_catalog: EquipmentCatalog, p_economy: Economy, p_availability: PaletteAvailabilityScript, p_placement: PlacementSystemScript = null, p_arbitration: ModeArbitrationScript = null) -> void:
+func init(p_catalog: EquipmentCatalog, p_economy: Economy, p_availability: PaletteAvailabilityScript, p_placement: PlacementSystemScript = null, p_arbitration: ModeArbitrationScript = null, p_equip_art = null) -> void:
 	if _initialized:
 		push_error("BuildShopPalette.init() called twice")
 		return
@@ -202,6 +207,7 @@ func init(p_catalog: EquipmentCatalog, p_economy: Economy, p_availability: Palet
 	_availability = p_availability
 	_placement = p_placement
 	_arbitration = p_arbitration
+	_equip_art = p_equip_art
 	_build_ui()
 	_economy.balance_changed.connect(_on_balance_changed)
 	# STORY 004 — S3 placement_committed subscription (typed, Control
@@ -455,6 +461,8 @@ func _hit_test_tile(pos: Vector2) -> String:
 
 ## Builds the rack: one PaletteTile per catalog id (loader insertion order),
 ## plus the always-present empty hint (visible only when there are no tiles).
+## V3 §10: when EquipmentArt is injected, each tile receives the equipment's
+## pixel-sprite thumbnail texture (scene-object sprite, non-placeholder).
 func _build_ui() -> void:
 	# 节点命名（与 HUD 的 `name = "Hud"` 同约定）：证据捕获/调试按名定位。
 	name = "BuildShopPalette"
@@ -462,7 +470,10 @@ func _build_ui() -> void:
 	for id in _catalog.get_all_ids():
 		var def := _catalog.get_definition(id)
 		var tile: PaletteTileScript = PaletteTileScript.new()
-		tile.setup(def.id, def.display_name, def.cost)
+		var thumbnail: Texture2D = null
+		if _equip_art != null:
+			thumbnail = _equip_art.texture_for(id, _zone_of(id), 0)
+		tile.setup(def.id, def.display_name, def.cost, thumbnail)
 		add_child(tile)
 		_tiles[id] = tile
 
@@ -538,3 +549,14 @@ func _derive_state(equipment_id: String) -> int:
 	if _availability.can_purchase(equipment_id):
 		return PaletteTileScript.State.AFFORDABLE
 	return PaletteTileScript.State.UNAFFORDABLE
+
+
+## equipment_id → zone_membership[0]（EquipmentArt 缩略图语义色键；与
+## WorldCanvas._zone_of 同一推导，单一来源 catalog def）。未知返回 ""（兜底）。
+func _zone_of(eq_id: String) -> String:
+	if eq_id == "" or _catalog == null:
+		return ""
+	var def = _catalog.get_definition(eq_id)
+	if def == null or def.zone_membership.is_empty():
+		return ""
+	return str(def.zone_membership[0])

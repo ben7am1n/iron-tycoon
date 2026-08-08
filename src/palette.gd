@@ -104,8 +104,9 @@ const MEMBER_SHOE_ALT3 := Color("414B56")
 const METAL_DARK := Color("5B6470")
 ## 金属冷色高光（25d §2 材质概括：金属 = 少量冷色高光）：Sky 系提亮，非纯白大面积。
 const METAL_HIGHLIGHT := Color("B7D4EC")
-## 设备脚下大暗面（25d §2 阴影：大块明暗色块，不追求物理写实）：半透明深色块，替代旧纯灰。
-## V3 §6/§7：阴影偏冷、偏蓝灰 —— EQUIP_SHADOW 改为冷蓝灰（0.05,0.09,0.14）。
+## 设备脚下 contact shadow（V3 §6 设备下方明显但柔和的 contact shadow）：
+## 冷蓝灰半透明（V3 §7 阴影：深蓝灰、青灰；Phase 5 定值 0.05,0.09,0.14）。
+## WorldCanvas 绘制为双层（宽软外层 + 贴身内层），alpha 在绘制处细分。
 const EQUIP_SHADOW := Color(0.05, 0.09, 0.14, 0.38)
 ## 放置预览合法：柔和高亮（art-bible §7）—— 半透明白/Sage tint，绝不刺眼。
 const PLACEMENT_OK_TINT := Color(0.96, 0.98, 0.94, 0.30)
@@ -115,14 +116,8 @@ const PLACEMENT_BAD_TINT := Color("E0A0A0", 0.35)
 const SNAP_PULSE_COLOR := BUTTER
 
 # === V3 §7 色彩体系（Phase 5：暖环境 + 冷阴影 + 高饱和重点色） ===
-#
-# V3 视觉重制 Phase 5 新增色域（visual-remaster-spec-v3.md §7）：
-#   背景基底：暖灰、奶油灰、低饱和棕
-#   阴影：深蓝灰、青灰
-#   器械：炭灰、深蓝灰、浅灰金属
-#   木材：暖橙棕
-#   植物：中等饱和绿
-#   Accent：黄、橙、青蓝（只用于设备屏幕/互动提示/重要道具/小型装饰）
+# 背景基底：暖灰/奶油灰/低饱和棕；阴影：深蓝灰/青灰；器械：炭灰/深蓝灰/浅灰
+# 金属；木材：暖橙棕；植物：中等饱和绿；Accent：黄/橙/青蓝（小范围）。
 # 色值单一来源（项目约定）：绘制层一律引用本文件，禁止硬编码。
 
 ## 顶墙基底：暖灰奶油灰（V3 §3 墙壁）。
@@ -235,3 +230,26 @@ const FOUNTAIN := Color("D8D4C8")
 const TRASH := Color("5E5A52")
 ## 毛巾：暖橙（小面积 accent）。
 const TOWEL := Color("C98E6E")
+
+# === Phase 3 设备场景物件材质（V3 §5/§6/§7/§11：机器灰阶 + 方向光 + 冷阴影） ===
+# V3 §7 器械色系：炭灰、深蓝灰、浅灰金属。设备本体用机器灰阶（非区域语义色 —
+# 区域色只做小范围 accent，§14 可购买设备饱和度高、轮廓更清楚）。
+# 方向光（§6）：顶部暖白主光 → 高光暖黄/奶白；阴影偏冷偏蓝灰。
+# 轮廓（§11）：机器部分深蓝灰轮廓，高光侧可无完整描边。
+
+## 机器轮廓：深蓝灰（§11 机器部分深蓝灰轮廓；非纯黑，§3 禁纯黑粗边）。
+const EQUIP_OUTLINE := Color("3B4552")
+## 机身材质暗面：炭灰（机器主体/背面/受光少的区域）。
+const EQUIP_BODY_DARK := Color("49525F")
+## 机身材质中调：深蓝灰（机器主体正面，方向光主受光面）。
+const EQUIP_BODY := Color("5D6673")
+## 浅灰金属：扶手/机架/轮毂（§5 浅灰金属扶手；§11 高光侧可无完整描边）。
+const EQUIP_BODY_LIGHT := Color("8E99A6")
+## 暖黄/奶白高光（§6 高光：暖黄色/奶白色 —— 顶部暖白主光的关键高光像素）。
+const EQUIP_HIGHLIGHT := Color("EADFB8")
+## 冷蓝灰阴影面（§6 阴影：偏冷、偏蓝灰 —— 设备自身受光面的暗侧）。
+const EQUIP_SHADOW_TONE := Color("3A4350")
+## 青蓝显示灯（§6 部分机器显示屏：青蓝/绿色局部 emissive pixels）。
+const EQUIP_ACCENT_CYAN := Color("5ED4E8")
+## Hover 黄色像素轮廓（§14 可读性 + §10 购买栏 Hover）：复用 Butter（暖黄 accent）。
+const EQUIP_HOVER_OUTLINE := BUTTER

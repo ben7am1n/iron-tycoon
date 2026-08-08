@@ -141,15 +141,18 @@ func _verify_structure() -> void:
 
 # === 世界内容验证（低分辨率管线内语义色仍可命中） ===
 
-## 采样点（世界坐标 → 屏幕换算；语义色与 phase_b 一致）：
-##   - treadmill(2,2) deck 主色 Sky；描边 Charcoal；access(2,3) Butter 菱形
-##   - bench_press(1,7) pad Sage；yoga_mat(9,2) 垫面 Peach
+## 采样点（世界坐标 → 屏幕换算；V3 Phase 3 设备场景物件语义色）：
+##   - treadmill(2,2) 机身中调 EQUIP_BODY #5D6673（机器灰阶，非 Sky 图标色）；
+##     轮廓 EQUIP_OUTLINE #3B4552（§11 机器深蓝灰轮廓，左缘 art col2）；access(2,3)
+##     Butter 菱形
+##   - bench_press(1,7) pad Sage（16×16 art 下 pad 居 world x 60..70，取 64）
+##   - yoga_mat(9,2) 垫面 Peach
 ##   - 阴影对比：treadmill footprint 下方 vs 同区域地板
 func _verify_world_content(img: Image) -> void:
 	var checks := [
-		["deck_sky", Vector2(96, 80), Color("8EC5E8"), 0.16],
-		["outline_charcoal", Vector2(66, 66), Color("3C3A42"), 0.20],
-		["bench_sage", Vector2(52, 268), Color("8FBF9F"), 0.16],
+		["deck_body", Vector2(96, 80), Color("5D6673"), 0.16],
+		["outline_equip", Vector2(68, 66), Color("3B4552"), 0.20],
+		["bench_sage", Vector2(64, 268), Color("8FBF9F"), 0.16],
 		["yoga_peach", Vector2(304, 80), Color("F2B486"), 0.16],
 		["access_butter", Vector2(80, 112), Color("F5D97B"), 0.28],
 	]
@@ -173,18 +176,18 @@ func _verify_world_content(img: Image) -> void:
 	])
 
 
-## 像素 stair-step（Exit 条件 1）：treadmill(2,2) sprite 右缘（Charcoal 描边 →
-## Sky 甲板）处的屏幕横向 6px：331/332/333（Charcoal 描边）逐像素 IDENTICAL；
-## 334/335/336（Sky 甲板）逐像素 IDENTICAL；两组之间硬切（无抗锯齿中间色）
-## —— 最近邻放大证据。Phase 2 地面材质为深灰橡胶，旧采样点（世界 x=64 地板
-## 侧）已不可用，改采 sprite 本体边缘（设备材质不受地面影响）。
+## 像素 stair-step（Exit 条件 1）：世界 x=68（sprite 左缘，treadmill 16×16 art
+## 的 art col2 = EQUIP_BODY_LIGHT）处的屏幕横向 6px：321/322/323（接触阴影
+## 色）逐像素 IDENTICAL；325/326/327（EQUIP_BODY_LIGHT）逐像素 IDENTICAL；
+## 两组之间硬切（无抗锯齿中间色）—— 最近邻放大证据（NEAREST 光栅化实测：
+## x=324 仍为阴影色，sprite 左缘起于 x=325）。
 func _verify_stair_step(img: Image) -> void:
 	var y := 180
-	var a: Array = [img.get_pixel(331, y), img.get_pixel(332, y), img.get_pixel(333, y)]
-	var b: Array = [img.get_pixel(334, y), img.get_pixel(335, y), img.get_pixel(336, y)]
-	_ok(_identical(a), "STAIR left block (331..333) identical nearest-run: %s" % a[0].to_html(false))
-	_ok(_identical(b), "STAIR right block (334..336) identical nearest-run: %s" % b[0].to_html(false))
-	_ok(not _near(a[0], b[0], 0.10), "STAIR hard edge 333/334 (no bilinear blend): %s vs %s" % [
+	var a: Array = [img.get_pixel(321, y), img.get_pixel(322, y), img.get_pixel(323, y)]
+	var b: Array = [img.get_pixel(325, y), img.get_pixel(326, y), img.get_pixel(327, y)]
+	_ok(_identical(a), "STAIR left block (321..323) identical nearest-run: %s" % a[0].to_html(false))
+	_ok(_identical(b), "STAIR right block (325..327) identical nearest-run: %s" % b[0].to_html(false))
+	_ok(not _near(a[0], b[0], 0.10), "STAIR hard edge 324/325 (no bilinear blend): %s vs %s" % [
 		a[0].to_html(false), b[0].to_html(false)
 	])
 
