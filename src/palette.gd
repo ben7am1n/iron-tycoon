@@ -75,6 +75,27 @@ const MEMBER_LEAVE_GRAY := Color("9A948C")
 ## 脚底阴影：Soft Charcoal 低透明（art-bible-25d §2 “大块阴影”）。
 const MEMBER_SHADOW := Color(0.235, 0.227, 0.259, 0.28)
 
+## Phase 4（V3 §8）：会员外观变体色（每人：清晰发型/皮肤色块/裤子/鞋）。
+## 变体 0 = 上述默认色（既有测试的像素断言保持有效）；变体 1-3 从同色域
+## 派生（暖调、低饱和，art-bible §4 —— 不引入刺眼高饱和撞色）。由
+## member_sprite.gd 的 MEMBER_VARIANTS 表引用，绘制处不得另写色值。
+## 发型变体：更深棕 / 红棕。
+const MEMBER_HAIR_ALT1 := Color("4A3A2E")
+const MEMBER_HAIR_ALT2 := Color("6B4E3B")
+const MEMBER_HAIR_ALT3 := Color("3B3129")
+## 皮肤变体：偏 tan / 偏深 tan / 偏暖浅。
+const MEMBER_SKIN_ALT1 := Color("E0B98F")
+const MEMBER_SKIN_ALT2 := Color("C9A284")
+const MEMBER_SKIN_ALT3 := Color("F0D3B0")
+## 裤子变体：蓝灰（冷阴影系）/ 卡其 / 深暖灰。
+const MEMBER_PANTS_ALT1 := Color("5E6B70")
+const MEMBER_PANTS_ALT2 := Color("7A6A55")
+const MEMBER_PANTS_ALT3 := Color("56504A")
+## 鞋变体：近炭 / 深棕 / 深蓝灰。
+const MEMBER_SHOE_ALT1 := Color("3F3733")
+const MEMBER_SHOE_ALT2 := Color("44342C")
+const MEMBER_SHOE_ALT3 := Color("414B56")
+
 # === Phase B v2 设备像素美术（art-bible-25d-style §2 材质概括 + art-bible §7 拖放反馈） ===
 # 设备 = 2.5D 场景的「前景像素主体」：粗颗粒 2D 像素 sprite（32×32 整数倍，Nearest）。
 # 色值仍以本文件为单一来源；设备精灵程序化绘制（src/presentation/equipment_art.gd）只引用这里。
