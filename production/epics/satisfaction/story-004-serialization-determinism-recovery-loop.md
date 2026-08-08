@@ -99,7 +99,7 @@
 - `tests/unit/satisfaction/determinism_serialization_test.gd` — AC1/AC15 (must exist and pass)
 - `tests/integration/satisfaction/recovery_loop_test.gd` — AC17 (advisory)
 
-**Status**: [x] In Review — 2026-08-03
+**Status**: [x] Complete — 2026-08-05 (QA 终审 PASS, t_21808ee2)
 
 Implemented and verified (51 assertions in `tests/unit/satisfaction/determinism_serialization_test.gd` + 21 in `tests/integration/satisfaction/recovery_loop_test.gd`, full suite 2990 passed / 0 failed, up from 2918):
 - Production (`src/systems/satisfaction.gd`): `serialize()` now emits `global_satisfaction` (float) + `member_accumulators` (the TR-SAT-002 per-member dict) alongside the stub-era `{counter, rng_state}` — the extended shape is exactly Core Rule 8's serialized set, and the stub-era keys are KEPT so the save-load integration tests' byte-identical contract round-trips unchanged (MemberSim precedent). `deserialize()` is two-phase: Phase A validates counter / rng_state / global in [0,1] / the accumulator shape (all errors collected, zero mutation); Phase B commits with JSON-safe coercion (float counter, stringified keys, float int-fields — the 4.7.1 JSON.parse reality) and REBUILDS the transient `_pending_uses` + `_last_seen` from the already-loaded MemberSim roster (SaveLoad load order — MemberSim before Satisfaction), mirroring MemberSim's reservation-map-rebuild precedent: pending uses are transient per Core Rule 8, never serialized as separate truth.

@@ -133,7 +133,7 @@ visit_length_modifier(G) = 1 + (satisfaction_modifier(G) − 1) × damp, damp = 
 **Required evidence**:
 - `tests/unit/satisfaction/global_satisfaction_modifiers_test.gd` — must exist and pass (AC2, AC3, AC4, AC7, AC13, AC14, AC16)
 
-**Status**: [x] In Review — 2026-08-03
+**Status**: [x] Complete — 2026-08-05 (QA 终审 PASS, t_e7f8f8b1)
 
 Implemented and verified (37 assertions in `tests/unit/satisfaction/global_satisfaction_modifiers_test.gd`, full suite 2918 passed / 0 failed):
 - Production: `src/systems/satisfaction.gd` gained `satisfaction_modifier(g)` + `visit_length_modifier(g)` (Core Rule 6, TR-SAT-006/007) plus the `damp` config knob (`CONFIG_DAMP` / `DAMP` / `_damp`, read in `_apply_config`). The piecewise-linear formula is exactly `G_c + 0.5` below 0.5 and `2·G_c` above (so `G=0.5 → 1.0` — AC3), the structural floor is 0.5 at G=0 (AC2 anti-spiral), and `visit_length_modifier = 1 + (sm − 1)·damp` with `damp = 0.5` (AC4). Input is defensively clamped to `[0,1]` first; non-finite inputs (NaN/±Inf, e.g. an upstream bug) fall back to the neutral anchor 0.5 so the modifier can never crash or emit NaN (AC16).
