@@ -154,7 +154,6 @@ func _verify_world_content(img: Image) -> void:
 		["outline_equip", Vector2(68, 66), Color("3B4552"), 0.20],
 		["bench_sage", Vector2(64, 268), Color("8FBF9F"), 0.16],
 		["yoga_peach", Vector2(304, 80), Color("F2B486"), 0.16],
-		["access_butter", Vector2(80, 112), Color("F5D97B"), 0.28],
 	]
 	for entry in checks:
 		var p := world_to_screen(entry[1])
@@ -164,6 +163,17 @@ func _verify_world_content(img: Image) -> void:
 		_ok(ok, "WORLD %-16s world%s -> screen(%3d,%3d) = %s expect=%s %s" % [
 			entry[0], str(entry[1]), p.x, p.y, got.to_html(false), expect.to_html(false),
 			"OK" if ok else "MISMATCH"
+		])
+	# V3 §14 可读性（P0-2 修复）：access cell 星形标记仅 placement mode / hover
+	# 出现 —— 正常经营模式静态帧不再常驻黄框（门禁 FAIL：选择/任务标记有调试感）。
+	# 断言：treadmill(2,2) 的 access cell (2,3) 中心（世界 (80,112)）在正常帧
+	# 不出现 BUTTER 标记；拖拽中的 placement 帧由 _verify_placement_butter 断言
+	# 标记出现。
+	var acc_p := world_to_screen(Vector2(80, 112))
+	var acc_col := img.get_pixel(acc_p.x, acc_p.y)
+	_ok(not _near(acc_col, Color("F5D97B"), 0.20),
+		"WORLD access_marker_hidden world(80,112) -> screen(%3d,%3d) = %s（V3 §14：正常经营帧无常驻黄框）" % [
+			acc_p.x, acc_p.y, acc_col.to_html(false)
 		])
 	var sh_p := world_to_screen(Vector2(130, 80))
 	var fl_p := world_to_screen(Vector2(138, 80))
@@ -227,6 +237,9 @@ func _verify_ui_layer(img: Image) -> void:
 
 ## placement mode（拖拽中）：网格线出现 —— 世界 (390,160) 亮瓷砖窗口内出现
 ## Charcoal 暗线（水平网格线 world y=160 → screen ≈358；相对瓷砖面显著更暗）。
+## V3 §14（P0-2 修复）：拖拽中 grid 可见 → 所有已放置实例的 access cell 星形
+## 标记也出现（正常经营帧隐藏，见 _verify_world_content）。断言 treadmill(2,2)
+## 的 access cell (2,3) 中心（世界 (80,112)）出现 BUTTER 标记。
 func _verify_grid_visible(img: Image) -> void:
 	var min_lum := 1.0
 	for x in range(1044, 1067):
@@ -234,6 +247,14 @@ func _verify_grid_visible(img: Image) -> void:
 			var c := img.get_pixel(x, y)
 			min_lum = minf(min_lum, _luminance(c))
 	_ok(min_lum < 0.45, "GRID visible: charcoal line in window 1044..1066 @357..360 during drag (min lum %.3f)" % min_lum)
+	var acc_p := world_to_screen(Vector2(80, 112))
+	var acc_col := img.get_pixel(acc_p.x, acc_p.y)
+	var acc_ok := _near(acc_col, Color("F5D97B"), 0.25)
+	if not acc_ok:
+		acc_ok = _scan_near(img, acc_p, Color("F5D97B"), 4) > 0
+	_ok(acc_ok, "GRID access_marker_visible world(80,112) -> screen(%3d,%3d) = %s（V3 §14：拖拽中 access 星形标记出现）" % [
+		acc_p.x, acc_p.y, acc_col.to_html(false)
+	])
 
 
 func _verify_perf() -> void:
@@ -249,6 +270,21 @@ func _ok(cond: bool, msg: String) -> void:
 	if not cond:
 		_all_ok = false
 	print("  %s %s" % ["PASS" if cond else "FAIL", msg])
+
+
+## 中心点 ±radius 窗口内搜索 target 颜色（NEAREST 光栅化 ±1..2px 落位容差，
+## 与 phase4 的 _scan_near 同款；V3 §2 管线已知现象）。
+func _scan_near(img: Image, center: Vector2i, target: Color, radius: int) -> int:
+	var hits := 0
+	for dy in range(-radius, radius + 1):
+		for dx in range(-radius, radius + 1):
+			var sx := center.x + dx
+			var sy := center.y + dy
+			if sx < 0 or sy < 0 or sx >= img.get_width() or sy >= img.get_height():
+				continue
+			if _near(img.get_pixel(sx, sy), target, 0.20):
+				hits += 1
+	return hits
 
 
 func _identical(cs: Array) -> bool:

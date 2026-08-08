@@ -170,11 +170,14 @@ func get_icon_text() -> String:
 
 
 func _build_children(p_display_name: String, p_cost: int) -> void:
-	custom_minimum_size = Vector2(96, 96)
+	# V3 §15（P0-2 UI 降权）：tile 最小尺寸 96×96 → 88×88 —— 底部购买栏
+	# 条带高度同步收紧（main.gd PALETTE_STRIP_H 96→88）。
+	custom_minimum_size = Vector2(88, 88)
 	# Phase D v2: 深色半透明 tile 面板 + Butter 亮色描边 + 轻微圆角。
 	# 状态灰化走 modulate（_apply_state_visual，色盲安全契约不变），
 	# stylebox 颜色不参与状态判定。
-	var sb := UiTheme.make_panel_style(UiTheme.panel_border(), 8, 2)
+	# V3 §15（P0-2 UI 降权）：radius 8→2、border 2→3 —— 像素面板语言。
+	var sb := UiTheme.make_panel_style(UiTheme.panel_border(), 2, 3)
 	add_theme_stylebox_override("panel", sb)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	focus_mode = Control.FOCUS_ALL

@@ -678,13 +678,14 @@ func _walk_rows(frame: int, variant: int) -> PackedStringArray:
 ## + 腿 9（32..40）+ 鞋 3（41..43）+ 影 4（44..47）= 48。
 func _tired_rows(frame: int, variant: int) -> PackedStringArray:
 	var rows := PackedStringArray()
-	# 头顶汗滴（§9 角色汗滴）：位于头之上，A/B 左右微移形成"滴落感"
+	# 头顶汗滴（§9 角色汗滴）：位于头之上，A/B 左右微移形成"滴落感"。
+	# V3 §15（P0-3）：2px→3px 加宽，远景辨识度（unit 断言仍 pin (22,0)）。
 	if frame == 0:
-		rows.append(_r(22, "ww"))
-		rows.append(_r(22, "ww"))
+		rows.append(_r(21, "www"))
+		rows.append(_r(22, "www"))
 	else:
-		rows.append(_r(24, "ww"))
-		rows.append(_r(24, "ww"))
+		rows.append(_r(23, "www"))
+		rows.append(_r(24, "www"))
 	rows.append_array(_head_rows(FACE_PANT, variant, true))
 	rows.append_array(_torso_rows("wipe", variant))
 	rows.append_array(_leg_rows("bent", variant))
@@ -701,12 +702,13 @@ func _tired_rows(frame: int, variant: int) -> PackedStringArray:
 ## + 鞋 3 + 影 4 = 48。
 func _satisfied_rows(frame: int, variant: int) -> PackedStringArray:
 	var rows := PackedStringArray()
+	# V3 §15（P0-3）：小闪光 2px→3px 加宽，远景辨识度（unit 断言仍 pin (9,0)）。
 	if frame == 0:
-		rows.append(_r(9, "gg"))
-		rows.append(_r(10, "gg"))
+		rows.append(_r(8, "ggg"))
+		rows.append(_r(9, "ggg"))
 	else:
-		rows.append(_r(12, "gg"))
-		rows.append(_r(11, "gg"))
+		rows.append(_r(11, "ggg"))
+		rows.append(_r(10, "ggg"))
 	rows.append_array(_head_rows(FACE_HAPPY, variant, true))
 	rows.append_array(_torso_rows("raised", variant))
 	rows.append_array(_leg_rows("stand", variant))

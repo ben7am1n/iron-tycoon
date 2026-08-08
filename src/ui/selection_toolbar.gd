@@ -79,8 +79,9 @@ const SELL_CONFIRM_PREFIX := "Confirm sell +$"
 const COLOR_BUTTER := Color("f5d97b")
 const COLOR_WARM_CREAM := Color("f4e9d8")
 
-## Phase D v2 现代 UI 皮肤（art-bible-25d-style §1/§2）—— 工具栏面板 =
-## 深色半透明 + Butter 亮色描边 + 粗字体按钮。
+# Phase D v2 现代 UI 皮肤（art-bible-25d-style §1/§2）—— 工具栏面板 =
+# 深色半透明 + Butter 亮色描边 + 粗字体按钮。
+# V3 §15（P0-2 UI 降权）：radius 6→2、border 1→2 —— 像素面板语言。
 const UiTheme := preload("res://src/ui/ui_theme.gd")
 
 ## Gap (px) between the piece's footprint edge and the toolbar.
@@ -234,7 +235,7 @@ func _build_buttons() -> void:
 
 
 func _make_background_style() -> StyleBoxFlat:
-	var sb := UiTheme.make_panel_style(UiTheme.panel_border(), 6, 1)
+	var sb := UiTheme.make_panel_style(UiTheme.panel_border(), 2, 2)
 	sb.content_margin_left = 8.0
 	sb.content_margin_right = 8.0
 	sb.content_margin_top = 6.0

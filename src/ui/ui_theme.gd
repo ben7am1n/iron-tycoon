@@ -39,12 +39,15 @@ static func panel_border() -> Color:
 	return Palette.BUTTER
 
 ## 标准面板 stylebox：深色半透明底 + 亮色描边 + 轻微圆角。
-## 供 Control._draw() 用 draw_style_box() 绘制（HUD/建造面板条带），
-## 或直接作为 PanelContainer 的 "panel" override（工具栏）。
+## V3 §15 修复（P0-2 UI 降权）：radius 8→2、border 2→3 —— 像素面板语言
+## （2-3px 明确描边、非圆角或极轻微），避免 HTML/CSS dashboard 圆角矩形感
+## （门禁 FAIL：圆角矩形组合像 Web dashboard）。供 Control._draw() 用
+## draw_style_box() 绘制（HUD/建造面板条带），或直接作为 PanelContainer 的
+## "panel" override（工具栏）。
 static func make_panel_style(
 	border_color: Color = Palette.BUTTER,
-	radius: int = 8,
-	border_width: int = 2
+	radius: int = 2,
+	border_width: int = 3
 ) -> StyleBoxFlat:
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = panel_bg()
@@ -58,10 +61,11 @@ static func make_panel_style(
 	return sb
 
 ## 深色半透明「芯片」stylebox（图标/标签的底，无边框或 1px 细描边）。
+## V3 §15：radius 6→2（像素直角语言），border 默认 2px（明确描边）。
 static func make_chip_style(
 	border_color: Color = Palette.BUTTER,
-	radius: int = 6,
-	border_width: int = 1
+	radius: int = 2,
+	border_width: int = 2
 ) -> StyleBoxFlat:
 	var sb := StyleBoxFlat.new()
 	var bg := Palette.CHARCOAL.darkened(0.45)

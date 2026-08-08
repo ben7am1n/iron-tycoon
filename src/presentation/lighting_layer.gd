@@ -79,15 +79,25 @@ func _draw_edge_shadows() -> void:
 		draw_rect(Rect2i(corner, Vector2i(edge, edge)), Palette.LIGHT_CORNER_SHADOW, true)
 
 
-## 顶部暖白主光池（V3 §6）：3 个暖白半透明圆 —— 统一室内主光。
+## 顶部暖白主光（V3 §6）：3 盏吊灯的光锥 + 地面光斑 —— 光池「可归属来源」
+## （P0-4：不再是无来源的透明圆形蒙版）。灯位 = WorldLayout.LAMP_CONES
+## （从灯罩底部到地面的四边形，与 FOREGROUND 吊灯结构对齐）。
 func _draw_light_pools() -> void:
-	for center in WorldLayout.LIGHT_POOLS:
+	for i in WorldLayout.LAMP_CONES.size():
+		var pts := PackedVector2Array()
+		for p: Vector2 in WorldLayout.LAMP_CONES[i]:
+			pts.append(p)
 		var c := Palette.LIGHT_TOP_WARM
-		# 分层圆：中心最亮，向外衰减（2 层就够，避免过度 draw call）
-		draw_circle(center, WorldLayout.LIGHT_POOL_RADIUS, c)
+		c.a = 0.05
+		draw_colored_polygon(pts, c)
+		# 光斑：灯正下方地面亮池（中心 = 光锥底部中点），暖白，略强于光锥
+		var center: Vector2 = WorldLayout.LIGHT_POOLS[i]
+		var pool := Palette.LIGHT_TOP_WARM
+		pool.a = 0.10
+		draw_circle(center, WorldLayout.LIGHT_POOL_RADIUS, pool)
 		var inner := Palette.LIGHT_TOP_WARM
-		inner.a = c.a * 1.5
-		draw_circle(center, WorldLayout.LIGHT_POOL_RADIUS * 0.55, inner)
+		inner.a = 0.16
+		draw_circle(center, WorldLayout.LIGHT_POOL_RADIUS * 0.5, inner)
 
 
 ## 窗口斜向自然光（V3 §6）：每扇窗一个暖白光锥，从窗底射向地板。

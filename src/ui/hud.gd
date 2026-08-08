@@ -192,8 +192,10 @@ const SHAPE_OUTLINE := "outline"
 ## Layout anchors (art-bible / UX spec): text ≥ 16px @1080p; safe margin
 ## ≥ 16px from screen edges at 1.0× UI scale, scaled with UI scale; top bar
 ## ≤ ~8% of vertical screen height at 1080p (48px + 16px margin = 64px strip).
+## V3 §15（P0-2 UI 降权）：48→44 —— 减小常驻 UI 占幅（门禁 FAIL：顶部状态栏
+## + 底部购买栏组合像 Web dashboard）。AC7 预算 44+16=60px ≤ 64px 仍满足。
 const SAFE_MARGIN_PX := 16
-const TOP_BAR_HEIGHT_PX := 48
+const TOP_BAR_HEIGHT_PX := 44
 const MIN_FONT_SIZE_PX := 16
 const METER_WIDTH_PX := 80
 const METER_HEIGHT_PX := 8
@@ -422,7 +424,9 @@ func _build_ui() -> void:
 		_transport_cluster.add_child(btn)
 
 	# Phase D v2: 顶栏深色半透明面板（_draw() 绘制；UiTheme 单一来源）。
-	_panel_style = UiTheme.make_panel_style(UiTheme.panel_border(), 10, 2)
+	# V3 §15（P0-2 UI 降权）：radius 10→2、border 2→3 —— 像素面板语言，
+	# 降低"Web dashboard"圆角矩形观感（门禁 FAIL）。
+	_panel_style = UiTheme.make_panel_style(UiTheme.panel_border(), 2, 3)
 	queue_redraw()
 
 

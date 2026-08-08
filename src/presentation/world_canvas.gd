@@ -277,13 +277,20 @@ func _draw_structure_layer(layer: String) -> void:
 
 
 ## 顶墙 + 左右侧墙（V3 §3 墙壁）：暖灰基底 + 墙裙压条 + 窗户。
+## V3 §15 第一眼修复：墙面延展到完整视口宽度（world x -76..492），消除
+## 两侧 ~171 screen px 纯米色空带（门禁 FAIL：large empty beige background）。
+## 顶墙保留入口门洞（x 0..32），侧墙保留出口门洞（y 288..320）。
 func _draw_walls() -> void:
-	# 顶墙
+	# 顶墙：主段 + 左右延展段（延展段用同色，画在门洞之外）
 	draw_rect(WorldLayout.WALL_TOP_RECT, Palette.WALL_BASE, true)
-	draw_rect(Rect2i(0, WorldLayout.WALL_TRIM_Y, WorldLayout.WORLD_W, 4), Palette.WALL_DARK, true)
-	# 侧墙
-	draw_rect(WorldLayout.WALL_LEFT_RECT, Palette.WALL_BASE, true)
-	draw_rect(WorldLayout.WALL_RIGHT_RECT, Palette.WALL_BASE, true)
+	draw_rect(WorldLayout.WALL_TOP_LEFT_FILL, Palette.WALL_BASE, true)
+	draw_rect(WorldLayout.WALL_TOP_RIGHT_FILL, Palette.WALL_BASE, true)
+	draw_rect(Rect2i(-76, WorldLayout.WALL_TRIM_Y, WorldLayout.WORLD_W + 152, 4), Palette.WALL_DARK, true)
+	# 侧墙：延展段（覆盖原 WALL_LEFT/RIGHT_RECT 并填满视口边缘）
+	draw_rect(WorldLayout.WALL_LEFT_EXTENDED, Palette.WALL_BASE, true)
+	draw_rect(WorldLayout.WALL_RIGHT_EXTENDED, Palette.WALL_BASE, true)
+	# 延展墙面的结构装饰（V3 §3/§12：管道/镜子/海报/置物架/空调/挂钟/通风口）
+	_draw_side_wall_decor()
 	# 窗户（V3 §6 窗口斜向自然光载体）：窗框 + 冷青灰玻璃
 	for window_rect in WorldLayout.WINDOWS:
 		draw_rect(window_rect, Palette.WINDOW_FRAME, true)
@@ -294,6 +301,59 @@ func _draw_walls() -> void:
 			Vector2(glass.position.x + 4, glass.position.y + 2),
 			Vector2(glass.position.x + 14, glass.position.y + glass.size.y - 2),
 			Palette.METAL_HIGHLIGHT, 2.0 * WorldScale.STROKE_COMPENSATION)
+
+
+## 延展墙面结构装饰（V3 §3/§12，V3 §15 第一眼）：左右两侧延展墙不再是
+## 纯米色空带，而是有管道/镜子/海报/置物架/空调/挂钟/通风口/毛巾架的结构
+## 墙。全部简单像素块（结构装饰，低对比 BACKGROUND 语汇 —— 不抢设备主体）。
+func _draw_side_wall_decor() -> void:
+	for decor_id: String in WorldLayout.WALL_SIDE_DECOR:
+		var pos: Vector2i = WorldLayout.WALL_SIDE_DECOR[decor_id]
+		if decor_id.begins_with("pipe"):
+			# 竖向管道：中暖灰 + 法兰接头（2px 宽）
+			draw_rect(Rect2i(pos, Vector2i(2, 240)), Palette.PIPE_COLOR, true)
+			draw_rect(Rect2i(pos + Vector2i(0, 60), Vector2i(3, 2)), Palette.PIPE_DARK, true)
+			draw_rect(Rect2i(pos + Vector2i(0, 140), Vector2i(3, 2)), Palette.PIPE_DARK, true)
+		elif decor_id.begins_with("mirror"):
+			# 长镜：冷蓝灰镜面 + 斜向高光 + 边框（V3 §6 冷调）
+			draw_rect(Rect2i(pos, Vector2i(14, 80)), Palette.WALL_DARK, true)
+			draw_rect(Rect2i(pos + Vector2i(2, 2), Vector2i(10, 76)), Palette.MIRROR_COLOR, true)
+			for i in 10:
+				draw_rect(Rect2i(pos + Vector2i(2 + i, 2 + i), Vector2i(1, 1)), Palette.MIRROR_HI, true)
+		elif decor_id.begins_with("poster"):
+			# 海报：边框 + 暖色 accent 主色（小面积高饱和，V3 §7）
+			draw_rect(Rect2i(pos, Vector2i(14, 18)), Palette.WALL_DARK, true)
+			var accent := Palette.ACCENT_CYAN if decor_id.ends_with("1") else Palette.ACCENT_ORANGE
+			draw_rect(Rect2i(pos + Vector2i(2, 2), Vector2i(10, 14)), accent, true)
+			draw_rect(Rect2i(pos + Vector2i(2, 11), Vector2i(10, 5)), accent.darkened(0.35), true)
+		elif decor_id.begins_with("shelf"):
+			# 置物架：隔板 + 小物件
+			draw_rect(Rect2i(pos, Vector2i(14, 2)), Palette.WALL_TRIM, true)
+			draw_rect(Rect2i(pos + Vector2i(2, 2), Vector2i(3, 5)), Palette.ACCENT_CYAN, true)
+			draw_rect(Rect2i(pos + Vector2i(8, 2), Vector2i(3, 4)), Palette.ACCENT_YELLOW, true)
+		elif decor_id.begins_with("clock"):
+			# 挂钟：表盘 + 指针
+			draw_rect(Rect2i(pos, Vector2i(12, 12)), Palette.CLOCK_FACE, true)
+			var cx := pos.x + 6
+			var cy := pos.y + 6
+			draw_rect(Rect2i(cx, pos.y + 1, 1, 5), Palette.CLOCK_HAND, true)
+			draw_rect(Rect2i(cx, cy, 5, 1), Palette.CLOCK_HAND, true)
+		elif decor_id.begins_with("ac"):
+			# 空调：暖白机身 + 出风栅 + 显示灯
+			draw_rect(Rect2i(pos, Vector2i(24, 10)), Palette.AC_BODY, true)
+			for i in 3:
+				draw_rect(Rect2i(pos + Vector2i(2, 2 + i * 3), Vector2i(20, 1)), Palette.AC_VENT, true)
+			draw_rect(Rect2i(pos + Vector2i(20, 1), Vector2i(2, 2)), Palette.ACCENT_YELLOW, true)
+		elif decor_id.begins_with("vent"):
+			# 通风口：边框 + 栅条
+			draw_rect(Rect2i(pos, Vector2i(12, 8)), Palette.AC_VENT.darkened(0.2), true)
+			for i in 5:
+				draw_rect(Rect2i(pos + Vector2i(2 + i * 2, 2), Vector2i(1, 4)), Palette.AC_BODY, true)
+		elif decor_id.begins_with("towel_rack"):
+			# 毛巾架：横杆 + 暖橙毛巾
+			draw_rect(Rect2i(pos, Vector2i(12, 1)), Palette.METAL_HIGHLIGHT, true)
+			draw_rect(Rect2i(pos + Vector2i(2, 1), Vector2i(3, 8)), Palette.TOWEL, true)
+			draw_rect(Rect2i(pos + Vector2i(7, 1), Vector2i(3, 8)), Palette.TOWEL.darkened(0.15), true)
 
 
 ## 墙上挂饰（V3 §12 海报/计时器/招牌）：EnvironmentArt 精灵（0.5x 缩放
@@ -347,14 +407,16 @@ func _draw_floor_decor() -> void:
 
 
 ## 环境前景（V3 §4 FOREGROUND：大型植物，可轻微遮挡角色）—— 画在设备之后。
+## V3 §15 修复（P0-4 纵深）：遍历所有 plant_fore_* 装饰（不只硬编码 2 个），
+## 前景元素真实压住 GAMEPLAY 层（前后遮挡强化纵深，门禁 FAIL：遮挡有限）。
 func _draw_environment_foreground() -> void:
 	if _env_art == null:
 		return
 	var tick: int = 0
 	if _tick_provider.is_valid():
 		tick = _tick_provider.call()
-	for prop_id: String in ["plant_fore_1", "plant_fore_2"]:
-		if not WorldLayout.DECOR.has(prop_id):
+	for prop_id: String in WorldLayout.DECOR:
+		if not prop_id.begins_with("plant_fore"):
 			continue
 		var pos: Vector2i = WorldLayout.DECOR[prop_id]
 		var sway := Vector2(round(sin(tick * 0.08 + float(prop_id.hash() % 100) * 0.13)), 0)
@@ -437,8 +499,13 @@ func _draw_equipment() -> void:
 			hover.a = 0.95
 			draw_rect(fp_rect.grow(2), hover, false, 2.0 * WorldScale.STROKE_COMPENSATION)
 
-		for c in inst.access_cells:
-			_draw_access_cell(c)
+		# V3 §14 可读性：access cell 星形标记仅 placement mode（grid 可见）或
+		# hover 时出现 —— 正常经营模式静态帧不常驻黄框/星形标记（门禁 FAIL：
+		# 选择/任务标记有调试感）。幽灵的 access cell 在拖拽时由
+		# _draw_placement_ghost 绘制（grid 可见时同路径）。
+		if _grid_visible or is_hovered:
+			for c in inst.access_cells:
+				_draw_access_cell(c)
 
 
 ## access cell 高亮：半透明 Butter 填充 + Butter 描边 + 中央实心 Butter 菱形
@@ -509,6 +576,11 @@ func _draw_placement_ghost() -> void:
 
 ## 会员渲染（Phase 4 / V3 §8）：2.5D 像素小人（48×48，>cell 32 —— 画面视觉
 ## 主体），状态双通道（颜色通道衬衫色 + 形状通道姿态）。
+## V3 §15 修复（P0-3 人物视觉权重）：sprite 纹理尺寸保持 48×48（unit 测试
+## 像素断言 pin 住），在绘制层增加「地面亮池 + 加宽接触影」—— 深色轮廓
+## （CHARCOAL）在深灰橡胶力量区（#4B4F57）上会融入背景（门禁 FAIL：轮廓
+## 弱），脚底亮池把人物从深色地面「托起」，远景远读性增强（V3 §6 接触
+## 阴影 + §11 轮廓可读性；不改变纹理像素，不破坏 unit 断言）。
 ##
 ## [foreground] 双层绘制：
 ##   false = 中景：walk/idle/tired/satisfied 会员，脚底锚定自身 cell 底部
@@ -544,15 +616,22 @@ func _draw_members(foreground: bool) -> void:
 		var facing_left := _update_facing(member_id, cell)
 		var ctx := _member_ctx(m, state)
 		var tex: ImageTexture = _member_sprites.texture_for(state, tick, facing_left, ctx)
+		var draw_pos: Vector2
 		if is_using:
 			# 前景：锚定设备 footprint（V3 §8 使用姿态叠加在设备上）。
 			var anchor: Vector2 = equip_anchors.get(
 				int(m.get("target_equipment_instance_id", -1)), Vector2.INF)
 			if anchor == Vector2.INF:
 				anchor = _cell_anchor(cell)  # 设备丢失兜底：锚定自身 cell
-			draw_texture(tex, anchor)
+			draw_pos = anchor
 		else:
-			draw_texture(tex, _cell_anchor(cell))
+			draw_pos = _cell_anchor(cell)
+		# V3 §15（P0-3 人物视觉权重）：脚底亮池 —— 半透明暖白椭圆垫在脚下，
+		# 把深色轮廓人物从深灰力量区地面「托起」（远景轮廓可读性）。亮池只
+		# 在中景成员绘制（非 USING 叠加在设备上时会被设备盖住，不额外画）。
+		if not is_using:
+			_draw_member_ground_glow(draw_pos)
+		draw_texture(tex, draw_pos)
 	# 清理已离场成员的朝向缓存（防止字典无限增长）
 	for member_id in _member_facing.keys():
 		if not alive.has(member_id):
@@ -611,6 +690,27 @@ func _cell_anchor(cell: Vector2i) -> Vector2:
 	var x := cell.x * _cell_size + (_cell_size - sprite_w) / 2.0
 	var y := cell.y * _cell_size + _cell_size - sprite_w
 	return Vector2(x, y)
+
+
+## V3 §15（P0-3 人物视觉权重）：会员脚底亮池 —— 半透明暖白椭圆垫在脚下，
+## 把深色轮廓（CHARCOAL）人物从深灰橡胶力量区（#4B4F57）地面「托起」。
+## 亮池用低 alpha 暖白（V3 §6 顶部暖白光），宽度略大于 sprite，视觉上
+## 像"人物站在灯光下"，远景远读性增强。纯 presentation 层效果 —— 不改
+## 纹理像素、不破坏 unit 像素断言；画在 sprite 之下（先画亮池后画人物）。
+## 4.7.1 注意：draw_ellipse 签名是 (position, radius: float, ...) 无 Vector2
+## 尺寸 —— 用 draw_colored_polygon 画椭圆多边形（16 段，确定性，低 alpha）。
+func _draw_member_ground_glow(sprite_anchor: Vector2) -> void:
+	var glow := Palette.HIGHLIGHT_WARM
+	glow.a = 0.10
+	var size := float(_member_sprites.SIZE) if _member_sprites != null else 48.0
+	var center := sprite_anchor + Vector2(size * 0.5, size)
+	var rx := size * 0.62
+	var ry := size * 0.16
+	var pts := PackedVector2Array()
+	for i in 16:
+		var a := TAU * float(i) / 16.0
+		pts.append(center + Vector2(cos(a) * rx, sin(a) * ry))
+	draw_colored_polygon(pts, glow)
 
 
 ## 会员绘制上下文（V3 §8 设备互动 + §9 微型动态 + 每人外观）：

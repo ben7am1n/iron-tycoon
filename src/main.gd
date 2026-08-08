@@ -76,9 +76,11 @@ const SMOKE_FRAMES := 600      # --smoke 运行帧数（headless 帧率不定，
 ## 改为按 viewport 显式定位/定尺 —— 与 playtest 会话 probe 验证的修复方向一致。
 const UI_VIEWPORT_W := 1280
 const UI_VIEWPORT_H := 720
-## 底部建造商店条带高度 = PaletteTile 最小尺寸 96×96（整块 tile 可见，
-## 不会被 64px 理论条带裁切）。
-const PALETTE_STRIP_H := 96
+## 底部建造商店条带高度 = PaletteTile 最小尺寸 88×88（整块 tile 可见，
+## 不会被 88px 条带裁切）。V3 §15（P0-2 UI 降权）：96→88 —— 减小常驻 UI
+## 占幅，底部多露出 8px 世界内容（门禁 FAIL：底部购买栏 + 顶部状态栏组合
+## 像 Web dashboard）。
+const PALETTE_STRIP_H := 88
 
 # === V3 §2 低分辨率世界管线（SubViewport → nearest 放大） ===
 ## 世界逻辑画布（viewport 像素空间）：426×240（V3 §2 建议值之一）。
