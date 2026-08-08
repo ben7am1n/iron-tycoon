@@ -45,6 +45,7 @@ const RejectionTooltipScript := preload("res://src/ui/rejection_tooltip.gd")
 const CongestionOverlayControllerScript := preload("res://src/ui/congestion_overlay_controller.gd")
 const SelectionToolbarScript := preload("res://src/ui/selection_toolbar.gd")
 const SelectionCueScript := preload("res://src/ui/selection_cue.gd")
+const MemberSpriteScript := preload("res://src/presentation/member_sprite.gd")
 const Palette := preload("res://src/palette.gd")
 
 # === 场景级常量（组装参数，非玩法数值） ===
@@ -90,11 +91,16 @@ var _tooltip
 var _overlay_ctrl
 var _toolbar
 var _cue
+var _member_sprites
 
 # === 组装状态 ===
 var _instance_defs: Dictionary = {}  # instance_id -> equipment_id（resolver 数据源）
 var _smoke := false
 var _smoke_frame := 0
+## Phase C v2：会员朝向（presentation 层状态，非玩法逻辑 —— 由 cell 移动
+## 推断 facing，纯绘制用）。member_id -> bool（true = 朝左）。
+var _member_facing: Dictionary = {}
+var _member_last_cell: Dictionary = {}
 
 
 func _ready() -> void:
@@ -218,6 +224,8 @@ func _zone_reader() -> Callable:
 # === 第 2 层：presentation（heatmap / access-blocked / glyph overlay） ===
 
 func _assemble_presentation() -> void:
+	_member_sprites = MemberSpriteScript.new()
+
 	_heatmap = HeatmapLayerScript.new()
 	_heatmap.init(_cong, _grid, CELL_SIZE)
 	add_child(_heatmap)
@@ -368,24 +376,60 @@ func _draw_equipment() -> void:
 
 
 func _draw_members() -> void:
+	if _member == null or _member_sprites == null:
+		return
+	# Phase C v2：2.5D 像素小人（32×32，1:1 绘制，状态双通道）。
+	# 颜色通道：walking≈Sky / queue·using≈Peach / leaving≈灰（色盲安全，
+	# 与形状/姿态通道叠加）；姿态通道：walk 摆臂迈步 / idle 站立微晃 /
+	# use 用力泵（帧按 tick 奇偶交替，8-12fps 观感，见 member_sprite.gd）。
+	var tick: int = _orch.get_tick_count()
+	var alive: Dictionary = {}
 	for m in _member.members:
-		if not (m is Dictionary) or not m.has("cell"):
+		if not (m is Dictionary) or not m.has("cell") or not m.has("state"):
 			continue
-		var cell: Vector2 = m["cell"]
-		var col := Color(0.3, 0.8, 0.9)
-		if m.has("state") and (str(m["state"]) == "QUEUEING" or str(m["state"]) == "USING"):
-			col = Color(0.9, 0.6, 0.3)
-		draw_circle(Vector2(cell.x * CELL_SIZE + CELL_SIZE / 2.0,
-			cell.y * CELL_SIZE + CELL_SIZE / 2.0), 8.0, col)
+		var member_id := int(m.get("member_id", -1))
+		if member_id >= 0:
+			alive[member_id] = true
+		var state := str(m["state"])
+		if _member_sprites.state_channel(state) == "":
+			continue  # GONE / 被动成员 —— 不渲染
+		var cell: Vector2i = m["cell"]
+		var facing_left := _update_facing(member_id, cell)
+		var tex: ImageTexture = _member_sprites.texture_for(state, tick, facing_left)
+		draw_texture(tex, Vector2(cell.x * CELL_SIZE, cell.y * CELL_SIZE))
+	# 清理已离场成员的朝向缓存（防止字典无限增长）
+	for member_id in _member_facing.keys():
+		if not alive.has(member_id):
+			_member_facing.erase(member_id)
+			_member_last_cell.erase(member_id)
+
+
+## 由 cell 移动推断朝向（presentation 层，纯绘制用；横向位移为 0 时保持
+## 上次朝向 —— QUEUEING/USING 成员静止，姿态已表达状态，朝向仅跟随入场方向）。
+func _update_facing(member_id: int, cell: Vector2i) -> bool:
+	var facing_left := bool(_member_facing.get(member_id, false))
+	if _member_last_cell.has(member_id):
+		var prev: Vector2i = _member_last_cell[member_id]
+		if cell.x < prev.x:
+			facing_left = true
+		elif cell.x > prev.x:
+			facing_left = false
+	_member_last_cell[member_id] = cell
+	_member_facing[member_id] = facing_left
+	return facing_left
 
 
 # === --smoke 报告 ===
 
 func _smoke_report() -> void:
 	var members := 0
+	var state_counts: Dictionary = {}
 	for m in _member.members:
 		if m is Dictionary and m.has("member_id"):
 			members += 1
+		if m is Dictionary and m.has("state"):
+			var st := str(m["state"])
+			state_counts[st] = int(state_counts.get(st, 0)) + 1
 	print("=".repeat(56))
 	print("  PLAYABLE BUILD SMOKE: assembly verified")
 	print("  tick_count=%d balance=%d members=%d placed=%d palette_tiles=%d" % [
@@ -395,6 +439,8 @@ func _smoke_report() -> void:
 		_grid.get_placed_instances().size(),
 		_palette.get_tile_count(),
 	])
+	print("  member_states=%s" % [str(state_counts)])
+	print("  sprites_ready=%s" % [_member_sprites != null])
 	print("  hud_initialized=%s shop_initialized=%s arbitration=%s toolbar=%s cue=%s" % [
 		_hud != null, _shop != null, _arbitration != null, _toolbar != null, _cue != null,
 	])

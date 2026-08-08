@@ -54,3 +54,23 @@ const ZONE_COLORS := {
 	"cardio": SKY,
 	"flex": PEACH,
 }
+
+# === 会员角色工具色（Phase C v2 派生：2.5D 像素小人，art-bible-25d §2） ===
+#
+# 供 src/presentation/member_sprite.gd 使用。全部从 art-bible §4 主色域
+# 派生（暖调、低饱和），状态双通道的“颜色通道”直接引用 SKY / PEACH /
+# MEMBER_LEAVE_GRAY —— 绘制处不得另写色值。
+
+## 肤色：暖调浅肤色（Warm Cream 亮化暖化，不抢状态色）。
+const MEMBER_SKIN := Color("EACBA6")
+## 发色：暖深棕（Charcoal 暖化，非纯黑 —— art-bible §3 禁纯黑描边）。
+const MEMBER_HAIR := Color("5E4638")
+## 裤色：暖灰褐（Charcoal 暖化中调，腿/裤块面）。
+const MEMBER_PANTS := Color("6E5F53")
+## 鞋色：暖深灰（Charcoal 暖化，鞋底块面）。
+const MEMBER_SHOE := Color("4A413B")
+## 离场灰：低饱和暖灰（LEAVING 状态通道 —— 脱出饱和区，与
+## walking≈Sky / queue≈Peach 三态区分；非 art-bible 主色，状态专用）。
+const MEMBER_LEAVE_GRAY := Color("9A948C")
+## 脚底阴影：Soft Charcoal 低透明（art-bible-25d §2 “大块阴影”）。
+const MEMBER_SHADOW := Color(0.235, 0.227, 0.259, 0.28)

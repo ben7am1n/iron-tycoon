@@ -89,6 +89,7 @@ const TEST_FILES := [
 	"tests/unit/congestion_overlay/glyph_fill_test.gd",
 	"tests/unit/congestion_overlay/rejection_bucket_test.gd",
 	"tests/unit/congestion_overlay/drag_dim_priority_test.gd",
+	"tests/unit/member_sprite/sprite_bank_test.gd",
 	"tests/unit/build_shop_ui/palette_state_test.gd",
 	"tests/unit/build_shop_ui/purchase_gate_test.gd",
 	"tests/unit/build_shop_ui/drag_feedback_test.gd",
