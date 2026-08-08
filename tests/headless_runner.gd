@@ -95,6 +95,8 @@ const TEST_FILES := [
 	"tests/unit/equipment_art/equipment_art_test.gd",
 	"tests/unit/equipment_art/snap_pulse_test.gd",
 	"tests/unit/world_canvas/world_canvas_grid_visibility_test.gd",
+	"tests/unit/world_canvas/world_canvas_hover_test.gd",
+	"tests/unit/build_shop_ui/palette_thumbnail_test.gd",
 	"tests/unit/build_shop_ui/purchase_gate_test.gd",
 	"tests/unit/build_shop_ui/drag_feedback_test.gd",
 	"tests/integration/build_shop_ui/mode_arbitration_test.gd",

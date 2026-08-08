@@ -293,6 +293,14 @@ func _assemble_presentation() -> void:
 	_world_canvas.init(_grid, _catalog, _member, _member_sprites, _equip_art,
 		_orch.placement_system, _arbitration, _resolver(),
 		func() -> int: return _orch.get_tick_count(), CELL_SIZE)
+	# V3 §14 hover 数据源：根 viewport 鼠标 → 世界坐标 → 网格 cell → occupant。
+	# presentation 层状态，O(1) 轮询（WorldCanvas._poll_hover），无寻路工作。
+	_world_canvas.set_hover_provider(func() -> int:
+		var cell: Vector2i = _grid.world_to_grid(_screen_to_world(get_viewport().get_mouse_position()), CELL_SIZE)
+		if not _grid.is_in_bounds(cell):
+			return -1
+		return _grid.get_occupant_id(cell)
+	)
 	_world_root.add_child(_world_canvas)
 
 	# WORLD 层 presentation 节点（统一低分辨率 pixel space，随 WorldRoot 缩放）。
@@ -361,7 +369,9 @@ func _assemble_ui() -> void:
 	_shop.init(_catalog, _econ, placement)
 
 	_palette = BuildShopPaletteScript.new()
-	_palette.init(_catalog, _econ, _shop, placement, _arbitration)
+	# V3 §10：底部购买栏显示设备 pixel sprite 缩略图（非图标/非占位符）——
+	# 注入 EquipmentArt，tile 用设备精灵纹理做缩略图（NEAREST，场景物件同源）。
+	_palette.init(_catalog, _econ, _shop, placement, _arbitration, _equip_art)
 	# BUILD-01 修复：Main 是 Node2D root，BOTTOM_WIDE 锚点 preset 在零尺寸父
 	# 矩形下解析失败（rect 曾为 (0,-64)-(407,32)，屏幕外）。显式停靠到底部：
 	# y = 视口高 - 条带高，铺满全宽。tile 可点击性/拖拽判定走 get_global_rect()，

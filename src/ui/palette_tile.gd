@@ -52,7 +52,26 @@ var equipment_id: String = ""
 ## (re-grey on balance_changed).
 var state: State = State.UNAFFORDABLE
 
+## V3 §10 — equipment pixel-sprite thumbnail (OPTIONAL, default null).
+## When provided, the icon slot renders the scene-object sprite (NEAREST)
+## instead of the placeholder glyph. Same texture source as the world sprite
+## (EquipmentArt), so the purchase bar thumbnail matches the placed object.
+var _thumbnail: Texture2D = null
+
+## V3 §10 hover state — true while the pointer is over the tile. Drives:
+##   设备略提亮（modulate 亮化） + 黄色像素描边（_draw Butter outline） +
+##   轻微上移（缩略图 y 上移，视觉抬起；Control 不动 —— HBox 布局安全）。
+var _hovered: bool = false
+
+## V3 §10 hover 亮化：affordable 时 modulate 轻微提亮（暖色，接近 Butter）。
+const HOVER_BRIGHTEN := Color(1.08, 1.04, 0.92)
+## V3 §10 hover 黄色像素描边色（复用 Palette 单一来源的 EQUIP_HOVER_OUTLINE）。
+const HOVER_OUTLINE_COLOR := Color("f5d97b")  # Butter
+## V3 §10 hover 上移量（px）：缩略图 icon 向上移，视觉「轻轻抬起」。
+const HOVER_LIFT := 3
+
 var _icon_label: Label
+var _icon_texture: TextureRect
 var _name_label: Label
 var _price_label: Label
 var _lock_label: Label
@@ -61,10 +80,49 @@ var _lock_label: Label
 ## One-time construction: builds the icon/name/price/lock child hierarchy and
 ## renders the initial state. p_cost is the Butter price from
 ## EquipmentCatalog.get_definition(id).cost.
-func setup(p_equipment_id: String, p_display_name: String, p_cost: int) -> void:
+## [p_thumbnail] OPTIONAL (V3 §10): equipment pixel sprite; when null the
+## placeholder glyph path is kept (story-001/002 rigs, tests).
+func setup(p_equipment_id: String, p_display_name: String, p_cost: int, p_thumbnail: Texture2D = null) -> void:
 	equipment_id = p_equipment_id
+	_thumbnail = p_thumbnail
 	_build_children(p_display_name, p_cost)
 	set_state(State.UNAFFORDABLE)
+
+
+## V3 §10 hover enter/leave. Brightens + draws yellow outline + lifts icon.
+func _on_mouse_entered() -> void:
+	_hovered = true
+	_apply_hover_visual()
+	queue_redraw()
+
+
+func _on_mouse_exited() -> void:
+	_hovered = false
+	_apply_hover_visual()
+	queue_redraw()
+
+
+## V3 §10 hover 状态查询（headless 断言 state，不碰像素）。
+func is_hovered() -> bool:
+	return _hovered
+
+
+## V3 §10 hover 描边色（测试查询：黄色像素描边契约）。
+func get_hover_outline_color() -> Color:
+	return HOVER_OUTLINE_COLOR
+
+
+## V3 §10 thumbnail 查询（测试：非占位符像素精灵缩略图）。
+func get_thumbnail() -> Texture2D:
+	return _thumbnail
+
+
+## Applies the hover visual to the child controls (layout-safe: only the
+## icon's own y-offset moves; the tile rect stays put in the HBox).
+func _apply_hover_visual() -> void:
+	if _icon_texture != null:
+		_icon_texture.position.y = -HOVER_LIFT if _hovered else 0
+	queue_redraw()
 
 
 ## Re-renders the tile for [p_state] — the palette calls this on every
@@ -102,8 +160,12 @@ func get_price_text() -> String:
 	return _price_label.text
 
 
-## The rendered icon slot content (placeholder glyph until art lands).
+## The rendered icon slot content (placeholder glyph until art lands;
+## V3 §10 with a thumbnail injected the slot renders the sprite — glyph query
+## stays non-empty for backward compat / placeholder path only).
 func get_icon_text() -> String:
+	if _icon_label == null:
+		return ""
 	return _icon_label.text
 
 
@@ -116,20 +178,34 @@ func _build_children(p_display_name: String, p_cost: int) -> void:
 	add_theme_stylebox_override("panel", sb)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	focus_mode = Control.FOCUS_ALL
+	# V3 §10 hover：鼠标悬停 → 略提亮 + 黄色像素描边 + 轻微上移。
+	mouse_entered.connect(_on_mouse_entered)
+	mouse_exited.connect(_on_mouse_exited)
 
 	var stack := VBoxContainer.new()
 	stack.alignment = BoxContainer.ALIGNMENT_CENTER
 	add_child(stack)
 
-	# Icon slot — Phase D v2: 商店→Peach 描边填充式图标（art-bible §7
-	# outlined-fill；placeholder 字形保留，测试固定 length > 0）。
-	_icon_label = Label.new()
-	_icon_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_icon_label.text = _placeholder_glyph(p_display_name)
-	UiTheme.apply_outlined_fill(_icon_label, UiTheme.icon_shop(), UiTheme.icon_shop(), 1)
-	_icon_label.add_theme_font_override("font", UiTheme.bold_font())
-	_icon_label.add_theme_font_size_override("font_size", UiTheme.FONT_ICON)
-	stack.add_child(_icon_label)
+	# Icon slot — V3 §10: equipment pixel-sprite thumbnail (non-placeholder)
+	# when provided; else the Phase D v2 outlined-fill placeholder glyph
+	# (story-001/002 rigs, tests).
+	if _thumbnail != null:
+		_icon_texture = TextureRect.new()
+		_icon_texture.texture = _thumbnail
+		_icon_texture.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		_icon_texture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		_icon_texture.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		_icon_texture.custom_minimum_size = Vector2(48, 40)
+		_icon_texture.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		stack.add_child(_icon_texture)
+	else:
+		_icon_label = Label.new()
+		_icon_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_icon_label.text = _placeholder_glyph(p_display_name)
+		UiTheme.apply_outlined_fill(_icon_label, UiTheme.icon_shop(), UiTheme.icon_shop(), 1)
+		_icon_label.add_theme_font_override("font", UiTheme.bold_font())
+		_icon_label.add_theme_font_size_override("font_size", UiTheme.FONT_ICON)
+		stack.add_child(_icon_label)
 
 	_name_label = Label.new()
 	_name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -157,17 +233,36 @@ func _build_children(p_display_name: String, p_cost: int) -> void:
 
 
 ## Applies the state's colorblind-safe visual (see class header).
+## V3 §10 hover 提亮叠加在 affordability 之上：affordable + hover → 轻微亮化；
+## greyed/locked 状态保持灰化（色盲安全契约不变，hover 不破坏 achromatic）。
 func _apply_state_visual() -> void:
+	var base := Color.WHITE
 	match state:
 		State.AFFORDABLE:
-			modulate = Color.WHITE
+			base = Color.WHITE
 			_lock_label.visible = false
 		State.UNAFFORDABLE:
-			modulate = COLOR_GREYED_MODULATE
+			base = COLOR_GREYED_MODULATE
 			_lock_label.visible = false
 		State.LOCKED:
-			modulate = COLOR_GREYED_MODULATE
+			base = COLOR_GREYED_MODULATE
 			_lock_label.visible = true
+	if _hovered and state == State.AFFORDABLE:
+		modulate = HOVER_BRIGHTEN
+	else:
+		modulate = base
+
+
+## V3 §10 hover 黄色像素描边：仅 hover 时画 2px Butter outline 于 tile 面板
+## 内侧（Control 不动，HBox 布局安全）。draw 在 children 之下 —— outline 位于
+## tile 边缘，不遮挡缩略图/文字。
+func _draw() -> void:
+	if not _hovered:
+		return
+	var r := Rect2(Vector2(2, 2), size - Vector2(4, 4))
+	var c := HOVER_OUTLINE_COLOR
+	c.a = 0.9
+	draw_rect(r, c, false, 2.0)
 
 
 ## First rune of the display name — a stable per-item placeholder glyph.

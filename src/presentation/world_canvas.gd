@@ -30,6 +30,11 @@ const WorldScale := preload("res://src/presentation/world_scale.gd")
 ## 默认网格可见性（V3 §14）：正常经营模式完全隐藏 grid。
 const DEFAULT_GRID_VISIBLE := false
 
+## Hover 上移量（世界 px）：V3 §14「hover 黄色像素轮廓 + 轻微上移」。
+## 精灵本体向上偏移 2 世界 px（≈1.5 viewport px，nearest 放大后 ~4.5 屏 px），
+## contact shadow 留在原地 —— 视觉上设备「轻轻抬起」。
+const HOVER_LIFT_PX := 2.0
+
 # === 注入依赖（ADR-0001 两阶段 init 形态） ===
 var _grid = null              # GridStateReader：placed instances / conversions
 var _catalog = null           # EquipmentCatalog：equipment_id → def（zone/语义色）
@@ -41,6 +46,14 @@ var _arbitration = null       # ModeArbitration：is_ghost_suppressed（Core Rul
 var _resolver: Callable = Callable()      # instance_id -> equipment_id
 var _tick_provider: Callable = Callable() # -> int（会员动画 tick）
 var _cell_size: int = 32
+
+## V3 §14 hover：当前被鼠标悬停的设备 instance_id（-1 = 无）。
+## presentation 层状态（纯绘制用），由 _hover_provider 轮询维护 —— 与
+## _poll_placement_mode 同一模式（O(1) 状态读，headless 测试直接驱动 setter）。
+var _hovered_instance_id: int = -1
+## hover 数据源：返回当前悬停的 instance_id（-1 = 无）。由 main.gd 注入
+## （根 viewport 鼠标 → _screen_to_world → grid.world_to_grid → occupant）。
+var _hover_provider: Callable = Callable()
 
 ## 当前网格可见性（V3 §14）。默认 false；仅 placement mode 为 true。
 var _grid_visible: bool = DEFAULT_GRID_VISIBLE
@@ -73,6 +86,12 @@ func init(
 		push_error("WorldCanvas.init(): called twice")
 		return
 	_initialized = true
+	# V3 §2 低分辨率世界统一 pixel space：WorldRoot scale 0.75 下设备纹理
+	# （Phase 3 16×16 art，ART_SCALE=2 → 每 art px = 1.5 viewport px，非整数）
+	# 必须 NEAREST 采样 —— 否则线性过滤在 art px 边界混色（旧 8×8 art 恰好
+	# 3 viewport px/art px 整数对齐，掩盖了此问题）。证据脚本 stair-step
+	# 断言依赖此硬边（无 bilinear blend）。
+	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	_grid = grid
 	_catalog = catalog
 	_member = member
@@ -107,6 +126,37 @@ func _on_world_changed(_a = null, _b = null, _c = null, _d = null) -> void:
 ## 预览/寻路工作 —— 不违反 TR-PS-012）。headless 测试直接驱动本方法。
 func _process(_delta: float) -> void:
 	_poll_placement_mode()
+	_poll_hover()
+
+
+## 轮询 hover 状态（V3 §14）：_hover_provider 返回当前悬停 instance_id，
+## 边沿变化 → queue_redraw。幂等 —— 状态未变时零开销。O(1) 状态读。
+func _poll_hover() -> void:
+	if not _initialized or not _hover_provider.is_valid():
+		return
+	var id := int(_hover_provider.call())
+	if id == _hovered_instance_id:
+		return
+	_hovered_instance_id = id
+	queue_redraw()
+
+
+## 注入 hover 数据源（composition root 调用；headless 测试可注入 Fake）。
+func set_hover_provider(provider: Callable) -> void:
+	_hover_provider = provider
+
+
+## 查询：当前悬停的设备 instance_id（-1 = 无）。测试/调试入口。
+func get_hovered_instance_id() -> int:
+	return _hovered_instance_id
+
+
+## 显式设置 hover（测试/调试入口；正常流程由 _poll_hover 驱动）。
+func set_hovered_instance_id(id: int) -> void:
+	if _hovered_instance_id == id:
+		return
+	_hovered_instance_id = id
+	queue_redraw()
 
 
 ## Placement-mode 轮询体：is_dragging() 边沿 → 切换网格可见性并重绘。幂等 ——
@@ -176,10 +226,13 @@ func _draw_grid_lines() -> void:
 			Palette.GRID_LINE, 1.0 * WorldScale.STROKE_COMPENSATION)
 
 
-## 设备渲染（Phase B v2）—— 前景像素主体（art-bible-25d §2）。
-##   1. 脚下大暗面（EQUIP_SHADOW 半透明深色块，替代旧纯灰 footprint；25d §2 阴影）
+## 设备渲染（V3 Phase 3）—— 前景小型场景物件（§5，非图标）。
+##   1. 脚下柔和 contact shadow（§6：设备下方明显但柔和的 contact shadow）：
+##      双层半透明冷蓝灰块（宽软外层 + 贴身内层），替代旧单层大暗面
 ##   2. 像素精灵纹理（EquipmentArt 程序化 ImageTexture，32×32/cell，Nearest 全局）
-##   3. access cell 用 Butter 高亮（art-bible §7 拖放反馈；§4 Butter 锚点 ~10%）
+##   3. Hover（§14）：黄色像素轮廓（EQUIP_HOVER_OUTLINE）+ 精灵轻微上移
+##      （HOVER_LIFT_PX，contact shadow 留原地 —— 设备「抬起」感）
+##   4. access cell 用 Butter 高亮（art-bible §7 拖放反馈；§4 Butter 锚点 ~10%）
 func _draw_equipment() -> void:
 	if _grid == null or _equip_art == null:
 		return
@@ -187,9 +240,18 @@ func _draw_equipment() -> void:
 		var fp_rect := _footprint_rect(inst.footprint_cells)
 		if fp_rect.size.x <= 0 or fp_rect.size.y <= 0:
 			continue
-		var shadow_rect := fp_rect.grow(3)
-		shadow_rect.position.y += 2
-		draw_rect(shadow_rect, Palette.EQUIP_SHADOW, true)
+		var is_hovered: bool = inst.instance_id == _hovered_instance_id
+		# V3 §6 contact shadow：宽软外层（柔和，扩散感）+ 贴身内层（明显接触）。
+		var soft_rect := fp_rect.grow(5)
+		soft_rect.position.y += 3
+		var soft := Palette.EQUIP_SHADOW
+		soft.a = 0.22
+		draw_rect(soft_rect, soft, true)
+		var core_rect := fp_rect.grow(2)
+		core_rect.position.y += 2
+		var core := Palette.EQUIP_SHADOW
+		core.a = 0.40
+		draw_rect(core_rect, core, true)
 
 		var eq_id := ""
 		if _resolver.is_valid():
@@ -197,10 +259,23 @@ func _draw_equipment() -> void:
 		var zone: String = _zone_of(eq_id)
 		var tex: ImageTexture = _equip_art.texture_for(eq_id, zone, inst.rotation)
 		if tex != null:
-			draw_texture_rect(tex, Rect2(fp_rect), false)
+			var draw_rect := Rect2(fp_rect)
+			if is_hovered:
+				# V3 §14 轻微上移：精灵本体向上抬 HOVER_LIFT_PX，contact shadow
+				# 留在原地 —— 设备「抬起」。
+				draw_rect.position.y -= HOVER_LIFT_PX
+			draw_texture_rect(tex, draw_rect, false)
 		else:
 			# 兜底（未知 equipment_id）：画 Soft Charcoal 剪影块，绝不崩溃。
 			draw_rect(fp_rect, Palette.CHARCOAL, false, 2.0 * WorldScale.STROKE_COMPENSATION)
+
+		if is_hovered:
+			# V3 §14 hover 黄色像素轮廓（BUTTER）：围绕 footprint 的像素描边。
+			# 描边宽度乘 STROKE_COMPENSATION：WorldRoot scale 0.75 下 1px 会消失
+			# （4.7.1 pitfall，见 world_scale.gd）。
+			var hover := Palette.EQUIP_HOVER_OUTLINE
+			hover.a = 0.95
+			draw_rect(fp_rect.grow(2), hover, false, 2.0 * WorldScale.STROKE_COMPENSATION)
 
 		for c in inst.access_cells:
 			_draw_access_cell(c)
