@@ -197,6 +197,12 @@ var _has_previewed: bool = false
 ## a mouse move to the SAME cell a no-op (no can_place call, no signal).
 var _last_preview_cell: Vector2i = Vector2i.ZERO
 
+## The can_place verdict of the most recent live preview (valid true/false).
+## Presentation observation surface for the ghost tint — mirrors the payload
+## of preview_validity_changed without requiring a signal subscription at
+## draw time (TR-PS-012: the ghost must NOT re-run can_place per frame).
+var _last_preview_valid: bool = false
+
 
 # === Relocate state (PL-005) ===
 
@@ -249,6 +255,61 @@ func is_dragging() -> bool:
 	if not _assert_initialized():
 		return false
 	return _state == DragState.DRAGGING
+
+
+## Returns the equipment_id of the in-flight drag (new placement AND
+## relocate), or "" when IDLE. Presentation observation surface — the ghost
+## renderer reads this to draw the dragged piece's sprite. Pure read, same
+## standing as is_dragging() (TR-PS-010); safe default "" before init().
+func get_drag_equipment_id() -> String:
+	if not _assert_initialized():
+		return ""
+	if _state != DragState.DRAGGING or _drag_def == null:
+		return ""
+	return _drag_def.id
+
+
+## Returns the current drag anchor (last cell previewed), or Vector2i.ZERO
+## when IDLE. Presentation observation surface — the ghost renderer positions
+## itself at this cell. Pure read; safe default Vector2i.ZERO before init().
+func get_drag_anchor() -> Vector2i:
+	if not _assert_initialized():
+		return Vector2i.ZERO
+	if _state != DragState.DRAGGING:
+		return Vector2i.ZERO
+	return _anchor
+
+
+## Returns the current drag rotation (degree-valued GridSystem.Rotation),
+## or R0 when IDLE. Presentation observation surface. Pure read; safe default.
+func get_drag_rotation() -> int:
+	if not _assert_initialized():
+		return GridSystem.Rotation.R0
+	if _state != DragState.DRAGGING:
+		return GridSystem.Rotation.R0
+	return _rotation
+
+
+## True iff the current drag has already run at least one live preview
+## (mouse has entered a cell — _has_previewed). The ghost renderer uses this
+## to avoid drawing a phantom ghost at ZERO before the first mouse move.
+func get_drag_has_previewed() -> bool:
+	if not _assert_initialized():
+		return false
+	return _has_previewed
+
+
+## Returns the last live-preview can_place verdict for the in-flight drag
+## (true = last previewed cell was legal), or false when IDLE / never
+## previewed. Presentation observation surface — the ghost's legal/illegal
+## tint reads this instead of re-running can_place per frame (TR-PS-012:
+## no per-frame can_place polling). Safe default false before init().
+func get_drag_preview_valid() -> bool:
+	if not _assert_initialized():
+		return false
+	if _state != DragState.DRAGGING or not _has_previewed:
+		return false
+	return _last_preview_valid
 
 
 ## Drag start (Core Rule 2, AC1/AC15/AC16).
@@ -367,6 +428,7 @@ func on_mouse_moved(cell: Vector2i) -> void:
 	var result: PlacementCheckResult = _grid.can_place(
 		_drag_def.footprint_cells, _drag_def.access_cells, _anchor, _rotation
 	)
+	_last_preview_valid = result.valid
 	preview_validity_changed.emit(result.valid)
 
 
@@ -582,6 +644,7 @@ func _clear_drag() -> void:
 	_preview = TransformedFootprint.new()
 	_has_previewed = false
 	_last_preview_cell = Vector2i.ZERO
+	_last_preview_valid = false
 	_relocate_id = -1
 	_relocate_anchor0 = Vector2i.ZERO
 	_relocate_rotation0 = GridSystem.Rotation.R0

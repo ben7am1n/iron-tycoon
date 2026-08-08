@@ -74,3 +74,20 @@ const MEMBER_SHOE := Color("4A413B")
 const MEMBER_LEAVE_GRAY := Color("9A948C")
 ## 脚底阴影：Soft Charcoal 低透明（art-bible-25d §2 “大块阴影”）。
 const MEMBER_SHADOW := Color(0.235, 0.227, 0.259, 0.28)
+
+# === Phase B v2 设备像素美术（art-bible-25d-style §2 材质概括 + art-bible §7 拖放反馈） ===
+# 设备 = 2.5D 场景的「前景像素主体」：粗颗粒 2D 像素 sprite（32×32 整数倍，Nearest）。
+# 色值仍以本文件为单一来源；设备精灵程序化绘制（src/presentation/equipment_art.gd）只引用这里。
+
+## 金属暗面（器械金属框架/滚轮/杠铃片主体色）：冷灰，非纯黑（25d §3 禁纯黑粗边）。
+const METAL_DARK := Color("5B6470")
+## 金属冷色高光（25d §2 材质概括：金属 = 少量冷色高光）：Sky 系提亮，非纯白大面积。
+const METAL_HIGHLIGHT := Color("B7D4EC")
+## 设备脚下大暗面（25d §2 阴影：大块明暗色块，不追求物理写实）：半透明深色块，替代旧纯灰。
+const EQUIP_SHADOW := Color(0.09, 0.08, 0.07, 0.35)
+## 放置预览合法：柔和高亮（art-bible §7）—— 半透明白/Sage tint，绝不刺眼。
+const PLACEMENT_OK_TINT := Color(0.96, 0.98, 0.94, 0.30)
+## 放置预览非法：Dusty Rose #E0A0A0 柔和警示（art-bible §7，绝不刺眼红）——复用 ROSE 但显式声明 alpha。
+const PLACEMENT_BAD_TINT := Color("E0A0A0", 0.35)
+## 吸附「咔哒」视觉反馈（art-bible §7 动效手感）：Butter 脉冲环。
+const SNAP_PULSE_COLOR := BUTTER
