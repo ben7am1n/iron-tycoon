@@ -70,6 +70,12 @@ var _tooltip: RejectionTooltipScript = null
 var _grid: GridSystemScript = null
 var _cell_size: int = 32
 
+## V3 §2 低分辨率管线：世界坐标 → 屏幕坐标的映射 Callable。本控制器挂在
+## 高分辨率 UICanvas 上，tooltip 绘制位置需从世界坐标映射到屏幕坐标。
+## 未注入（Callable 无效）时退化为恒等映射 —— 单位测试直接喂世界坐标时
+## 行为不变。
+var _world_to_screen: Callable = Callable()
+
 ## White-box observable for the drag-dim contract: the last drag state this
 ## controller observed from PlacementSystem.is_dragging(). Tests drive
 ## _poll_drag_state() and assert the transitions.
@@ -108,6 +114,12 @@ func init(
 	_tooltip = tooltip
 	_grid = grid
 	_cell_size = cell_size
+
+
+## V3 §2 注入 world→screen 映射（composition root 调用）。未设置时保持
+## 恒等映射（_world_to_screen 无效 Callable → 世界坐标即绘制坐标）。
+func set_world_to_screen(cb: Callable) -> void:
+	_world_to_screen = cb
 
 
 ## Cross-system wiring phase (Phase 2). Subscribes to S4
@@ -221,13 +233,16 @@ func set_heatmap_enabled(enabled: bool) -> bool:
 	return _heatmap.is_heatmap_on()
 
 
-## The world position the tooltip is drawn at — anchor cell center + fixed
-## offset (cursor-adjacent, GDD Core Rule 6). Exposed for tests; _draw
-## uses it.
+## The SCREEN position the tooltip is drawn at — anchor cell center + fixed
+## offset, mapped world→screen (V3 §2 低分辨率管线；未注入映射时为世界坐标，
+## 单位测试直接喂世界坐标时行为不变)。Exposed for tests; _draw uses it.
 func tooltip_draw_position() -> Vector2:
 	if _grid == null:
 		return Vector2.ZERO
-	return _grid.grid_to_world_center(_tooltip.get_anchor(), _cell_size) + TOOLTIP_OFFSET
+	var world_pos: Vector2 = _grid.grid_to_world_center(_tooltip.get_anchor(), _cell_size) + TOOLTIP_OFFSET
+	if not _world_to_screen.is_valid():
+		return world_pos
+	return _world_to_screen.call(world_pos)
 
 
 ## Draws the rejection tooltip (CanvasItem.draw_string — 4.7.1 signature:

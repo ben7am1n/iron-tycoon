@@ -63,6 +63,12 @@ var _grid: GridSystem
 ## contract; tests may inject any value.
 var _cell_size: int = 32
 
+## V3 §2 低分辨率管线：屏幕坐标 → 世界坐标的映射 Callable。世界已进
+## SubViewport + 缩放，输入事件（根 viewport 屏幕坐标）必须先经此映射再
+## world_to_grid()。未注入（Callable 无效）时退化为恒等映射 —— 单位测试
+## 直接喂世界坐标时行为不变。
+var _screen_to_world: Callable = Callable()
+
 ## Last hovered cell forwarded to the system — TR-PS-012 dedupe state.
 ## Mouse motion within the SAME cell is a silent no-op (no world_to_grid
 ## result change, no system call). Vector2i.ZERO is the pre-first-move
@@ -80,6 +86,12 @@ func init(system: PlacementSystem, grid: GridSystem, cell_size: int) -> void:
 	_system = system
 	_grid = grid
 	_cell_size = cell_size
+
+
+## V3 §2 注入 screen→world 映射（composition root 调用）。未设置时保持
+## 恒等映射（_screen_to_world 无效 Callable → 输入即世界坐标）。
+func set_screen_to_world(cb: Callable) -> void:
+	_screen_to_world = cb
 
 
 # === 6 forwarded calls (ADR-0005 §5 contract) ===
@@ -191,7 +203,8 @@ func _notification(what: int) -> void:
 func _forward_hover(screen_pos: Vector2) -> void:
 	if _system == null or _grid == null:
 		return
-	var cell: Vector2i = _grid.world_to_grid(screen_pos, _cell_size)
+	var world_pos: Vector2 = screen_pos if not _screen_to_world.is_valid() else _screen_to_world.call(screen_pos)
+	var cell: Vector2i = _grid.world_to_grid(world_pos, _cell_size)
 	if _has_hovered and cell == _last_hovered_cell:
 		return  # same cell — no re-preview, no system call (TR-PS-012)
 	_has_hovered = true

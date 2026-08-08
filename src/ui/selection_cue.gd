@@ -84,7 +84,10 @@ const BREATHE_ALPHA_SETTLE := 0.9
 
 var _selection: SelectionSystemScript
 var _grid: GridSystemScript
-var _cell_size: int = 32
+## 屏幕空间 cell 尺寸（V3 §2：世界已进 SubViewport + nearest 放大，UI 层
+## 锚定用的 cell_size 是「世界 cell 的屏幕像素尺寸」，float 以保留精确换算
+## ≈72.11px；单位测试/旧调用注入 32 时行为不变）。
+var _cell_size: float = 32.0
 var _grid_origin: Vector2 = Vector2.ZERO
 var _reduced_motion: bool = false
 var _breathe_duration: float = DEFAULT_BREATHE_DURATION
@@ -113,7 +116,7 @@ var _initialized: bool = false
 func init(
 	selection: SelectionSystemScript,
 	grid: GridSystemScript,
-	cell_size: int,
+	cell_size: float,
 	config: Dictionary = {},
 	grid_origin: Vector2 = Vector2.ZERO
 ) -> void:

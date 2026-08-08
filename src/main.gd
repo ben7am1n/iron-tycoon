@@ -10,11 +10,15 @@
 #      selection / 两个输入 bridge（ADR-0001 §4/§5）
 #   3. 构造 4 个 tick 系统（MemberSim/Congestion/Satisfaction/Economy）并注入
 #      orchestrator 字段 + 按 FIXED_TICK_ORDER 填入 _tick_systems（TR-TS-003）
-#   4. 构造 presentation 层（HeatmapLayer / AccessBlockedLayer /
+#   4. 构造 presentation 层（WorldCanvas / HeatmapLayer / AccessBlockedLayer /
 #      CongestionGlyphLayer）与 UI 层（Hud / BuildShopPalette / Shop /
 #      ModeArbitration / SelectionToolbar / SelectionCue / 拖拽反馈控制器）
-#   5. 初始布局：预置 3 台设备让 playtest 开箱即有内容可看
-#   6. --smoke 模式：headless 下跑 N 帧验证组装无崩溃，打印状态后退出
+#   5. 渲染架构（V3 §2 低分辨率世界管线）：世界画在 SubViewport 426×240
+#      （WorldRoot scale 0.75，世界像素空间 416×320），TextureRect
+#      nearest 放大到 1280×720；UI 挂独立 CanvasLayer（UICanvas，高分辨率），
+#      世界与 UI 分辨率分离（V3 §2 禁止：UI 可更高分辨率，游戏世界不能）。
+#   6. 初始布局：预置 3 台设备让 playtest 开箱即有内容可看
+#   7. --smoke 模式：headless 下跑 N 帧验证组装无崩溃，打印状态后退出
 #
 # headless 注意：class_name 在 headless 项目加载下不保证全局注册
 # （4.7.1 已验证，项目内脚本统一使用 preload const alias —— 本文件遵循
@@ -48,6 +52,8 @@ const SelectionCueScript := preload("res://src/ui/selection_cue.gd")
 const MemberSpriteScript := preload("res://src/presentation/member_sprite.gd")
 const EquipmentArtScript := preload("res://src/presentation/equipment_art.gd")
 const SnapPulseScript := preload("res://src/presentation/snap_pulse.gd")
+const WorldCanvasScript := preload("res://src/presentation/world_canvas.gd")
+const WorldScale := preload("res://src/presentation/world_scale.gd")
 const Palette := preload("res://src/palette.gd")
 
 # === 场景级常量（组装参数，非玩法数值） ===
@@ -68,6 +74,26 @@ const UI_VIEWPORT_H := 720
 ## 底部建造商店条带高度 = PaletteTile 最小尺寸 96×96（整块 tile 可见，
 ## 不会被 64px 理论条带裁切）。
 const PALETTE_STRIP_H := 96
+
+# === V3 §2 低分辨率世界管线（SubViewport → nearest 放大） ===
+## 世界逻辑画布（viewport 像素空间）：426×240（V3 §2 建议值之一）。
+## 426→1280 水平放大 ≈3.0047，240→720 垂直放大 = 3.0 —— 近乎方形像素，
+## nearest 采样下 stair-step 真实（非高清抗锯齿）。
+const WORLD_VIEWPORT_W := 426
+const WORLD_VIEWPORT_H := 240
+## 世界像素空间（416×320，CELL_SIZE=32）→ viewport 空间的统一缩放。
+## 32px cell → 24 viewport px（整数倍），世界在 426×240 中满高居中。
+## 单一来源：src/presentation/world_scale.gd（含描边宽度补偿常量）。
+const WORLD_SCALE := WorldScale.WORLD_SCALE
+## 世界原点在 viewport 中的偏移：(426 - 416*0.75)/2 = 57（水平居中，垂直满高）。
+const WORLD_VIEWPORT_OFFSET := Vector2(57.0, 0.0)
+## viewport → 屏幕（1280×720）的非等比放大系数。
+const SCREEN_PER_VIEWPORT_X := 1280.0 / 426.0
+const SCREEN_PER_VIEWPORT_Y := 720.0 / 240.0
+## 世界→屏幕的 UI 锚定参数（供 SelectionCue/SelectionToolbar 注入）：
+## 世界 (0,0) 的屏幕坐标 ≈ (171.27, 0)；一个 world cell 的屏幕尺寸 ≈ 72.11px。
+const GRID_SCREEN_ORIGIN := Vector2(WORLD_VIEWPORT_OFFSET.x * SCREEN_PER_VIEWPORT_X, 0.0)
+const GRID_SCREEN_CELL := float(CELL_SIZE) * WORLD_SCALE * SCREEN_PER_VIEWPORT_X
 
 # === 系统引用（供 UI/presentation 注入，orchestrator 持有所有权） ===
 var _orch
@@ -97,14 +123,17 @@ var _member_sprites
 var _equip_art
 var _snap_pulse
 
+# === V3 §2 低分辨率世界管线引用 ===
+var _world_viewport   # SubViewport：低分辨率世界画布（426×240）
+var _world_root       # Node2D：世界像素空间 → viewport 空间（scale 0.75）
+var _world_canvas     # WorldCanvas：世界绘制（地板/网格/会员/设备/幽灵）
+var _world_display    # TextureRect：nearest 放大到窗口
+var _ui_canvas        # CanvasLayer：高分辨率 UI 层（1280×720）
+
 # === 组装状态 ===
 var _instance_defs: Dictionary = {}  # instance_id -> equipment_id（resolver 数据源）
 var _smoke := false
 var _smoke_frame := 0
-## Phase C v2：会员朝向（presentation 层状态，非玩法逻辑 —— 由 cell 移动
-## 推断 facing，纯绘制用）。member_id -> bool（true = 朝左）。
-var _member_facing: Dictionary = {}
-var _member_last_cell: Dictionary = {}
 
 ## 吸附「咔哒」去重：记录最近一次脉冲的 anchor cell，防止同一格反复触发
 ## preview_validity_changed(true) 时脉冲重放（视觉噪声，art-bible §9 无闪烁）。
@@ -229,50 +258,107 @@ func _zone_reader() -> Callable:
 		return float(entry.get("total", 0.0))
 
 
-# === 第 2 层：presentation（heatmap / access-blocked / glyph overlay） ===
+# === 第 2 层：presentation（V3 §2 低分辨率世界 + heatmap / access-blocked / glyph） ===
 
 func _assemble_presentation() -> void:
 	_member_sprites = MemberSpriteScript.new()
+	_equip_art = EquipmentArtScript.new()
 
+	# ModeArbitration（build/select 仲裁，GDD Core Rule 4）在 WorldCanvas 之前
+	# 构造 —— WorldCanvas 的幽灵渲染需要 is_ghost_suppressed()（见 init 注入）。
+	_arbitration = ModeArbitrationScript.new()
+	_arbitration.init(_orch.selection_system)
+
+	# --- V3 §2：低分辨率世界管线（SubViewport → nearest 放大） ---
+	# WorldRoot 承载整个 WORLD 层（世界像素空间 416×320，CELL_SIZE=32），
+	# scale 0.75 落到 426×240 viewport（32px cell → 24 viewport px，整数倍）。
+	# 世界所有绘制（含 presentation 节点）都在 WORLD 层内 —— 统一 pixel space。
+	_world_viewport = SubViewport.new()
+	_world_viewport.name = "WorldViewport"
+	_world_viewport.size = Vector2i(WORLD_VIEWPORT_W, WORLD_VIEWPORT_H)
+	_world_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	_world_viewport.handle_input_locally = false
+	add_child(_world_viewport)
+
+	_world_root = Node2D.new()
+	_world_root.name = "WorldRoot"
+	_world_root.position = WORLD_VIEWPORT_OFFSET
+	_world_root.scale = Vector2(WORLD_SCALE, WORLD_SCALE)
+	_world_viewport.add_child(_world_root)
+
+	# WorldCanvas：世界绘制节点（旧 main.gd 高清 draw_rect 世界路径的迁移目标；
+	# V3 §2 禁止在高清画布直接绘制世界）。会员动画 tick 经 tick_provider 注入。
+	_world_canvas = WorldCanvasScript.new()
+	_world_canvas.name = "WorldCanvas"
+	_world_canvas.init(_grid, _catalog, _member, _member_sprites, _equip_art,
+		_orch.placement_system, _arbitration, _resolver(),
+		func() -> int: return _orch.get_tick_count(), CELL_SIZE)
+	_world_root.add_child(_world_canvas)
+
+	# WORLD 层 presentation 节点（统一低分辨率 pixel space，随 WorldRoot 缩放）。
 	_heatmap = HeatmapLayerScript.new()
 	_heatmap.init(_cong, _grid, CELL_SIZE)
-	add_child(_heatmap)
+	_world_root.add_child(_heatmap)
 
 	_access_blocked = AccessBlockedLayerScript.new()
 	_access_blocked.configure(_cong, _grid, CELL_SIZE)
-	add_child(_access_blocked)
+	_world_root.add_child(_access_blocked)
 
 	_glyph_layer = CongestionGlyphLayerScript.new()
 	_glyph_layer.init(_heatmap, _cong, _grid, CELL_SIZE)
-	add_child(_glyph_layer)
+	_world_root.add_child(_glyph_layer)
 
 	_tooltip = RejectionTooltipScript.new()
 	_tooltip.init()
 
+	# 拖拽反馈控制器（UI 层 —— 在 _assemble_ui 中挂到 UICanvas；世界→屏幕
+	# 映射随后注入，见 _assemble_ui）。
 	_overlay_ctrl = CongestionOverlayControllerScript.new()
 	_overlay_ctrl.init(_orch.placement_system, _heatmap, _access_blocked,
 		_tooltip, _grid, CELL_SIZE)
 	_overlay_ctrl._post_init()
-	add_child(_overlay_ctrl)
 
-	# Phase B v2：设备像素精灵工厂（前景主体）+ 吸附「咔哒」脉冲节点。
-	_equip_art = EquipmentArtScript.new()
+	# Phase B v2：吸附「咔哒」脉冲节点（世界层 —— 脉冲坐标是世界空间）。
 	_snap_pulse = SnapPulseScript.new()
-	add_child(_snap_pulse)
+	_world_root.add_child(_snap_pulse)
+
+	# 世界显示：TextureRect 以 NEAREST 滤镜把 426×240 视口贴图放大到 1280×720。
+	# 像素 stair-step 由此产生（真实低分辨率像素，非高清抗锯齿 —— V3 §2）。
+	_world_display = TextureRect.new()
+	_world_display.name = "WorldDisplay"
+	_world_display.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_world_display.stretch_mode = TextureRect.STRETCH_SCALE
+	_world_display.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_world_display.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_world_display.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	_world_display.position = Vector2.ZERO
+	_world_display.size = Vector2(UI_VIEWPORT_W, UI_VIEWPORT_H)
+	# 显式类型：_world_viewport 是未类型化引用，get_texture() 返回 Variant，
+	# `:=` 推断失败（4.7.1 项目 pitfall，显式 : Texture2D）。
+	var viewport_tex: Texture2D = _world_viewport.get_texture()
+	if viewport_tex != null:
+		_world_display.texture = viewport_tex
+	add_child(_world_display)
 
 
-# === 第 3 层：UI（HUD / 建造商店 / 选择工具） ===
+# === 第 3 层：UI（HUD / 建造商店 / 选择工具）—— 高分辨率 CanvasLayer ===
 
 func _assemble_ui() -> void:
 	var placement = _orch.placement_system
 	var selection = _orch.selection_system
 	var sel_bridge = _orch.get_node("SelectionInputBridge")
 
+	# V3 §2：UI 与 WORLD 分辨率分离 —— 全部 UI 挂独立 CanvasLayer（1280×720
+	# 高分辨率），不受 SubViewport 低分辨率影响（禁止：UI 更高分辨率可以，
+	# 游戏世界不能）。CanvasLayer 的 transform 为单位阵，子 Control 锚点按
+	# 根 viewport 解析 —— 与 BUILD-01/02 的显式停靠兼容。
+	_ui_canvas = CanvasLayer.new()
+	_ui_canvas.name = "UICanvas"
+	_ui_canvas.layer = 10
+	add_child(_ui_canvas)
+
 	_shop = ShopScript.new()
 	_shop.init(_catalog, _econ, placement)
-
-	_arbitration = ModeArbitrationScript.new()
-	_arbitration.init(selection)
 
 	_palette = BuildShopPaletteScript.new()
 	_palette.init(_catalog, _econ, _shop, placement, _arbitration)
@@ -283,7 +369,7 @@ func _assemble_ui() -> void:
 	_palette.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	_palette.set_position(Vector2(0, UI_VIEWPORT_H - PALETTE_STRIP_H))
 	_palette.set_size(Vector2(UI_VIEWPORT_W, PALETTE_STRIP_H))
-	add_child(_palette)
+	_ui_canvas.add_child(_palette)
 
 	_hud = HudScript.new()
 	_hud.init(_econ, _sat, _orch.time_system, _orch)
@@ -293,31 +379,45 @@ func _assemble_ui() -> void:
 	_hud.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	_hud.set_position(Vector2.ZERO)
 	_hud.set_size(Vector2(UI_VIEWPORT_W, UI_VIEWPORT_H))
-	add_child(_hud)
+	_ui_canvas.add_child(_hud)
 
+	# 世界锚定 UI 注入屏幕空间网格参数（V3 §2 世界→屏幕换算）：cell_size 改为
+	# 屏幕空间 float（≈72.11px），grid_origin 为世界 (0,0) 的屏幕坐标 ——
+	# toolbar/cue 的 footprint 矩形由此精确对齐低分辨率世界的像素格。
 	_toolbar = SelectionToolbarScript.new()
-	_toolbar.init(selection, sel_bridge, placement, _grid, CELL_SIZE)
-	add_child(_toolbar)
+	_toolbar.init(selection, sel_bridge, placement, _grid, GRID_SCREEN_CELL,
+		{}, GRID_SCREEN_ORIGIN)
+	_ui_canvas.add_child(_toolbar)
 
 	_cue = SelectionCueScript.new()
-	_cue.init(selection, _grid, CELL_SIZE)
-	add_child(_cue)
+	_cue.init(selection, _grid, GRID_SCREEN_CELL, {}, GRID_SCREEN_ORIGIN)
+	_ui_canvas.add_child(_cue)
 
-	# BUILD-03/04 修复：main._draw() 是设备/会员的唯一渲染路径，但此前只在
-	# _initial_layout() 调用过一次 queue_redraw()，放置/出售/会员移动后画面
-	# 永不刷新。信号驱动重绘：
-	#   - grid_changed（place=commit / remove=sell 都会 emit，见 grid_system）
-	#     → 设备上屏/下屏
+	# 拖拽反馈控制器：tooltip 绘制在世界锚定位置 → 注入 world→screen 映射。
+	_overlay_ctrl.set_world_to_screen(_world_to_screen)
+	_ui_canvas.add_child(_overlay_ctrl)
+
+	# BUILD-03/04 修复：世界绘制已迁至 WorldCanvas（V3 §2）。重绘信号：
+	#   - grid_changed（place=commit / remove=sell）→ WorldCanvas 内部已接
 	#   - tick_completed（S2，10Hz）→ 会员位置/状态随 tick 移动
+	#   - preview_validity_changed → 幽灵合法/非法 tint 跟随拖拽
 	# queue_redraw() 是幂等合并的（一帧内多次调用只重绘一次），headless 下
 	# 不渲染、调用无害。
-	_grid.grid_changed.connect(func(_fp: Array, _ac: Array) -> void: queue_redraw())
-	_orch.tick_completed.connect(func(_tick: int) -> void: queue_redraw())
+	_orch.tick_completed.connect(
+		func(_tick: int) -> void: _world_canvas.queue_redraw())
+	placement.preview_validity_changed.connect(
+		func(_valid: bool) -> void: _world_canvas.queue_redraw())
 
 	# Phase B v2：吸附「咔哒」触发 + 幽灵/脉冲重绘。
 	# preview_validity_changed(valid=true) 且 anchor 变化 → 合法格吸附脉冲。
 	# 同 anchor 重复触发不重放（_last_snap_cell 去重，art-bible §9 无闪烁）。
 	placement.preview_validity_changed.connect(_on_preview_validity_changed)
+
+	# 输入桥接（V3 §2）：世界已进 SubViewport + 缩放，屏幕坐标 ≠ 世界坐标。
+	# 注入 screen→world 映射（世界坐标再经 grid.world_to_grid(cell_size=32)
+	# 换算成 cell —— 数据层 GridSystem 保持不变）。
+	_orch.get_node("PlacementInputBridge").set_screen_to_world(_screen_to_world)
+	sel_bridge.set_screen_to_world(_screen_to_world)
 
 
 # === 初始布局：预置设备（clumped，让 congestion 开场即有表现） ===
@@ -330,14 +430,13 @@ func _initial_layout() -> void:
 	_drag_drop(placement, "treadmill", Vector2i(6, 3))
 	_drag_drop(placement, "bench_press", Vector2i(1, 7))
 	_drag_drop(placement, "yoga_mat", Vector2i(9, 2))
-	queue_redraw()
+	# 世界绘制已迁至 WorldCanvas；grid_changed 信号驱动其重绘（见 _assemble_ui）。
 
 
 ## preview_validity_changed handler（S 扩展，Phase B v2）：
 ##   - valid=true 且 anchor 是新的 → 吸附「咔哒」脉冲（视觉，无音频）
-##   - 任意 validity 变化 → queue_redraw（幽灵合法/非法 tint 跟随拖拽）
+## 幽灵合法/非法 tint 跟随拖拽的重绘由 WorldCanvas 自己的连接负责。
 func _on_preview_validity_changed(valid: bool) -> void:
-	queue_redraw()
 	if not valid:
 		return
 	var placement = _orch.placement_system
@@ -364,227 +463,36 @@ func _on_placed(instance_id: int, equipment_id: String, _footprint_cells: Array)
 	_instance_defs[instance_id] = equipment_id
 
 
-# === 渲染（窗口模式；headless 下引擎不调用，防御性 null 检查） ===
+# === 世界 ↔ 屏幕映射（V3 §2 低分辨率管线） ===
+#
+# 世界像素空间（CELL_SIZE=32，416×320）→ WorldRoot scale 0.75 → SubViewport
+# （426×240）→ TextureRect nearest 放大（1280×720）。
+#   屏幕坐标 = (世界坐标 × WORLD_SCALE + WORLD_VIEWPORT_OFFSET) × 屏幕放大
+# 输入桥接（screen→world）与 UI 世界锚定（world→screen）都走这里；数据层
+# GridSystem.world_to_grid() 保持原语义（世界坐标 + cell_size=32）不动。
 
-func _process(delta: float) -> void:
+## --smoke 运行驱动（headless 冒烟验证）：跑满 SMOKE_FRAMES 后打印报告退出。
+func _process(_delta: float) -> void:
 	if _smoke:
 		_smoke_frame += 1
 		if _smoke_frame >= SMOKE_FRAMES:
 			_smoke_report()
 			get_tree().quit(0)
 
-
-func _draw() -> void:
-	if _grid == null or _cong == null:
-		return
-	_draw_floor_zones()
-	_draw_grid_lines()
-	# 2.5D 空间层级（art-bible-25d §1）：会员中景 / 设备前景 —— 设备画在会员
-	# 之后（前景层），幽灵画在最上（活动决策预览，Core Rule 7 优先级最高）。
-	_draw_members()
-	_draw_equipment()
-	_draw_placement_ghost()
+## 屏幕坐标 → 世界坐标（输入桥接：鼠标在根 viewport 的 1280×720 屏幕坐标）。
+func _screen_to_world(screen_pos: Vector2) -> Vector2:
+	var vp := Vector2(
+		screen_pos.x / SCREEN_PER_VIEWPORT_X,
+		screen_pos.y / SCREEN_PER_VIEWPORT_Y
+	)
+	return (vp - WORLD_VIEWPORT_OFFSET) / WORLD_SCALE
 
 
-## 地板三区域色块（art-bible §6：功能区用色块 + 柔和描边区分，分区一眼可读）。
-## 数据源：palette.gd ZONE_RECTS / ZONE_COLORS（单一来源，Phase B/C 复用）。
-## 画在最底层（先于网格线/设备/会员），不遮挡任何上层元素。
-func _draw_floor_zones() -> void:
-	for zone: String in Palette.ZONE_RECTS:
-		var rect: Rect2i = Palette.ZONE_RECTS[zone]
-		var px_rect := Rect2i(rect.position * CELL_SIZE, rect.size * CELL_SIZE)
-		draw_rect(px_rect, Palette.ZONE_COLORS[zone], true)
-		draw_rect(px_rect, Palette.ZONE_BORDER, false, 1.0)
-
-
-func _draw_grid_lines() -> void:
-	for x in GRID_W + 1:
-		draw_line(Vector2(x * CELL_SIZE, 0), Vector2(x * CELL_SIZE, GRID_H * CELL_SIZE),
-			Palette.GRID_LINE, 1.0)
-	for y in GRID_H + 1:
-		draw_line(Vector2(0, y * CELL_SIZE), Vector2(GRID_W * CELL_SIZE, y * CELL_SIZE),
-			Palette.GRID_LINE, 1.0)
-
-
-## 设备渲染（Phase B v2）—— 前景像素主体（art-bible-25d §2）。
-##
-## 每台设备：
-##   1. 脚下大暗面（EQUIP_SHADOW 半透明深色块，替代旧纯灰 footprint；25d §2 阴影）
-##   2. 像素精灵纹理（EquipmentArt 程序化 ImageTexture，32×32/cell，Nearest 全局）
-##   3. access cell 用 Butter 高亮（art-bible §7 拖放反馈；§4 Butter 锚点 ~10%）
-##
-## 语义色：equipment_id → def.zone_membership → ZONE_COLORS（cardio→Sky /
-## strength→Sage / flex→Peach），描边 Soft Charcoal（art-bible §4）。纹理按
-## (id, zone, rotation) 全量缓存，运行时零重建。
-func _draw_equipment() -> void:
-	for inst in _grid.get_placed_instances():
-		var fp_rect := _footprint_rect(inst.footprint_cells)
-		if fp_rect.size.x <= 0 or fp_rect.size.y <= 0:
-			continue
-		# 1) 脚下大暗面（半透明深色块；偏移 2px 向下，读作地板阴影而非轮廓）。
-		var shadow_rect := fp_rect.grow(3)
-		shadow_rect.position.y += 2
-		draw_rect(shadow_rect, Palette.EQUIP_SHADOW, true)
-
-		# 2) 像素精灵（前景主体）。
-		var eq_id: String = str(_instance_defs.get(inst.instance_id, ""))
-		var zone: String = _zone_of(eq_id)
-		var tex: ImageTexture = _equip_art.texture_for(eq_id, zone, inst.rotation)
-		if tex != null:
-			draw_texture_rect(tex, Rect2(fp_rect), false)
-		else:
-			# 兜底（未知 equipment_id）：画 Soft Charcoal 剪影块，绝不崩溃。
-			draw_rect(fp_rect, Palette.CHARCOAL, false, 2.0)
-
-		# 3) access cell：Butter 高亮（柔和填充 + 描边，非刺眼）。
-		for c in inst.access_cells:
-			_draw_access_cell(c)
-
-
-## access cell 高亮：半透明 Butter 填充 + Butter 描边 + 中央实心 Butter 菱形。
-## art-bible §7「合法位置柔和高亮」的静态版本 —— 柔和，不刺眼，无闪烁；
-## 菱形是「图标+颜色双通道」的色盲安全形状（accessibility 通道，不单靠颜色）。
-func _draw_access_cell(c: Vector2i) -> void:
-	var rect := Rect2i(c * CELL_SIZE, Vector2i(CELL_SIZE, CELL_SIZE))
-	var fill := Palette.BUTTER
-	fill.a = 0.25
-	draw_rect(rect, fill, true)
-	var border := Palette.BUTTER
-	border.a = 0.85
-	draw_rect(rect, border, false, 1.0)
-	# 实心菱形（Butter，半径 ~5px）：采样点稳定命中，读作「可用」锚点。
-	var diamond := Palette.BUTTER
-	diamond.a = 0.95
-	var cx := rect.position.x + CELL_SIZE / 2.0
-	var cy := rect.position.y + CELL_SIZE / 2.0
-	var r := 5.0
-	var pts := PackedVector2Array([
-		Vector2(cx, cy - r),
-		Vector2(cx + r, cy),
-		Vector2(cx, cy + r),
-		Vector2(cx - r, cy),
-	])
-	draw_colored_polygon(pts, diamond)
-
-
-## 放置预览幽灵（art-bible §7 拖放反馈）：
-##   - 合法位置：柔和高亮（PLACEMENT_OK_TINT 半透明白/Sage）+ Butter 网格吸附描边
-##   - 非法位置：Dusty Rose #E0A0A0 柔和警示（PLACEMENT_BAD_TINT，绝不刺眼红）
-## 画在最上（活动决策预览，Core Rule 7）；无 drag 时无开销（is_dragging O(1)）。
-func _draw_placement_ghost() -> void:
-	if _orch == null or _orch.placement_system == null:
-		return
-	var placement = _orch.placement_system
-	if not placement.is_dragging():
-		return
-	# 双幽灵抑制（GDD Core Rule 4 / ModeArbitration）：有选中物时不画新放置幽灵。
-	if _arbitration != null and _arbitration.is_ghost_suppressed():
-		return
-	if not placement.get_drag_has_previewed():
-		return  # 尚未进入任何格 —— 不画 ZERO 幽灵
-	var eq_id: String = placement.get_drag_equipment_id()
-	if eq_id == "":
-		return
-	var def = _catalog.get_definition(eq_id)
-	if def == null:
-		return
-	var anchor: Vector2i = placement.get_drag_anchor()
-	var rotation: int = placement.get_drag_rotation()
-	var tf = _grid.get_transformed_cells(def.footprint_cells, def.access_cells, anchor, rotation)
-	var rect := _cells_rect(tf.footprint_cells)
-	if rect.size.x <= 0 or rect.size.y <= 0:
-		return
-	var valid: bool = placement.get_drag_preview_valid()
-	var tint: Color = Palette.PLACEMENT_OK_TINT if valid else Palette.PLACEMENT_BAD_TINT
-	draw_rect(rect, tint, true)
-	# 精灵本体（半透明幽灵，让玩家看清要放什么）——先于描边，描边永远可读。
-	var zone: String = _zone_of(eq_id)
-	var tex: ImageTexture = _equip_art.texture_for(eq_id, zone, rotation)
-	if tex != null:
-		var ghost_col := Color(1, 1, 1, 0.65)
-		draw_texture_rect(tex, Rect2(rect), false, ghost_col)
-	# 网格吸附描边（画在最上，覆盖幽灵本体）：合法 → Butter（锚点高亮）；
-	# 非法 → Dusty Rose（柔和警示，绝不刺眼红）。
-	var edge: Color = Palette.BUTTER if valid else Palette.ROSE
-	edge.a = 0.9
-	draw_rect(rect, edge, false, 2.0)
-	for c in tf.access_cells:
-		_draw_access_cell(c)
-
-
-## footprint 单元格集合 → 像素 Rect2i（min cell × CELL_SIZE，size = bbox）。
-func _footprint_rect(cells: Array) -> Rect2i:
-	return _cells_rect(cells)
-
-
-## 任意网格 cell 集合 → 像素 Rect2i（空集合返回零尺寸）。
-func _cells_rect(cells: Array) -> Rect2i:
-	if cells.is_empty():
-		return Rect2i()
-	var min_c := Vector2i(cells[0])
-	var max_c := Vector2i(cells[0])
-	for c in cells:
-		min_c.x = min(min_c.x, c.x)
-		min_c.y = min(min_c.y, c.y)
-		max_c.x = max(max_c.x, c.x)
-		max_c.y = max(max_c.y, c.y)
-	var size := (max_c - min_c + Vector2i.ONE) * CELL_SIZE
-	return Rect2i(min_c * CELL_SIZE, size)
-
-
-## equipment_id → zone_membership[0]（语义色键，与 palette.ZONE_COLORS 对齐）。
-## 未知 id 返回 ""（EquipmentArt 兜底 FALLBACK_ZONE）。
-func _zone_of(eq_id: String) -> String:
-	if eq_id == "":
-		return ""
-	var def = _catalog.get_definition(eq_id)
-	if def == null or def.zone_membership.is_empty():
-		return ""
-	return str(def.zone_membership[0])
-
-
-func _draw_members() -> void:
-	if _member == null or _member_sprites == null:
-		return
-	# Phase C v2：2.5D 像素小人（32×32，1:1 绘制，状态双通道）。
-	# 颜色通道：walking≈Sky / queue·using≈Peach / leaving≈灰（色盲安全，
-	# 与形状/姿态通道叠加）；姿态通道：walk 摆臂迈步 / idle 站立微晃 /
-	# use 用力泵（帧按 tick 奇偶交替，8-12fps 观感，见 member_sprite.gd）。
-	var tick: int = _orch.get_tick_count()
-	var alive: Dictionary = {}
-	for m in _member.members:
-		if not (m is Dictionary) or not m.has("cell") or not m.has("state"):
-			continue
-		var member_id := int(m.get("member_id", -1))
-		if member_id >= 0:
-			alive[member_id] = true
-		var state := str(m["state"])
-		if _member_sprites.state_channel(state) == "":
-			continue  # GONE / 被动成员 —— 不渲染
-		var cell: Vector2i = m["cell"]
-		var facing_left := _update_facing(member_id, cell)
-		var tex: ImageTexture = _member_sprites.texture_for(state, tick, facing_left)
-		draw_texture(tex, Vector2(cell.x * CELL_SIZE, cell.y * CELL_SIZE))
-	# 清理已离场成员的朝向缓存（防止字典无限增长）
-	for member_id in _member_facing.keys():
-		if not alive.has(member_id):
-			_member_facing.erase(member_id)
-			_member_last_cell.erase(member_id)
-
-
-## 由 cell 移动推断朝向（presentation 层，纯绘制用；横向位移为 0 时保持
-## 上次朝向 —— QUEUEING/USING 成员静止，姿态已表达状态，朝向仅跟随入场方向）。
-func _update_facing(member_id: int, cell: Vector2i) -> bool:
-	var facing_left := bool(_member_facing.get(member_id, false))
-	if _member_last_cell.has(member_id):
-		var prev: Vector2i = _member_last_cell[member_id]
-		if cell.x < prev.x:
-			facing_left = true
-		elif cell.x > prev.x:
-			facing_left = false
-	_member_last_cell[member_id] = cell
-	_member_facing[member_id] = facing_left
-	return facing_left
+## 世界坐标 → 屏幕坐标（世界锚定 UI：tooltip / cue / toolbar 的高分辨率定位）。
+func _world_to_screen(world_pos: Vector2) -> Vector2:
+	return (world_pos * WORLD_SCALE + WORLD_VIEWPORT_OFFSET) * Vector2(
+		SCREEN_PER_VIEWPORT_X, SCREEN_PER_VIEWPORT_Y
+	)
 
 
 # === --smoke 报告 ===
