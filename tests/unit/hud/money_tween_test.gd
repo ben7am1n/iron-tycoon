@@ -3,7 +3,7 @@
 # (production/epics/hud/story-002-money-count-tween.md)
 #
 # Covers the BLOCKING ACs / Edge Cases (TR-HUD-004):
-#   - AC2   balance_changed -> the money number animates old->new over ~0.3s
+#   - AC2   balance_changed -> the money number animates old->new over ~0.25s
 #         (TRANS_QUAD EASE_OUT throughout — "Butter motion"), no red/error
 #         flash on decrease. Headless cannot tick engine tweens (no frames
 #         iterate under the runner), so the ANIMATION is verified two ways:
@@ -23,7 +23,7 @@
 #   - spend acknowledgment: on delta < 0 the Butter coin desaturates
 #         (hue-preserving lerp toward gray — spend_ack_color(), NEVER red) and
 #         a settle tween restores Butter; the NUMBER label color never changes.
-#   - duration knob: default 0.3s, config override clamped to GDD 0.2-0.5s.
+#   - duration knob: default 0.25s, config override clamped to GDD 0.2-0.5s.
 #
 # Run standalone: godot --headless --script tests/unit/hud/money_tween_test.gd
 extends SceneTree
@@ -147,14 +147,14 @@ func _test_ac2_tween_created_on_balance_changed() -> void:
 # === AC2: easing math (deterministic, headless) ===
 
 func _test_ac2_easing_math_income() -> void:
-	print("\n[AC2] easing: TRANS_QUAD EASE_OUT 500 -> 600 over 0.3s, monotonic, no overshoot")
+	print("\n[AC2] easing: TRANS_QUAD EASE_OUT 500 -> 600 over 0.25s, monotonic, no overshoot")
 	var hud_script: GDScript = _HUD()
 	var trans: int = int(hud_script.get("MONEY_TWEEN_TRANS"))
 	var ease: int = int(hud_script.get("MONEY_TWEEN_EASE"))
 	var duration: float = float(hud_script.get("DEFAULT_MONEY_COUNT_DURATION"))
 	_check(trans == Tween.TRANS_QUAD, "HUD uses TRANS_QUAD (got %d)" % trans)
 	_check(ease == Tween.EASE_OUT, "HUD uses EASE_OUT (got %d)" % ease)
-	_check(absf(duration - 0.3) < 1e-9, "default duration 0.3s (got %s)" % duration)
+	_check(absf(duration - 0.25) < 1e-9, "default duration 0.25s (got %s)" % duration)
 	var start: float = float(Tween.interpolate_value(500.0, 100.0, 0.0, duration, trans, ease))
 	var end: float = float(Tween.interpolate_value(500.0, 100.0, duration, duration, trans, ease))
 	_check(start == 500.0, "t=0 -> 500 (got %s)" % start)
@@ -176,7 +176,7 @@ func _test_ac2_easing_math_income() -> void:
 
 
 func _test_ac2_easing_math_spend() -> void:
-	print("\n[AC2] easing: TRANS_QUAD EASE_OUT 600 -> 350 over 0.3s (spend direction)")
+	print("\n[AC2] easing: TRANS_QUAD EASE_OUT 600 -> 350 over 0.25s (spend direction)")
 	var hud_script: GDScript = _HUD()
 	var trans: int = int(hud_script.get("MONEY_TWEEN_TRANS"))
 	var ease: int = int(hud_script.get("MONEY_TWEEN_EASE"))
@@ -219,7 +219,7 @@ func _test_ac2_no_red_on_spend() -> void:
 	var coin_color: Color = hud.call("get_coin_icon_color")
 	_check(coin_color == ack, "coin icon color == desaturated Butter right after spend (got %s)" % coin_color)
 	var number_color: Color = money_label.get_theme_color("font_color")
-	_check(number_color == _HUD().get("COLOR_CHARCOAL"), "NUMBER label color unchanged (charcoal — never red, got %s)" % number_color)
+	_check(number_color == _HUD().get("COLOR_TEXT_LIGHT"), "NUMBER label color unchanged (light cream on dark panel — never red, got %s)" % number_color)
 
 
 # === Edge: rapid changes re-target, no queue ===
@@ -303,10 +303,10 @@ func _test_reduced_motion_spend_no_ack() -> void:
 # === Duration knob ===
 
 func _test_duration_knob_default() -> void:
-	print("\n[Knob] money_count_duration default 0.3s")
+	print("\n[Knob] money_count_duration default 0.25s")
 	var rig := _make_rig()
 	var hud: Control = rig["hud"]
-	_check(absf(float(hud.call("get_money_count_duration")) - 0.3) < 1e-9, "default duration 0.3s (got %s)" % hud.call("get_money_count_duration"))
+	_check(absf(float(hud.call("get_money_count_duration")) - 0.25) < 1e-9, "default duration 0.25s (got %s)" % hud.call("get_money_count_duration"))
 
 
 func _test_duration_knob_config_clamp() -> void:

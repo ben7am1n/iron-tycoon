@@ -7,7 +7,7 @@
 ##        production/epics/hud/story-003-satisfaction-meter.md,
 ##        production/epics/hud/story-004-pause-speed-transport-day-time.md
 ## Req:   TR-HUD-001 (minimal top bar: money / satisfaction / day+time+transport),
-##        TR-HUD-004 (money count: tween digits old->new over ~0.3s on
+##        TR-HUD-004 (money count: tween digits old->new over ~0.25s on
 ##        balance_changed; never red flash on spend),
 ##        TR-HUD-002 (satisfaction meter: Sage -> warm neutral -> soft muted
 ##        Dusty Rose only at the very low end; NEVER saturated red, NEVER pulse),
@@ -46,7 +46,7 @@
 ##
 ## MONEY COUNT TWEEN (Story 002 / TR-HUD-004, GDD Core Rule 3):
 ##   - On balance_changed(new, delta): tween the DISPLAYED number from its
-##     current value -> new over ~0.3s (data-driven knob "money_count_duration",
+##     current value -> new over ~0.25s (data-driven knob "money_count_duration",
 ##     GDD safe range 0.2-0.5s), TRANS_QUAD EASE_OUT throughout (calm "Butter"
 ##     motion — never a red flash; the easing is monotonic so the count never
 ##     overshoots past the target).
@@ -113,6 +113,12 @@
 ## activate the button instead of reaching the hotkey handler).
 class_name Hud extends Control
 
+## Phase D v2 现代 UI 皮肤（art-bible-25d-style §1/§2）—— 深色半透明面板 +
+## 亮色 Butter 描边 + 粗字体 + 描边填充式图标。面板背景在 _draw() 里用
+## draw_style_box 绘制（不新增子节点 —— hud_layout_test 固定 HUD root
+## child-count == 1 / MoneyGroup == 2 children，技能 pitfall 已验证）。
+const UiTheme := preload("res://src/ui/ui_theme.gd")
+
 ## Data-driven config seams (coding standard: gameplay values never hardcoded).
 const CONFIG_TICKS_PER_DAY := "ticks_per_day"
 const CONFIG_UI_SCALE := "ui_scale"
@@ -126,10 +132,11 @@ const DEFAULT_TICKS_PER_DAY := 1800
 ## UI scale (UX spec: 0.8×–1.5× integer multipliers; 1.0 = art-bible anchor).
 const DEFAULT_UI_SCALE := 1.0
 
-## Money count tween duration (GDD Core Rule 3 / TR-HUD-004): ~0.3s default,
-## safe range 0.2–0.5s (too long = laggy; too short = snap). Data-driven via
+## Money count tween duration (GDD Core Rule 3 / TR-HUD-004): ~0.25s default
+## (Phase D v2 动效带 120-250ms —— 取上限 250ms，EASE_OUT 仍从容不迫；
+## GDD 安全区间 0.2–0.5s 保持不变）。Data-driven via config
 ## config["money_count_duration"], clamped to the GDD safe range.
-const DEFAULT_MONEY_COUNT_DURATION := 0.3
+const DEFAULT_MONEY_COUNT_DURATION := 0.25
 const MONEY_COUNT_DURATION_MIN := 0.2
 const MONEY_COUNT_DURATION_MAX := 0.5
 
@@ -191,6 +198,20 @@ const METER_CORNER_RADIUS_PX := 2  ## rounded fill — reads as a gauge, not a b
 const COLOR_BUTTER := Color("f5d97b")
 const COLOR_CHARCOAL := Color("3c3a42")
 const COLOR_SKY := Color("8ec5e8")
+
+## Phase D v2: 深色面板上的浅色正文（Warm Cream 系，art-bible §4 单一色源
+## CREAM_BG #F4E9D8）。深色半透明面板 + 浅色文字保证可读（Exit 条件 1/3）。
+const COLOR_TEXT_LIGHT := Color("f4e9d8")
+
+# === Phase D v2 面板状态（_draw() 绘制，不新增子节点） ===
+## 顶栏面板 stylebox：深色半透明 + Butter 亮色描边（UiTheme.make_panel_style）。
+var _panel_style: StyleBoxFlat = null
+## 面板淡入 alpha（0→PANEL_ALPHA，ANIM_PANEL_FADE）。_draw() 每帧读取；
+## 测试断言结构/颜色，不读本字段。
+var _panel_alpha: float = UiTheme.PANEL_ALPHA
+## 金钱图标脉冲 tween（余额变化时 offset_transform_scale 1→1.15→1，
+## ANIM_ICON_PULSE）。与 _money_tween/_ack_tween 相互独立。
+var _pulse_tween: Tween = null
 
 ## Transport cluster (UX spec §4): four small buttons ‖ (pause), 1×, 2×, 3×.
 const PAUSE_BUTTON_LABEL := "‖"
@@ -314,9 +335,12 @@ func _build_ui() -> void:
 	_money_group = _make_group("MoneyGroup")
 	_top_bar.add_child(_money_group)
 
-	_coin_icon = _make_label("CoinIcon", "🪙", COLOR_BUTTER)
+	_coin_icon = _make_label("CoinIcon", "🪙", COLOR_BUTTER, UiTheme.FONT_TITLE)
+	# Phase D v2: 描边填充式图标（art-bible §7）—— 金钱→Butter，亮色描边。
+	UiTheme.apply_outlined_fill(_coin_icon, COLOR_BUTTER, COLOR_BUTTER, 1)
 	_money_group.add_child(_coin_icon)
-	_money_label = _make_label("MoneyLabel", "$0", COLOR_CHARCOAL)
+	# Phase D v2: 金钱数字 = 标题级（最大数字）+ 浅 Cream 正文，深色面板可读。
+	_money_label = _make_label("MoneyLabel", "$0", COLOR_TEXT_LIGHT, UiTheme.FONT_TITLE)
 	_money_group.add_child(_money_label)
 
 	_left_spacer = _make_spacer("LeftSpacer")
@@ -325,7 +349,9 @@ func _build_ui() -> void:
 	_satisfaction_group = _make_group("SatisfactionGroup")
 	_top_bar.add_child(_satisfaction_group)
 
-	_face_icon = _make_label("FaceIcon", ICON_MID, COLOR_CHARCOAL)
+	# Phase D v2: 满意度图标 → Sage 语义色 + 描边（satisfaction→Sage）。
+	_face_icon = _make_label("FaceIcon", ICON_MID, UiTheme.icon_satisfaction(), UiTheme.FONT_BODY)
+	UiTheme.apply_outlined_fill(_face_icon, UiTheme.icon_satisfaction(), UiTheme.icon_satisfaction(), 1)
 	_satisfaction_group.add_child(_face_icon)
 	_meter = ProgressBar.new()
 	_meter.name = "Meter"
@@ -343,8 +369,14 @@ func _build_ui() -> void:
 	_meter_fill_style.bg_color = satisfaction_fill_color(0.5)
 	_meter_fill_style.set_corner_radius_all(_scaled(METER_CORNER_RADIUS_PX))
 	_meter.add_theme_stylebox_override("fill", _meter_fill_style)
+	# Phase D v2: 轨道（background）深色半透明，配合深色面板（fill 的 ramp
+	# 颜色不变 —— satisfaction_meter_test 固定 fill 样式）。
+	var meter_bg := StyleBoxFlat.new()
+	meter_bg.bg_color = Color(0.0, 0.0, 0.0, 0.28)
+	meter_bg.set_corner_radius_all(_scaled(METER_CORNER_RADIUS_PX))
+	_meter.add_theme_stylebox_override("background", meter_bg)
 	_satisfaction_group.add_child(_meter)
-	_satisfaction_label = _make_label("SatisfactionLabel", "0%", COLOR_CHARCOAL)
+	_satisfaction_label = _make_label("SatisfactionLabel", "0%", COLOR_TEXT_LIGHT, UiTheme.FONT_BODY)
 	_satisfaction_group.add_child(_satisfaction_label)
 
 	_right_spacer = _make_spacer("RightSpacer")
@@ -353,9 +385,11 @@ func _build_ui() -> void:
 	_time_group = _make_group("TimeGroup")
 	_top_bar.add_child(_time_group)
 
-	_day_label = _make_label("DayLabel", "Day 1", COLOR_CHARCOAL)
+	_day_label = _make_label("DayLabel", "Day 1", COLOR_TEXT_LIGHT, UiTheme.FONT_BODY)
 	_time_group.add_child(_day_label)
-	_time_of_day_label = _make_label("TimeOfDayLabel", "00:00", COLOR_SKY)
+	# Phase D v2: 时间图标 → Sky 语义色 + 描边（time→Sky，保持 art-bible 原色）。
+	_time_of_day_label = _make_label("TimeOfDayLabel", "00:00", COLOR_SKY, UiTheme.FONT_BODY)
+	UiTheme.apply_outlined_fill(_time_of_day_label, COLOR_SKY, COLOR_SKY, 1)
 	_time_group.add_child(_time_of_day_label)
 
 	_transport_cluster = HBoxContainer.new()
@@ -372,6 +406,28 @@ func _build_ui() -> void:
 		btn.pressed.connect(_on_speed_button_pressed.bind(i + 1))
 		_speed_buttons.append(btn)
 		_transport_cluster.add_child(btn)
+
+	# Phase D v2: 顶栏深色半透明面板（_draw() 绘制；UiTheme 单一来源）。
+	_panel_style = UiTheme.make_panel_style(UiTheme.panel_border(), 10, 2)
+	queue_redraw()
+
+
+## Phase D v2: 顶栏面板背景 —— 深色半透明 + Butter 亮色描边。在 HUD root
+## 的 _draw() 里绘制（不新增子节点：hud_layout_test 固定 root child-count
+## == 1 / TopBar 结构）。面板紧贴顶栏条带，四边留 2px 呼吸边距；描边颜色
+## 与圆角来自 UiTheme（单一来源）。_panel_alpha 由面板淡入动效驱动。
+func _draw() -> void:
+	if _panel_style == null:
+		return
+	var margin := _scaled(SAFE_MARGIN_PX)
+	var strip_rect := Rect2(
+		margin - _scaled(4),
+		_scaled(2),
+		size.x - (margin - _scaled(4)) * 2.0,
+		_scaled(TOP_BAR_HEIGHT_PX) + _scaled(4)
+	)
+	_panel_style.bg_color.a = _panel_alpha
+	draw_style_box(_panel_style, strip_rect)
 
 
 ## Two-phase init (ADR-0001 for UI Nodes): stores the injected systems,
@@ -401,6 +457,9 @@ func init(
 	if _orchestrator != null:
 		_orchestrator.tick_completed.connect(_on_tick_completed)
 	refresh_all()
+	# Phase D v2: 面板淡入（120-250ms 柔和过渡，Exit 条件 3）。reduced-motion
+	# 下 _panel_alpha 保持 PANEL_ALPHA（无动画，见 _start_panel_fade）。
+	_start_panel_fade()
 
 
 ## Reads [config] into the tuning fields. Missing keys keep the GDD anchors.
@@ -438,7 +497,7 @@ func _apply_config(config: Dictionary) -> void:
 ## (spend/credit), so it must never wait for the next tick_completed.
 ##
 ## Story 002 (TR-HUD-004): the count tween. The displayed number animates
-## current -> new over _money_count_duration (~0.3s), TRANS_QUAD EASE_OUT
+## current -> new over _money_count_duration (~0.25s), TRANS_QUAD EASE_OUT
 ## throughout. Re-targets mid-tween on rapid changes (kill + restart from the
 ## CURRENT displayed value toward the LATEST target — no queue backlog).
 ## delta < 0 (spend) triggers the desaturation acknowledgment — NEVER red.
@@ -453,6 +512,51 @@ func _on_balance_changed(new_balance: int, delta: int) -> void:
 	_start_money_tween(new_balance)
 	if delta < 0:
 		_acknowledge_spend()
+	# Phase D v2: 图标脉冲 —— 余额变化时金钱图标轻微放大回弹（120-250ms，
+	# Exit 条件 3）。reduced-motion 下跳过。
+	_pulse_coin_icon()
+
+
+## Phase D v2: 金钱图标脉冲 —— offset_transform_scale 1 → 1.15 → 1，
+## 总时长 ANIM_ICON_PULSE（200ms，120-250ms 区间内）。用 4.7 的
+## offset_transform_scale（不被容器布局重置，技能 pitfall 已验证），
+## 与金钱计数 tween / spend-ack tween 相互独立（不同属性、不同 tween）。
+## reduced-motion：跳过。
+func _pulse_coin_icon() -> void:
+	if _reduced_motion:
+		return
+	if _pulse_tween != null and _pulse_tween.is_valid():
+		_pulse_tween.kill()
+	_coin_icon.offset_transform_scale = Vector2.ONE
+	var half := UiTheme.ANIM_ICON_PULSE * 0.5
+	_pulse_tween = create_tween()
+	_pulse_tween.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_pulse_tween.tween_property(
+		_coin_icon, "offset_transform_scale", Vector2(1.15, 1.15), half
+	)
+	_pulse_tween.tween_property(
+		_coin_icon, "offset_transform_scale", Vector2.ONE, half
+	)
+
+
+## Phase D v2: 顶栏面板淡入 —— _panel_alpha 从 0 缓入到 PANEL_ALPHA，
+## 时长 ANIM_PANEL_FADE（180ms）。_draw() 每帧读取 alpha 绘制面板。
+## reduced-motion：保持 PANEL_ALPHA（无动画）。
+func _start_panel_fade() -> void:
+	if _reduced_motion:
+		_panel_alpha = UiTheme.PANEL_ALPHA
+		queue_redraw()
+		return
+	_panel_alpha = 0.0
+	var fade := create_tween()
+	fade.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	fade.tween_method(_set_panel_alpha, 0.0, UiTheme.PANEL_ALPHA, UiTheme.ANIM_PANEL_FADE)
+
+
+## Panel fade tween callback：写 _panel_alpha 并请求重绘（_draw 读取）。
+func _set_panel_alpha(value: float) -> void:
+	_panel_alpha = value
+	queue_redraw()
 
 
 ## Starts a fresh count tween from the CURRENT displayed value toward [target].
@@ -795,11 +899,12 @@ func _make_spacer(spacer_name: String) -> Control:
 	return spacer
 
 
-func _make_label(label_name: String, text: String, color: Color) -> Label:
+func _make_label(label_name: String, text: String, color: Color, font_size: int = UiTheme.FONT_BODY) -> Label:
 	var label := Label.new()
 	label.name = label_name
 	label.text = text
-	label.add_theme_font_size_override("font_size", _scaled(MIN_FONT_SIZE_PX))
+	label.add_theme_font_override("font", UiTheme.bold_font())
+	label.add_theme_font_size_override("font_size", _scaled(font_size))
 	label.add_theme_color_override("font_color", color)
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return label
@@ -811,23 +916,31 @@ func _make_label(label_name: String, text: String, color: Color) -> Label:
 ## "Space toggles pause regardless of focus". The hotkeys are the keyboard
 ## path; the buttons are the mouse path. MOUSE_FILTER_STOP opts the button
 ## back into mouse input (the rest of the HUD stays IGNORE — TR-HUD-006).
+## Phase D v2: 主题级按钮皮肤（UiTheme.button_theme —— 深色半透明芯片 +
+## 亮色细描边 + 粗字体 + 浅 Cream 文字）。主题级 stylebox 而非 override：
+## 4.7.1 的 Control 无 add_theme_stylebox()，主题级走 Theme.set_stylebox +
+## control.theme（probe 验证），has_theme_stylebox_override() 保持 false ——
+## transport 测试「inactive 无 override」断言依赖此行为。
 func _make_transport_button(button_name: String, label: String) -> Button:
 	var btn := Button.new()
 	btn.name = button_name
 	btn.text = label
 	btn.focus_mode = Control.FOCUS_NONE
 	btn.mouse_filter = Control.MOUSE_FILTER_STOP
-	btn.add_theme_font_size_override("font_size", _scaled(MIN_FONT_SIZE_PX))
+	btn.add_theme_font_size_override("font_size", _scaled(UiTheme.FONT_BODY))
+	UiTheme.style_button(btn)
 	return btn
 
 
-## Lazily builds the shared active-cue stylebox: a charcoal outline (never
-## color alone — paired with the filled-dot text prefix in _set_button_active).
+## Lazily builds the shared active-cue stylebox: a Butter bright outline
+## (never color alone — paired with the filled-dot text prefix in
+## _set_button_active). Phase D v2: 亮色描边 = Butter（art-bible-25d §2
+## 10% 锚点）；transport 测试只断言 border_width > 0，颜色换新皮安全。
 func _get_active_stylebox() -> StyleBoxFlat:
 	if _active_stylebox == null:
 		var sb := StyleBoxFlat.new()
 		sb.bg_color = Color(1.0, 1.0, 1.0, 0.0)
-		sb.border_color = COLOR_CHARCOAL
+		sb.border_color = UiTheme.panel_border()
 		sb.set_border_width_all(2)
 		sb.set_corner_radius_all(3)
 		_active_stylebox = sb

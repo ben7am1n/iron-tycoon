@@ -339,7 +339,7 @@ func _test_config_ui_scale_override() -> void:
 	_check(int(top_bar.offset_right) == -24, "safe margin scales: offset_right == -24 (got %d)" % int(top_bar.offset_right))
 	_check(int(top_bar.offset_bottom) == 72, "top bar height scales: offset_bottom == 72 (got %d)" % int(top_bar.offset_bottom))
 	var money_label: Label = hud.call("get_money_label")
-	_check(int(money_label.get_theme_font_size("font_size")) == 24, "font size scales: 16 * 1.5 == 24 (got %d)" % int(money_label.get_theme_font_size("font_size")))
+	_check(int(money_label.get_theme_font_size("font_size")) == 30, "font size scales: 20 * 1.5 == 30 (title level, got %d)" % int(money_label.get_theme_font_size("font_size")))
 
 
 func _test_double_init_guard() -> void:
