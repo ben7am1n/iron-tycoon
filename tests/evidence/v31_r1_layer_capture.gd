@@ -3,8 +3,10 @@
 # 渲染真实主场景（src/main.tscn）并保存视口快照，验证 R1 核心目标：
 # 「设备作为前景物体从深色地面分离」（3D diorama 空间层级）。量化信号
 # （本脚本只导出 PNG + 少量内联检查；完整量化在 v31_r1_layer_pil_sample.py）：
-#   - 设备贴地 contact shadow：设备底边比远处地板更暗（物体「坐」在地面上，
-#     不漂浮）—— 空间层级证据
+#   - 设备贴地 contact shadow：设备贴身带中位亮度 < 所在区域干净地板参照
+#     （物体「坐」在地面上，不漂浮）—— 空间层级证据。median 对少量高亮
+#     装饰像素鲁棒（mean 会被个别亮像素/UI 条带抬高 —— 合并 V3.1 返工
+#     UI 后 bench 南侧屏幕 y>=640 出现底部 UI 条带）。
 #   - 设备顶面与地面分离：顶面（区域语义色/机身亮部）与所在区域地板在
 #     亮度或饱和度上有可测差异（silhouette 从背景托起）
 #   - 设备脚下暖色亮池（HIGHLIGHT_WARM）：设备周边地面比远处同区地面更暖
@@ -37,13 +39,31 @@ const WS := Main.WORLD_SCALE
 ## 初始布局设备（footprint 世界 px + 顶面高度，与 main.gd _initial_layout 同源）。
 ## V3.1 R1：yoga_mat(9,2) 西半已正确落在 column_2 前景立柱的屏幕柱影后
 ## （diorama 深度：前景柱遮挡背景物）—— 顶面采样取东半可见部分。
+## contact shadow 采样带（side）：
+##   south      —— 默认：footprint 南侧贴身带 y0+hh+2..+6
+##   west       —— bike：南侧被 bench 顶面（z=26 挤出，屏幕四边形
+##                 294..489 × 501..590）正确遮挡 —— diorama 深度，取西侧
+##                 x0-3..x0+1 贴身带
+##   south_tight —— bench：南侧贴身带 y0+hh+1..+3（合并 V3.1 返工 UI 后
+##                 屏幕 y>=640 是底部 UI 条带，shadow 带必须贴边）；
+##                 bench 西侧是前景盆栽、东侧是 medicine_ball 装饰。
 const EQUIP := [
-	{"name": "treadmill_a", "fp": Rect2i(64, 64, 64, 32), "h": 30.0},
-	{"name": "bike",        "fp": Rect2i(64, 160, 32, 32), "h": 36.0},
-	{"name": "treadmill_b", "fp": Rect2i(192, 96, 64, 32), "h": 30.0},
-	{"name": "bench",       "fp": Rect2i(32, 224, 64, 64), "h": 26.0},
-	{"name": "yoga_mat",    "fp": Rect2i(312, 64, 16, 32), "h": 6.0},
+	{"name": "treadmill_a", "fp": Rect2i(64, 64, 64, 32), "h": 30.0, "zone": "strength", "side": "south"},
+	{"name": "bike",        "fp": Rect2i(64, 160, 32, 32), "h": 36.0, "zone": "strength", "side": "west"},
+	{"name": "treadmill_b", "fp": Rect2i(192, 96, 64, 32), "h": 30.0, "zone": "cardio", "side": "south"},
+	{"name": "bench",       "fp": Rect2i(32, 224, 64, 64), "h": 26.0, "zone": "strength", "side": "south_tight"},
+	{"name": "yoga_mat",    "fp": Rect2i(312, 64, 16, 32), "h": 6.0, "zone": "flex", "side": "south"},
 ]
+
+## 各区域干净地板参照（世界 px 窗口，经验证中屏、在世界边界内、位于
+## 屏幕底部 UI 条带之上）。contact shadow 的「远处地面」基线用区域参照，
+## 不用 footprint 南侧更远窗口（bench 南侧在世界边界外 y>320，会采到
+## 画布外/UI 像素；且参照窗口必须避开合并后的 HUD 底部条带）。
+const ZONE_FLOOR_REF := {
+	"strength": Rect2i(120, 120, 24, 24),
+	"cardio":   Rect2i(240, 160, 24, 24),
+	"flex":     Rect2i(368, 200, 16, 16),
+}
 
 var _frame := 0
 var _captured := false
@@ -111,12 +131,16 @@ func _capture_and_report() -> void:
 
 ## 内联检查（主场景帧）：
 ##   - 每台设备顶面中心存在（亮度 > 0.25：顶面不是空白）
-##   - 每台设备贴地 contact shadow 存在（底边南侧 2..5px 比远处地板暗）
+##   - 每台设备贴地 contact shadow 存在（贴身带中位亮度 < 区域干净地板
+##     参照中位亮度 —— 与 PIL 脚本同法（median 鲁棒，不受少量亮像素/
+##     UI 条带污染；mean 会被个别高亮像素抬高）
 func _verify_world_frame(img: Image) -> void:
 	for eq in EQUIP:
 		var name: String = eq["name"]
 		var fp: Rect2i = eq["fp"]
 		var h: float = eq["h"]
+		var zone: String = eq["zone"]
+		var side: String = eq["side"]
 		# 顶面中心存在（采样中心 8×8 窗口，取最大亮度）
 		var cx := fp.position.x + fp.size.x / 2.0
 		var cy := fp.position.y + fp.size.y / 2.0
@@ -129,31 +153,58 @@ func _verify_world_frame(img: Image) -> void:
 				if img.get_pixel(p.x, p.y).get_luminance() > 0.25:
 					top_seen = true
 		_ok(top_seen, "WORLD %s top face present (设备顶面可见)" % name)
-		# contact shadow：footprint 南侧 2..5px 平均亮度 < 远处同 x 地板平均亮度
-		var shadow_lum := 0.0
-		var shadow_n := 0
-		for dx in range(4, fp.size.x - 4, 4):
-			for dy in range(2, 6, 2):
-				var p := world_to_screen(Vector2(fp.position.x + dx, fp.position.y + fp.size.y + dy), 0.0)
-				if not _in_bounds(img, p):
-					continue
-				shadow_lum += img.get_pixel(p.x, p.y).get_luminance()
-				shadow_n += 1
-		shadow_lum /= maxi(shadow_n, 1)
-		var far_y := fp.position.y + fp.size.y + fp.size.y * 0.62 + 18.0
-		var far_lum := 0.0
-		var far_n := 0
-		for dx in range(4, fp.size.x - 4, 4):
-			for dy in range(0, 8, 4):
-				var p := world_to_screen(Vector2(fp.position.x + dx, far_y + dy), 0.0)
-				if not _in_bounds(img, p):
-					continue
-				far_lum += img.get_pixel(p.x, p.y).get_luminance()
-				far_n += 1
-		far_lum /= maxi(far_n, 1)
+		# contact shadow：贴身带中位亮度 vs 区域干净地板参照（median）
+		var shadow_lum := _shadow_band_median_lum(img, fp, side)
+		var ref: Rect2i = ZONE_FLOOR_REF[zone]
+		var far_lum := _rect_median_lum(img, ref)
 		var grounded := shadow_lum < far_lum
-		_ok(grounded, "WORLD %s contact shadow grounds floor (shadow %.3f < far %.3f)"
+		_ok(grounded, "WORLD %s contact shadow grounds floor (shadow %.3f < zoneRef %.3f)"
 			% [name, shadow_lum, far_lum])
+
+
+## 设备 contact shadow 贴身带中位亮度（median —— 与 PIL 脚本同法，
+## 对个别高亮装饰像素/UI 条带鲁棒）。[side] 见 EQUIP 注释。
+func _shadow_band_median_lum(img: Image, fp: Rect2i, side: String) -> float:
+	var vals: Array[float] = []
+	if side == "south":
+		for dx in range(6, fp.size.x - 6, 2):
+			for dy in range(2, 7, 2):
+				var p := world_to_screen(
+					Vector2(fp.position.x + dx, fp.position.y + fp.size.y + dy), 0.0)
+				if _in_bounds(img, p):
+					vals.append(img.get_pixel(p.x, p.y).get_luminance())
+	elif side == "west":
+		for dy in range(fp.size.y / 3, fp.size.y * 2 / 3, 3):
+			for dx in range(-3, 2, 3):
+				var p := world_to_screen(
+					Vector2(fp.position.x + dx, fp.position.y + dy), 0.0)
+				if _in_bounds(img, p):
+					vals.append(img.get_pixel(p.x, p.y).get_luminance())
+	else:  # south_tight (bench)：南侧贴边 y+1..+3（避开底部 UI 条带）
+		for dx in range(4, fp.size.x - 4, 2):
+			for dy in range(1, 4, 2):
+				var p := world_to_screen(
+					Vector2(fp.position.x + dx, fp.position.y + fp.size.y + dy), 0.0)
+				if _in_bounds(img, p):
+					vals.append(img.get_pixel(p.x, p.y).get_luminance())
+	if vals.is_empty():
+		return 1.0
+	vals.sort()
+	return vals[vals.size() / 2]
+
+
+## 世界矩形窗口中位亮度（median，step 3 —— 与 PIL _collect 同法）。
+func _rect_median_lum(img: Image, r: Rect2i) -> float:
+	var vals: Array[float] = []
+	for yy in range(r.position.y, r.position.y + r.size.y, 3):
+		for xx in range(r.position.x, r.position.x + r.size.x, 3):
+			var p := world_to_screen(Vector2(xx, yy), 0.0)
+			if _in_bounds(img, p):
+				vals.append(img.get_pixel(p.x, p.y).get_luminance())
+	if vals.is_empty():
+		return 1.0
+	vals.sort()
+	return vals[vals.size() / 2]
 
 
 # === helpers ===
