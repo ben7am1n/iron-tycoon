@@ -34,6 +34,7 @@
 class_name EquipmentArt extends RefCounted
 
 const Palette := preload("res://src/palette.gd")
+const Proj2D := preload("res://src/presentation/oblique_projection.gd")
 
 ## Art map 每个 cell 的逻辑像素数（16×16），放大到 CELL_SIZE 后每个 art px = 2 屏 px。
 ## V3 Phase 3：8→16 提升造型细节（同 32×32/cell 屏尺寸，4 倍 art 分辨率）。
@@ -292,7 +293,8 @@ const DEFAULT_EQUIP_HEIGHT := 24.0
 
 ## 挤出面高度系数（与 oblique_projection.HEIGHT_SCALE 同值 —— 纹理裁剪
 ## 高度 = height × 系数，WorldCanvas 用同一系数绘制面四边形）。
-const FACE_HEIGHT_SCALE := 0.62
+## V3.1 R1：改为引用 Proj2D.HEIGHT_SCALE（单一来源，随投影修正 0.62→0.79）。
+const FACE_HEIGHT_SCALE := Proj2D.HEIGHT_SCALE
 
 ## 挤出面纹理缓存：key = "eq|zone|rot|face_h" → {"front": tex, "side": tex}。
 var _face_cache: Dictionary = {}

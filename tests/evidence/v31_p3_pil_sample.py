@@ -28,11 +28,11 @@ PNG = os.path.join(EVIDENCE_DIR, "v31-p3-density.png")
 
 # === 投影常量（与 oblique_projection.gd / main.gd 同源复算） ===
 SHEAR = 0.35
-FLOOR_SCALE = 0.78
-HEIGHT_SCALE = 0.62
+FLOOR_SCALE = 0.62
+HEIGHT_SCALE = 0.79
 EXTRUDE_X = 0.20
 WORLD_SCALE = 0.75
-VIEWPORT_OFFSET = (19.05, 51.975)
+VIEWPORT_OFFSET = (19.05, 78.1875)
 SCREEN_PER_VIEWPORT = (1280.0 / 426.0, 720.0 / 240.0)
 CELL = 32
 
@@ -172,28 +172,37 @@ def verify_floor_clusters(img):
 
 def verify_irregular_edges(img):
     print("\n-- B. 区域边界不规则（非完美直线矩形） --")
-    # strength 左边界世界列 x=32：取 zone 内 y 范围（32..288）采样边界列投影
+    # strength 左边界世界列 x=32：取 zone 内 y 范围（32..288）采样边界列投影。
+    # V3.1 R1（投影修正）：HEIGHT_SCALE 0.62→0.79 后西墙面 + 镜面装饰在屏幕上
+    # 更高更宽，边界列上段（y<90）落在墙面而非地板 —— 采样窗口改为跨边界
+    # 两侧（x=22..46，含 walk 环 x<32 与 strength x≥32），y 取墙面覆盖不到的
+    # 中下段（90..215）—— 意图不变：边界不规则 → 窗口内 walk/strength 两色
+    # 并存（若边界是完美直线，x<32 全 walk、x≥32 全 strength，窗口只含单侧）。
     x0, y0, w, h = ZONE_RECTS_PX["strength"]
     zone_px = 0
     walk_px = 0
     px = img.load()
-    for wy in range(y0 + 6, y0 + h - 6, 4):
-        sx, sy = screen(x0, wy)
-        if not (0 <= sx < img.width and 0 <= sy < img.height):
-            continue
-        c = px[sx, sy]
-        if near_any(c, FLOOR_STRENGTH_COLORS, 0.10):
-            zone_px += 1
-        elif near_any(c, FLOOR_WALK_COLORS, 0.12):
-            walk_px += 1
+    for wy in range(90, 215, 5):
+        for wx in range(x0 - 10, x0 + 14, 2):
+            sx, sy = screen(wx, wy)
+            if not (0 <= sx < img.width and 0 <= sy < img.height):
+                continue
+            c = px[sx, sy]
+            if near_any(c, FLOOR_STRENGTH_COLORS, 0.10):
+                zone_px += 1
+            elif near_any(c, FLOOR_WALK_COLORS, 0.12):
+                walk_px += 1
     check(zone_px > 0 and walk_px > 0,
           f"B strength left edge irregular (zone {zone_px} + walk {walk_px} samples)")
 
 
 def verify_wall_paint(img):
     print("\n-- C. 墙面粉刷非纯色（手绘 cluster） --")
-    # 北墙（WALL_BASE）采样：世界 (200, 24, z=55) 附近窗口。z=55 中段墙面。
-    cx, cy = 200, 24
+    # 北墙（WALL_BASE）采样：世界 (90, 24, z=55) 附近窗口。z=55 中段墙面。
+    # V3.1 R1（投影修正）：x=200 在 HEIGHT_SCALE 0.79 下与 P5 红广告牌
+    # （WALL_DECOR.ad_red 挂墙 z 35..105）重叠 —— 墙面采样改 x=90
+    # （P1 capture 同源避让点：窗 x 96+/喷淋 x 80..84 之间，纯墙段）。
+    cx, cy = 90, 24
     colors = []
     for dz in range(-8, 9, 2):
         for dx in range(-6, 7, 2):

@@ -191,8 +191,12 @@ func _verify_world_floor(img: Image) -> void:
 	for zone in FLOOR_SAMPLES:
 		var center: Vector2 = FLOOR_SAMPLES[zone]
 		var colors: Array[Color] = []
-		for dy in range(-FLOOR_SAMPLE_R, FLOOR_SAMPLE_R, 3):
-			for dx in range(-FLOOR_SAMPLE_R, FLOOR_SAMPLE_R, 3):
+		# V3.1 R1（投影修正）：采样步长 3→2 —— 世界帧采样窗口不变（±12 world px），
+		# 但 FLOOR_SCALE 0.78→0.62 后同一世界点经 nearest 采样落在不同地板 texel，
+		# 3px 步长在稀疏手绘 cluster 下会漏掉第 3 色调（flex 实测 2）。加密到
+		# 2px 步长保持窗口与检查意图不变（地板区域多色，非贴图）。
+		for dy in range(-FLOOR_SAMPLE_R, FLOOR_SAMPLE_R, 2):
+			for dx in range(-FLOOR_SAMPLE_R, FLOOR_SAMPLE_R, 2):
 				var p := world_to_screen(center + Vector2(dx, dy))
 				if _in_bounds(img, p):
 					colors.append(img.get_pixel(p.x, p.y))

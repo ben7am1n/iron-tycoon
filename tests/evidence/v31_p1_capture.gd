@@ -121,11 +121,13 @@ func _verify_structure() -> void:
 	if canvas != null:
 		_ok(canvas.get("_floor_art") != null, "STRUCT WorldCanvas has FloorArt (V3 §1 low-res pipeline)")
 		_ok(canvas.get("_equip_art") != null, "STRUCT WorldCanvas has EquipmentArt (V3 Phase 3)")
-	# 投影常量契约（V3.1 P1）：30-45° 区间 → FLOOR_SCALE/HEIGHT_SCALE 合理。
-	_ok(Proj2D.FLOOR_SCALE > 0.70 and Proj2D.FLOOR_SCALE < 0.87,
-		"STRUCT FLOOR_SCALE %.2f in 30-45deg band" % Proj2D.FLOOR_SCALE)
-	_ok(Proj2D.HEIGHT_SCALE > 0.50 and Proj2D.HEIGHT_SCALE < 0.71,
-		"STRUCT HEIGHT_SCALE %.2f in 30-45deg band" % Proj2D.HEIGHT_SCALE)
+	# 投影常量契约（V3.1 P1/P1-R1）：30-45° 俯角 → FLOOR_SCALE=sin(θ)∈[0.50,0.71]、
+	# HEIGHT_SCALE=cos(θ)∈[0.71,0.87]（R1 修正：此前 0.78/0.62 相当于 52° 俯角，
+	# 超出区间读作俯视布局图 —— 修正为 sin38°≈0.62 / cos38°≈0.79）。
+	_ok(Proj2D.FLOOR_SCALE > 0.50 and Proj2D.FLOOR_SCALE < 0.71,
+		"STRUCT FLOOR_SCALE %.2f in 30-45deg band (sin)" % Proj2D.FLOOR_SCALE)
+	_ok(Proj2D.HEIGHT_SCALE > 0.71 and Proj2D.HEIGHT_SCALE < 0.87,
+		"STRUCT HEIGHT_SCALE %.2f in 30-45deg band (cos)" % Proj2D.HEIGHT_SCALE)
 	# 世界锚定 UI 投影注入（selection cue/toolbar 拿 world_to_screen）。
 	var cue := _main.get_node_or_null("UICanvas/SelectionCue")
 	if cue != null:
@@ -202,6 +204,10 @@ func _verify_equipment_volume(img: Image) -> void:
 ## 会员生成后（frame 150，到达率 60/min → 应有会员在走动/排队）：
 ## 取第一个非 USING 会员，采样其 sprite 衬衫区（脚底上方 ~20-34px），
 ## 命中 SKY（walking）/ PEACH（queueing）通道色 —— 人物立起有身体。
+## V3.1 R1（投影修正）：sprite 是 screen-space billboard（脚底投影点上方
+## 48px sprite，不随 FLOOR_SCALE 压缩）—— 采样改为「投影脚底 + 屏幕空间
+## 偏移」，不再用世界坐标向上偏移（旧方式在 FLOOR_SCALE 0.78→0.62 后
+## 与 sprite 错位）。
 func _verify_member_volume(img: Image) -> void:
 	var member = _find_visible_member()
 	if member == null:
@@ -211,12 +217,17 @@ func _verify_member_volume(img: Image) -> void:
 	var state := str(member["state"])
 	var expected := Palette.SKY if _is_walking_state(state) else Palette.PEACH
 	var feet := Vector2(cell.x * 32 + 16, cell.y * 32 + 32)
-	# 衬衫区：脚底上方 20..34px（48px sprite 中段），水平扫 5 列
+	var feet_p := world_to_screen(feet)
+	# 衬衫区：屏幕空间脚底上方 48..66px（48px sprite 中段 shirt 行 20-34 ×
+	# 0.75×3 屏幕放大 ≈ 45..76px；实测 shirt 蓝灰在 50-66px —— 取中段
+	# 48/54/60/66），水平扫 5 列。
 	var found := false
-	for dy in [20, 24, 28, 32]:
-		var p := world_to_screen(feet - Vector2(0, dy))
-		for dx in [-8, -4, 0, 4, 8]:
-			var c := img.get_pixel(p.x + dx, p.y)
+	for dy in [48, 54, 60, 66]:
+		for dx in [-10, -5, 0, 5, 10]:
+			var p := Vector2i(feet_p.x + dx, feet_p.y - dy)
+			if not _in_bounds(img, p):
+				continue
+			var c := img.get_pixel(p.x, p.y)
 			if _near(c, expected, 0.28) or _near(c, Palette.MEMBER_SKIN, 0.25):
 				found = true
 				break
@@ -227,7 +238,7 @@ func _verify_member_volume(img: Image) -> void:
 	# 会员 sprite 高于地面（脚底贴地，身体立起 —— 与地板不同色）
 	var ground_p := world_to_screen(feet)
 	var ground_c := img.get_pixel(ground_p.x, ground_p.y)
-	var body_p := world_to_screen(feet - Vector2(0, 28))
+	var body_p := Vector2i(feet_p.x, feet_p.y - 54)
 	var body_c := img.get_pixel(body_p.x, body_p.y)
 	_ok(not _near(ground_c, body_c, 0.06),
 		"MEMBER body pixels differ from ground (standing, has height): %s vs %s" % [
@@ -270,6 +281,10 @@ func _ok(cond: bool, msg: String) -> void:
 	if not cond:
 		_all_ok = false
 	print("  %s %s" % ["PASS" if cond else "FAIL", msg])
+
+
+func _in_bounds(img: Image, p: Vector2i) -> bool:
+	return p.x >= 0 and p.y >= 0 and p.x < img.get_width() and p.y < img.get_height()
 
 
 func _near(a: Color, b: Color, tol: float) -> bool:

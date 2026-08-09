@@ -37,13 +37,18 @@ const OFF := Main.WORLD_VIEWPORT_OFFSET
 const WS := Main.WORLD_SCALE
 
 ## 世界采样锚点（世界像素空间）。
-## 红广告牌：WALL_DECOR.ad_red = (192,1) 挂墙，墙条坐标 → 世界坐标近似
-## 取墙基（y≈24 处投影）。直接对渲染帧做色簇检测，锚点只用于容差窗口。
-const AD_ANCHOR := Vector2(192, 20)
+## 红广告牌：WALL_DECOR.ad_red = (192,1) 挂墙，墙条坐标 fy=1 → 墙面 z≈105
+## （V3.1 R1 修正投影后 HEIGHT_SCALE 0.79：墙更高，广告牌必须按墙面高度采样，
+## 不能再按墙基 z=0 近似 —— 旧近似在新投影下窗口偏移出广告牌区域）。
+## 采样 z 用 AD_ANCHOR_Z（墙面高度，世界 px）。
+const AD_ANCHOR := Vector2(192, 24)
+const AD_ANCHOR_Z := 105.0
 ## 黄水杯：DECOR.cup_yellow_f1 = (88,108)。
 const CUP_ANCHOR := Vector2(88, 108)
-## 彩色瑜伽球：DECOR.yoga_ball_f1 = (288,96)。
-const YOGA_BALL_ANCHOR := Vector2(288, 96)
+## 彩色瑜伽球：DECOR.yoga_ball_f1 = (320,136)。
+## V3.1 R1（投影修正）：原 (288,96) 落入 column_2 前景立柱屏幕柱影
+## （x 284..308），东移到 flex 区中段可见木地板。
+const YOGA_BALL_ANCHOR := Vector2(320, 136)
 ## treadmill(2,2) footprint = (64,64,64,32)；顶面 z=30。
 const TM_RECT := Rect2i(64, 64, 64, 32)
 const TM_HEIGHT := 30.0
@@ -121,7 +126,8 @@ func _capture_and_report() -> void:
 ##   - 植物亮叶（PLANT_GREEN_LIGHT）在植物锚点附近存在（绿色焦点）
 func _verify_world_frame(img: Image) -> void:
 	# 红广告牌：渲染帧窗口内找 FOCAL_RED 族（含光照压暗/提亮 → 宽容差 0.22）
-	var ad_found := _window_contains(img, AD_ANCHOR, 22, Palette.FOCAL_RED, 0.22)
+	# V3.1 R1：广告牌挂墙 z≈105，按墙面高度采样（旧 z=0 近似在新投影下偏移）。
+	var ad_found := _window_contains(img, AD_ANCHOR, 22, Palette.FOCAL_RED, 0.22, AD_ANCHOR_Z)
 	_ok(ad_found, "WORLD red ad board focal red pixels present (红广告牌焦点)")
 	# 黄水杯
 	var cup_found := _window_contains(img, CUP_ANCHOR, 20, Palette.ACCENT_YELLOW, 0.22)
@@ -173,10 +179,11 @@ func _ok(cond: bool, msg: String) -> void:
 
 
 ## 世界锚点周围窗口内是否存在接近 [color] 的像素（投影后 + 容差窗口）。
-func _window_contains(img: Image, world_anchor: Vector2, r: int, color: Color, tol: float) -> bool:
+## [height_z] 采样高度（世界 px，z=0 贴地；挂墙元素按墙面高度采样）。
+func _window_contains(img: Image, world_anchor: Vector2, r: int, color: Color, tol: float, height_z: float = 0.0) -> bool:
 	for dy in range(-r, r + 1, 2):
 		for dx in range(-r, r + 1, 2):
-			var p := world_to_screen(world_anchor + Vector2(dx, dy))
+			var p := world_to_screen(world_anchor + Vector2(dx, dy), height_z)
 			if not _in_bounds(img, p):
 				continue
 			var c := img.get_pixel(p.x, p.y)

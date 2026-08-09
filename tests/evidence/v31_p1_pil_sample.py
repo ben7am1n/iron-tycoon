@@ -18,18 +18,20 @@ src/presentation/oblique_projection.gd 相同的投影数学复算采样点：
 退出码：0 = 全部通过；1 = 有失败。
 """
 import math
+import os
 import sys
 from PIL import Image
 
-PNG = "/Users/bmac/CodeBase/gym_manager/tests/evidence/v31-p1-camera.png"
+EVIDENCE_DIR = os.path.dirname(os.path.abspath(__file__))
+PNG = os.path.join(EVIDENCE_DIR, "v31-p1-camera.png")
 
 # === 投影常量（与 oblique_projection.gd / main.gd 同源复算） ===
 SHEAR = 0.35
-FLOOR_SCALE = 0.78
-HEIGHT_SCALE = 0.62
+FLOOR_SCALE = 0.62
+HEIGHT_SCALE = 0.79
 EXTRUDE_X = 0.20
 WORLD_SCALE = 0.75
-VIEWPORT_OFFSET = (19.05, 51.975)
+VIEWPORT_OFFSET = (19.05, 78.1875)
 SCREEN_PER_VIEWPORT = (1280.0 / 426.0, 720.0 / 240.0)
 
 
