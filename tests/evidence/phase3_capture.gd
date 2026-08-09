@@ -65,9 +65,12 @@ var _all_ok := true
 
 
 ## 世界坐标 → 屏幕坐标（V3 §2 管线换算，独立于 main.gd 实现复算）。
-func world_to_screen(w: Vector2) -> Vector2i:
+## [z] 高度（世界 px，0=地面；设备顶面用设备高度）。
+func world_to_screen(w: Vector2, z: float = 0.0) -> Vector2i:
 	# V3.1 P1：世界→屏幕走 oblique 投影（main.gd 同源换算，证据独立复算）。
-	var v := Proj2D.world_to_screen(w, OFF, WS, Vector2(SX, SY))
+	# V3.1 P2：设备有体积，treadmill 顶面 z=30（EQUIP_HEIGHTS treadmill 30.0）
+	# —— 跑带/控制台在前半区顶面，采样必须带高度（z=0 会采到挤出前脸）。
+	var v := Proj2D.world_to_screen(w, OFF, WS, Vector2(SX, SY), z)
 	return Vector2i(roundi(v.x), roundi(v.y))
 
 
@@ -168,8 +171,11 @@ func _verify_world_equipment() -> void:
 	var tm := _grab()
 	if tm == null:
 		return
-	var front := _region_has(tm, Rect2i(64, 88, 64, 8), Palette.EQUIP_ACCENT_CYAN, 0.15)
-	var back := _region_has(tm, Rect2i(64, 64, 64, 8), Palette.EQUIP_ACCENT_CYAN, 0.15)
+	# V3 §5 朝向：控制台（cyan display）在 treadmill 顶面前半区 —— 采样顶面
+	# z=30（EQUIP_HEIGHTS treadmill 30.0；z=0 会采到挤出前脸/接触影，见
+	# V3.1 P2 设备体积）。front = 世界 y 88..96（控制台行），back = 64..72。
+	var front := _region_has(tm, Rect2i(64, 88, 64, 8), Palette.EQUIP_ACCENT_CYAN, 0.15, 30.0)
+	var back := _region_has(tm, Rect2i(64, 64, 64, 8), Palette.EQUIP_ACCENT_CYAN, 0.15, 30.0)
 	_ok(front, "WORLD treadmill front (console) has cyan display — orientation (V3 §5)")
 	_ok(not back, "WORLD treadmill back has no cyan — front/back distinct (V3 §5)")
 	# contact shadow（§6）：treadmill(2,2) fp (64,64,64,32) 下方 contact shadow
@@ -190,6 +196,9 @@ func _verify_world_equipment() -> void:
 
 ## hover 验证（V3 §14）：treadmill(2,2) fp 世界 (64,64,64,32) →
 ## 屏幕 → 黄色 Butter 轮廓采样 + 精灵上移（顶部原本轮廓色处出现高光/亮色）。
+## V3.1 P1 迁移：hover outline 是围绕 oblique 投影足迹的平行四边形（顶面在
+## z=height 挤出，底面贴地）—— 左缘从 proj(62,62,30) 到 proj(62,98,0)，
+## 不再是轴对齐矩形。沿四条边采样，任一边命中 Butter 即 PASS。
 func _verify_hover() -> void:
 	if _world_canvas == null:
 		_ok(false, "HOVER world_canvas available")
@@ -199,20 +208,39 @@ func _verify_hover() -> void:
 	var img := _grab()
 	if img == null:
 		return
-	# 轮廓：hover outline 画在 fp_rect.grow(2) 描边，宽 2*补偿 ≈ 2.67 世界 px，
-	# 且 draw_rect(unfilled) 描边在 rect 内侧 —— 左缘带 ≈ 世界 x 59.3..62。
-	# 采样点取左缘带中心 (60.5, 66)，窗口 ±5 屏 px（≈±2 世界 px）。
-	var outline_p := world_to_screen(Vector2(60.5, 66))
+	# fp.grow(2) = Rect2(62, 62, 68, 36)；平行四边形四角（顶面 z=30 / 底面 z=0）
+	var tl := world_to_screen(Vector2(62, 62), 30.0)
+	var tr := world_to_screen(Vector2(130, 62), 30.0)
+	var br := world_to_screen(Vector2(130, 98), 0.0)
+	var bl := world_to_screen(Vector2(62, 98), 0.0)
 	var butter_found := false
-	for dy in range(-5, 6):
-		for dx in range(-5, 6):
-			var c := img.get_pixel(outline_p.x + dx, outline_p.y + dy)
-			if _near(c, Palette.BUTTER, 0.20):
-				butter_found = true
+	for pair in [
+		[Vector2(tl), Vector2(tr)],
+		[Vector2(tr), Vector2(br)],
+		[Vector2(br), Vector2(bl)],
+		[Vector2(bl), Vector2(tl)],
+	]:
+		var a: Vector2 = pair[0]
+		var b: Vector2 = pair[1]
+		var len := maxi(1, int(a.distance_to(b) / 3.0))
+		for i in range(0, len + 1):
+			var pt := a.lerp(b, float(i) / float(len))
+			for dy in range(-6, 7):
+				for dx in range(-6, 7):
+					var x := int(round(pt.x)) + dx
+					var y := int(round(pt.y)) + dy
+					if x < 0 or y < 0 or x >= img.get_width() or y >= img.get_height():
+						continue
+					if _near(img.get_pixel(x, y), Palette.BUTTER, 0.20):
+						butter_found = true
+						break
+				if butter_found:
+					break
+			if butter_found:
 				break
 		if butter_found:
 			break
-	_ok(butter_found, "HOVER yellow (Butter) pixel outline around treadmill (V3 §14)")
+	_ok(butter_found, "HOVER yellow (Butter) pixel outline around treadmill parallelogram (V3 §14)")
 
 
 ## 底部购买栏缩略图（V3 §10）：tile 图标 slot 是 pixel sprite（非占位符字形）。
@@ -310,9 +338,10 @@ func _distinct_colors(colors: Array[Color], tol: float) -> int:
 	return reps.size()
 
 
-func _region_has(img: Image, world_rect: Rect2i, color: Color, tol: float) -> bool:
-	var tl := world_to_screen(world_rect.position)
-	var br := world_to_screen(world_rect.position + world_rect.size)
+## [world_rect] 世界矩形；[z] 采样高度（0=地面，设备顶面用设备高度）。
+func _region_has(img: Image, world_rect: Rect2i, color: Color, tol: float, z: float = 0.0) -> bool:
+	var tl := world_to_screen(world_rect.position, z)
+	var br := world_to_screen(world_rect.position + world_rect.size, z)
 	for y in range(tl.y, br.y):
 		for x in range(tl.x, br.x):
 			if x < 0 or y < 0 or x >= img.get_width() or y >= img.get_height():

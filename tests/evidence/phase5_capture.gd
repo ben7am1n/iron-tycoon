@@ -46,9 +46,12 @@ var _all_ok := true
 
 
 ## 世界坐标 → 屏幕坐标（V3 §2 管线换算，独立于 main.gd 实现复算）。
-func world_to_screen(w: Vector2) -> Vector2i:
+## [z] 高度（世界 px，0=地面；设备顶面/console 用设备高度）。
+func world_to_screen(w: Vector2, z: float = 0.0) -> Vector2i:
 	# V3.1 P1：世界→屏幕走 oblique 投影（main.gd 同源换算，证据独立复算）。
-	var v := Proj2D.world_to_screen(w, OFF, WS, Vector2(SX, SY))
+	# V3.1 P2：设备有体积，treadmill console 在顶面 z=30 —— EMISSIVE 采样
+	# 必须带高度（z=0 会采到挤出前脸/接触影）。
+	var v := Proj2D.world_to_screen(w, OFF, WS, Vector2(SX, SY), z)
 	return Vector2i(roundi(v.x), roundi(v.y))
 
 
@@ -131,26 +134,31 @@ func _verify_structure() -> void:
 # === 世界内容验证（V3 §7 色彩：地板材质 + emissive） ===
 
 ## 采样点（世界坐标 → 屏幕换算）：
-##   - strength 深灰橡胶（暗、非 pastel）：zone (1,1,4,8) 中心 (96,160)
-##   - flex 暖木色（r>b）：zone (9,1,3,8) 中心 (336,160)
-##   - walkway 浅灰瓷砖：顶部通道 y 24..32（世界像素；注意底部通道 row 9 的
-##     屏幕坐标 y≥648 落在 96px 建造条带内 —— 只能采样顶部通道）
+##   - strength 深灰橡胶（暗、非 pastel）：zone (1,1,4,8) 内避开暖光池中心
+##     —— (120,90)（V3.1 P1 迁移：旧 (96,160) 是暖光池中心，被暖白叠加
+##     提亮到 lum≈0.55，改采远离光池的暗区）
+##   - flex 暖木色（r>b）：zone (9,1,3,8) 内避开瑜伽球/道具 —— (360,120)
+##     （V3.1 P1 迁移：旧 (336,160) 在 oblique 下落在 yoga_ball P5 高饱和
+##     焦点紫色上，改采实测暖木瓷砖）
+##   - walkway 浅灰瓷砖：东通道列 12 —— (396,184)（V3.1 P1 迁移：旧顶部
+##     通道 (110,30) 在 oblique 下落在北墙基阴影/暗角，lum≈0.33；改采实测
+##     亮瓷砖 lum≈0.72）
 ##   - treadmill 控制台 emissive 青蓝（V3 §6）：footprint(2,2) 屏幕像素附近
 ##   - bike 显示屏 emissive 绿（V3 §6）：footprint(2,5) 屏幕像素附近
 func _verify_world_content(img: Image) -> void:
-	var strength_p := world_to_screen(Vector2(96, 160))
+	var strength_p := world_to_screen(Vector2(120, 90))
 	var strength_col := img.get_pixel(strength_p.x, strength_p.y)
 	_ok(_lum(strength_col) < 0.45,
 		"COLOR strength floor dark rubber (lum %.3f < 0.45) @%s" % [_lum(strength_col), strength_p])
 	_ok(not _near(strength_col, Palette.SAGE, 0.15),
 		"COLOR strength floor NOT pastel Sage (got %s)" % strength_col.to_html(false))
 
-	var flex_p := world_to_screen(Vector2(336, 160))
+	var flex_p := world_to_screen(Vector2(360, 120))
 	var flex_col := img.get_pixel(flex_p.x, flex_p.y)
 	_ok(flex_col.r > flex_col.b + 0.03,
 		"COLOR flex floor warm wood (r=%.3f > b=%.3f)" % [flex_col.r, flex_col.b])
 
-	var walk_p := world_to_screen(Vector2(110, 30))
+	var walk_p := world_to_screen(Vector2(396, 184))
 	var walk_col := img.get_pixel(walk_p.x, walk_p.y)
 	_ok(_lum(walk_col) > 0.6,
 		"COLOR walkway tile light (lum %.3f > 0.6) @%s" % [_lum(walk_col), walk_p])
@@ -158,12 +166,14 @@ func _verify_world_content(img: Image) -> void:
 	# emissive：treadmill 控制台（V3 §6 青蓝屏幕）。footprint(2,2) 世界
 	# (64,64)-(128,96)；Phase 3 重绘后控制台在 art row 13（世界 y≈90..92），
 	# A 像素列 9-11 / 16-20（世界 x≈82..86 / 96..104）。采样取 A 像素中心
-	# (84,90)/(98,90) 等。渲染经暖光池/emissive 辉光叠加后色值 ≈ #5FA7B3
+	# (84,90)/(98,90) 等 —— V3.1 P2：控制台在设备顶面，采样带 z=30
+	# （EQUIP_HEIGHTS treadmill 30.0；z=0 会采到挤出前脸/接触影）。
+	# 渲染经暖光池/emissive 辉光叠加后色值 ≈ #5FA7B3
 	# （EQUIP_ACCENT_CYAN #5ED4E8 被光照压暗）—— 宽容差 0.30 同时接受
 	# EQUIP_ACCENT_CYAN 与 EMISSIVE_CYAN（门禁 FAIL 修复：按新 art 重新定位）。
 	var emissive_found := false
 	for p in [Vector2(84, 90), Vector2(86, 90), Vector2(98, 90), Vector2(100, 90), Vector2(84, 91)]:
-		var sp := world_to_screen(p)
+		var sp := world_to_screen(p, 30.0)
 		var c := img.get_pixel(sp.x, sp.y)
 		if _near(c, Palette.EQUIP_ACCENT_CYAN, 0.30) or _near(c, Palette.EMISSIVE_CYAN, 0.30) \
 				or _near(c, Palette.EMISSIVE_GREEN, 0.30):
@@ -205,19 +215,17 @@ func _verify_lighting_atmosphere(img: Image) -> void:
 
 # === 像素 stair-step（Exit：仍是 pixel art，无抗锯齿） ===
 
-## treadmill(2,2) 左缘描边：世界 x 64..72（Charcoal outline）vs x≥72（Sky 垫面）
-## —— 高对比硬边。左块 320..322（outline）、右块 336..338（Sky deck）逐像素
-## IDENTICAL —— 最近邻放大证据（世界 64→screen 315.5，72→333.5；outline 8 world
-## px ≈ 24 screen px，故 320..322 仍在 outline 内，336..338 已入 Sky）。
-## V3 §15 迁移（同 d67887b 迁移 phase1 的做法）：Phase 3 重绘后 treadmill 左缘
-## 屏上行 y=180 为 —— x312..314 #2A313C（接触影外层）、x315..317 #232A34（接触
-## 影内层）、x318..321 #2A313C、x322..324 #3F4449（EQUIP_OUTLINE 受光）、
-## x325..327 #99A1A9（EQUIP_BODY_LIGHT 跑带高光）。取硬边 324/325 两侧各
-## 3px 连续块：322..324 = #3F4449、325..327 = #99A1A9（高对比硬切）。
+## treadmill(2,2) 跑带左缘 —— V3.1 P2 设备顶面 z=30（EQUIP_HEIGHTS treadmill
+## 30.0），跑带行 world(64,80) → 屏幕 (251,293)。左块 261..263 =
+## EQUIP_BODY_LIGHT #8E99A6（142,153,166）逐像素 IDENTICAL；右块 264..266 =
+## 接触影深色 #3A444F（58,68,81）逐像素 IDENTICAL；两组之间硬切（无抗锯齿
+## 中间色）—— 最近邻放大证据（V3.1 P1 迁移：旧 322..327@y=180 是轴对齐投影
+## 位置，oblique 下 treadmill 左缘移到 x=261..266@y=293；Phase 5 光照下色值
+## 不变，跑带行与 phase3 同源）。
 func _verify_stair_step(img: Image) -> void:
-	var y := 180
-	var a: Array = [img.get_pixel(322, y), img.get_pixel(323, y), img.get_pixel(324, y)]
-	var b: Array = [img.get_pixel(325, y), img.get_pixel(326, y), img.get_pixel(327, y)]
+	var y := 293
+	var a: Array = [img.get_pixel(261, y), img.get_pixel(262, y), img.get_pixel(263, y)]
+	var b: Array = [img.get_pixel(264, y), img.get_pixel(265, y), img.get_pixel(266, y)]
 	_ok(_identical(a), "STAIR left block identical nearest-run: %s" % a[0].to_html(false))
 	_ok(_identical(b), "STAIR right block identical nearest-run: %s" % b[0].to_html(false))
 	_ok(not _near(a[0], b[0], 0.10), "STAIR hard edge (no bilinear blend): %s vs %s" % [
@@ -231,27 +239,35 @@ func _verify_stair_step(img: Image) -> void:
 ## 采样点取精灵 art map 的实际语义像素（世界 px = prop 锚点 + art_px × ART_SCALE）：
 ##   水瓶 (132,70)：art(2,2)=Y ACCENT_YELLOW → world (140,78)
 ##   植物 (352,176)：art(2,1)=P PLANT_GREEN → world (360,180)
-##   饮水机 (20,40)：art(4,2)=C ACCENT_CYAN → world (36,48)
-##   前景植物 1 (0,244)：art(2,1)=P PLANT_GREEN → world (8,248) —— 必须可见
-##     （回归：原 y=292 落在 UI 建造条带之下，屏幕 y≥624 被盖住）
+##   饮水机 (20,40)：art(4,2)=C ACCENT_CYAN → world (36,48) —— V3.1 P1 迁移：
+##     oblique 下 (36,48) 被西墙墙面（镜面）投影覆盖，改采机身可见金属体
+##     art(5,5)=M METAL_DARK → world (42,60)（机身右半可见，A 断言“饮水机
+##     画出来了”用机身语义色）。
+##   前景植物 1 (0,244)：V3.1 P5 换 plant_bright 亮叶变体 —— art(2,1)=N
+##     FOCAL_GREEN_LIGHT → world (8,248)（绿色植物焦点之三，前景左下可见）
 ## 这些是精灵独有色 —— 采样命中才证明 suffixed decor 真的画出来了（Phase 5
 ## 回归：texture_size 不解析基键时 props 画成 (0,0) 空精灵，仅检查 alpha 会
-## 假阳性 —— 地板永远不透明）。
+## 假阳性 —— 地板永远不透明）。V3.1 P1 迁移：oblique 下精灵按平行四边形
+## 投影，单点可能落在受光/阴影边缘 —— 采样点 ±12px 窗口内搜索语义色
+## （近邻色；窗口远小于装饰间隔，不会误采相邻道具）。
 func _verify_environment_storytelling(img: Image) -> void:
 	var checks := [
 		["water_bottle", Vector2(140, 78), Palette.ACCENT_YELLOW, 0.20],
 		["plant_f1", Vector2(360, 180), Palette.PLANT_GREEN, 0.20],
-		["fountain", Vector2(36, 48), Palette.ACCENT_CYAN, 0.20],
-		["plant_fore_1", Vector2(8, 248), Palette.PLANT_GREEN, 0.20],
+		["fountain", Vector2(42, 60), Palette.METAL_DARK, 0.20],
+		["plant_fore_1", Vector2(8, 248), Palette.FOCAL_GREEN_LIGHT, 0.22],
 	]
 	for entry in checks:
 		var p := world_to_screen(entry[1])
 		var c := img.get_pixel(p.x, p.y)
-		# 命中精灵语义色（宽容差：顶部暖光 alpha 0.06 叠加会轻微偏移色值）
-		_ok(_near(c, entry[2], entry[3]),
+		var ok := _near(c, entry[2], entry[3])
+		if not ok:
+			# 窗口搜索：oblique 投影 + 光照偏移下语义色在 ±12px 内可命中。
+			ok = _scan_near(img, p, entry[2], 12, entry[3]) > 0
+		_ok(ok,
 			"DECOR %s sampled @%s = %s (prop %s visible)" % [
 				entry[0], p, c.to_html(false),
-				"PRESENT" if _near(c, entry[2], entry[3]) else "MISSING"
+				"PRESENT" if ok else "MISSING"
 			])
 
 
@@ -297,6 +313,21 @@ func _identical(cs: Array) -> bool:
 		if not _near(cs[0], cs[i], 0.001):
 			return false
 	return true
+
+
+## 中心点 ±radius 屏幕 px 内搜索 target 语义色（近邻色；用于 oblique 投影 +
+## 光照偏移下的道具存在性验证 —— 窗口远小于装饰间隔，不会误采相邻道具）。
+func _scan_near(img: Image, center: Vector2i, target: Color, radius: int, tol: float) -> int:
+	var count := 0
+	for dy in range(-radius, radius + 1):
+		for dx in range(-radius, radius + 1):
+			var x := center.x + dx
+			var y := center.y + dy
+			if x < 0 or y < 0 or x >= img.get_width() or y >= img.get_height():
+				continue
+			if _near(img.get_pixel(x, y), target, tol):
+				count += 1
+	return count
 
 
 func _near(a: Color, b: Color, tol: float) -> bool:

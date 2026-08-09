@@ -48,12 +48,15 @@ var _all_ok := true
 
 ## 注入会员：state -> cell / 设备 target。cell 避开初始布局设备占位
 ## （(2,2)(3,2)(2,5)(3,5)(6,3)(7,3)(1,7)(2,7)(1,8)(2,8)(9,2)）与互不遮挡。
-## 非 USING 会员放 row≥2：sprite 脚底锚定 cell 底部、头部向上越出 cell 16px
-## —— row 1 的头部会探进顶部走道，被 HUD 顶栏面板（screen y≈2..54）遮挡，
-## 汗滴/闪光等微元素会被盖住。row 2+ 头部完全露出（screen y≈108+）。
+## V3.1 P1 迁移：QUEUEING 从 (8,4) 移到 (9,4) —— 旧 cell 的 sprite 头/躯干被
+## FOREGROUND 立柱 (276,16,8,288) 盖住（oblique 下立柱正面投影覆盖右侧）。
+## (9,4) 全精灵无遮挡（sweat/head/shirt/legs 均 CLEAR，避让 treadmill(6,3)
+## 与立柱）。非 USING 会员放 row≥2：sprite 脚底锚定 cell 底部、头部向上越出
+## cell 16px —— row 1 的头部会探进顶部走道，被 HUD 顶栏面板（screen y≈2..54）
+## 遮挡，汗滴/闪光等微元素会被盖住。row 2+ 头部完全露出（screen y≈108+）。
 const INJECTED := [
 	{"member_id": 9001, "state": "WALKING_TO", "cell": Vector2i(5, 2)},
-	{"member_id": 9002, "state": "QUEUEING", "cell": Vector2i(8, 4)},
+	{"member_id": 9002, "state": "QUEUEING", "cell": Vector2i(9, 4)},
 	{"member_id": 9003, "state": "LEAVING", "cell": Vector2i(11, 2), "leaving_reason": "quota_met"},
 	{"member_id": 9004, "state": "SELECTING_TARGET", "cell": Vector2i(5, 6)},
 	{"member_id": 9005, "state": "USING", "cell": Vector2i(3, 3), "target_equipment": "treadmill"},
@@ -180,7 +183,7 @@ func _verify_action_states(img: Image) -> void:
 		# 非 USING 成员：脚底锚定 cell 底部；USING 成员：锚定设备 footprint。
 		var anchor := _member_anchor(state, entry, cell)
 		var shirt_px := _shirt_local(state, entry)
-		var p := world_to_screen(anchor + shirt_px)
+		var p := canvas_to_full(anchor + shirt_px)
 		if p.x < 0 or p.y < 0 or p.x >= img.get_width() or p.y >= img.get_height():
 			_ok(false, "STATE %-18s sample out of screen (%d,%d)" % [state, p.x, p.y])
 			continue
@@ -220,42 +223,41 @@ func _scan_near(img: Image, center: Vector2i, target: Color, radius: int) -> int
 ## 采样衬衫色 —— 颜色通道保留）。
 func _verify_channels(img: Image) -> void:
 	# WALKING_TO (9001) 衬衫 Sky
-	var walk_p := world_to_screen(_cell_anchor(Vector2i(5, 2)) + _shirt_local("WALKING_TO", INJECTED[0]))
+	var walk_p := canvas_to_full(_cell_anchor(Vector2i(5, 2)) + _shirt_local("WALKING_TO", INJECTED[0]))
 	_ok(_near(img.get_pixel(walk_p.x, walk_p.y), Palette.SKY, 0.20),
 		"CHANNEL walking 衬衫 Sky @%s" % str(walk_p))
 	# QUEUEING (9002) 衬衫 Peach（tired 姿态，颜色通道不变）
-	var queue_p := world_to_screen(_cell_anchor(Vector2i(8, 4)) + _shirt_local("QUEUEING", INJECTED[1]))
+	var queue_p := canvas_to_full(_cell_anchor(INJECTED[1]["cell"]) + _shirt_local("QUEUEING", INJECTED[1]))
 	_ok(_near(img.get_pixel(queue_p.x, queue_p.y), Palette.PEACH, 0.20),
 		"CHANNEL queue 衬衫 Peach @%s" % str(queue_p))
 	# LEAVING+quota_met (9003) 衬衫 灰
-	var leave_p := world_to_screen(_cell_anchor(Vector2i(11, 2)) + _shirt_local("LEAVING", INJECTED[2]))
+	var leave_p := canvas_to_full(_cell_anchor(Vector2i(11, 2)) + _shirt_local("LEAVING", INJECTED[2]))
 	_ok(_near(img.get_pixel(leave_p.x, leave_p.y), Palette.MEMBER_LEAVE_GRAY, 0.20),
 		"CHANNEL leaving 衬衫 MEMBER_LEAVE_GRAY @%s" % str(leave_p))
 
 
-## 设备互动（V3 §8）：USING 会员锚定在设备 footprint —— 在设备中心附近
-## 采样到成员主体像素（衬衫 Peach 或轮廓/皮肤 —— 至少不是纯地板）。
+## 设备互动（V3 §8）：USING 会员锚定在设备 footprint，脚底投影到设备高度
+## （stand_z = 高度×0.75）—— 在设备上采样成员主体像素（衬衫 Peach 或轮廓/
+## 皮肤 —— 至少不是纯地板）。V3.1 P1：锚点走 _member_anchor（画布坐标），
+## 采样走 canvas_to_full（billboard 不再贴地）。
 func _verify_equipment_interaction(img: Image) -> void:
-	# 初始布局 footprint 中心（世界坐标）：
-	#   treadmill(2,2) 2×1 → (96, 80)；bench(1,7) 2×2 → (64, 256)；
-	#   bike(2,5) 1×1 → (80, 176)；yoga(9,2) 1×1 → (304, 80)
-	var eqs := [
-		["treadmill", Vector2(96, 80)],
-		["bench_press", Vector2(64, 262)],
-		["bike", Vector2(80, 178)],
-		["yoga_mat", Vector2(304, 84)],
-	]
-	for entry in eqs:
-		var p := world_to_screen(entry[1])
+	# USING 注入条目（9005 treadmill / 9006 bench_press / 9007 bike / 9008 yoga_mat）
+	for entry in INJECTED:
+		if entry["state"] != "USING":
+			continue
+		var eq: String = entry["target_equipment"]
+		var anchor := _member_anchor("USING", entry, entry["cell"])
+		var shirt_px := _shirt_local("USING", entry)
+		var p := canvas_to_full(anchor + shirt_px)
 		if p.x < 0 or p.y < 0 or p.x >= img.get_width() or p.y >= img.get_height():
-			_ok(false, "EQ %s sample out of screen" % entry[0])
+			_ok(false, "EQ %s sample out of screen" % eq)
 			continue
 		var c := img.get_pixel(p.x, p.y)
 		# 成员主体/轮廓：不是纯地板色（Warm Cream 系）即为叠加成功
 		var is_floor := _near(c, Color("F4E9D8"), 0.10) or _near(c, Palette.SAGE, 0.10) \
 			or _near(c, Palette.SKY, 0.10) or _near(c, Palette.PEACH, 0.10)
 		_ok(not is_floor or _near(c, Palette.PEACH, 0.20),
-			"EQ %-12s @(%3d,%3d) = %s（设备上有人/轮廓叠加）" % [entry[0], p.x, p.y, c.to_html(false)])
+			"EQ %-12s @(%3d,%3d) = %s（设备上有人/轮廓叠加）" % [eq, p.x, p.y, c.to_html(false)])
 
 
 ## V3 §11 深色轮廓：在 walk 成员头左侧边缘采样 CHARCOAL（发际线外 1px）。
@@ -277,8 +279,8 @@ func _verify_outline(img: Image) -> void:
 	_ok(local != Vector2i(-1, -1), "OUTLINE 纹理存在 CHARCOAL 轮廓像素（发际线外）")
 	if local == Vector2i(-1, -1):
 		return
-	# 9001 WALKING_TO @cell(5,2)：锚 (5*32-8, 2*32-16)=(152,48)
-	var p := world_to_screen(Vector2(152, 48) + Vector2(local))
+	# 9001 WALKING_TO @cell(5,2)：billboard 画布锚点（_cell_anchor 已投影）
+	var p := canvas_to_full(_cell_anchor(Vector2i(5, 2)) + Vector2(local))
 	var c := img.get_pixel(p.x, p.y)
 	var ok := _near(c, Palette.CHARCOAL, 0.20)
 	if not ok:
@@ -293,7 +295,7 @@ func _verify_outline(img: Image) -> void:
 ## V3 §9 微型动态：tired 头顶 BUTTER 汗滴（9002 @cell(8,4)）、satisfied BUTTER
 ## 闪光（9003 @cell(11,2)）。采样点不硬编码 —— 从实际纹理按当前帧位解析
 ## （tick 奇偶决定 A/B 帧；汗滴/闪光在 A/B 帧位置不同）。在世界坐标中找到
-## 该 BUTTER 微元素的左上角后经 world_to_screen 采样，避免帧位漂移。
+## 该 BUTTER 微元素的左上角后经 canvas_to_full 采样，避免帧位漂移。
 func _verify_micro_elements(img: Image) -> void:
 	var sprites = _main.get("_member_sprites")
 	var tick := _live_tick()
@@ -303,7 +305,7 @@ func _verify_micro_elements(img: Image) -> void:
 	_ok(tired_local != Vector2i(-1, -1),
 		"MICRO tired 纹理存在 BUTTER 汗滴像素（帧位 tick=%d）" % tick)
 	if tired_local != Vector2i(-1, -1):
-		var tired_p := world_to_screen(_cell_anchor(Vector2i(8, 4)) + Vector2(tired_local))
+		var tired_p := canvas_to_full(_cell_anchor(INJECTED[1]["cell"]) + Vector2(tired_local))
 		var c1 := img.get_pixel(tired_p.x, tired_p.y)
 		var ok1 := _near(c1, Palette.BUTTER, 0.20)
 		if not ok1:
@@ -318,7 +320,7 @@ func _verify_micro_elements(img: Image) -> void:
 	_ok(sat_local != Vector2i(-1, -1),
 		"MICRO satisfied 纹理存在 BUTTER 闪光像素（帧位 tick=%d）" % tick)
 	if sat_local != Vector2i(-1, -1):
-		var sat_p := world_to_screen(_cell_anchor(Vector2i(11, 2)) + Vector2(sat_local))
+		var sat_p := canvas_to_full(_cell_anchor(Vector2i(11, 2)) + Vector2(sat_local))
 		var c2 := img.get_pixel(sat_p.x, sat_p.y)
 		var ok2 := _near(c2, Palette.BUTTER, 0.20)
 		if not ok2:
@@ -348,13 +350,6 @@ func _verify_perf() -> void:
 
 # === helpers ===
 
-## 世界坐标 → 屏幕坐标（V3 §2 管线换算，独立于 main.gd 实现复算）。
-func world_to_screen(w: Vector2) -> Vector2i:
-	# V3.1 P1：世界→屏幕走 oblique 投影（main.gd 同源换算，证据独立复算）。
-	var v := Proj2D.world_to_screen(w, OFF, WS, Vector2(SX, SY))
-	return Vector2i(roundi(v.x), roundi(v.y))
-
-
 ## 当前动画 tick（与 world_canvas 的 tick_provider 同源 —— 采样帧位一致）。
 func _live_tick() -> int:
 	if _orch != null and _orch.time_system != null:
@@ -362,11 +357,25 @@ func _live_tick() -> int:
 	return 0
 
 
-## 普通会员的 sprite 锚点（sprite 左上角）：cell 底边对齐 + 水平居中。
+## 画布坐标 → SubViewport 像素（vp = canvas × WS + OFF；与 main.gd WorldDisplay 同源）。
+func canvas_to_vp(c: Vector2) -> Vector2i:
+	return Vector2i(roundi(c.x * WS + OFF.x), roundi(c.y * WS + OFF.y))
+
+## 画布坐标 → 全屏像素（×3 放大）。
+func canvas_to_full(c: Vector2) -> Vector2i:
+	var v := canvas_to_vp(c)
+	return Vector2i(roundi(v.x * SX), roundi(v.y * SY))
+
+
+## 普通会员的 sprite 锚点（投影后画布坐标，sprite 左上角）：脚底
+## （cell 底部中心）投影后 - (sprite_w/2, sprite_w) —— 与 world_canvas._cell_anchor
+## 同源（V3.1 P1：billboard 站立，头部向上越出 cell）。
 func _cell_anchor(cell: Vector2i) -> Vector2:
 	var w := float(_main.get("_member_sprites").SIZE)
-	return Vector2(cell.x * CELL_SIZE + (CELL_SIZE - w) / 2.0,
-		cell.y * CELL_SIZE + CELL_SIZE - w)
+	var feet := Vector2(cell.x * CELL_SIZE + CELL_SIZE * 0.5,
+		cell.y * CELL_SIZE + CELL_SIZE)
+	var p := Proj2D.proj(feet.x, feet.y, 0.0)
+	return p - Vector2(w * 0.5, w)
 
 
 ## 衬衫采样局部坐标（纹理内）：站立/跑步姿态躯干行 (24,19)；卧推是横躺
@@ -391,23 +400,47 @@ func _channel_of(main_node, state: String) -> Color:
 			return Color(0, 0, 0, 0)
 
 
-## 注入条目 → 绘制锚点（非 USING：cell；USING：设备 footprint 中心附近）。
-## 证据脚本与 world_canvas 的 _equipment_anchor 同源复算。
+## 注入条目 → 绘制锚点（投影后画布坐标；非 USING：cell；USING：设备
+## footprint 中心附近，脚底投影到设备高度 stand_z = 高度×0.75 —— 与
+## world_canvas._equipment_anchor 同源）。证据脚本独立复算。
 func _member_anchor(state: String, entry: Dictionary, cell: Vector2i) -> Vector2:
 	if state != "USING":
 		return _cell_anchor(cell)
 	var eq: String = entry.get("target_equipment", "")
+	var w := float(_main.get("_member_sprites").SIZE)
+	var rect := _equipment_rect(eq)
+	var flat_anchor: Vector2
 	match eq:
 		"treadmill":
-			return Vector2(96 - 24, 96 - 48)
+			flat_anchor = Vector2(rect.position.x + rect.size.x / 2.0 - w * 0.5,
+				rect.position.y + rect.size.y - w)
 		"bench_press":
-			return Vector2(34, 224 + 26)
+			flat_anchor = Vector2(rect.position.x + 2, rect.position.y + 26)
 		"bike":
-			return Vector2(80 - 24, 160 + 32 - 16 - 24)
+			flat_anchor = Vector2(rect.position.x + rect.size.x / 2.0 - w * 0.5,
+				rect.position.y + rect.size.y - 16 - w * 0.5)
 		"yoga_mat":
-			return Vector2(304 - 24, 96 - 48 * 0.62)
+			flat_anchor = Vector2(rect.position.x + rect.size.x / 2.0 - w * 0.5,
+				rect.position.y + rect.size.y - w * 0.62)
 		_:
-			return _cell_anchor(cell)
+			flat_anchor = Vector2(rect.position.x + rect.size.x / 2.0 - w * 0.5,
+				rect.position.y + rect.size.y - w)
+	var flat_feet := flat_anchor + Vector2(w * 0.5, w)
+	var stand_z: float = 16.0
+	if _main.get("_equip_art") != null:
+		stand_z = _main.get("_equip_art").height_for(eq) * 0.75
+	var p := Proj2D.proj(flat_feet.x, flat_feet.y, stand_z)
+	return p - Vector2(w * 0.5, w)
+
+
+## 设备 footprint（世界坐标；与 main.gd 初始布局同源 —— 证据复算用）。
+func _equipment_rect(eq: String) -> Rect2i:
+	match eq:
+		"treadmill": return Rect2i(64, 64, 64, 32)
+		"bench_press": return Rect2i(32, 224, 64, 64)
+		"bike": return Rect2i(64, 160, 32, 32)
+		"yoga_mat": return Rect2i(288, 64, 32, 32)
+		_: return Rect2i(0, 0, 32, 32)
 
 
 ## 设备使用锚点（与 world_canvas._equipment_anchor 同源复算；供 INST 调试打印）。
@@ -415,17 +448,24 @@ func _equipment_anchor(eq_id: String, rect: Rect2i) -> Vector2:
 	var center_x := rect.position.x + rect.size.x / 2.0
 	var feet_y := rect.position.y + rect.size.y
 	var sprite_w := 48.0
+	var flat_anchor: Vector2
 	match eq_id:
 		"treadmill":
-			return Vector2(center_x - sprite_w / 2.0, feet_y - sprite_w)
+			flat_anchor = Vector2(center_x - sprite_w / 2.0, feet_y - sprite_w)
 		"bench_press":
-			return Vector2(rect.position.x + 2, rect.position.y + 26)
+			flat_anchor = Vector2(rect.position.x + 2, rect.position.y + 26)
 		"bike":
-			return Vector2(center_x - sprite_w / 2.0, rect.position.y + rect.size.y - 16 - sprite_w * 0.5)
+			flat_anchor = Vector2(center_x - sprite_w / 2.0, rect.position.y + rect.size.y - 16 - sprite_w * 0.5)
 		"yoga_mat":
-			return Vector2(center_x - sprite_w / 2.0, feet_y - sprite_w * 0.62)
+			flat_anchor = Vector2(center_x - sprite_w / 2.0, feet_y - sprite_w * 0.62)
 		_:
-			return Vector2(center_x - sprite_w / 2.0, feet_y - sprite_w)
+			flat_anchor = Vector2(center_x - sprite_w / 2.0, feet_y - sprite_w)
+	var flat_feet := flat_anchor + Vector2(sprite_w * 0.5, sprite_w)
+	var stand_z: float = 16.0
+	if _main.get("_equip_art") != null:
+		stand_z = _main.get("_equip_art").height_for(eq_id) * 0.75
+	var p := Proj2D.proj(flat_feet.x, flat_feet.y, stand_z)
+	return p - Vector2(sprite_w * 0.5, sprite_w)
 
 
 func _ok(cond: bool, msg: String) -> void:

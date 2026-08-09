@@ -47,9 +47,13 @@ var _all_ok := true
 
 
 ## 世界坐标 → 屏幕坐标（V3 §2 管线换算，独立于 main.gd 实现复算）。
-func world_to_screen(w: Vector2) -> Vector2i:
+## [w] 扁平世界坐标；[z] 高度（世界 px，0=地面；设备顶面/挤出面用设备高度）。
+func world_to_screen(w: Vector2, z: float = 0.0) -> Vector2i:
 	# V3.1 P1：世界→屏幕走 oblique 投影（main.gd 同源换算，证据独立复算）。
-	var v := Proj2D.world_to_screen(w, OFF, WS, Vector2(SX, SY))
+	# V3.1 P2：设备/结构有体积（顶面 z=height 挤出）—— 采样 z>0 顶面/挤出面
+	# 必须带高度（bench_press z=26、yoga_mat z=6；P1 审查：z=0 采样到挤出
+	# 前脸阴影，期望色在 z=15/30 顶面）。
+	var v := Proj2D.world_to_screen(w, OFF, WS, Vector2(SX, SY), z)
 	return Vector2i(roundi(v.x), roundi(v.y))
 
 
@@ -148,22 +152,25 @@ func _verify_structure() -> void:
 ##     轮廓 EQUIP_OUTLINE #3B4552（§11 机器深蓝灰轮廓，左缘 art col2）；access(2,3)
 ##     Butter 菱形
 ##   - bench_press(1,7) pad Sage（16×16 art 下 pad 居 world x 60..70，取 64）
-##   - yoga_mat(9,2) 垫面 Peach
+##     —— V3.1 P2：设备有体积，sage pad 在顶面 z=26（EQUIP_HEIGHTS bench_press
+##     26.0）。z=0 采样会落到挤出前脸阴影（#424B57）—— P1 审查确认期望色
+##     #8FBF9F 在 z=26 顶面。
+##   - yoga_mat(9,2) 垫面 Peach —— 同理顶面 z=6（EQUIP_HEIGHTS yoga_mat 6.0）
 ##   - 阴影对比：treadmill footprint 下方 vs 同区域地板
 func _verify_world_content(img: Image) -> void:
 	var checks := [
-		["deck_body", Vector2(96, 80), Color("5D6673"), 0.16],
-		["outline_equip", Vector2(68, 66), Color("3B4552"), 0.20],
-		["bench_sage", Vector2(64, 268), Color("8FBF9F"), 0.16],
-		["yoga_peach", Vector2(304, 80), Color("F2B486"), 0.16],
+		["deck_body", Vector2(96, 80), Color("5D6673"), 0.16, 0.0],
+		["outline_equip", Vector2(68, 66), Color("3B4552"), 0.20, 0.0],
+		["bench_sage", Vector2(64, 268), Color("8FBF9F"), 0.16, 26.0],
+		["yoga_peach", Vector2(310, 74), Color("F2B486"), 0.16, 6.0],
 	]
 	for entry in checks:
-		var p := world_to_screen(entry[1])
+		var p := world_to_screen(entry[1], entry[4])
 		var got := img.get_pixel(p.x, p.y)
 		var expect: Color = entry[2]
 		var ok := _near(got, expect, entry[3])
-		_ok(ok, "WORLD %-16s world%s -> screen(%3d,%3d) = %s expect=%s %s" % [
-			entry[0], str(entry[1]), p.x, p.y, got.to_html(false), expect.to_html(false),
+		_ok(ok, "WORLD %-16s world%s z=%s -> screen(%3d,%3d) = %s expect=%s %s" % [
+			entry[0], str(entry[1]), str(entry[4]), p.x, p.y, got.to_html(false), expect.to_html(false),
 			"OK" if ok else "MISMATCH"
 		])
 	# V3 §14 可读性（P0-2 修复）：access cell 星形标记仅 placement mode / hover
@@ -188,33 +195,34 @@ func _verify_world_content(img: Image) -> void:
 	])
 
 
-## 像素 stair-step（Exit 条件 1）：世界 x=68（sprite 左缘，treadmill 16×16 art
-## 的 art col2 = EQUIP_BODY_LIGHT）处的屏幕横向 6px：322/323/324（接触阴影
-## 色，Phase 5 光照叠加后 #3F4449）逐像素 IDENTICAL；325/326/327
-## （EQUIP_BODY_LIGHT + 光照）逐像素 IDENTICAL；两组之间硬切（无抗锯齿
-## 中间色）—— 最近邻放大证据。NEAREST 光栅化 + Phase 5 光照实测：
-## sprite 左缘起于 x=325。
+## 像素 stair-step（Exit 条件 1）：treadmill(2,2) 跑带左缘 —— V3.1 P2 设备顶面
+## z=30（EQUIP_HEIGHTS treadmill 30.0），跑带行 world(64,80) → 屏幕 (251,293)。
+## 左块 261..263 = EQUIP_BODY_LIGHT #8E99A6（142,153,166）逐像素 IDENTICAL；
+## 右块 264..266 = 接触影深色 #3A444F（58,68,81）逐像素 IDENTICAL；两组之间
+## 硬切（无抗锯齿中间色）—— 最近邻放大证据（P1 审查：旧 322..327@y=180 是
+## 轴对齐投影位置，oblique 下 treadmill 左缘移到 x=261..266@y=293）。
 func _verify_stair_step(img: Image) -> void:
-	var y := 180
-	var a: Array = [img.get_pixel(322, y), img.get_pixel(323, y), img.get_pixel(324, y)]
-	var b: Array = [img.get_pixel(325, y), img.get_pixel(326, y), img.get_pixel(327, y)]
-	_ok(_identical(a), "STAIR left block (322..324) identical nearest-run: %s" % a[0].to_html(false))
-	_ok(_identical(b), "STAIR right block (325..327) identical nearest-run: %s" % b[0].to_html(false))
-	_ok(not _near(a[0], b[0], 0.10), "STAIR hard edge 324/325 (no bilinear blend): %s vs %s" % [
+	var y := 293
+	var a: Array = [img.get_pixel(261, y), img.get_pixel(262, y), img.get_pixel(263, y)]
+	var b: Array = [img.get_pixel(264, y), img.get_pixel(265, y), img.get_pixel(266, y)]
+	_ok(_identical(a), "STAIR left block (261..263) identical nearest-run: %s" % a[0].to_html(false))
+	_ok(_identical(b), "STAIR right block (264..266) identical nearest-run: %s" % b[0].to_html(false))
+	_ok(not _near(a[0], b[0], 0.10), "STAIR hard edge 263/264 (no bilinear blend): %s vs %s" % [
 		a[0].to_html(false), b[0].to_html(false)
 	])
 
 
-## V3 §14：正常经营模式 grid 完全隐藏 —— 世界 (390,160)（walkway 列 12 瓷砖
-## 面）处无 Charcoal 线。采样窗口 x 1044..1066 @ y 357..360（水平网格线
-## world y=160 → screen ≈358，±2 viewport px 栅格化容差；窗口落在亮瓷砖面
-## 内，无结构/设备遮挡）。Phase 2 地面材质后旧采样点（力量区深灰橡胶）与
-## Charcoal 无法区分，迁移至亮区。
+## V3 §14：正常经营模式 grid 完全隐藏 —— world (394,224)（walkway 列 12 瓷砖面
+## 上的水平网格线位置）处无 Charcoal 线。采样窗口 x 1112..1132 @ y 544..550
+## （world y=224 → screen ≈547，±2 viewport px 栅格化容差；窗口落在亮瓷砖面
+## 内，无结构/设备遮挡）。V3.1 P1 迁移：旧窗口 1044..1066@357..360 是轴对齐
+## 投影下的世界 (390,160)；oblique 下该屏幕位置落在东墙（暗），改用新投影
+## 下 walkway 亮瓷砖 + 网格线交点 (394,224)→(1122,547)。
 func _verify_grid_hidden(img: Image) -> void:
 	var min_lum := 1.0
 	var max_lum := 0.0
-	for x in range(1044, 1067):
-		for y in range(357, 361):
+	for x in range(1112, 1133):
+		for y in range(544, 551):
 			var c := img.get_pixel(x, y)
 			min_lum = minf(min_lum, _luminance(c))
 			max_lum = maxf(max_lum, _luminance(c))
@@ -222,7 +230,7 @@ func _verify_grid_hidden(img: Image) -> void:
 	# 主断言是 min_lum（无暗线）；spread 为次级平坦检查 —— 瓷砖面 + 砖缝行
 	# 本身有 ~0.1 亮度差（材质地板，非旧纯色 Sage），Phase 5 地板砖缝 + 光照
 	# 叠加 ~0.16，放宽至 0.20（仅作平坦性参考，不承载 grid 隐藏判定）。
-	_ok(min_lum > 0.55, "GRID hidden: no charcoal in window 1044..1066 @357..360 (min lum %.3f)" % min_lum)
+	_ok(min_lum > 0.55, "GRID hidden: no charcoal in window 1112..1132 @544..550 (min lum %.3f)" % min_lum)
 	_ok(max_lum - min_lum < 0.20, "GRID hidden: flat tile window (spread %.3f)" % (max_lum - min_lum))
 
 
@@ -237,18 +245,18 @@ func _verify_ui_layer(img: Image) -> void:
 	])
 
 
-## placement mode（拖拽中）：网格线出现 —— 世界 (390,160) 亮瓷砖窗口内出现
-## Charcoal 暗线（水平网格线 world y=160 → screen ≈358；相对瓷砖面显著更暗）。
+## placement mode（拖拽中）：网格线出现 —— world (394,224) 亮瓷砖窗口内出现
+## Charcoal 暗线（水平网格线 world y=224 → screen ≈547；相对瓷砖面显著更暗）。
 ## V3 §14（P0-2 修复）：拖拽中 grid 可见 → 所有已放置实例的 access cell 星形
 ## 标记也出现（正常经营帧隐藏，见 _verify_world_content）。断言 treadmill(2,2)
-## 的 access cell (2,3) 中心（世界 (80,112)）出现 BUTTER 标记。
+## 的 access cell (2,3) 中心（世界 (80,112)，z=0 贴地）出现 BUTTER 标记。
 func _verify_grid_visible(img: Image) -> void:
 	var min_lum := 1.0
-	for x in range(1044, 1067):
-		for y in range(357, 361):
+	for x in range(1112, 1133):
+		for y in range(544, 551):
 			var c := img.get_pixel(x, y)
 			min_lum = minf(min_lum, _luminance(c))
-	_ok(min_lum < 0.45, "GRID visible: charcoal line in window 1044..1066 @357..360 during drag (min lum %.3f)" % min_lum)
+	_ok(min_lum < 0.45, "GRID visible: charcoal line in window 1112..1132 @544..550 during drag (min lum %.3f)" % min_lum)
 	var acc_p := world_to_screen(Vector2(80, 112))
 	var acc_col := img.get_pixel(acc_p.x, acc_p.y)
 	var acc_ok := _near(acc_col, Color("F5D97B"), 0.25)

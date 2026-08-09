@@ -59,10 +59,13 @@ func world_to_screen(w: Vector2) -> Vector2i:
 	return Vector2i(roundi(v.x), roundi(v.y))
 
 
-## 世界坐标 → SubViewport 坐标（vp = world × 0.75 + offset；世界断言用）。
-func world_to_vp(w: Vector2) -> Vector2i:
-	var v := w * WS + OFF
-	return Vector2i(roundi(v.x), roundi(v.y))
+## 世界坐标 → SubViewport 坐标（oblique 投影后画布 → viewport：vp = proj × 0.75
+## + offset；世界断言用）。[w] 扁平世界坐标；[z] 高度（0=地面；墙/结构挤出面
+## 用对应高度）。V3.1 P1 迁移：旧 vp = w × 0.75 + offset（轴对齐）缺 SHEAR
+## 剪切 —— oblique 下地板是平行四边形，采样必须走 proj(w, z)。
+func world_to_vp(w: Vector2, z: float = 0.0) -> Vector2i:
+	var p := Proj2D.proj(w.x, w.y, z)
+	return Vector2i(roundi(p.x * WS + OFF.x), roundi(p.y * WS + OFF.y))
 
 
 ## 从 SubViewport 取当前渲染帧（世界像素空间；无 UI 遮挡）。
@@ -76,9 +79,9 @@ func _vp_image() -> Image:
 	return img
 
 
-## 世界坐标 → SubViewport 像素色。
-func _vp_px(img: Image, w: Vector2) -> Color:
-	var v := world_to_vp(w)
+## 世界坐标 → SubViewport 像素色（[z] 高度；墙/结构挤出面带高度采样）。
+func _vp_px(img: Image, w: Vector2, z: float = 0.0) -> Color:
+	var v := world_to_vp(w, z)
 	return img.get_pixel(v.x, v.y)
 
 
@@ -180,43 +183,64 @@ func _verify_density() -> void:
 
 # === 环境结构采样（V3 §3/§4）—— SubViewport ===
 
-## 采样点（世界坐标 → 各层结构内部；避开窗棂 mullion、Phase 5 装饰精灵与
-## 光照边角。光照（LightingLayer z=1）叠加在 WorldCanvas 之上 —— 断言用
-## 亮度/色相带，容忍 ±0.08 光照偏移）：
-##   front desk (140,38)   GAMEPLAY 原色（暖木台面 DESK_WOOD）
-##   column (160,160)      FOREGROUND（暖灰立柱 COLUMN_COLOR）
-##   lockers (6,230)       BACKGROUND（蓝灰柜体 LOCKER_COLOR）
-##   mirror (6,60)         BACKGROUND（冷蓝灰镜面 MIRROR_COLOR）
-##   north wall (144,8)    BACKGROUND 降饱和（Phase 5 WALL_BASE 暖灰）
-##   window glass (104,8)  BACKGROUND 降饱和（Phase 5 冷蓝玻璃）
+## 采样点（世界坐标 → 各层结构内部；V3.1 P1/P2 迁移：墙体/结构是体积挤出面，
+## 采样带高度 z 或走墙空间变换，不再用轴对齐 z=0 点）：
+##   front desk (140,38)  GAMEPLAY 原色（暖木台面 DESK_WOOD）—— 顶面 z=22
+##     （STRUCT_FRONT_DESK_H；z=0 会采到前台正面/墙基）
+##   column (160,150)     FOREGROUND（暖灰立柱 COLUMN_COLOR）—— 正面 z=50
+##     （column 挤出高 WALL_HEIGHT-10=100，正面中段采样）
+##   lockers (6,230)      BACKGROUND（蓝灰柜体 LOCKER_COLOR）—— 贴地 z=0
+##   mirror               西墙墙面镜像（wall-local u=100, v=50；MIRROR_COLOR）
+##   north wall (144,12)  BACKGROUND 降饱和（Phase 5 WALL_BASE 暖灰）—— 墙空间
+##   window glass (124,13) BACKGROUND 降饱和（Phase 5 冷蓝玻璃）—— 墙空间
 func _verify_environment() -> void:
 	var img := _vp_image()
 	if img == null:
 		return
-	# 前台：暖木（r > b + 0.08，DESK_WOOD A87E4F；GAMEPLAY 层原色）
-	var desk := _vp_px(img, Vector2(140, 38))
+	# 前台：暖木（r > b + 0.08，DESK_WOOD A87E4F；GAMEPLAY 层原色；顶面 z=22）
+	var desk := _vp_px(img, Vector2(140, 38), 22.0)
 	_ok(desk.r > desk.b + 0.08,
 		"ENV front desk warm wood (r=%.2f > b=%.2f, got %s)" % [desk.r, desk.b, desk.to_html(false)])
-	# 立柱：暖灰（lum 0.45..0.75，COLUMN_COLOR A59E90 ≈ 0.62；FOREGROUND 允许遮挡）
-	var column := _vp_px(img, Vector2(160, 160))
+	# 立柱：暖灰（lum 0.40..0.80，COLUMN_COLOR A59E90 ≈ 0.62；FOREGROUND 允许遮挡）
+	var column := _vp_px(img, Vector2(160, 150), 50.0)
 	_ok(_luminance(column) > 0.40 and _luminance(column) < 0.80,
 		"ENV FOREGROUND column present (lum %.3f, got %s)" % [_luminance(column), column.to_html(false)])
 	# 储物柜：蓝灰（b >= r - 0.05，LOCKER_COLOR 7C8A94；BACKGROUND 降饱和）
 	var lockers := _vp_px(img, Vector2(6, 230))
 	_ok(lockers.b >= lockers.r - 0.05,
 		"ENV lockers blue-gray (b=%.2f >= r=%.2f, got %s)" % [lockers.b, lockers.r, lockers.to_html(false)])
-	# 镜子：冷蓝灰（b > r + 0.03，MIRROR_COLOR AFC4D2）
-	var mirror := _vp_px(img, Vector2(6, 60))
+	# 镜子：西墙墙面镜像（冷蓝灰 MIRROR_COLOR AFC4D2；wall-local u=100 v=50）
+	var mirror := _wall_px(img, false, Vector2(100, 50))
 	_ok(mirror.b > mirror.r + 0.03,
 		"ENV mirror cool glass (b=%.2f > r=%.2f, got %s)" % [mirror.b, mirror.r, mirror.to_html(false)])
-	# 北墙：暖灰（lum 0.35..0.75，Phase 5 WALL_BASE 8B8378 ≈ 0.51）
-	var wall := _vp_px(img, Vector2(144, 8))
+	# 北墙：暖灰（lum 0.35..0.75，Phase 5 WALL_BASE 8B8378 ≈ 0.51；墙空间 fy=12）
+	var wall := _wall_px(img, true, Vector2(144, 12))
 	_ok(_luminance(wall) > 0.35 and _luminance(wall) < 0.75,
 		"ENV north wall mid warm-gray (lum %.3f, got %s)" % [_luminance(wall), wall.to_html(false)])
-	# 窗玻璃：冷蓝（b > r，Phase 5 WINDOW_GLASS；避开 mullion 中心）
-	var glass := _vp_px(img, Vector2(104, 8))
+	# 窗玻璃：冷蓝（b > r，Phase 5 WINDOW_GLASS；墙空间 fy=13 避开 mullion）
+	var glass := _wall_px(img, true, Vector2(124, 13))
 	_ok(glass.b > glass.r,
 		"ENV window glass blue-tinted (b=%.2f > r=%.2f, got %s)" % [glass.b, glass.r, glass.to_html(false)])
+
+
+## 墙面像素：墙本地坐标 → SubViewport 像素色（与 world_canvas 墙变换同源复算）。
+## [north] true=北墙（fx∈[32,416], fy∈[0,24]；fy=24 底/z=0，fy=0 顶/z=110）；
+## false=西/东墙（u=沿墙世界 y, v=墙高 z）。V3.1 P1：墙上结构（镜子/窗户/
+## 墙面）从贴地改成墙面挤出 —— 采样必须走墙空间变换。
+func _wall_px(img: Image, north: bool, local: Vector2) -> Color:
+	var kex := Proj2D.WALL_HEIGHT * Proj2D.EXTRUDE_X / 24.0
+	var khe := Proj2D.WALL_HEIGHT * Proj2D.HEIGHT_SCALE / 24.0
+	var p: Vector2
+	if north:
+		p = Vector2(
+			local.x + local.y * kex + 24.0 * Proj2D.SHEAR - 24.0 * kex,
+			local.y * khe + 24.0 * Proj2D.FLOOR_SCALE - 24.0 * khe)
+	else:
+		p = Vector2(
+			14.0 + local.x * Proj2D.SHEAR - local.y * Proj2D.EXTRUDE_X,
+			local.x * Proj2D.FLOOR_SCALE - local.y * Proj2D.HEIGHT_SCALE)
+	var v := Vector2i(roundi(p.x * WS + OFF.x), roundi(p.y * WS + OFF.y))
+	return img.get_pixel(v.x, v.y)
 
 
 # === 地面材质采样（V3 §1，Phase 5 FloorArt 保留）—— SubViewport ===
@@ -225,7 +249,8 @@ func _verify_environment() -> void:
 ##   strength (88,200)：力量区 cell(2,6) 中部 —— 暗灰橡胶
 ##   cardio (230,200)：有氧区 cell(7,6) —— 中灰
 ##   flex (330,50)：瑜伽区 cell(10,1) —— 暖木
-##   walkway (394,120)：通道列 12 —— 亮
+##   walkway (396,184)：通道列 12 cell(12,5) —— 亮（V3.1 P1 迁移：旧 (394,120)
+##     在 oblique 下落在 walkway 瓷砖暗块/plant 阴影附近，改采实测亮瓷砖）
 func _verify_floor_materials() -> void:
 	var img := _vp_image()
 	if img == null:
@@ -245,7 +270,7 @@ func _verify_floor_materials() -> void:
 	_ok(flex.r > flex.b + 0.08,
 		"FLOOR flex is warm wood (r=%.2f > b=%.2f, got %s)" % [flex.r, flex.b, flex.to_html(false)])
 	# 公共通道：比力量区亮（差 > 0.20；FLOOR_WALK_BASE D3CBB9 ≈ 0.80）
-	var walk := _vp_px(img, Vector2(394, 120))
+	var walk := _vp_px(img, Vector2(396, 184))
 	_ok(_luminance(walk) > _luminance(strength) + 0.20,
 		"FLOOR walkway brighter than strength (%.3f > %.3f + 0.20, got %s)" % [
 			_luminance(walk), _luminance(strength), walk.to_html(false)])
@@ -261,22 +286,23 @@ func _verify_floor_materials() -> void:
 
 # === V3 §14 grid 可见性 ===
 
-## 正常经营模式：world (396,160)（通道列 12 内部）处无 Charcoal 网格线 →
-## 窗口内全是亮地面（lum > 0.50，FLOOR_WALK_BASE + 光照）。采样 SubViewport
-## vp x 352..356（世界 x ≈ 393..399，避开东墙 baseboard ≥404 即 vp x≥360），
-## y 119..121（世界 y ≈ 159..163）。
+## 正常经营模式：world (394,224)（通道列 12 亮瓷砖 + 水平网格线位置）处无
+## Charcoal 网格线 → 窗口内全是亮地面（lum > 0.50，FLOOR_WALK_BASE + 光照）。
+## 采样 SubViewport（vp = proj × WS + OFF —— V3.1 P1 迁移）。V3.1 P1：旧点
+## world (396,160) 在 oblique 下落在 walkway 暗块（植物/阴影附近），改采
+## 实测亮瓷砖 + 网格线交点 (394,224)。
 func _verify_grid_hidden() -> void:
 	var img := _vp_image()
 	if img == null:
 		return
-	var base := world_to_vp(Vector2(396, 160))
+	var base := world_to_vp(Vector2(394, 224))
 	var min_lum := 1.0
 	for dx in range(-2, 3):
 		for dy in range(-1, 2):
 			var c := img.get_pixel(base.x + dx, base.y + dy)
 			min_lum = minf(min_lum, _luminance(c))
 	_ok(min_lum > 0.50,
-		"GRID hidden in normal mode @world(396,160) (min lum %.3f > 0.50)" % min_lum)
+		"GRID hidden in normal mode @world(394,224) (min lum %.3f > 0.50)" % min_lum)
 
 
 ## placement mode：同一点出现 Charcoal 网格线（lum 显著下降）。
@@ -284,14 +310,14 @@ func _verify_grid_visible() -> void:
 	var img := _vp_image()
 	if img == null:
 		return
-	var base := world_to_vp(Vector2(396, 160))
+	var base := world_to_vp(Vector2(394, 224))
 	var min_lum := 1.0
 	for dx in range(-2, 3):
 		for dy in range(-1, 2):
 			var c := img.get_pixel(base.x + dx, base.y + dy)
 			min_lum = minf(min_lum, _luminance(c))
 	_ok(min_lum < 0.40,
-		"GRID visible in placement mode @world(396,160) (min lum %.3f < 0.40)" % min_lum)
+		"GRID visible in placement mode @world(394,224) (min lum %.3f < 0.40)" % min_lum)
 	# 回到正常模式（结束拖拽），供后续清场帧使用。
 	var placement = _main.get("_orch").placement_system
 	placement.on_drop()
@@ -320,25 +346,26 @@ func _verify_no_dev_colors() -> void:
 # === V3 §3 验收：空场仍完整 ===
 
 ## 移除全部设备后：环境结构采样点仍命中（前台/立柱/储物柜/镜子/墙/窗）。
+## V3.1 P1/P2 迁移：与 _verify_environment 同款 z/墙空间采样。
 func _verify_empty_gym() -> void:
 	var placed = _main.get("_grid").get_placed_instances()
 	_ok(placed.is_empty(), "EMPTY all equipment removed (%d left)" % placed.size())
 	var img := _vp_image()
 	if img == null:
 		return
-	var desk := _vp_px(img, Vector2(140, 38))
+	var desk := _vp_px(img, Vector2(140, 38), 22.0)
 	_ok(desk.r > desk.b + 0.08, "EMPTY front desk still present")
-	var column := _vp_px(img, Vector2(160, 160))
+	var column := _vp_px(img, Vector2(160, 150), 50.0)
 	_ok(_luminance(column) > 0.40 and _luminance(column) < 0.80,
 		"EMPTY FOREGROUND column still present")
 	var lockers := _vp_px(img, Vector2(6, 230))
 	_ok(lockers.b >= lockers.r - 0.05, "EMPTY lockers still present")
-	var mirror := _vp_px(img, Vector2(6, 60))
+	var mirror := _wall_px(img, false, Vector2(100, 50))
 	_ok(mirror.b > mirror.r + 0.03, "EMPTY mirror still present")
-	var wall := _vp_px(img, Vector2(144, 8))
+	var wall := _wall_px(img, true, Vector2(144, 12))
 	_ok(_luminance(wall) > 0.35 and _luminance(wall) < 0.75,
 		"EMPTY north wall still present")
-	var glass := _vp_px(img, Vector2(104, 8))
+	var glass := _wall_px(img, true, Vector2(124, 13))
 	_ok(glass.b > glass.r, "EMPTY window glass still present")
 	# 地板材质保持
 	var strength := _vp_px(img, Vector2(88, 200))
