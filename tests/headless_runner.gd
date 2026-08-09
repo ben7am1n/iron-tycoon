@@ -41,6 +41,7 @@ const TEST_FILES := [
 	"tests/integration/selection_system/load_rebuild_test.gd",
 	"tests/integration/selection_system/bridge_input_test.gd",
 	"tests/unit/member_sim/lifecycle_state_machine_test.gd",
+	"tests/unit/member_sim/preference_profile_test.gd",
 	"tests/unit/member_sim/target_selection_weight_test.gd",
 	"tests/unit/member_sim/tick_order_test.gd",
 	"tests/unit/member_sim/reservation_map_test.gd",

@@ -162,7 +162,7 @@
 ## WEIGHT FORMULA (Core Rule 3 / GDD Formulas):
 ##   weight_i = BASE_WEIGHT × exp(-k_congestion × Congestion_i(t-1))
 ##              × exp(-k_proximity × dist_i / D_max)
-##              × novelty_factor_i × pref_noise_i
+##              × novelty_factor_i × preference_weight_i × pref_noise_i
 ##   - dist_i = Chebyshev distance (cells) from the member to the access cell
 ##     — the geometric proxy, NOT the pathfinding length: Core Rule 3 forbids
 ##     pathfinding every candidate (top-K guardrail), so the weight is
@@ -171,6 +171,8 @@
 ##   - novelty_factor_i ∈ {0.2 just-used, 0.6 recent, 1.0} — suppressed
 ##     immediate repeats via the member's recently_used_ids (updated on each
 ##     completed use).
+##   - preference_weight_i = the member's resolved preference-type weight for
+##     the candidate EquipmentDef.zone_membership (strength/cardio/flex).
 ##   - pref_noise_i = the member's stored preference_profile.preference_noise
 ##     (Uniform(0.85, 1.15), rolled at spawn).
 ##   - WEIGHT_EPSILON floor keeps every weight strictly positive — fully
@@ -212,6 +214,26 @@ const VALID_STATES: Array[String] = [
 	STATE_ENTERING, STATE_SELECTING_TARGET, STATE_WALKING_TO,
 	STATE_QUEUEING, STATE_USING, STATE_LEAVING, STATE_GONE,
 ]
+
+# === Member preference profiles (A1 gameplay-depth extension) ===
+const PREF_STRENGTH := "STRENGTH"
+const PREF_CARDIO := "CARDIO"
+const PREF_FLEX := "FLEX"
+const PREF_BALANCED := "BALANCED"
+const PREF_TYPES: Array[String] = [
+	PREF_STRENGTH, PREF_CARDIO, PREF_FLEX, PREF_BALANCED,
+]
+
+## Resolved category multipliers stored in every newly spawned member's
+## preference_profile. Specialists strongly favor their own zone while still
+## retaining a positive chance to use the other zones; BALANCED preserves the
+## pre-A1 target-selection behavior exactly (all category weights = 1.0).
+const PREF_CATEGORY_WEIGHTS := {
+	PREF_STRENGTH: {"strength": 1.5, "cardio": 0.8, "flex": 0.8},
+	PREF_CARDIO: {"strength": 0.8, "cardio": 1.5, "flex": 0.8},
+	PREF_FLEX: {"strength": 0.8, "cardio": 0.8, "flex": 1.5},
+	PREF_BALANCED: {"strength": 1.0, "cardio": 1.0, "flex": 1.0},
+}
 
 ## Story 005: the int-typed fields of a state-machine member record. These
 ## are validated as numeric on load (int|float — JSON.parse returns floats
@@ -727,7 +749,8 @@ func _pick_weighted_target(member: Dictionary) -> int:
 
 
 ## Builds the Story 002 candidate pool with one weight per placed instance:
-##   {instance_id, weight, congestion, dist_cells, novelty, noise}
+##   {instance_id, weight, congestion, dist_cells, novelty,
+##    preference_weight, noise}
 ## in ascending equipment_instance_id order (never grid/hash order — the
 ## deterministic summation order AC12's ΣP depends on).
 ##
@@ -760,12 +783,14 @@ func _build_weighted_candidates(member: Dictionary) -> Array:
 		var dist_cells := _dist_cells(from, access_cells[0])
 		var congestion := _congestion_value(instance_id)
 		var novelty := _novelty_factor(member, instance_id)
+		var preference_weight := _preference_weight(member, instance_id)
 		out.append({
 			"instance_id": instance_id,
-			"weight": target_selection_weight(congestion, dist_cells, novelty, noise),
+			"weight": target_selection_weight(congestion, dist_cells, novelty, noise, preference_weight),
 			"congestion": congestion,
 			"dist_cells": dist_cells,
 			"novelty": novelty,
+			"preference_weight": preference_weight,
 			"noise": noise,
 		})
 	return out
@@ -802,14 +827,15 @@ func _candidate_entry_by_id(candidates: Array, instance_id: int) -> Dictionary:
 ##
 ## weight = BASE_WEIGHT × exp(-k_congestion × congestion)
 ##          × exp(-k_proximity × dist_cells / D_max)
-##          × novelty_factor × pref_noise
+##          × novelty_factor × preference_weight × pref_noise
 ## then floored at WEIGHT_EPSILON so the weight is ALWAYS strictly positive
 ## (AC12: no divide-by-zero, no NaN, even at congestion 1.0).
 func target_selection_weight(
 	congestion: float,
 	dist_cells: int,
 	novelty_factor: float,
-	pref_noise: float
+	pref_noise: float,
+	preference_weight: float = 1.0
 ) -> float:
 	var c := clampf(congestion, 0.0, 1.0)
 	var d := maxi(dist_cells, 0)
@@ -817,6 +843,7 @@ func target_selection_weight(
 		* exp(-_k_congestion * c) \
 		* exp(-_k_proximity * float(d) / float(maxi(_d_max, 1))) \
 		* clampf(novelty_factor, 0.0, 1.0) \
+		* clampf(preference_weight, 0.0, 2.0) \
 		* clampf(pref_noise, 0.0, 2.0)
 	return maxf(raw, WEIGHT_EPSILON)
 
@@ -847,6 +874,68 @@ func _pref_noise(member: Dictionary) -> float:
 	if profile is Dictionary and profile.has("preference_noise"):
 		return float(profile["preference_noise"])
 	return 1.0
+
+
+## A1 preference multiplier for one equipment candidate. Equipment category
+## truth comes from EquipmentCatalog's EquipmentDef.zone_membership through
+## the already-injected instance_id -> equipment_id resolver. Missing legacy
+## profile data, resolver data, catalog data, or recognized zones is neutral
+## (1.0), preserving old saves and test rigs.
+func _preference_weight(member: Dictionary, instance_id: int) -> float:
+	var profile_value: Variant = member.get("preference_profile", {})
+	if not (profile_value is Dictionary):
+		return 1.0
+	var profile: Dictionary = profile_value
+	var category_weights := _resolved_category_weights(profile)
+	if category_weights.is_empty():
+		return 1.0
+	var zones := _equipment_zones(instance_id)
+	var found := false
+	var best := 0.0
+	for zone_value in zones:
+		var category := _canonical_preference_category(str(zone_value))
+		if category.is_empty() or not category_weights.has(category):
+			continue
+		var value := clampf(float(category_weights[category]), 0.0, 2.0)
+		best = maxf(best, value) if found else value
+		found = true
+	return best if found else 1.0
+
+
+## Prefer the stored resolved weights. A type-only injected/older transitional
+## record may derive the canonical table without consuming RNG; a pre-A1
+## noise-only record remains neutral.
+func _resolved_category_weights(profile: Dictionary) -> Dictionary:
+	var stored: Variant = profile.get("category_weights", {})
+	if stored is Dictionary and not (stored as Dictionary).is_empty():
+		return stored
+	var preference_type := str(profile.get("type", ""))
+	if PREF_CATEGORY_WEIGHTS.has(preference_type):
+		return (PREF_CATEGORY_WEIGHTS[preference_type] as Dictionary).duplicate(true)
+	return {}
+
+
+func _equipment_zones(instance_id: int) -> Array:
+	if not _equipment_id_resolver.is_valid() or _catalog == null:
+		return []
+	var equipment_id := str(_equipment_id_resolver.call(instance_id))
+	if equipment_id.is_empty() or not _catalog.has_definition(equipment_id):
+		return []
+	var def: EquipmentDef = _catalog.get_definition(equipment_id)
+	return def.zone_membership
+
+
+## Canonical aliases keep preference semantics compatible with the zone names
+## already used by Palette/SelectionCue and plausible future catalog entries.
+func _canonical_preference_category(zone: String) -> String:
+	match zone.to_lower():
+		"strength", "free_weights":
+			return "strength"
+		"cardio", "aerobic":
+			return "cardio"
+		"flex", "yoga", "mobility":
+			return "flex"
+	return ""
 
 
 ## novelty_factor_i: {0.2 just-used, 0.6 recent, 1.0} — suppresses repeating
@@ -1262,11 +1351,24 @@ func _roll_exercises_per_visit() -> int:
 
 
 ## Resolved at spawn and stored (Core Rule 7 — never a re-derivable seed).
-## Story 002 owns the profile SHAPE (per-member preference weights); the
-## skeleton stores the single preference-noise draw the GDD defines
-## (Uniform(0.85, 1.15) — pref_noise_i in target_selection_weight).
+## A1 resolves both a uniformly distributed preference type and its category
+## weights at spawn from the SAME uniform sample as the existing per-member
+## noise. This deliberately preserves the pre-A1 RNG consumption count (one
+## draw per profile), so later lifecycle rolls keep their established seeded
+## sequence. The sample comes only from the MemberSim RNG sub-stream. The full
+## resolved Dictionary is saved, so deserialize restores it directly without
+## re-rolling (Core Rule 7).
 func _roll_preference_profile() -> Dictionary:
-	return {"preference_noise": _rng().randf_range(0.85, 1.15)}
+	var rng := _rng()
+	var preference_noise := rng.randf_range(0.85, 1.15)
+	var unit_sample := clampf((preference_noise - 0.85) / 0.30, 0.0, 1.0)
+	var type_index := clampi(floori(unit_sample * float(PREF_TYPES.size())), 0, PREF_TYPES.size() - 1)
+	var preference_type := PREF_TYPES[type_index]
+	return {
+		"type": preference_type,
+		"category_weights": (PREF_CATEGORY_WEIGHTS[preference_type] as Dictionary).duplicate(true),
+		"preference_noise": preference_noise,
+	}
 
 
 ## TR-MS-009: use_duration = round(clamp(randfn(mean, stddev), min, max)).

@@ -33,7 +33,7 @@ This is where the game's payoff becomes visible. The player doesn't control the 
 
 3. **Target selection algorithm.** Per reselect, in this fixed order (all randomness via `get_rng("MemberSim")`):
    1. Build the candidate pool: equipment matching member interest, **excluding** any equipment already fully "spoken for" (its reservation `next_claimant` held by someone else) and any on this member's short-term no-repeat blacklist.
-   2. Compute `target_selection_weight` (see Formulas) for each candidate from `Congestion(t-1)`, distance, novelty, and per-member preference noise.
+   2. Compute `target_selection_weight` (see Formulas) for each candidate from `Congestion(t-1)`, distance, novelty, resolved preference-type category weight, and per-member preference noise.
    3. **Do not pathfind every candidate.** Sort by weight descending, deterministic tie-break by `equipment_instance_id`, take the top-K (K = 3–5) — a hard performance guard against O(members × equipment) pathing.
    4. Path-check the K in ascending `equipment_instance_id` order via `Navigation.get_path`; drop unreachable; renormalize weights over survivors.
    5. Weighted-random draw over survivors using one `rng.randf()`.
@@ -113,7 +113,7 @@ The **member_arrival_rate** formula is defined as:
 
 The **target_selection_weight** formula is defined as:
 
-`weight_i = base_weight × exp(-k_congestion × Congestion_i(t-1)) × exp(-k_proximity × dist_i / D_max) × novelty_factor_i × pref_noise_i`
+`weight_i = base_weight × exp(-k_congestion × Congestion_i(t-1)) × exp(-k_proximity × dist_i / D_max) × novelty_factor_i × preference_weight_i × pref_noise_i`
 then `P_i = weight_i / Σ_j weight_j` (weighted-random pick via seeded RNG).
 
 **Variables:**
@@ -125,10 +125,13 @@ then `P_i = weight_i / Σ_j weight_j` (weighted-random pick via seeded RNG).
 | Normalizer | `D_max` | int | ≈16 | Grid diagonal, for normalizing distance |
 | Proximity weight | `k_proximity` | float | 0.1–0.3 (tune) | **Deliberately low** — a weak tie-breaker only; must not override congestion |
 | Novelty factor | `novelty_factor_i` | float | {0.2 just-used, 0.6 recent, 1.0} | Suppresses repeating the same machine |
+| Preference category weight | `preference_weight_i` | float | {0.8, 1.0, 1.5} | Resolved at spawn from member type and candidate `EquipmentDef.zone_membership` |
 | Preference noise | `pref_noise_i` | float | Uniform(0.85, 1.15) | Per-member randomness (seeded) so behavior isn't robotic |
 | Selection probability | `P_i` | float | (0,1], Σ = 1 | Normalized pick probability |
 
 **Output Range:** Weights are always strictly positive (exp never reaches 0, with an epsilon floor guarding against total underflow), so even a fully-crowded floor is a probability distribution, never a hard prohibition — this is what keeps behavior non-robotic. **Example:** candidate A (`Congestion=0.1, dist=3`) vs B (`Congestion=0.8, dist=1`), `k_congestion=3, k_proximity=0.2, D_max=16`: `weight_A ≈ 0.741 × 0.963 ≈ 0.714`, `weight_B ≈ 0.0907 × 0.988 ≈ 0.0896` → `P_A ≈ 0.888, P_B ≈ 0.112`. The crowded machine is clearly but not absolutely avoided — exactly the "bad layout → visible bottleneck, good layout → smooth flow" target.
+
+**Resolved preference profiles (A1):** each spawn rolls one of `STRENGTH`, `CARDIO`, `FLEX`, or `BALANCED` with equal probability from the `MemberSim` RNG sub-stream. The type quartile and `pref_noise_i` are resolved from the same uniform sample, preserving the pre-A1 one-draw-per-profile RNG consumption contract and therefore all later seeded lifecycle rolls. The resolved profile stores its type, category-weight map, and `pref_noise_i`. Specialist profiles apply `1.5` to their matching `strength` / `cardio` / `flex` zone and `0.8` to the other two; `BALANCED` applies `1.0` to all three and therefore preserves the prior formula. The resolved profile is serialized verbatim and restored without any new roll (Core Rule 7).
 
 ---
 
