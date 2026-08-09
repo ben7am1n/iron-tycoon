@@ -1,7 +1,12 @@
-## src/presentation/equipment_art.gd — 设备像素精灵程序化工厂（V3 Phase 3）
+## src/presentation/equipment_art.gd — 设备像素精灵程序化工厂（V3 Phase 3 + V3.1 P2 真物体）
 ##
-## 设备 = 小型场景物件（V3 §5，非图标）：3/4 top-down 可辨朝向 + 明显前后结构 +
-## 3-5 个主要颜色层级 + 明确高光 + 明确阴影 + 小范围 accent color。
+## 设备 = 小型场景物件（V3 §5，非图标）：V3.1 P2 起，每台设备是「真物体」——
+## 3 个方向面（top/front/side）各自由手工归纳的像素造型（ASCII map）定义，
+## 5 层颜色（base/shadow/outline/highlight/accent）+ contact shadow（由
+## WorldCanvas 画贴地影）。跑步机有跑带/扶手/控制台/支撑柱；卧推有长凳厚度/
+## 杠铃/杠铃片/架子；动感单车有飞轮/座椅/脚踏/把手 —— 部件可辨认，有体积感
+## （V3.1 P2：设备离开地面，不贴地图）。
+##
 ## 本工厂把每台设备的手工归纳像素造型（字符串 map，16×16 art px per cell）
 ## 放大到 CELL_SIZE 并产出 ImageTexture（ART_SCALE=2 → 每个 art px = 2 屏 px）。
 ##
@@ -12,7 +17,8 @@
 ##     冷蓝灰阴影（EQUIP_SHADOW_TONE，右侧）；contact shadow 由 WorldCanvas 画
 ##   - 轮廓（§11）：机器深蓝灰轮廓（EQUIP_OUTLINE）；高光侧可无完整描边
 ##   - 屏幕 emissive：青蓝显示灯（EQUIP_ACCENT_CYAN，§6 部分屏幕青蓝像素）
-##   - 负面约束：无纯黑粗边、无照片纹理、无高饱和撞色
+##   - V3.1 负面约束：无等宽边框（高光侧开放）、无重复规则纹理（履带 M2M 间隔、
+##     框架 1313 错位）、设备不贴地图（有支撑柱/腿/架）
 ##
 ## 色值单一来源：src/palette.gd。本文件不出现任何硬编码色值。
 ##
@@ -20,6 +26,8 @@
 ## R0 map 按设备 canonical footprint 绘制；R90/R180/R270 通过对 Image 做
 ## rotate_90(CLOCKWISE) 得到（与 GridSystem._transform_cell 的 R90 方向一致，
 ## 已验证：Image.rotate_90(CLOCKWISE) 把 (0,0) 移到 (W-1,0)）。
+## V3.1 P2：front/side 面 map 按 R0 手工绘制；R90/R180/R270 走「从旋转后
+## 顶面 art 切条带」的通用推导（与 P1 行为一致，保证任意朝向都有体积）。
 ##
 ## headless 可靠性：class_name 仅作编辑器便利，跨脚本引用一律走 preload alias
 ## （项目约定，见 src/main.gd 头部注释）。
@@ -44,55 +52,57 @@ const ART_SCALE := 2
 ##   A 青蓝显示灯（EQUIP_ACCENT_CYAN，§6 emissive 屏幕）
 ##   Z 区域语义色（小范围 accent，§14）  D 区域暗色  L 区域亮色
 ##
-## 每件设备 = 手工归纳的 3/4 top-down 场景物件（先剪影后补特征，§5）：
-##   - treadmill 2×1：后滚轮（暗/影）→ 大型倾斜跑带（M2M 履带纹）→ 前端
-##     控制面板（青蓝显示屏 + 暖高光 + 区域 accent 键）；两侧浅灰金属扶手
-##   - bike 1×1：座椅（后，暗+暖顶光）→ 飞轮（M/H 金属盘 + 区域 accent）→
-##     车把 + 小显示屏（前，青蓝）；机架 3/1 交替
-##   - bench_press 2×2：杠铃 + 配重片（后/头端）→ 支架（浅灰金属）→
-##     卧推凳（前，区域色 Sage 竖向条带，C 边 + L/D 高光阴影）
-##   - yoga_mat 1×1：卷起边缘（上，L/Z/D 卷筒）→ 垫面（Z + D 细纹理）→
-##     平展端（下）
+## V3.1 P2：每台设备 = 手工归纳的 3 面场景物件（top = 顶面，front = 南面
+## 面向相机，side = 东面）。部件在顶面/正面/侧面分别可辨：
+##   - treadmill：顶面跑带 M2M 履带纹 + 两侧浅灰金属扶手（3）→ 前端控制台
+##     （青蓝显示屏 A + 暖高光 W + 区域 accent 键 Z）；正面支撑柱/跑带前缘/
+##     控制台显示屏；侧面滚轮/履带剖面/控制台立柱
+##   - bike：顶面座椅（LLLZZLLL）→ 飞轮（M/H 金属盘 + 区域 accent 毂）→
+##     车把 + 小显示屏（前，青蓝）；正面把手/立柱/飞轮前缘；侧面飞轮圆盘剖面
+##   - bench_press：顶面杠铃 + 配重片（后/头端）→ 支架（浅灰金属）→
+##     卧推凳（区域色 Sage 竖向条带，C 边 + L/D 高光阴影）；正面凳端厚度 +
+##     凳腿；侧面杠铃片 + 支架 + 长凳厚度剖面
+## 每面至少 5 色层：base(1/2/3/M)、shadow(S)、outline(O)、highlight(W/H)、
+## accent(A/Z/D/L)。无等宽边框（V3.1 负面约束）—— 顶面高光侧（南/东）开放。
 const ART_MAPS := {
 	"treadmill": [
-		"..OOOOOOOOOOOOOOOOOOOOOOOOOOOO..",
 		"..OSSSSSSSSSSSSSSSSSSSSSSSSSSO..",
-		"..OS111111111111111111111111SO..",
-		"..OS111111111111111111111111SO..",
-		"..3W1M2M2M2M2M2M2M2M2M2M2M233O..",
-		"..3W1M2M2M2M2M2M2M2M2M2M2M233O..",
-		"..3W1M2M2M2M2M2M2M2M2M2M2M233O..",
-		"..3W1M2M2M2M2M2M2M2M2M2M2M233O..",
-		"..3W1M2M2M2M2M2M2M2M2M2M2M233O..",
-		"..3W1M2M2M2M2M2M2M2M2M2M2M233O..",
-		"..3W3333333333333333333333333O..",
-		"..3W1111111111111111111111111O..",
-		"..3O111111111111111111111111O3..",
-		"..3O1WWWWAAAZZ11AAAAAWWWW11113..",
 		"..O11111111111111111111111111O..",
-		"..OOOOOOOOOOOOOOOOOOOOOOOOOOOO..",
+		"..3O1M2M2M2M2M2M2M2M2M2M2M21O3..",
+		"..3O1M2M2M2M2M2M2M2M2M2M2M21O3..",
+		"..3O1M2M2M2M2M2M2M2M2M2M2M21O3..",
+		"..3O1M2M2M2M2M2M2M2M2M2M2M21O3..",
+		"..3O1M2M2M2M2M2M2M2M2M2M2M21O3..",
+		"..3O1M2M2M2M2M2M2M2M2M2M2M21O3..",
+		"..3O1M2M2M2M2M2M2M2M2M2M2M21O3..",
+		"..3O1M2M2M2M2M2M2M2M2M2M2M21O3..",
+		"..3O1M2M2M2M2M2M2M2M2M2M2M21O3..",
+		"..3O1M2M2M2M2M2M2M2M2M2M2M21O3..",
+		"..3O111111111111111111111111O3..",
+		"..3W1WWWAAAZZZ1ZZZAAAAWWWW11O3..",
+		"..3W1WWWAAAZZZ111ZZZAAAWWW11O3..",
+		"..3O1111111111111111111111111O..",
 	],
 	"bike": [
-		"..OOOOOOOOOOOO..",
 		"..OSSSSSSSSSSO..",
-		"..OS11111111SO..",
-		"..3W11HHHH11W3..",
-		"..3W1M3333M1W3..",
-		"..3W1MMHHMM1W3..",
-		"..3W1MHZZHM1W3..",
-		"..3W1MMSSMM1W3..",
-		"..3W33333333W3..",
-		"..3W31313131W3..",
-		"..3O31313131O3..",
-		"..3O1M3131M1O3..",
-		"..3O1HAAAH11O3..",
-		"..3O33333333O3..",
+		"..O1LLLZZLLL1O..",
 		"..O1111111111O..",
-		"..OOOOOOOOOOOO..",
+		"..3W1MHHHHM1W3..",
+		"..3W1MHZZZM1W3..",
+		"..3W1MMHHMM1W3..",
+		"..3W1MMSSMM1W3..",
+		"..3W1MSSSSM1W3..",
+		"..3O11111111O3..",
+		"..3O13131313O3..",
+		"..3O1M3131M1O3..",
+		"..3O1H1M31M1H3..",
+		"..3O1HAAAWW1H3..",
+		"..3O11111111O3..",
+		"..O1111111111O..",
+		"..3O11111111O3..",
 	],
 	"bench_press": [
-		"..OOOOOOOOOOOOOOOOOOOOOOOOOOOO..",
-		"..OSMMMMMMMMMMMMMMMMMMMMMMMMSO..",
+		"..OSSSSSSSSSSSSSSSSSSSSSSSSSSO..",
 		"..OMHHHHMMMMMMMMMMMMMMMMHHHHMO..",
 		"..OMHHHHMMMMMMMMMMMMMMMMHHHHMO..",
 		"..OMSSSSMMMMMMMMMMMMMMMMSSSSMO..",
@@ -101,28 +111,29 @@ const ART_MAPS := {
 		"..OMSSSSMMMMMMMMMMMMMMMMSSSSMO..",
 		"..OMHHHHMMMMMMMMMMMMMMMMHHHHMO..",
 		"..OSMMMMMMMMMMMMMMMMMMMMMMMMSO..",
-		"..OWWMMMMMMMMMMMMMMMMMMMMMMWWO..",
-		"..O11111133111111111133111111O..",
-		"..O11111133111111111133111111O..",
-		"..O11111133111111111133111111O..",
-		"..O1111111111CLLLLLC111111111O..",
-		"..O1111111111CZZZZZC111111111O..",
-		"..O1111111111CZZZZZC111111111O..",
-		"..O1111111111CZZZZZC111111111O..",
-		"..O1111111111CZZZZZC111111111O..",
-		"..O1111111111CZZZZZC111111111O..",
-		"..O1111111111CZZZZZC111111111O..",
-		"..O1111111111CZZZZZC111111111O..",
-		"..O1111111111CZZZZZC111111111O..",
-		"..O1111111111CZZZZZC111111111O..",
-		"..O1111111111CZZZZZC111111111O..",
-		"..O1111111111CZZZZZC111111111O..",
-		"..O1111111111CZZZZZC111111111O..",
-		"..O1111111111CZZZZZC111111111O..",
-		"..O1111111111CZZZZZC111111111O..",
-		"..O1111111111CDDDDDC111111111O..",
+		"..O3333O1111111111111111O3333O..",
+		"..O3333O1111111111111111O3333O..",
 		"..O11111111111111111111111111O..",
-		"..OOOOOOOOOOOOOOOOOOOOOOOOOOOO..",
+		"..O11CWLLLLLLLLLLLLLLLLLLLL11O..",
+		"..O11CZZZZZZZZZZZZZZZZZZZZZ11O..",
+		"..O11CZZZZZZZZZZZZZZZZZZZZZ11O..",
+		"..O11CZZZZZZZZZZZZZZZZZZZZZ11O..",
+		"..O11CZZZZZZZZZZZZZZZZZZZZZ11O..",
+		"..O11CZZZZZZZZZZZZZZZZZZZZZ11O..",
+		"..O11CZZZZZZZZZZZZZZZZZZZZZ11O..",
+		"..O11CZZZZZZZZZZZZZZZZZZZZZ11O..",
+		"..O11CZZZZZZZZZZZZZZZZZZZZZ11O..",
+		"..O11CZZZZZZZZZZZZZZZZZZZZZ11O..",
+		"..O11CZZZZZZZZZZZZZZZZZZZZZ11O..",
+		"..O11CZZZZZZZZZZZZZZZZZZZZZ11O..",
+		"..O11CZZZZZZZZZZZZZZZZZZZZZ11O..",
+		"..O11CZZZZZZZZZZZZZZZZZZZZZ11O..",
+		"..O11CZZZZZZZZZZZZZZZZZZZZZ11O..",
+		"..O11CZZZZZZZZZZZZZZZZZZZZZ11O..",
+		"..O11CZZZZZZZZZZZZZZZZZZZZZ11O..",
+		"..O11CDDDDDDDDDDDDDDDDDDDDD11O..",
+		"..O11111111111111111111111111O..",
+		"..O11111111111111111111111111O..",
 	],
 	"yoga_mat": [
 		"..OOOOOOOOOOOO..",
@@ -144,6 +155,87 @@ const ART_MAPS := {
 	],
 }
 
+## V3.1 P2：手绘 front/side 面 map（art px）。front 宽 = footprint x 尺寸，
+## side 宽 = footprint y 尺寸；行序 = 地面（row 0）→ 机器顶部（最后一行）。
+## 与顶面（ART_MAPS）一起构成 3 方向面（top/front/side）+ 5 色层。
+## 只有 R0 使用手绘面；非 R0 旋转走通用条带推导（见 extrusion_faces_for）。
+const FACE_MAPS := {
+	"treadmill": {
+		"front": [
+			"..3O1SSSSSSSSSSSSSSSSSSSSSS1O3..",
+			"..3O1SSSSSSSSSSSSSSSSSSSSSS1O3..",
+			"..3O111111111111111111111111O3..",
+			"..33O1111111111111111111111O33..",
+			"..33O1M2M2M2M2M2M2M2M2M2M2MO33..",
+			"..33O1M2M2M2M2M2M2M2M2M2M2MO33..",
+			"..33O1111111111111111111111O33..",
+			"..33O1WWWAAAASSSSSAAAAWWW11O33..",
+			"..33O1WWWAAASSSSSSAAAWWW111O33..",
+		],
+		"side": [
+			"..OSSSSSSSSSSO..",
+			"..O1111111111O..",
+			"..O1M2M2M2M21O..",
+			"..O1M2M2M2M21O..",
+			"..O1111111111O..",
+			"..3O111111111O..",
+			"..3O1WWWAWWW1O..",
+			"..3O1SSSSSSSSO..",
+			"..3O1SSSSSSSSO..",
+		],
+	},
+	"bike": {
+		"front": [
+			"..3O1HAAAWW1H3..",
+			"..3O11111111O3..",
+			"..3O1SSSSSSSO3..",
+			"..3O1SSSSSSSO3..",
+			"..3O11111111O3..",
+			"..3O1MHHHHM1O3..",
+			"..3O1MHZZZM1O3..",
+			"..3O1MMSSMM1O3..",
+			"..3O11111111O3..",
+			"..3OSSSSSSSSO3..",
+			"..3O11111111O3..",
+		],
+		"side": [
+			"..OSSSSSSSSSSO..",
+			"..O1LLLZZLLL1O..",
+			"..O1111111111O..",
+			"..3O1MHHHHM1O3..",
+			"..3O1MHZZZM1O3..",
+			"..3O1MHHHHM1O3..",
+			"..3O1MMSSMM1O3..",
+			"..3O11111111O3..",
+			"..3O1SSSSSSSO3..",
+			"..3O1SSSSSSSO3..",
+			"..3O11111111O3..",
+		],
+	},
+	"bench_press": {
+		"front": [
+			"..3O11W111111111111111111111O3..",
+			"..3O11CDDDDDDDDDDDDDDDDDDD11O3..",
+			"..33O11CZZZZZZZZZZZZZZZZZ11O33..",
+			"..33O11CZZZZZZZZZZZZZZZZZ11O33..",
+			"..33O1111111111111111111111O33..",
+			"..33O1SSSSSSSSSSSSSSSSSSSSSO33..",
+			"..3O1SSSSSSSSSSSSSSSSSSSSSS1O3..",
+			"..3O1SSSSSSSSSSSSSSSSSSSSSS1O3..",
+		],
+		"side": [
+			"..OMHHHHMMMMMMMMMMMMMMMMMMMMMO..",
+			"..OMSSSSMMMMMMMMMMMMMMMMMMMMMO..",
+			"..OSMMMMMMMMMMMMMMMMMMMMMMMMMO..",
+			"..O3333O111111111111111111111O..",
+			"..O1111O11CZZZZZZZZZZZZZZZZZ1O..",
+			"..O1111O11CZZZZZZZZZZZZZZZZZ1O..",
+			"..O1111O11CDDDDDDDDDDDDDDDDD1O..",
+			"..O11111111111111111111111111O..",
+		],
+	},
+}
+
 ## 未知 equipment_id / zone 的兜底区域色（暖中性，避免与 Sage↔Rose 关键对撞色）。
 const FALLBACK_ZONE := Color("C9A87C")
 
@@ -153,8 +245,8 @@ const FALLBACK_ZONE := Color("C9A87C")
 var _cache: Dictionary = {}
 
 
-## 取设备精灵纹理。R0 map 建立后按 rotation 旋转并缓存；zone 决定 Z/D/L 三个
-## 语义色槽（art-bible §4 区域色系，单一来源 palette.ZONE_COLORS）。
+## 取设备精灵纹理（顶面）。R0 map 建立后按 rotation 旋转并缓存；zone 决定
+## Z/D/L 三个语义色槽（art-bible §4 区域色系，单一来源 palette.ZONE_COLORS）。
 ## [equipment_id] 未知时返回 null（调用方兜底画剪影块，绝不崩溃）。
 ## [rotation] 非法时 push_error 并回退 R0。
 func texture_for(equipment_id: String, zone: String, rotation: int) -> ImageTexture:
@@ -186,7 +278,7 @@ func texture_size(equipment_id: String) -> Vector2i:
 	return art_size(equipment_id) * ART_SCALE
 
 
-# === V3.1 P1：体积挤出（顶面 + 正面 + 侧面） ===
+# === V3.1 P1/P2：体积挤出（顶面 + 正面 + 侧面） ===
 
 ## 设备挤出高度（世界 px，V3.1 P1 斜俯视的体积表达）。数据驱动常量，
 ## 绘制层与 USING 会员站立高度共用。
@@ -209,11 +301,13 @@ var _face_cache: Dictionary = {}
 func height_for(equipment_id: String) -> float:
 	return float(EQUIP_HEIGHTS.get(equipment_id, DEFAULT_EQUIP_HEIGHT))
 
-## V3.1 P1：挤出面纹理（缓存）。返回 {"front": ImageTexture, "side":
+
+## V3.1 P2：挤出面纹理（缓存）。返回 {"front": ImageTexture, "side":
 ## ImageTexture}：
-##   - front = 旋转后 art 的底部 face_h 行（南边条带）变暗 → 正面
-##   - side  = 旋转后 art 的右侧 face_h 列（东边条带）变暗并旋转 90°
-##             → 侧面（沿深度铺开）
+##   - R0 且 FACE_MAPS 有该设备 → 手绘 front/side 面（真物体部件可辨，
+##     V3.1 P2 最低要求：3 方向面 + 5 色层）
+##   - 其他情况 → 从旋转后顶面 art 切条带（南边条带变暗 = 正面、东边条带
+##     变暗旋转 90° = 侧面；与 P1 行为一致，保证任意朝向都有体积）
 ## 变暗方向：正面中调（EQUIP_BODY 混合）、侧面暗调（EQUIP_SHADOW_TONE 混合）
 ## —— 顶面亮、正面中、侧面暗，三面分层（V3.1 P1 证据：多层高度色）。
 ## 未知设备返回空字典（调用方画实色面兜底，绝不崩溃）。
@@ -224,6 +318,13 @@ func extrusion_faces_for(equipment_id: String, zone: String, rotation: int,
 	if _face_cache.has(key):
 		return _face_cache[key]
 	var result := {"front": null, "side": null}
+	# V3.1 P2：R0 手绘面优先（真物体部件）
+	if rotation == 0 and FACE_MAPS.has(equipment_id):
+		result = _authored_faces_for(equipment_id, zone, height, face_h)
+		if result["front"] != null:
+			_face_cache[key] = result
+			return result
+	# 通用条带推导（非 R0 旋转 / 无手绘面的设备 / 兜底）
 	var tex := texture_for(equipment_id, zone, rotation)
 	if tex == null:
 		return result
@@ -247,6 +348,74 @@ func extrusion_faces_for(equipment_id: String, zone: String, rotation: int,
 	result["side"] = ImageTexture.create_from_image(side)
 	_face_cache[key] = result
 	return result
+
+
+## V3.1 P2：从 FACE_MAPS 建立手绘 front/side 面纹理（art px → ART_SCALE）。
+## front 宽 = footprint x（ART_MAPS 同宽），side 宽 = footprint y（ART_MAPS
+## 行数）；高 = 面高 art px（face_h / ART_SCALE，至少 2 行）。应用与通用
+## 推导一致的变暗（正面中调 / 侧面暗调），保证三面分层一致。
+func _authored_faces_for(equipment_id: String, zone: String, height: float,
+		face_h: int) -> Dictionary:
+	var result := {"front": null, "side": null}
+	var face: Dictionary = FACE_MAPS[equipment_id]
+	var front_rows: Array = face.get("front", [])
+	var side_rows: Array = face.get("side", [])
+	var zone_color: Color = Palette.ZONE_COLORS.get(zone, FALLBACK_ZONE)
+	var shade_dark: Color = zone_color.darkened(0.25)
+	var shade_light: Color = zone_color.lightened(0.15)
+	if not front_rows.is_empty():
+		var img := _build_face_image(front_rows, zone_color, shade_dark, shade_light)
+		if img != null:
+			_darken_image(img, Palette.EQUIP_BODY.darkened(0.2), 0.35)
+			result["front"] = ImageTexture.create_from_image(img)
+	if not side_rows.is_empty():
+		var img := _build_face_image(side_rows, zone_color, shade_dark, shade_light)
+		if img != null:
+			_darken_image(img, Palette.EQUIP_SHADOW_TONE, 0.5)
+			result["side"] = ImageTexture.create_from_image(img)
+	return result
+
+
+## V3.1 P2：取手绘面 map（未变暗）原始图像。返回 {"front": Image, "side":
+## Image}；无手绘面/未知设备返回空字典（不崩溃）。证据脚本/单元测试用它
+## 精确验证 5 色层（base/shadow/outline/highlight/accent 不受变暗混合污染）。
+func raw_face_images(equipment_id: String, zone: String) -> Dictionary:
+	var result := {"front": null, "side": null}
+	if not FACE_MAPS.has(equipment_id):
+		return result
+	var face: Dictionary = FACE_MAPS[equipment_id]
+	var zone_color: Color = Palette.ZONE_COLORS.get(zone, FALLBACK_ZONE)
+	var shade_dark: Color = zone_color.darkened(0.25)
+	var shade_light: Color = zone_color.lightened(0.15)
+	if face.has("front") and not (face["front"] as Array).is_empty():
+		result["front"] = _build_face_image(face["front"], zone_color, shade_dark, shade_light)
+	if face.has("side") and not (face["side"] as Array).is_empty():
+		result["side"] = _build_face_image(face["side"], zone_color, shade_dark, shade_light)
+	return result
+
+
+## 从字符串行建立面图像（ART_SCALE 放大，透明底）。行宽不齐时按最长行
+## 右补透明（防御性，不崩溃）。zone 语义色槽与顶面共用。
+func _build_face_image(rows: Array, zone: Color, dark: Color, light: Color) -> Image:
+	var w: int = 0
+	for r in rows:
+		w = maxi(w, String(r).length())
+	if w <= 0 or rows.is_empty():
+		return null
+	var h: int = rows.size()
+	var img := Image.create(w * ART_SCALE, h * ART_SCALE, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	for y in h:
+		var row: String = String(rows[y])
+		for x in w:
+			var ch := row[x] if x < row.length() else "."
+			var color := _color_for(ch, zone, dark, light)
+			if color.a <= 0.0:
+				continue
+			for py in ART_SCALE:
+				for px in ART_SCALE:
+					img.set_pixel(x * ART_SCALE + px, y * ART_SCALE + py, color)
+	return img
 
 
 ## 整图向 [target] 混合 [amount]（保留 alpha；透明像素跳过）。

@@ -1,5 +1,5 @@
 # tests/unit/equipment_art/equipment_art_test.gd
-# V3 Phase 3 — 设备场景物件像素工厂单元测试
+# V3 Phase 3 + V3.1 P2 — 设备场景物件像素工厂单元测试
 #
 # 验证 EquipmentArt（src/presentation/equipment_art.gd）：
 #   - art map 结构合法（等宽行、已知图例字符、整 cell 尺寸）
@@ -9,6 +9,10 @@
 #     青蓝显示灯 accent 存在；zone 色小范围 accent（§14 可购买设备饱和度高）
 #   - V3 §5 3/4 top-down 朝向可辨：前端（控制面板/显示屏）与后端（阴影面）
 #     区域像素显著不同 —— 前后结构可读
+#   - V3.1 P2（真物体，非图标）：3 方向面（top/front/side）各有手绘 map，
+#     每台设备每个面含 5 色层（base/shadow/outline/highlight/accent）；
+#     部件可辨 —— treadmill 跑带/扶手/控制台、bench 杠铃片/长凳、bike 飞轮/
+#     座椅；设备离开地面（front/side 有支撑结构）
 #   - 旋转变体尺寸正确（R90 交换宽高）且旋转后内容仍在（非全透明）
 #   - 未知 equipment_id 返回 null（兜底不崩溃）
 #
@@ -33,7 +37,7 @@ func _init() -> void:
 
 func run_all() -> Dictionary:
 	print("=".repeat(48))
-	print("  UNIT TEST: EquipmentArt pixel sprite factory (V3 Phase 3 scene objects)")
+	print("  UNIT TEST: EquipmentArt pixel sprite factory (V3 Phase 3 + V3.1 P2)")
 	print("=".repeat(48))
 
 	_test_map_structure()
@@ -41,6 +45,10 @@ func run_all() -> Dictionary:
 	_test_semantic_colors()
 	_test_v3_machine_outline_highlight_shadow_accent()
 	_test_v3_orientation_front_back()
+	_test_v31p2_face_maps_structure()
+	_test_v31p2_five_layers_per_face()
+	_test_v31p2_components_recognizable()
+	_test_v31p2_equipment_leaves_ground()
 	_test_rotation_variants()
 	_test_unknown_id_returns_null()
 	_test_cache_returns_same_texture()
@@ -199,6 +207,182 @@ func _test_v3_orientation_front_back() -> void:
 		PaletteScript.EQUIP_SHADOW_TONE, 0.05)
 	_check(front_has_warm, "treadmill front (console) has warm highlight — lit side (V3 §6)")
 	_check(back_has_shadow, "treadmill back (rear roller) has cool shadow — shaded side (V3 §6)")
+
+
+# === 5.5. V3.1 P2: face map 结构 ===
+
+## V3.1 P2 最低要求：3 方向面（top/front/side）。FACE_MAPS 为每台机器提供
+## front（南面，面向相机）与 side（东面）手绘 map。结构断言：等宽行、
+## 已知图例字符、非空、尺寸合理（front 宽 = 顶面宽；side 宽 = 顶面高）。
+func _test_v31p2_face_maps_structure() -> void:
+	var art = EquipmentArtScript.new()
+	for eq_id in ["treadmill", "bike", "bench_press"]:
+		_check(EquipmentArtScript.FACE_MAPS.has(eq_id),
+			"V3.1P2 %s has authored FACE_MAPS (3 facing directions)" % eq_id)
+		if not EquipmentArtScript.FACE_MAPS.has(eq_id):
+			continue
+		var face: Dictionary = EquipmentArtScript.FACE_MAPS[eq_id]
+		_check(face.has("front") and face.has("side"),
+			"V3.1P2 %s face map has front + side" % eq_id)
+		var top_size: Vector2i = art.art_size(eq_id)
+		for fname in ["front", "side"]:
+			var rows: Array = face.get(fname, [])
+			_check(not rows.is_empty(), "V3.1P2 %s.%s non-empty" % [eq_id, fname])
+			if rows.is_empty():
+				continue
+			var width := String(rows[0]).length()
+			var all_same := true
+			for r in rows:
+				if String(r).length() != width:
+					all_same = false
+			_check(all_same, "V3.1P2 %s.%s equal-width rows (%d)" % [eq_id, fname, width])
+			var known := true
+			for r in rows:
+				for ch in String(r):
+					if not "OC123MHWSAZDL.".contains(ch):
+						known = false
+			_check(known, "V3.1P2 %s.%s uses known legend chars" % [eq_id, fname])
+		# front 宽 = 顶面宽（footprint x）；side 宽 = 顶面高（footprint y）
+		var front_rows: Array = face.get("front", [])
+		var side_rows: Array = face.get("side", [])
+		if not front_rows.is_empty():
+			_check(String(front_rows[0]).length() == top_size.x,
+				"V3.1P2 %s front width %d == top width %d (footprint x)"
+				% [eq_id, String(front_rows[0]).length(), top_size.x])
+		if not side_rows.is_empty():
+			_check(String(side_rows[0]).length() == top_size.y,
+				"V3.1P2 %s side width %d == top height %d (footprint y)"
+				% [eq_id, String(side_rows[0]).length(), top_size.y])
+
+
+# === 5.6. V3.1 P2: 每面 5 色层（base/shadow/outline/highlight/accent） ===
+
+## V3.1 P2 最低要求：5 层颜色（base/shadow/outline/highlight/accent）可在
+## sprite 像素中找到。对每台设备 × 每个方向面（top/front/side）逐面断言
+## 5 层都存在 —— 不是「全局有 5 种颜色」，而是「每一面都画全 5 层」。
+func _test_v31p2_five_layers_per_face() -> void:
+	var art = EquipmentArtScript.new()
+	var zone_of := {"treadmill": "cardio", "bike": "cardio", "bench_press": "strength"}
+	var layer_checks := {
+		"base": [
+			PaletteScript.EQUIP_BODY_DARK, PaletteScript.EQUIP_BODY,
+			PaletteScript.EQUIP_BODY_LIGHT, PaletteScript.METAL_DARK,
+		],
+		"shadow": [PaletteScript.EQUIP_SHADOW_TONE],
+		"outline": [PaletteScript.EQUIP_OUTLINE],
+		"highlight": [PaletteScript.EQUIP_HIGHLIGHT, PaletteScript.METAL_HIGHLIGHT],
+		# accent：青蓝显示灯 A 或区域语义色 Z（V3 §7 高饱和重点色小范围使用）
+		"accent": [],
+	}
+	for eq_id in zone_of:
+		var zone: String = zone_of[eq_id]
+		layer_checks["accent"] = [
+			PaletteScript.EQUIP_ACCENT_CYAN, PaletteScript.ZONE_COLORS[zone],
+			PaletteScript.ZONE_COLORS[zone].darkened(0.25),
+			PaletteScript.ZONE_COLORS[zone].lightened(0.15),
+		]
+		# top 面（texture_for）
+		var top_img := art.texture_for(eq_id, zone, 0).get_image()
+		# front/side 面（raw_face_images —— 未变暗，5 层不被混合污染）
+		var raws: Dictionary = art.raw_face_images(eq_id, zone)
+		var face_imgs := {
+			"front": raws.get("front"), "side": raws.get("side"),
+		}
+		for layer in layer_checks:
+			var colors: Array = layer_checks[layer]
+			# top 面
+			var top_ok := false
+			for c in colors:
+				if _image_contains(top_img, c, 0.05):
+					top_ok = true
+					break
+			_check(top_ok, "V3.1P2 %s top has %s layer (5 layers, V3.1 P2)" % [eq_id, layer])
+			# front/side 面
+			for fname in ["front", "side"]:
+				var fimg: Image = face_imgs[fname]
+				if fimg == null:
+					_check(false, "V3.1P2 %s.%s image built" % [eq_id, fname])
+					continue
+				var f_ok := false
+				for c in colors:
+					if _image_contains(fimg, c, 0.05):
+						f_ok = true
+						break
+				_check(f_ok, "V3.1P2 %s.%s has %s layer (5 layers, V3.1 P2)" % [eq_id, fname, layer])
+
+
+# === 5.7. V3.1 P2: 部件可辨（真物体，非图标） ===
+
+## 每台设备部件必须在 sprite 像素中可辨（V3.1 P2 退出条件「设备像场景物件非
+## 图标」）：
+##   - treadmill：跑带（M2 履带纹，M）+ 控制台显示屏（A，在 front 面上）
+##   - bench_press：杠铃片（H 金属高光）+ 长凳厚度（side 面 Z 条带 + D 端）
+##   - bike：飞轮（H 金属盘）+ 座椅（zone 色 Z，在 side 面上）
+func _test_v31p2_components_recognizable() -> void:
+	var art = EquipmentArtScript.new()
+	# treadmill：front 面控制台显示屏（A 青蓝）存在 —— 相机可见面有真实控制台
+	var tm_raw: Dictionary = art.raw_face_images("treadmill", "cardio")
+	var tm_front: Image = tm_raw.get("front")
+	_check(tm_front != null, "V3.1P2 treadmill front face built")
+	if tm_front != null:
+		_check(_image_contains(tm_front, PaletteScript.EQUIP_ACCENT_CYAN, 0.05),
+			"V3.1P2 treadmill front has console display (cyan A) — 控制台可辨")
+	# treadmill：跑带 M2 履带纹（METAL_DARK）在 front 面中段 —— 跑带可辨
+	_check(_image_contains(tm_front, PaletteScript.METAL_DARK, 0.05),
+		"V3.1P2 treadmill front has belt tread (METAL_DARK M) — 跑带可辨")
+	# bench_press：side 面 = 杠铃片（H）+ 长凳厚度（zone Z + D 端）
+	var bench_raw: Dictionary = art.raw_face_images("bench_press", "strength")
+	var bench_side: Image = bench_raw.get("side")
+	_check(bench_side != null, "V3.1P2 bench_press side face built")
+	if bench_side != null:
+		_check(_image_contains(bench_side, PaletteScript.METAL_HIGHLIGHT, 0.05),
+			"V3.1P2 bench side has barbell plates (H metal highlight) — 杠铃片可辨")
+		_check(_image_contains(bench_side, PaletteScript.ZONE_COLORS["strength"], 0.05),
+			"V3.1P2 bench side has bench pad zone color — 长凳可辨")
+		_check(_image_contains(bench_side,
+			PaletteScript.ZONE_COLORS["strength"].darkened(0.25), 0.05),
+			"V3.1P2 bench side has pad end (zone dark) — 长凳厚度可辨")
+	# bike：side 面 = 飞轮（H）+ 座椅（zone Z）
+	var bike_raw: Dictionary = art.raw_face_images("bike", "cardio")
+	var bike_side: Image = bike_raw.get("side")
+	_check(bike_side != null, "V3.1P2 bike side face built")
+	if bike_side != null:
+		_check(_image_contains(bike_side, PaletteScript.METAL_HIGHLIGHT, 0.05),
+			"V3.1P2 bike side has flywheel (H metal highlight) — 飞轮可辨")
+		_check(_image_contains(bike_side, PaletteScript.ZONE_COLORS["cardio"], 0.05),
+			"V3.1P2 bike side has seat (zone accent) — 座椅可辨")
+
+
+# === 5.8. V3.1 P2: 设备离开地面（front/side 有支撑结构） ===
+
+## V3.1 P2「设备离开地面，不贴地图」：front/side 面底部有支撑结构 —— 用
+## 支撑色（body dark / shadow tone）而非透明/空。每台机器 front/side 面的
+## 最下两行至少含一个不透明像素，且含 shadow/支撑色（不是悬空剪影）。
+func _test_v31p2_equipment_leaves_ground() -> void:
+	var art = EquipmentArtScript.new()
+	var zone_of := {"treadmill": "cardio", "bike": "cardio", "bench_press": "strength"}
+	for eq_id in zone_of:
+		var raws: Dictionary = art.raw_face_images(eq_id, zone_of[eq_id])
+		for fname in ["front", "side"]:
+			var img: Image = raws.get(fname)
+			if img == null:
+				_check(false, "V3.1P2 %s.%s built (leaves ground check)" % [eq_id, fname])
+				continue
+			var h := img.get_height()
+			var bottom_opaque := false
+			var bottom_shadow := false
+			for y in range(maxi(0, h - 2 * art.ART_SCALE), h):
+				for x in img.get_width():
+					var c := img.get_pixel(x, y)
+					if c.a > 0.5:
+						bottom_opaque = true
+						if _color_distance(c, PaletteScript.EQUIP_SHADOW_TONE) <= 0.08 \
+								or _color_distance(c, PaletteScript.EQUIP_BODY_DARK) <= 0.08:
+							bottom_shadow = true
+			_check(bottom_opaque,
+				"V3.1P2 %s.%s bottom rows have support structure (leaves ground)" % [eq_id, fname])
+			_check(bottom_shadow,
+				"V3.1P2 %s.%s bottom rows have shadow/support tone (contact at ground)" % [eq_id, fname])
 
 
 # === 6. 旋转变体 ===
