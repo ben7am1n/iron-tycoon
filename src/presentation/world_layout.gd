@@ -197,13 +197,13 @@ const LIGHT_POOLS := [
 ]
 ## 灯光池半径。
 const LIGHT_POOL_RADIUS := 46.0
-## 吊灯光锥：从灯罩底部（y≈30）斜向地面（y≈180）的四边形 —— 光池的
-## "来源"可见（V3 §6 顶部暖白灯 + §4 纵深）。键 = 灯 id，值 = 光锥多边形
-## （世界像素空间，由 LightingLayer 绘制）。
+## 吊灯光锥：从灯罩底部（y≈32，R4 灯罩改大后底缘）斜向地面（y≈180）的四边形
+## —— 光池的「来源」可见（V3 §6 顶部暖白灯 + §4 纵深）。键 = 灯 id，值 = 光锥
+## 多边形（世界像素空间，由 LightingLayer 绘制）。
 const LAMP_CONES := [
-	[Vector2(74, 30), Vector2(98, 30), Vector2(108, 180), Vector2(64, 180)],
-	[Vector2(190, 30), Vector2(214, 30), Vector2(224, 180), Vector2(180, 180)],
-	[Vector2(350, 30), Vector2(374, 30), Vector2(384, 180), Vector2(340, 180)],
+	[Vector2(74, 32), Vector2(98, 32), Vector2(108, 180), Vector2(64, 180)],
+	[Vector2(190, 32), Vector2(214, 32), Vector2(224, 180), Vector2(180, 180)],
+	[Vector2(350, 32), Vector2(374, 32), Vector2(384, 180), Vector2(340, 180)],
 ]
 ## 墙边暗角带（四周，宽度 20px）。
 const EDGE_SHADOW_WIDTH := 20

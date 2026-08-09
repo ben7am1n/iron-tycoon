@@ -260,8 +260,17 @@ const COLUMN_COLOR := Color("A59E90")
 const COLUMN_DARK := Color("877F70")
 ## 吊灯灯罩：深暖灰（FOREGROUND，悬于上方）。
 const LAMP_SHADE := Color("4A443C")
+## 吊灯灯罩受光体（V3.1 R4 光源可辨识）：灯罩本体暖橙金 —— 吊灯是「发光体」，
+## 不再是暗色剪影。暖橙（r>b）—— 光影响材质颜色（V3.1 P4 非透明白圆）。
+## 饱和度 < 0.72（P5 高饱和焦点阈值 —— 灯具是环境光源，不抢焦点簇计数）。
+const LAMP_SHADE_LIT := Color("E8A84D")
+## 吊灯灯泡核心（V3.1 R4）：近白暖亮点 —— 灯罩底部小范围亮色（1-2px 核心）。
+const LAMP_BULB := Color("FFF3C4")
 ## 吊灯暖光晕：半透明暖黄（V3 §6 顶部暖白灯）。
 const LAMP_GLOW := Color(1.0, 0.92, 0.68, 0.30)
+## 冷光渗透（V3.1 R4 窗边/门口冷光）：窗光冷蓝灰 —— 与室内暖光形成冷暖对比
+## （V3 §15 warm indoor lighting / cool colored shadows）。
+const LIGHT_WINDOW_COOL := Color(0.72, 0.82, 0.98, 0.12)
 ## 消防栓：低饱和红（小面积 accent，V3 §7 高饱和仅小范围）。
 const HYDRANT := Color("B0483C")
 ## 饮水机：暖白机身。
