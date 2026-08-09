@@ -312,6 +312,8 @@ const STRUCT_FRONT_DESK_H := 22.0
 const STRUCT_LAMP_H := 95.0
 
 ## V3.1 P1 结构 GAMEPLAY：前台（主要交互对象）—— 体积挤出（顶面+正面+侧面）。
+## V3.1 R3（P3 手绘感）：正面不再纯色填充 —— 挤出面之上叠确定性手工木纹
+## cluster（暗/亮小色块），打破大面积单色（P3「纯色大面积填充」禁令）。
 func _draw_structure_gameplay() -> void:
 	if _structure_art == null:
 		return
@@ -321,6 +323,43 @@ func _draw_structure_gameplay() -> void:
 		return
 	_draw_extruded_box(tex, rect, STRUCT_FRONT_DESK_H,
 		Palette.DESK_WOOD.darkened(0.22), Palette.DESK_WOOD.darkened(0.4))
+	# 正面手工木纹 cluster：沿正面平面（世界 y=y1，z∈[0,h]）撒确定性暗/亮
+	# 小色块 —— 正面不再 200px+ 单色直线（P3 手绘感）。
+	_draw_desk_front_clusters(rect, STRUCT_FRONT_DESK_H)
+
+
+## 前台正面手工 cluster（V3.1 R3 / P3）：沿正面平面确定性撒 20 个 2-3px
+## 木纹色块（DESK_WOOD 暗/亮变体）。投影到屏幕后叠在正面多边形上，
+## 打破「纯色大面积填充」直线 —— 仍是可读的台面结构（V3 §14）。
+## z 覆盖全高 [0, height]（含顶部边缘行 —— 顶部行也要打破单色直线）。
+func _draw_desk_front_clusters(rect: Rect2i, height: float) -> void:
+	var y1 := float(rect.position.y + rect.size.y)
+	var x0 := float(rect.position.x)
+	var x1 := float(rect.position.x + rect.size.x)
+	var cluster_colors := [
+		Palette.DESK_WOOD.darkened(0.30),
+		Palette.DESK_WOOD.darkened(0.16),
+		Palette.DESK_TOP.darkened(0.12),
+	]
+	for i in 20:
+		# 确定性 hash（无 RNG 状态 —— 同输入同输出）
+		var h := _front_cluster_hash(i)
+		var fx := x0 + 4.0 + float(h % int(maxf(x1 - x0 - 8.0, 1.0)))
+		# z 覆盖正面全高 [0, height]（含顶部边缘行 —— 顶部行也要打破单色直线）
+		var fz := float((h >> 5) % int(maxf(height + 1.0, 1.0)))
+		var c: Color = cluster_colors[(h >> 9) % cluster_colors.size()]
+		var p := Proj2D.proj(fx, y1, fz)
+		# 2-3px 小色块（不遮正面整体轮廓 —— 只打破大面积单色）
+		draw_rect(Rect2(p - Vector2(1, 1), Vector2(2, 2)), c, true)
+		if h % 3 == 0:
+			draw_rect(Rect2(p + Vector2(1, 0), Vector2(2, 2)), c.darkened(0.1), true)
+
+
+## 前台 cluster 确定性 hash（R3：同输入同输出，headless 可测）。
+func _front_cluster_hash(i: int) -> int:
+	var h := i * 374761393 + 5917 * 668265263
+	h = (h ^ (h >> 13)) * 1274126177
+	return h & 0x7fffffff
 
 
 ## V3.1 P1 结构 FOREGROUND：立柱（体积挤出，近景可遮挡）+ 吊灯（挂在
