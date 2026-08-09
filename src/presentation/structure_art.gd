@@ -235,9 +235,9 @@ func ceiling_texture() -> ImageTexture:
 			var h := _hash2(gx * 31 + seed, gy * 17 + seed * 7)
 			var cx := gx + (h % 7) - 3
 			var cy := gy + ((h >> 4) % 7) - 3
-			var r := 3 + (h >> 8) % 4
 			var c: Color = colors[(h >> 12) % colors.size()]
-			_paint_blob(img, cx, cy, r, c, h ^ seed)
+			# 返工2 R1：天花板也用手绘短笔触（粉刷纹理），非规则圆点。
+			_paint_wall_stroke(img, cx, cy, 5 + (h >> 8) % 5, c, h ^ seed)
 	var tex := ImageTexture.create_from_image(img)
 	_ceiling_texture = tex
 	return tex
@@ -263,6 +263,9 @@ func wall_face_texture(kind: String) -> ImageTexture:
 
 ## 北墙：WALL_BASE 面 + 稀疏同族 cluster + jagged 墙帽（WALL_TRIM）/踢脚线
 ## （WALL_DARK）。行结构（24 行）：fy 0..2 墙帽、3..21 墙面、22..23 踢脚线。
+## 返工2 R1：墙面 cluster 改为手绘短笔触（_paint_wall_stroke）—— 不规则
+## 短线 + 端点抖动 + 色相微差（WALL 族亮/暗变体），像粉刷/手绘石膏纹理，
+## 而非规则噪点圆点。
 func _bake_north_wall() -> Image:
 	var img := Image.create(WALL_NORTH_TEX.x, WALL_NORTH_TEX.y, false, Image.FORMAT_RGBA8)
 	img.fill(Palette.WALL_BASE)
@@ -279,8 +282,8 @@ func _bake_north_wall() -> Image:
 			var h := _hash2(gx * 31 + 4001, gy * 17 + 4001 * 7)
 			var cx := gx + (h % 5) - 2
 			var cy := gy + ((h >> 4) % 5) - 2
-			var r := 2 + (h >> 8) % 3
-			_paint_blob(img, cx, cy, r, colors[(h >> 12) % colors.size()], h ^ 4001)
+			_paint_wall_stroke(img, cx, cy, 4 + (h >> 8) % 4,
+				colors[(h >> 12) % colors.size()], h ^ 4001)
 	# 墙面磨损：近踢脚线少量暗点（局部磨损，P3）。
 	for i in 10:
 		var h := _hash2(4007 + i * 7, i * 13)
@@ -332,6 +335,7 @@ func _bake_north_wall() -> Image:
 
 ## 侧墙（西/东共用）：u=沿墙世界 y（288 宽）v=墙高 z（110 行）；行结构：
 ## v 0..5 踢脚线、6..103 墙面、104..109 墙帽 —— 与 _side_wall_transform 一致。
+## 返工2 R1：墙面手绘短笔触（同北墙）。
 func _bake_side_wall() -> Image:
 	var img := Image.create(WALL_SIDE_TEX.x, WALL_SIDE_TEX.y, false, Image.FORMAT_RGBA8)
 	img.fill(Palette.WALL_BASE)
@@ -345,8 +349,8 @@ func _bake_side_wall() -> Image:
 			var h := _hash2(gx * 31 + 4041, gy * 17 + 4041 * 7)
 			var cx := gx + (h % 5) - 2
 			var cy := gy + ((h >> 4) % 5) - 2
-			var r := 2 + (h >> 8) % 3
-			_paint_blob(img, cx, cy, r, colors[(h >> 12) % colors.size()], h ^ 4041)
+			_paint_wall_stroke(img, cx, cy, 4 + (h >> 8) % 4,
+				colors[(h >> 12) % colors.size()], h ^ 4041)
 	for i in 16:
 		var h := _hash2(4047 + i * 7, i * 13)
 		var px := int(h % WALL_SIDE_TEX.x)
@@ -538,6 +542,40 @@ func _paint_blob(img: Image, cx: int, cy: int, r: int, color: Color, seed: int) 
 			var jit := (_hash2(seed * 13 + bucket * 7, bucket * 3 + seed) % 7) - 3
 			if d <= float(r) + float(jit) * 0.5:
 				img.set_pixel(x, y, color)
+
+
+## 手绘短笔触（返工2 R1）：墙面/天花板用 —— 短线段 + 端点抖动 + 笔触宽
+## 2px。方向 8 桶 hash 抖动（多为斜/竖 —— 粉刷/石膏笔触）。确定性：
+## 同输入永远同形状。与 floor_art._paint_stroke 独立实现（各自本地空间
+## 与调用约定，避免跨脚本依赖）。
+func _paint_wall_stroke(img: Image, x: int, y: int, length: int, color: Color,
+		seed: int) -> void:
+	var angle := float((seed % 8) * 45) + float((seed >> 4) % 5) * 3.0 - 6.0
+	var rad := deg_to_rad(angle)
+	var dx := cos(rad)
+	var dy := sin(rad)
+	var x0 := x
+	var y0 := y
+	var x1 := x + int(round(dx * length))
+	var y1 := y + int(round(dy * length))
+	# 端点抖动 ±2（手绘不齐）
+	x1 += (_hash2(seed + 101, x) % 5) - 2
+	y1 += (_hash2(seed + 203, y) % 5) - 2
+	# 笔触宽 2px：垂直方向微移（刷毛宽度）
+	var steps := maxi(1, length)
+	for i in steps + 1:
+		var t := float(i) / float(steps)
+		var px := int(round(lerpf(x0, x1, t)))
+		var py := int(round(lerpf(y0, y1, t)))
+		px += (_hash2(seed + i * 7, x + y) % 3) - 1
+		py += (_hash2(seed + i * 13, y - x) % 3) - 1
+		for w in 2:
+			var ox := (_hash2(seed + i * 17 + w, px + py) % 3) - 1
+			var oy := (_hash2(seed + i * 19 + w, py - px) % 3) - 1
+			var wx := px + ox
+			var wy := py + oy
+			if wx >= 0 and wy >= 0 and wx < img.get_width() and wy < img.get_height():
+				img.set_pixel(wx, wy, color)
 
 
 ## 断裂 jagged 水平缝（P3 无完美直线）：分段 + 垂直偏移 + 随机跳过。

@@ -77,7 +77,8 @@ func build_image() -> Image:
 func _draw_walkway(img: Image) -> void:
 	var w := img.get_width()
 	var h := img.get_height()
-	# 瓷砖色差 cluster：每 cell 一个不规则 blob（亮/暗瓷砖色，非规则点阵）。
+	# 瓷砖色差 cluster：每 cell 一个不规则笔触簇（亮/暗瓷砖色，非规则点阵、
+	# 非圆点）—— 返工2 R1：手绘短笔触。
 	for cy in _grid_h:
 		for cx in _grid_w:
 			var seed := _hash2(cx * 5 + 1, cy * 7 + 3)
@@ -85,7 +86,7 @@ func _draw_walkway(img: Image) -> void:
 			var cy_px := cy * _cell + _cell / 2 + ((seed >> 4) % 5) - 2
 			var c: Color = Palette.FLOOR_WALK_CL_LIGHT if (seed + cy) % 3 != 0 \
 				else Palette.FLOOR_WALK_CL_DARK
-			_paint_blob(img, cx_px, cy_px, 5 + (seed >> 8) % 3, c, seed)
+			_paint_stroke(img, cx_px, cy_px, 4 + (seed >> 8) % 3, c, seed)
 	# 断裂 jagged 砖缝：只在部分 cell 边界画（非每 cell 全直线），每段偏移。
 	for gx in range(1, _grid_w):
 		if _hash2(gx * 11, 7) % 3 == 0:
@@ -95,12 +96,13 @@ func _draw_walkway(img: Image) -> void:
 		if _hash2(gy * 13, 5) % 3 == 0:
 			continue
 		_paint_jagged_seam_h(img, 0, w, gy * _cell, Palette.FLOOR_WALK_GROUT, gy * 17)
-	# 少量污渍 cluster（手绘局部细节，不铺满）。
+	# 少量污渍 cluster（手绘局部细节，不铺满）—— 返工2 R1：污渍用短笔触
+	# 而非圆点（手绘污痕）。
 	for i in 24:
 		var seed := _hash2(i * 3, i * 5 + 11)
 		var px := int(seed % w)
 		var py := int((seed >> 6) % h)
-		_paint_blob(img, px, py, 2 + (seed >> 12) % 2,
+		_paint_stroke(img, px, py, 2 + (seed >> 12) % 3,
 			Palette.FLOOR_WALK_CL_DARK, seed * 7)
 
 
@@ -125,12 +127,13 @@ func _draw_strength(img: Image) -> void:
 		Palette.FLOOR_STRENGTH_STAIN,
 	]
 	_paint_cluster_zone(img, rect, palette, Palette.FLOOR_STRENGTH_SEAM, 9, 101)
-	# 磨损高光 cluster（稀疏，不铺满）：小块 WEAR 亮色。
+	# 磨损高光 cluster（稀疏，不铺满）：小块 WEAR 亮色 —— 返工2 R1：磨损
+	# 用短笔触（刮痕）而非圆点。
 	for i in 36:
 		var seed := _hash2(i * 7 + 3, i * 11 + 5)
 		var wx := rect.position.x + int(seed % rect.size.x)
 		var wy := rect.position.y + int((seed >> 5) % rect.size.y)
-		_paint_blob(img, wx, wy, 1 + (seed >> 9) % 2, Palette.FLOOR_STRENGTH_WEAR, seed * 3)
+		_paint_stroke(img, wx, wy, 2 + (seed >> 9) % 3, Palette.FLOOR_STRENGTH_WEAR, seed * 3)
 
 
 ## 有氧区：偏暖灰/蓝灰地面 —— 不规则暖灰/蓝灰 cluster（无规则点阵/无压条）。
@@ -144,7 +147,7 @@ func _draw_cardio(img: Image) -> void:
 		Palette.FLOOR_CARDIO_CL_GRAYBLUE,
 		Palette.FLOOR_CARDIO_CL_WARMGRAY,
 	]
-	_paint_cluster_zone(img, rect, palette, Palette.FLOOR_CARDIO_EDGE, 11, 202)
+	_paint_cluster_zone(img, rect, palette, Palette.FLOOR_CARDIO_EDGE, 9, 202)
 
 
 ## 瑜伽区：暖色木地板 —— 不规则木板分隔 + 亮/暗木板 cluster + 木纹。
@@ -159,34 +162,89 @@ func _draw_flex(img: Image) -> void:
 		Palette.FLOOR_FLEX_GRAIN,
 	]
 	_paint_cluster_zone(img, rect, palette, Palette.FLOOR_FLEX_PLANK, 10, 303)
-	# 木纹：稀疏短横线 cluster（手绘木纹，非规则条带）。
+	# 木纹：稀疏短笔触 cluster（手绘木纹，非规则条带）—— 返工2 R1：木纹
+	# 使用短倾斜笔触（_paint_stroke），端点/方向抖动，色相微差（GRAIN 与
+	# CL_DARK 交替）。
 	for i in 40:
 		var seed := _hash2(i * 5 + 2, i * 9 + 7)
 		var gy := rect.position.y + int(seed % rect.size.y)
 		var gx := rect.position.x + int((seed >> 5) % (rect.size.x - 6))
-		for j in 3 + (seed >> 9) % 3:
-			if gx + j < rect.position.x + rect.size.x - 2:
-				img.set_pixel(gx + j, gy, Palette.FLOOR_FLEX_GRAIN)
+		var grain_col: Color = Palette.FLOOR_FLEX_GRAIN \
+			if (seed >> 9) % 3 != 0 else Palette.FLOOR_FLEX_CL_DARK
+		_paint_stroke(img, gx, gy, 3 + (seed >> 9) % 3, grain_col, seed * 11)
 
 
 # === V3.1 P3 手绘原语（全部确定性，无 RNG 状态） ===
 
-## 多色 cluster 区域（P3 核心）：jagged 底 + 不规则 blob 叠色 + 断裂接缝。
+## 多色 cluster 区域（P3 核心 + 返工2 R1 手绘笔触）：jagged 底 + 不规则
+## 短笔触簇叠色 + 断裂接缝。R1：材质不再以「噪点圆点」（blob）为主 ——
+## 改为「手绘笔触」—— 短线段（_paint_stroke）按 hash 方向/长度抖动、
+## 端点偏移，笔触色从同族色表选（色相微差），形成艺术家逐笔绘制的质感；
+## 少量 blob 仅作局部磨损点（非主力）。
 ## [palette] cluster 色表（含 base，第一个 = 底色）；[seam] 接缝色；
 ## [spacing] 簇间距（px，越小越密）；[seed_base] 确定性种子。
 func _paint_cluster_zone(img: Image, rect: Rect2i, palette: Array, seam: Color,
 		spacing: int, seed_base: int) -> void:
 	_fill_jagged(img, rect, palette[0], seed_base)
 	var bleed := maxi(6, spacing)
+	# 笔触簇（主力，~3/4）：短线段，方向/长度/端点抖动 —— 手绘感。
+	# 起始点钳制在 zone rect 内（±2 容差）—— 笔触不泄漏进相邻 walkway/
+	# 其它区（phase1/2 GRID-hidden 窗口依赖 walkway 亮瓷砖面平坦）。
 	for gy in range(rect.position.y - bleed, rect.position.y + rect.size.y + bleed, spacing):
 		for gx in range(rect.position.x - bleed, rect.position.x + rect.size.x + bleed, spacing):
 			var h := _hash2(gx * 31 + seed_base, gy * 17 + seed_base * 7)
 			var cx := gx + (h % 7) - 3
 			var cy := gy + ((h >> 4) % 7) - 3
-			var r := 3 + (h >> 8) % 4
+			cx = clampi(cx, rect.position.x - 2, rect.position.x + rect.size.x - 1)
+			cy = clampi(cy, rect.position.y - 2, rect.position.y + rect.size.y - 1)
 			var col: Color = palette[(h >> 12) % palette.size()]
-			_paint_blob(img, cx, cy, r, col, h ^ seed_base)
+			if h % 4 == 0:
+				# ~1/4 保留小磨损点（局部旧痕，非噪点主力）
+				_paint_blob(img, cx, cy, 1 + (h >> 8) % 2, col, h ^ seed_base)
+			else:
+				# 双笔触（不同方向交叉）—— 覆盖量与旧 blob 相当，且呈手绘
+				# 短笔触簇（非圆点噪点）。绘制边界钳制在 rect 内 ——
+				# 笔触不泄漏进相邻 walkway/其它区。
+				_paint_stroke(img, cx, cy, 6 + (h >> 8) % 7, col, h ^ seed_base, rect)
+				_paint_stroke(img, cx, cy, 5 + ((h >> 9) % 6), col, (h ^ seed_base) * 7 + 3, rect)
 	_paint_jagged_seams(img, rect, seam, seed_base * 3)
+
+## 手绘短笔触（返工2 R1）：5-9px 短线段，方向 8 桶 hash 抖动、端点偏移
+## ±2、笔触宽 2-3px（沿垂线微移）—— 像艺术家随手画的一笔，覆盖量与旧
+## blob 相当（保证多色 cluster 占比不退化）。确定性：同输入永远同形状。
+## [bounds] 可选绘制边界（钳制像素到该矩形内）—— 防止笔触泄漏进相邻区。
+func _paint_stroke(img: Image, x: int, y: int, length: int, color: Color,
+		seed: int, bounds: Rect2i = Rect2i()) -> void:
+	var angle := float((seed % 8) * 45) + float((seed >> 4) % 5) * 3.0 - 6.0
+	var rad := deg_to_rad(angle)
+	var dx := cos(rad)
+	var dy := sin(rad)
+	var x0 := x
+	var y0 := y
+	var x1 := x + int(round(dx * length))
+	var y1 := y + int(round(dy * length))
+	# 端点抖动 ±2（手绘不齐）
+	x1 += (_hash2(seed + 101, x) % 5) - 2
+	y1 += (_hash2(seed + 203, y) % 5) - 2
+	# 笔触宽 2-3px：垂直方向微移（刷毛宽度）—— 稳定 2px 起
+	var thick := 2 + (_hash2(seed + 307, x * 3 + y) % 2)
+	# 沿线段逐步画，每步 ±1 抖动（笔触毛边）
+	var steps := maxi(1, length)
+	for i in steps + 1:
+		var t := float(i) / float(steps)
+		var px := int(round(lerpf(x0, x1, t)))
+		var py := int(round(lerpf(y0, y1, t)))
+		px += (_hash2(seed + i * 7, x + y) % 3) - 1
+		py += (_hash2(seed + i * 13, y - x) % 3) - 1
+		for w in thick:
+			var ox := (_hash2(seed + i * 17 + w, px + py) % 3) - 1
+			var oy := (_hash2(seed + i * 19 + w, py - px) % 3) - 1
+			var wx := px + ox
+			var wy := py + oy
+			if wx >= 0 and wy >= 0 and wx < img.get_width() and wy < img.get_height():
+				if bounds.size.x > 0 and not bounds.has_point(Vector2i(wx, wy)):
+					continue
+				img.set_pixel(wx, wy, color)
 
 
 ## 断裂 jagged 接缝（P3 无完美直线）：沿 cell 边界走段，每段垂直偏移 ±2，

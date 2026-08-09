@@ -360,6 +360,42 @@ const ART_MAPS := {
 		"..KKHH..",
 		".KKKKKK.",
 	],
+	# 计时器（跑步机区叙事道具组，返工2 R1「毛巾+水杯+计时器」）：深色
+	# 计时器机身 + 青蓝显示屏 + 小按钮。低饱和（METAL_DARK/CHARCOAL），
+	# 不抢设备焦点。
+	"timer_treadmill": [
+		".KKKKKK.",
+		"KHHHHHHK",
+		"KHHHHHHK",
+		"KHCCCCHK",
+		"KHCCCCHK",
+		"KHHHHHHK",
+		".KKKKKK.",
+		"........",
+	],
+	# 力量区海报（返工2 R1「杠铃片+粉笔盒+海报」叙事道具组）：手绘海报板
+	# —— 暖白板面 + 简单力量剪影 + 暗色边框（无等宽外框，缺角手绘感）。
+	"poster_strength": [
+		"..OOOO..",
+		".OWWWWO.",
+		"OWWWWWWO",
+		"OWBBWWWO",
+		"OWWWWWWO",
+		"OWWWWWWO",
+		".OWWWWO.",
+		"..OOOO..",
+	],
+	# 单车区水瓶架（返工2 R1「水瓶架+毛巾」叙事道具组）：金属架 + 水瓶。
+	"bottle_rack": [
+		"..HH....",
+		".HHHH...",
+		".HMMH...",
+		".HYYH...",
+		".HYYH...",
+		".HMMH...",
+		"..HH....",
+		"........",
+	],
 }
 
 ## 兜底色（未知 prop_id / 区域）：暖中性（不与其他语义色撞）。
