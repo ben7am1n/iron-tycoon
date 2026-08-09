@@ -327,28 +327,46 @@ func _plate_texture() -> ImageTexture:
 	return _plate_texture_tex
 
 
-## 断续黄色像素轮廓：沿四边画 2px 粗、6px 长的段（间隔 4px 缺口）+ 两角
-## 3×3 色块 —— 手绘「黄色像素轮廓」，绝非等宽闭合矩形边框（V3 §14 /
-## V3.1 负面约束）。
+## 断续黄色像素轮廓（V3.1 返工 2）：沿四边画 2px 粗、**不规则长度**短段
+## （3-9px 交替、间隔 3-8px 随机缺口）+ 两角 3×3 色块 —— 手绘「黄色像素
+## 轮廓」，绝无等宽闭合矩形边框、绝无规则重复虚线（V3 §14 / V3.1 负面约束；
+## 第二轮 FAIL：重复虚线纹理）。段长/缺口由 equipment_id 派生 seed 决定，
+## 同一 tile 每次绘制一致（确定性，无闪烁）。
 func _draw_pixel_outline() -> void:
 	var c := HOVER_OUTLINE_COLOR
 	c.a = 0.9
 	var w := size.x
 	var h := size.y
-	var seg := 6
-	var gap := 4
-	for x0 in range(2, w - 2, seg + gap):
+	var rng := RandomNumberGenerator.new()
+	rng.seed = abs(hash(equipment_id)) if equipment_id != "" else 0x71E
+	# 顶边：不规则短段（seg 3-9px，gap 3-8px）
+	var x0 := 2
+	while x0 < w - 2:
+		var seg := rng.randi_range(3, 9)
 		var x1 := mini(x0 + seg, w - 3)
 		draw_rect(Rect2(x0, 1, x1 - x0, 2), c, true)
-	for x0 in range(2, w - 2, seg + gap):
+		x0 = x1 + rng.randi_range(3, 8) + 1
+	# 底边
+	x0 = 2
+	while x0 < w - 2:
+		var seg := rng.randi_range(3, 9)
 		var x1 := mini(x0 + seg, w - 3)
 		draw_rect(Rect2(x0, h - 3, x1 - x0, 2), c, true)
-	for y0 in range(2, h - 2, seg + gap):
+		x0 = x1 + rng.randi_range(3, 8) + 1
+	# 左边
+	var y0 := 2
+	while y0 < h - 2:
+		var seg := rng.randi_range(3, 9)
 		var y1 := mini(y0 + seg, h - 3)
 		draw_rect(Rect2(1, y0, 2, y1 - y0), c, true)
-	for y0 in range(2, h - 2, seg + gap):
+		y0 = y1 + rng.randi_range(3, 8) + 1
+	# 右边
+	y0 = 2
+	while y0 < h - 2:
+		var seg := rng.randi_range(3, 9)
 		var y1 := mini(y0 + seg, h - 3)
 		draw_rect(Rect2(w - 3, y0, 2, y1 - y0), c, true)
+		y0 = y1 + rng.randi_range(3, 8) + 1
 	# 两角 3×3 色块（不对称手绘收尾）
 	draw_rect(Rect2(1, 1, 3, 3), c, true)
 	draw_rect(Rect2(w - 4, h - 4, 3, 3), c, true)

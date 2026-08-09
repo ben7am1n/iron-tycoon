@@ -24,6 +24,7 @@
 ## PixelPanel 手绘像素纹理（不规则边缘 + 材质 cluster + 非等宽描边）；文字
 ## 渲染关闭抗锯齿/hinting（像素化硬边字形）。见 src/ui/pixel_panel.gd。
 const Palette := preload("res://src/palette.gd")
+const PixelPanel := preload("res://src/ui/pixel_panel.gd")
 
 # === 面板体系（V3.1 手绘像素面板：颜色单一来源；纹理生成见 pixel_panel.gd） ===
 
@@ -118,36 +119,56 @@ static func apply_outlined_fill(
 	label.add_theme_color_override("font_outline_color", outline)
 	label.add_theme_constant_override("outline_size", outline_px)
 
-# === 按钮（深色半透明 + 亮色细描边，主题级 stylebox） ===
+# === 按钮（手绘像素平板 + 非等宽散点描边，主题级 stylebox） ===
 
 static var _button_theme: Theme = null
 
-## 像素芯片按钮 stylebox：非对称描边（顶/左 2px、右/底 1px）+ 非对称圆角
-## （仅左上/右下 1px，切掉另外两角）—— 手绘像素按钮语言，非 macOS 圆角
-## 芯片、非等宽边框（V3.1 负面约束）。[bg_boost] 额外提高底色不透明度
-## （hover 提亮用）。
-static func make_pixel_chip_style(border_color: Color, bg_boost: float = 0.0) -> StyleBoxFlat:
-	var sb := StyleBoxFlat.new()
-	var bg := Palette.CHARCOAL.darkened(0.45)
-	bg.a = clampf(PANEL_ALPHA + bg_boost, 0.0, 1.0)
-	sb.bg_color = bg
-	sb.border_color = border_color
-	sb.border_width_left = 2
-	sb.border_width_top = 2
-	sb.border_width_right = 1
-	sb.border_width_bottom = 1
-	sb.corner_radius_top_left = 1
-	sb.corner_radius_bottom_right = 1
-	sb.corner_radius_top_right = 0
-	sb.corner_radius_bottom_left = 0
+## 共享按钮平板纹理（V3.1 返工 2）：PixelPanel 金属小板（不规则边缘 +
+## 材质 cluster + 散点 accent —— 无全宽虚线、无纯色块、无等宽边框）。
+## StyleBoxTexture NEAREST 拉伸到按钮尺寸；边缘缺口透明像素让场景透出，
+## 按钮轮廓读作手绘像素片，绝非 CSS 矩形芯片。确定性 seed，懒生成一次。
+static var _button_plate_tex: ImageTexture = null
+
+## 按钮平板纹理设计尺寸（texel 4px）：16×10 texel = 64×40 设计像素，
+## NEAREST 拉伸到任意按钮尺寸（transport ~40×28 / toolbar ~90×34）。
+const BUTTON_PLATE_SEED := 0x8077E5
+const BUTTON_PLATE_W := 16
+const BUTTON_PLATE_H := 10
+
+## 手绘按钮平板：PixelPanel 金属小板 + 散点 accent（无全宽虚线/无等宽边框
+## —— V3.1 返工 2，第二轮 FAIL：右上速度按钮规整矩形分区与等宽描边）。
+static func _button_plate() -> ImageTexture:
+	if _button_plate_tex == null:
+		var base := Palette.CHARCOAL.darkened(0.45)
+		base.a = PANEL_ALPHA
+		_button_plate_tex = PixelPanel.plate_texture(
+			BUTTON_PLATE_SEED,
+			Vector2i(BUTTON_PLATE_W, BUTTON_PLATE_H),
+			base,
+			Palette.BUTTER,
+			PixelPanel.Style.METAL,
+			PANEL_ALPHA
+		)
+	return _button_plate_tex
+
+## 像素芯片按钮 stylebox（V3.1 返工 2）：StyleBoxTexture 手绘金属小板，
+## NEAREST 拉伸 + 透明边缘缺口 → 不规则手绘轮廓；底色含逐 texel 噪声
+## （非纯色块）+ 散点 accent（非等宽边框/非重复虚线）。[bg_boost] 映射到
+## modulate_color 提亮（hover 用）。替代旧 StyleBoxFlat 规整矩形 + 等宽
+## 描边（门禁 FAIL：CSS 芯片观感）。
+static func make_pixel_chip_style(border_color: Color, bg_boost: float = 0.0) -> StyleBoxTexture:
+	var sb := StyleBoxTexture.new()
+	sb.texture = _button_plate()
+	var boost: float = clampf(bg_boost, 0.0, 1.0)
+	sb.modulate_color = Color(1.0 + boost * 0.5, 1.0 + boost * 0.4, 1.0 + boost * 0.2, 1.0)
 	sb.content_margin_left = 8.0
 	sb.content_margin_right = 8.0
 	sb.content_margin_top = 4.0
 	sb.content_margin_bottom = 4.0
 	return sb
 
-## 共享 Button Theme：normal/hover/pressed/focus 全为像素芯片（非对称
-## 描边/圆角 —— V3.1 返工 UI，替代旧 rounded chip）。通过
+## 共享 Button Theme：normal/hover/pressed/focus 全为手绘像素小板（非对称
+## 散点 accent —— V3.1 返工 UI，替代旧 rounded chip）。通过
 ## `btn.theme = button_theme()` 挂到按钮上 —— 这是 4.7.1 的「主题级
 ## stylebox」路径（probe 验证：Control 无 add_theme_stylebox()；
 ## Theme.set_stylebox() + control.theme 后 has_theme_stylebox_override() 保持
@@ -158,16 +179,10 @@ static func button_theme() -> Theme:
 	if _button_theme == null:
 		_button_theme = Theme.new()
 		var normal := make_pixel_chip_style(Palette.BUTTER, 0.0)
-		var hover := make_pixel_chip_style(Palette.BUTTER, 0.06)
-		hover.border_width_left = 3
-		hover.border_width_top = 3
+		var hover := make_pixel_chip_style(Palette.BUTTER, 0.12)
+		# pressed：modulate 压暗（物理按压感）—— 手绘小板压暗而非描边内陷
 		var pressed := make_pixel_chip_style(Palette.BUTTER, 0.0)
-		pressed.bg_color = Palette.BUTTER.darkened(0.55)
-		pressed.bg_color.a = 0.9
-		pressed.border_width_left = 1  # 按下：上/左描边内陷（物理按压感）
-		pressed.border_width_top = 1
-		pressed.border_width_right = 2
-		pressed.border_width_bottom = 2
+		pressed.modulate_color = Color(0.72, 0.72, 0.78, 1.0)
 		_button_theme.set_stylebox("normal", "Button", normal)
 		_button_theme.set_stylebox("hover", "Button", hover)
 		_button_theme.set_stylebox("pressed", "Button", pressed)
@@ -180,9 +195,12 @@ static func button_theme() -> Theme:
 	return _button_theme
 
 ## 把共享按钮皮肤挂到一个 Button 上（主题级，非 override —— 保持
-## has_theme_stylebox_override 为 false 的测试契约）。
+## has_theme_stylebox_override 为 false 的测试契约）。NEAREST 由 Button 自身
+## texture_filter 提供（4.7.1 的 StyleBoxTexture 无 texture_filter 属性，
+## 过滤模式跟随 CanvasItem —— probe 验证：属性不存在，需在 Control 上设置）。
 static func style_button(btn: Button) -> void:
 	btn.theme = button_theme()
+	btn.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 
 # === 动效（120-250ms 柔和过渡，克制、可读） ===
 

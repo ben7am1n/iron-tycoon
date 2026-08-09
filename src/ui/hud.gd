@@ -993,14 +993,16 @@ func _make_transport_button(button_name: String, label: String) -> Button:
 ## (never color alone — paired with the filled-dot text prefix in
 ## _set_button_active). V3.1 返工 UI：非对称描边（顶/左 3px、右/底 1px）+
 ## 非对称圆角（仅左上 1px）—— 手绘像素轮廓，非等宽边框（V3.1 负面约束）。
+## V3.1 返工 2：进一步打散对称性 —— 左 4 / 顶 2 / 右 1 / 底 1 + 仅左上
+## 1px 圆角（四边全不相等，绝无等宽描边观感）。
 ## transport 测试只断言 border_width_left > 0，颜色换新皮安全。
 func _get_active_stylebox() -> StyleBoxFlat:
 	if _active_stylebox == null:
 		var sb := StyleBoxFlat.new()
 		sb.bg_color = Color(1.0, 1.0, 1.0, 0.0)
 		sb.border_color = UiTheme.panel_border()
-		sb.border_width_left = 3
-		sb.border_width_top = 3
+		sb.border_width_left = 4
+		sb.border_width_top = 2
 		sb.border_width_right = 1
 		sb.border_width_bottom = 1
 		sb.corner_radius_top_left = 1
