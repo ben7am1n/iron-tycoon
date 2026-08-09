@@ -99,7 +99,8 @@ const DECOR := {
 	"medicine_ball_s1": Vector2i(100, 236),
 	"dumbbell_s3": Vector2i(108, 240),
 	# 瑜伽区：植物、小音箱、卷起的备用瑜伽垫（V3 §12；flex 区空闲格）
-	"plant_f1": Vector2i(352, 176),
+	# V3.1 P5：plant_f1 换亮叶变体（绿色植物焦点之一，分布瑜伽区）
+	"plant_bright_f1": Vector2i(352, 176),
 	"speaker_f1": Vector2i(336, 96),
 	"mat_rolled_f1": Vector2i(348, 268),
 	# 瑜伽区（V3 §15 密度）：瑜伽砖 + 第二盆植物
@@ -117,19 +118,30 @@ const DECOR := {
 	"fountain": Vector2i(20, 40),
 	"trash": Vector2i(386, 30),
 	"hydrant": Vector2i(12, 120),
+	# V3.1 P5 高饱和焦点（附录 V3.1 P5：10-15 个高饱和视觉焦点）——
+	# 新增地面焦点：黄色水杯（前台南侧 walkway）+ 彩色瑜伽用品（瑜伽区）。
+	# 位置避让既有设备/装饰/access 格（水杯 (88,108) 在前台 (56..160,
+	# 24..48) 之南、treadmill(2,2) footprint (64..128,64..96) 之南、水瓶
+	# (132,70) 之西 —— 贴地装饰，无设备盖住；瑜伽球/瑜伽带在 flex 区左侧
+	# 空闲竖条）。
+	"cup_yellow_f1": Vector2i(88, 108),
+	"yoga_ball_f1": Vector2i(288, 96),
+	"yoga_strap_f1": Vector2i(288, 136),
 	# 中央通道（walkway 环道，V3 §15 第一眼：消除空荡通道）—— 长椅/盆栽/垫子
 	# 沿顶部通道：前台右侧等待长椅 + 通道盆栽（cell row 1 空闲格，避开前台
 	# (56,24,104,24) 与入口门洞 x 0..32）
 	"bench_b1": Vector2i(170, 32),
 	"bench_b2": Vector2i(210, 32),
-	"plant_b1": Vector2i(244, 32),
+	# V3.1 P5：plant_b1 换亮叶变体（绿色植物焦点之二，分布中央通道）
+	"plant_bright_b1": Vector2i(244, 32),
 	"plant_b2": Vector2i(300, 32),
 	"mat_rolled_b1": Vector2i(340, 32),
 	# 左侧 walkway 长椅（x 0..32 通道，避开 bench_press (1,7)(2,7) 与 bike(2,5)）
 	"bench_b3": Vector2i(16, 186),
 	# 前景：大植物（V3 §4 FOREGROUND，可轻微遮挡）—— 位置须落在 UI 建造条带
 	# 之上（world y ≤ 277，屏幕 y ≤ 624；实测 y≥292 会被 96px 条带盖住）。
-	"plant_fore_1": Vector2i(0, 244),
+	# V3.1 P5：plant_fore_1 换亮叶变体（绿色植物焦点之三，分布前景左下）
+	"plant_bright_fore_1": Vector2i(0, 244),
 	"plant_fore_2": Vector2i(384, 244),
 	# V3 §15（P0-4 纵深）：前景遮挡增强 —— 底部通道/设备前多两棵大植物，
 	# 真实压住 GAMEPLAY 层（纵深三层的"前景"层更明显）。y 控制在 277 之上
@@ -146,6 +158,8 @@ const WALL_DECOR := {
 	"timer_bike": Vector2i(52, 1),
 	"sign_entrance": Vector2i(36, 1),
 	"tv": Vector2i(320, 1),
+	# V3.1 P5 高饱和焦点：红色广告牌挂墙（两海报之间，x≈192 空闲墙段）。
+	"ad_red": Vector2i(192, 1),
 }
 
 # === V3 §6 灯光锚点 ===

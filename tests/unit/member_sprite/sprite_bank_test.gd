@@ -235,6 +235,15 @@ func _test_appearance_variants() -> void:
 	# 同一 member_id 永远同一外观（确定性）
 	var v0b := s.texture_for("WALKING_TO", 0, false, {"member_id": 0}).get_image()
 	_check(_near(v0.get_pixel(24, 4), v0b.get_pixel(24, 4)), "同一 member_id 外观稳定")
+	# V3.1 P5：变体 1 运动短裤高饱和橙色（橙色健身服焦点 —— 精选焦点，
+	# 非全员；变体 0/2/3 保持低饱和）。变体 1 的裤像素 = FOCAL_GYM_ORANGE。
+	var v1_pants := s.texture_for("WALKING_TO", 0, false, {"member_id": 1}).get_image()
+	_check(_near(v1_pants.get_pixel(9, 33), Palette.FOCAL_GYM_ORANGE),
+		"V3.1 P5 变体1 短裤 == FOCAL_GYM_ORANGE（橙色健身服焦点）")
+	# 变体 2 保持低饱和裤（不破坏环境 70% 低饱和 —— 焦点只 1 个变体）
+	var v2_pants := s.texture_for("WALKING_TO", 0, false, {"member_id": 2}).get_image()
+	_check(_near(v2_pants.get_pixel(9, 33), Palette.MEMBER_PANTS_ALT2),
+		"V3.1 P5 变体2 短裤保持低饱和（焦点精选）")
 
 
 func _test_bench_situp_window() -> void:

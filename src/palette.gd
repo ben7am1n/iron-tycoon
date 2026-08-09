@@ -164,11 +164,18 @@ const FLOOR_WALK_CL_DARK := Color("C6BEA9")
 ## 植物叶色：中等饱和绿（V3 §7；比旧 Sage 更深更实，脱离 pastel）。
 const PLANT_GREEN := Color("4E8A5A")
 const PLANT_GREEN_DARK := Color("3E7048")
+## 植物亮叶（普通植物）：低饱和亮绿（V3 §7 植物色 —— 环境低饱和）。
+## V3.1 P5 的「绿色植物」焦点由 plant_bright 变体（FOCAL_GREEN_LIGHT
+## 亮叶）承担，避免 9 盆植物全部成为高饱和簇（P5 精选 10-15 焦点）。
 const PLANT_GREEN_LIGHT := Color("6BA575")
 ## 陶盆：低饱和暖棕。
 const PLANT_POT := Color("9C5A3C")
 
 ## Accent 高饱和色（V3 §7 —— 只用于设备屏幕/小型装饰/UI 提示）。
+## 注意：环境装饰（水瓶/招牌/饮水机/瑜伽砖/消防栓）用这些色时保持
+## 低-中饱和（V3.1 P5「保持 70% 环境低饱和」）—— 高饱和焦点由
+## FOCAL_* 色族 + 设备屏幕 + 植物亮叶承担（P5 精选 10-15 个焦点，
+## 不把整个环境提饱和）。
 const ACCENT_YELLOW := Color("F2C94C")
 const ACCENT_ORANGE := Color("E07A3F")
 const ACCENT_CYAN := Color("45C4D8")
@@ -177,6 +184,27 @@ const EMISSIVE_CYAN := Color("4FD8E8")
 const EMISSIVE_GREEN := Color("58E08A")
 ## 高光：暖黄/奶白（V3 §6 高光暖黄色/奶白色；金属高光仍用 METAL_HIGHLIGHT）。
 const HIGHLIGHT_WARM := Color("F5E6C8")
+
+# === V3.1 P5 高饱和焦点色（附录 V3.1 P5：10-15 个高饱和视觉焦点） ===
+## 新增焦点色：红广告牌 / 亮绿植物叶 / 彩色瑜伽用品（粉/紫/青）。HSV
+## 饱和度均 ≥ 0.73 —— 在 70% 低饱和环境中构成局部高饱和焦点。只用于
+## 小型装饰/广告牌/瑜伽用品（V3 §7 高饱和仅小型装饰，禁止大面积）。
+## 红色广告牌（P5 例子「红色广告牌」）：暖调高饱和红，非刺眼荧光红。
+const FOCAL_RED := Color("D8382E")
+## 黄色水杯（P5 例子「黄色水杯」）：高饱和暖黄（s≈0.76，比环境
+## ACCENT_YELLOW 更饱和 —— 焦点与环境分离）。
+const FOCAL_YELLOW := Color("FFCB3D")
+## 植物亮叶高饱和绿（P5 例子「绿色植物」）：植物主体保持中等饱和绿
+## （V3 §7），亮叶像素用本色形成绿色焦点簇。
+const FOCAL_GREEN_LIGHT := Color("3AD860")
+## 彩色瑜伽用品（P5 例子「彩色瑜伽用品」）：粉/紫/青三色。
+const FOCAL_PINK := Color("F23E9E")
+const FOCAL_PURPLE := Color("8E3FF0")
+const FOCAL_TEAL := Color("2FC9B8")
+## 会员运动短裤高饱和色（P5 例子「橙色健身服」）：变体 1-3 短裤色。
+const FOCAL_GYM_ORANGE := Color("FF8A2A")
+const FOCAL_GYM_BLUE := Color("2F9BE8")
+const FOCAL_GYM_YELLOW := Color("FFCB3D")
 
 ## 顶部暖白主光（V3 §6 统一室内主光）：暖白，低 alpha 叠加在世界上层。
 const LIGHT_TOP_WARM := Color(1.0, 0.95, 0.83, 0.06)
@@ -262,6 +290,8 @@ const EQUIP_HIGHLIGHT := Color("EADFB8")
 ## 冷蓝灰阴影面（§6 阴影：偏冷、偏蓝灰 —— 设备自身受光面的暗侧）。
 const EQUIP_SHADOW_TONE := Color("3A4350")
 ## 青蓝显示灯（§6 部分机器显示屏：青蓝/绿色局部 emissive pixels）。
-const EQUIP_ACCENT_CYAN := Color("5ED4E8")
+## V3.1 P5：提高饱和 —— 设备屏幕是全场景高饱和焦点之一（P5 例子「蓝色
+## 设备屏幕」），在低饱和环境中跳出来。
+const EQUIP_ACCENT_CYAN := Color("2FC4E8")
 ## Hover 黄色像素轮廓（§14 可读性 + §10 购买栏 Hover）：复用 Butter（暖黄 accent）。
 const EQUIP_HOVER_OUTLINE := BUTTER

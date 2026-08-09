@@ -575,6 +575,9 @@ func _draw_floor_decor() -> void:
 
 ## 环境前景（V3 §4 FOREGROUND：大型植物，可轻微遮挡角色）—— 画在设备之后。
 ## V3.1 P1：前景植物贴地（floor transform 内扁平绘制，billboard 植物）。
+## 识别：DECOR 键含 "_fore_" 段（含 plant_fore_* 与 V3.1 P5 亮叶变体
+## plant_bright_fore_* —— 用 contains("_fore_") 而非 begins_with 前缀，
+## 否则亮叶变体丢失前景层级）。
 func _draw_environment_foreground() -> void:
 	if _env_art == null:
 		return
@@ -583,7 +586,7 @@ func _draw_environment_foreground() -> void:
 		tick = _tick_provider.call()
 	_draw_with_floor_transform(func() -> void:
 		for prop_id: String in WorldLayout.DECOR:
-			if not prop_id.begins_with("plant_fore"):
+			if not prop_id.contains("_fore_"):
 				continue
 			var pos: Vector2i = WorldLayout.DECOR[prop_id]
 			var sway := Vector2(round(sin(tick * 0.08 + float(prop_id.hash() % 100) * 0.13)), 0)
