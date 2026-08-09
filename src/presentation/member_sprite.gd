@@ -73,17 +73,38 @@ const FACE_HAPPY := "happy"     # satisfied：笑眼 + 微笑 + 闪光
 # 低饱和裤，画面中橙色短裤会员是少数跳出的焦点）。变体 0 保留默认
 # 低饱和裤（既有测试 pin 变体 0 的裤像素；变体 1 无像素断言，安全）。
 # 短裤高饱和色来自 palette FOCAL_GYM_*（单一数据源）。
+# V3.1 R2（P2-sprite 辨识度）：外观不再是「同一 silhouette 换色」——
+# 每变体有差异化体型（build）与发型（hair_style）：
+#   build 0 标准（默认体型，测试像素断言 pin 住，不得改形）
+#   build 1 壮硕（肩宽 34 / 腰窄 20，V 字倒三角；无袖背心 + 橙色短裤）
+#   build 2 纤细（肩窄 26 / 腿细，马尾发型）
+#   build 3 敦实（肩宽 38 / 腿粗，平头发型）
+# 体型由 BUILDS 表驱动（_torso_rows/_leg_rows 按 build 生成行数据），
+# 颜色仍由本表 + palette 单一色源。变体 0 保持既有行数据（测试 pin）。
 const MEMBER_VARIANTS := [
 	{"hair": Palette.MEMBER_HAIR, "skin": Palette.MEMBER_SKIN,
 	 "pants": Palette.MEMBER_PANTS, "shoes": Palette.MEMBER_SHOE, "hair_style": 0},
 	{"hair": Palette.MEMBER_HAIR_ALT1, "skin": Palette.MEMBER_SKIN_ALT1,
 	 "pants": Palette.FOCAL_GYM_ORANGE, "shoes": Palette.MEMBER_SHOE_ALT1, "hair_style": 1},
 	{"hair": Palette.MEMBER_HAIR_ALT2, "skin": Palette.MEMBER_SKIN_ALT2,
-	 "pants": Palette.MEMBER_PANTS_ALT2, "shoes": Palette.MEMBER_SHOE_ALT2, "hair_style": 0},
+	 "pants": Palette.MEMBER_PANTS_ALT2, "shoes": Palette.MEMBER_SHOE_ALT2, "hair_style": 2},
 	{"hair": Palette.MEMBER_HAIR_ALT3, "skin": Palette.MEMBER_SKIN_ALT3,
-	 "pants": Palette.MEMBER_PANTS_ALT3, "shoes": Palette.MEMBER_SHOE_ALT3, "hair_style": 1},
+	 "pants": Palette.MEMBER_PANTS_ALT3, "shoes": Palette.MEMBER_SHOE_ALT3, "hair_style": 3},
 ]
 const VARIANT_COUNT := 4
+
+# === V3.1 R2（P2-sprite）：差异化体型 build（同一姿态模板，不同放样宽度） ===
+# 每项：{sh 肩宽, chest 胸宽, waist 腰宽, hip 臀宽, leg 腿宽, sleeve 袖型,
+#        legwear 裤型, hair 发型索引}。行数据生成见 _torso_rows/_leg_rows。
+# 变体 0 是「锚定变体」—— 其行数据由既有手写行保持（测试像素断言 pin），
+# BUILDS[0] 仅作参考，不驱动生成。变体 1-3 由模板按宽度放样。
+# 单位：字符宽（1 char = 1 屏 px）。
+const BUILDS := {
+	0: {"sh": 28, "chest": 28, "waist": 24, "hip": 26, "leg": 12, "sleeve": "cc", "legwear": "pants", "hair": 0},
+	1: {"sh": 34, "chest": 28, "waist": 20, "hip": 24, "leg": 14, "sleeve": "ss", "legwear": "shorts", "hair": 1},
+	2: {"sh": 26, "chest": 24, "waist": 22, "hip": 22, "leg": 10, "sleeve": "cc", "legwear": "pants", "hair": 2},
+	3: {"sh": 38, "chest": 32, "waist": 28, "hip": 28, "leg": 16, "sleeve": "cc", "legwear": "pants", "hair": 3},
+}
 
 ## 卧推「结束坐起」窗口：use_ticks_remaining 进入该窗口时显示坐起帧
 ## （V3 §8 "结束时坐起"）。8 ticks ≈ 0.8s @10Hz —— 收尾节奏可见。
@@ -305,30 +326,53 @@ func _frame_rows(pose: String, frame: int, variant: int) -> PackedStringArray:
 # === 基础部件（头 18 行 0..17 / 躯干 14 行 18..31 / 腿 9 行 32..40 /
 #         鞋 3 行 41..43 / 影 4 行 44..47） ===
 
-## 头（18 行）：发顶圆顶 + 一撮呆毛（tuft）或平刘海（fringe）发型变体；
-## 脸低细节高表达（眼/眉/嘴变体）。发两侧 H 延伸至下巴，形成圆脸。
+## 头（18 行）：发型变体（V3.1 R2：差异化 silhouette，非换色）：
+##   style 0 tuft —— 顶上一撮呆毛（既有，测试 pin）
+##   style 1 fringe —— 平顶 + 刘海（既有）
+##   style 2 ponytail —— 圆顶 + 右侧 2px 马尾（纤细变体）
+##   style 3 flat —— 短平头（敦实变体）
+## 脸低细节高表达（眼/眉/嘴变体，四发型共用同一脸块）。
 ## [compact] 用于带头顶微元素（汗滴/闪光）的姿态 —— 去掉最后 2 行颈，
 ## 给微元素留出 0..1 行（调用方自行前置 2 行），总高保持 48。
 func _head_rows(face: String, variant: int, compact: bool = false) -> PackedStringArray:
 	var v: Dictionary = MEMBER_VARIANTS[variant % VARIANT_COUNT]
 	var style := int(v["hair_style"])
 	var r := PackedStringArray()
-	if style == 0:
-		# tuft：顶上一撮呆毛（2px 高，bob 上浮时仍有残留）
-		r.append(_r(22, "hhhh"))
-		r.append(_r(21, "hhhhhh"))
-		r.append(_r(19, "hhhhhhhhhh"))
-		r.append(_r(17, "hhhhhhhhhhhhhh"))
-		r.append(_r(15, "hhhhhhhhhhhhhhhhhh"))
-		r.append(_r(14, "hhhhhhhhhhhhhhhhhhhh"))
-	else:
-		# fringe：平顶 + 刘海
-		r.append(_r(18, "hhhhhhhhhhhh"))
-		r.append(_r(17, "hhhhhhhhhhhhhhhh"))
-		r.append(_r(16, "hhhhhhhhhhhhhhhhhh"))
-		r.append(_r(15, "hhhhhhhhhhhhhhhhhhhh"))
-		r.append(_r(14, "hhhhhhhhhhhhhhhhhhhhhh"))
-		r.append(_r(13, "hhhhhhhhhhhhhhhhhhhhhhhh"))
+	match style:
+		0:
+			# tuft：顶上一撮呆毛（2px 高，bob 上浮时仍有残留）
+			r.append(_r(22, "hhhh"))
+			r.append(_r(21, "hhhhhh"))
+			r.append(_r(19, "hhhhhhhhhh"))
+			r.append(_r(17, "hhhhhhhhhhhhhh"))
+			r.append(_r(15, "hhhhhhhhhhhhhhhhhh"))
+			r.append(_r(14, "hhhhhhhhhhhhhhhhhhhh"))
+		1:
+			# fringe：平顶 + 刘海
+			r.append(_r(18, "hhhhhhhhhhhh"))
+			r.append(_r(17, "hhhhhhhhhhhhhhhh"))
+			r.append(_r(16, "hhhhhhhhhhhhhhhhhh"))
+			r.append(_r(15, "hhhhhhhhhhhhhhhhhhhh"))
+			r.append(_r(14, "hhhhhhhhhhhhhhhhhhhhhh"))
+			r.append(_r(13, "hhhhhhhhhhhhhhhhhhhhhhhh"))
+		2:
+			# ponytail（V3.1 R2）：圆顶 + 右侧 2px 马尾（脸侧发向右延伸，
+			# 发顶比 tuft 圆润 —— 剪影右侧多 2px 小辫）
+			r.append(_r(19, "hhhhhhhhhh"))
+			r.append(_r(18, "hhhhhhhhhhhh"))
+			r.append(_r(17, "hhhhhhhhhhhhhh"))
+			r.append(_r(16, "hhhhhhhhhhhhhhhh"))
+			r.append(_r(15, "hhhhhhhhhhhhhhhhhh"))
+			r.append(_r(14, "hhhhhhhhhhhhhhhhhhhh"))
+		3:
+			# flat（V3.1 R2）：短平头 —— 顶平、比 tuft 窄（无呆毛/刘海，
+			# 发顶平坦），轮廓像刚剃过的寸头
+			r.append(_r(20, "hhhhhhhh"))
+			r.append(_r(19, "hhhhhhhhhh"))
+			r.append(_r(18, "hhhhhhhhhhhh"))
+			r.append(_r(17, "hhhhhhhhhhhhhh"))
+			r.append(_r(16, "hhhhhhhhhhhhhhhh"))
+			r.append(_r(15, "hhhhhhhhhhhhhhhhhh"))
 	r.append(_r(13, "hh" + "s".repeat(18) + "hh"))        # 发两侧 + 脸顶
 	r.append(_r(13, "hh" + "s".repeat(18) + "hh"))        # 发两侧 + 脸
 	# 脸块统一 4 行（每姿态总行数一致：6 发 + 2 脸顶 + 4 脸块 + 4 下巴 + 2 颈
@@ -356,6 +400,12 @@ func _head_rows(face: String, variant: int, compact: bool = false) -> PackedStri
 			r.append(_r(13, "hh" + "sssss" + "ee" + "ssssss" + "ee" + "sssss" + "hh"))  # 半闭眼
 			r.append(_r(13, "hh" + "s".repeat(18) + "hh"))
 			r.append(_r(13, "hh" + "ssssssssmmmmssssss" + "hh"))                      # 小嘴
+	# 马尾：脸块之后（行 7..10）右侧 2px 小辫延伸 —— 与发顶同色，
+	# 轮廓上形成「头右侧 2×4 发束」差异化剪影（V3.1 R2 silhouette）。
+	if style == 2:
+		for i in range(1, 5):
+			var row := r[r.size() - 1 - i]
+			r[r.size() - 1 - i] = _right_extend(row, 35, "hh")
 	r.append(_r(13, "hh" + "s".repeat(18) + "hh"))        # 脸
 	r.append(_r(15, "s".repeat(18)))                      # 下巴收窄
 	r.append(_r(16, "s".repeat(16)))
@@ -366,10 +416,22 @@ func _head_rows(face: String, variant: int, compact: bool = false) -> PackedStri
 	return r
 
 
+## V3.1 R2：把 [row] 在 [x] 处替换为 [content]（用于马尾等非对称发型延伸）。
+## row 由 _r() 生成（content 左对齐 + 右补透明），右侧是 '.'，直接替换即可。
+func _right_extend(row: String, x: int, content: String) -> String:
+	if x < 0 or x + content.length() > row.length():
+		return row
+	return row.substr(0, x) + content + row.substr(x + content.length())
+
+
 ## 躯干（14 行 18..31）：肩 1 行宽于头（肩膀明显），双臂（袖 c / 手 s）
 ## 在外侧，躯干 c 中置；右侧阴影（V3 §6 顶部暖光 → 阴影侧偏冷暗）。
 ## [arms] 决定手臂姿态（摆臂/上举/前伸/擦汗/举手等）。
+## V3.1 R2：变体 0 走既有手写行（测试像素断言 pin）；变体 1-3 由
+## _torso_build_rows 按 BUILDS 放样（差异化体型 silhouette）。
 func _torso_rows(arms: String, variant: int) -> PackedStringArray:
+	if variant % VARIANT_COUNT != 0:
+		return _torso_build_rows(arms, variant)
 	var r := PackedStringArray()
 	match arms:
 		"swing_f":   # walk A：左臂前摆 + 右臂后摆
@@ -540,9 +602,127 @@ func _torso_rows(arms: String, variant: int) -> PackedStringArray:
 	return r
 
 
+## V3.1 R2：躯干姿态模板（变体 1-3 放样用）。每姿态 14 行（与手写行同结构）：
+## 每行 [L 左延伸, R 右延伸, W 宽度键, ch(可选 覆盖字符)]。
+##   W 键：sh=肩 / chest=胸 / waist=腰 / hip=臀 —— 宽度取自 BUILDS。
+##   L/R：袖 "cc"（build 1 换肤成 "ss" 无袖背心）或手 "ss"。
+##   行 9 = 下摆（d）、行 10-13 = 裤腰（p）—— 与手写行同结构。
+## 模板按既有手写行归纳（swing_f 等 11 姿态 + down 兜底）。
+const TORSO_TPL := {
+	"swing_f": [
+		["", "", "sh"], ["cc", "cc", "sh"], ["cc", "cc", "sh"], ["cc", "cc", "sh"],
+		["cc", "cc", "sh"], ["ss", "cc", "chest"], ["ss", "ss", "chest"], ["", "ss", "chest"],
+		["", "", "waist"], ["", "", "waist", "d"], ["", "", "hip", "p"], ["", "", "hip", "p"],
+		["", "", "hip", "p"], ["", "", "hip", "p"],
+	],
+	"swing_b": [
+		["", "", "sh"], ["cc", "cc", "sh"], ["cc", "cc", "sh"], ["cc", "cc", "sh"],
+		["cc", "cc", "sh"], ["cc", "ss", "chest"], ["ss", "ss", "chest"], ["ss", "", "chest"],
+		["", "", "waist"], ["", "", "waist", "d"], ["", "", "hip", "p"], ["", "", "hip", "p"],
+		["", "", "hip", "p"], ["", "", "hip", "p"],
+	],
+	"pump_up": [
+		["", "", "sh"], ["ss", "ss", "sh"], ["ss", "ss", "sh"], ["cc", "cc", "sh"],
+		["cc", "cc", "sh"], ["cc", "cc", "chest"], ["cc", "cc", "chest"], ["", "", "chest"],
+		["", "", "waist"], ["", "", "waist", "d"], ["", "", "hip", "p"], ["", "", "hip", "p"],
+		["", "", "hip", "p"], ["", "", "hip", "p"],
+	],
+	"pump_down": [
+		["", "", "sh"], ["cc", "cc", "sh"], ["cc", "cc", "sh"], ["cc", "cc", "sh"],
+		["cc", "cc", "sh"], ["ss", "ss", "chest"], ["ss", "ss", "chest"], ["", "", "chest"],
+		["", "", "waist"], ["", "", "waist", "d"], ["", "", "hip", "p"], ["", "", "hip", "p"],
+		["", "", "hip", "p"], ["", "", "hip", "p"],
+	],
+	"rails": [
+		["", "", "sh"], ["cc", "cc", "sh"], ["cc", "cc", "sh"],
+		["ss", "ss", "sh"], ["cc", "cc", "sh"], ["cc", "cc", "chest"], ["cc", "cc", "chest"],
+		["", "", "chest"], ["", "", "waist"], ["", "", "waist", "d"], ["", "", "hip", "p"],
+		["", "", "hip", "p"], ["", "", "hip", "p"], ["", "", "hip", "p"],
+	],
+	"handlebar": [
+		["", "", "sh"], ["cc", "cc", "sh"], ["cc", "cc", "sh"],
+		["ss", "ss", "sh"], ["cc", "cc", "sh"], ["cc", "cc", "chest"], ["cc", "cc", "chest"],
+		["", "", "chest"], ["", "", "waist"], ["", "", "waist", "d"], ["", "", "hip", "p"],
+		["", "", "hip", "p"], ["", "", "hip", "p"], ["", "", "hip", "p"],
+	],
+	"wipe": [
+		["", "", "sh"], ["cc", "cc", "sh"], ["cc", "cc", "sh"],
+		["ss", "cc", "sh"], ["cc", "cc", "sh"], ["cc", "cc", "chest"], ["cc", "ss", "chest"],
+		["", "", "chest"], ["", "", "waist"], ["", "", "waist", "d"], ["", "", "hip", "p"],
+		["", "", "hip", "p"], ["", "", "hip", "p"], ["", "", "hip", "p"],
+	],
+	"raised": [
+		["", "", "sh"], ["ss", "cc", "sh"], ["ss", "cc", "sh"], ["cc", "cc", "sh"],
+		["cc", "cc", "sh"], ["cc", "cc", "chest"], ["cc", "ss", "chest"], ["", "", "chest"],
+		["", "", "waist"], ["", "", "waist", "d"], ["", "", "hip", "p"], ["", "", "hip", "p"],
+		["", "", "hip", "p"], ["", "", "hip", "p"],
+	],
+	"stretch_up": [
+		["", "", "sh"], ["ss", "ss", "sh"], ["ss", "ss", "sh"], ["cc", "cc", "sh"],
+		["cc", "cc", "sh"], ["cc", "cc", "chest"], ["cc", "cc", "chest"], ["", "", "chest"],
+		["", "", "waist"], ["", "", "waist", "d"], ["", "", "hip", "p"], ["", "", "hip", "p"],
+		["", "", "hip", "p"], ["", "", "hip", "p"],
+	],
+	"stretch_out": [
+		["", "", "sh"], ["ss", "ss", "sh"], ["ss", "ss", "sh"], ["cc", "cc", "sh"],
+		["cc", "cc", "sh"], ["cc", "cc", "chest"], ["cc", "cc", "chest"], ["", "", "chest"],
+		["", "", "waist"], ["", "", "waist", "d"], ["", "", "hip", "p"], ["", "", "hip", "p"],
+		["", "", "hip", "p"], ["", "", "hip", "p"],
+	],
+	"down": [
+		["", "", "sh"], ["cc", "cc", "sh"], ["cc", "cc", "sh"], ["cc", "cc", "sh"],
+		["cc", "cc", "sh"], ["ss", "ss", "chest"], ["ss", "ss", "chest"], ["", "", "chest"],
+		["", "", "waist"], ["", "", "waist", "d"], ["", "", "hip", "p"], ["", "", "hip", "p"],
+		["", "", "hip", "p"], ["", "", "hip", "p"],
+	],
+}
+
+
+## V3.1 R2：按 build 宽度放样躯干 14 行（变体 1-3）。肩→胸→腰→臀逐段收窄/
+## 加宽（体型 silhouette 差异化），中心对齐 x24。build 1（无袖背心）把
+## 袖 "cc" 换成皮肤 "ss" —— 手臂裸露，运动服配色差异。
+func _torso_build_rows(arms: String, variant: int) -> PackedStringArray:
+	var b: Dictionary = BUILDS[variant % VARIANT_COUNT]
+	var tpl: Array = TORSO_TPL.get(arms, TORSO_TPL["down"])
+	var r := PackedStringArray()
+	var tank := str(b.get("sleeve", "cc")) == "ss"
+	for spec: Array in tpl:
+		var l := String(spec[0])
+		var rr := String(spec[1])
+		if tank:
+			l = l.replace("cc", "ss")
+			rr = rr.replace("cc", "ss")
+		var w := _build_width(String(spec[2]), b)
+		var ch := "c"
+		if spec.size() > 3:
+			ch = String(spec[3])
+		var content := l + ch.repeat(w) + rr
+		var left := 24 - content.length() / 2
+		r.append(_r(left, content))
+	return r
+
+
+## W 键 → build 宽度（字符数）。
+func _build_width(key: String, b: Dictionary) -> int:
+	match key:
+		"sh":
+			return int(b.get("sh", 28))
+		"chest":
+			return int(b.get("chest", 26))
+		"waist":
+			return int(b.get("waist", 22))
+		"hip":
+			return int(b.get("hip", 24))
+	return int(b.get("waist", 22))
+
+
 ## 腿（9 行 32..40）：裤 + 短腿（V3 §8 四肢较短）。
 ## [legs] 决定步态（迈步/骑踏/盘坐/站立）。
+## V3.1 R2：变体 0 走既有手写行（测试像素断言 pin）；变体 1-3 由
+## _leg_build_rows 按 build 放样（腿粗 + build 1 运动短裤露出小腿皮肤）。
 func _leg_rows(legs: String, variant: int) -> PackedStringArray:
+	if variant % VARIANT_COUNT != 0:
+		return _leg_build_rows(legs, variant)
 	var r := PackedStringArray()
 	match legs:
 		"stride_f":  # walk A：左腿前迈 + 右腿后蹬
@@ -628,6 +808,81 @@ func _leg_rows(legs: String, variant: int) -> PackedStringArray:
 	return r
 
 
+## V3.1 R2：按 build 放样腿 9 行（变体 1-3）。单腿宽 = max(3, leg/4)；
+## build 1（运动短裤）裤行 0..2 用短裤色 p、行 3..5 露小腿皮肤 s、行 6..8
+## 鞋 k —— 与长裤 build 的 silhouette 差异明显（V3.1 R2 运动服配色）。
+## 步态结构（行 0..2 / 3..5 / 6..8）与手写行一致；行宽随 build 缩放。
+func _leg_build_rows(legs: String, variant: int) -> PackedStringArray:
+	var b: Dictionary = BUILDS[variant % VARIANT_COUNT]
+	var lw := maxi(3, int(b.get("leg", 12)) / 4)
+	var shorts := str(b.get("legwear", "pants")) == "shorts"
+	var up := "p"           # 裤/短裤
+	var down := "s" if shorts else "p"   # 短裤露小腿皮肤 / 长裤继续裤色
+	var r := PackedStringArray()
+	match legs:
+		"stride_f":  # walk A：左腿前迈 + 右腿后蹬
+			for _i in 3:
+				r.append(_r(8, up.repeat(lw) + ".".repeat(8) + up.repeat(lw)))
+			for _i in 3:
+				r.append(_r(6, down.repeat(lw * 2) + "...." + down.repeat(lw)))
+			for _i in 2:
+				r.append(_r(6, "k".repeat(lw * 2) + "...." + "k".repeat(lw)))
+			r.append(_r(8, "k".repeat(lw * 3)))
+		"stride_b":  # walk B：右腿前迈 + 左腿后蹬（镜像）
+			for _i in 3:
+				r.append(_r(8, up.repeat(lw) + ".".repeat(8) + up.repeat(lw)))
+			for _i in 3:
+				r.append(_r(8, up.repeat(lw) + "...." + up.repeat(lw * 2)))
+			for _i in 2:
+				r.append(_r(8, "k".repeat(lw) + "...." + "k".repeat(lw * 2)))
+			r.append(_r(8, "k".repeat(lw * 3)))
+		"plant":  # use：双脚站稳（宽距）
+			for _i in 3:
+				r.append(_r(6, up.repeat(lw * 2)))
+			for _i in 3:
+				r.append(_r(5, down.repeat(lw * 2 + 2)))
+			for _i in 2:
+				r.append(_r(4, "k".repeat(lw * 2 + 4)))
+			r.append(_r(6, "k".repeat(lw * 2 + 2)))
+		"pedal_f":  # bike A：左脚下踏 + 右脚上抬
+			for _i in 3:
+				r.append(_r(8, up.repeat(lw) + ".".repeat(8) + up.repeat(lw)))
+			for _i in 3:
+				r.append(_r(6, down.repeat(lw * 2) + "...." + down.repeat(lw)))
+			for _i in 2:
+				r.append(_r(4, "k".repeat(lw * 2) + ".." + "k".repeat(lw)))
+			r.append(_r(6, "k".repeat(lw * 3)))
+		"pedal_b":  # bike B：右脚下踏 + 左脚上抬
+			for _i in 3:
+				r.append(_r(8, up.repeat(lw) + ".".repeat(8) + up.repeat(lw)))
+			for _i in 3:
+				r.append(_r(8, up.repeat(lw) + "...." + up.repeat(lw * 2)))
+			for _i in 2:
+				r.append(_r(8, "k".repeat(lw) + ".." + "k".repeat(lw * 2)))
+			r.append(_r(8, "k".repeat(lw * 3)))
+		"cross":  # yoga：盘坐（宽、短）
+			for _i in 3:
+				r.append(_r(6, up.repeat(lw * 2)))
+			for _i in 3:
+				r.append(_r(5, down.repeat(lw * 2 + 2)))
+			for _i in 3:
+				r.append(_r(4, "k".repeat(lw * 2 + 4)))
+		"bent":  # tired：腿微弯
+			for _i in 3:
+				r.append(_r(9, up.repeat(lw)))
+			for _i in 3:
+				r.append(_r(8, down.repeat(lw + 2)))
+			for _i in 3:
+				r.append(_r(6, "k".repeat(lw + 4)))
+		_:
+			# stand：双脚并立
+			for _i in 6:
+				r.append(_r(9, up.repeat(lw)))
+			for _i in 3:
+				r.append(_r(8, "k".repeat(lw + 2)))
+	return r
+
+
 ## 鞋（3 行 41..43）+ 影（4 行 44..47）。阴影固定在地面，身体做弹跳/下蹲时
 ## 不跟着浮动（_bob_up 只移动 0..40 行）。
 func _shoe_rows() -> PackedStringArray:
@@ -638,12 +893,16 @@ func _shoe_rows() -> PackedStringArray:
 	return r
 
 
+## 脚底接触影（4 行 44..47）：随身体保持贴地（_bob_up 只移动 0..40 行）。
+## V3.1 R2（P2-sprite）：从「36px 全宽平带」改为「脚下收拢的椭圆」——
+## 行 44 窄（贴身）、行 45-47 渐宽，全部居中 x24；contact shadow 明确
+## （V3 §6 设备/人物脚下明显但柔和的 contact shadow，非整片暗板）。
 func _shadow_rows() -> PackedStringArray:
 	var r := PackedStringArray()
-	r.append(_r(6, "y".repeat(36)))
-	r.append(_r(6, "y".repeat(36)))
-	r.append(_r(6, "y".repeat(36)))
-	r.append(_r(6, "y".repeat(36)))
+	r.append(_r(14, "y".repeat(20)))
+	r.append(_r(11, "y".repeat(26)))
+	r.append(_r(10, "y".repeat(28)))
+	r.append(_r(10, "y".repeat(28)))
 	return r
 
 
