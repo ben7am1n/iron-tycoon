@@ -115,17 +115,19 @@ const PLACEMENT_BAD_TINT := Color("E0A0A0", 0.35)
 ## 吸附「咔哒」视觉反馈（art-bible §7 动效手感）：Butter 脉冲环。
 const SNAP_PULSE_COLOR := BUTTER
 
-# === V3 §7 色彩体系（Phase 5：暖环境 + 冷阴影 + 高饱和重点色） ===
+# === V3 §7 / V3.1 R5 色彩体系（暖环境 + 冷阴影 + 高饱和重点色） ===
 # 背景基底：暖灰/奶油灰/低饱和棕；阴影：深蓝灰/青灰；器械：炭灰/深蓝灰/浅灰
-# 金属；木材：暖橙棕；植物：中等饱和绿；Accent：黄/橙/青蓝（小范围）。
+# 金属；木材：暖橙棕；植物：中等饱和绿；Accent：黄/橙/青蓝（小范围）。R5 只把
+# 墙体、通道、有氧区与少量力量区 cluster 推向暖相；力量区橡胶主体、金属、
+# 器械暗面与 LIGHT_*_SHADOW 保持冷灰，作为冷暖对比锚点。
 # 色值单一来源（项目约定）：绘制层一律引用本文件，禁止硬编码。
 
 ## 顶墙基底：暖灰奶油灰（V3 §3 墙壁）。
-const WALL_BASE := Color("8B8378")
+const WALL_BASE := Color("978879")
 ## 顶墙踢脚/明暗块：低饱和棕（比墙基底深一档）。
-const WALL_DARK := Color("6E675C")
+const WALL_DARK := Color("736557")
 ## 墙裙线：暖灰更亮一档（装饰压条）。
-const WALL_TRIM := Color("9C948A")
+const WALL_TRIM := Color("A99A89")
 ## 窗玻璃：冷青灰蓝（V3 §7 阴影系青灰；窗户斜向自然光的载体）。
 const WINDOW_GLASS := Color("9FB4C8")
 ## 窗框：炭灰暖调（非纯黑，25d §3）。
@@ -139,14 +141,14 @@ const FLOOR_STRENGTH_WEAR := Color("5A5F68")    # 磨损/高光
 const FLOOR_STRENGTH_STAIN := Color("383C44")   # 汗渍
 ## V3.1 P3：力量区手绘 cluster 色（深灰/灰蓝/暖灰 —— 非纯色大块填充）。
 const FLOOR_STRENGTH_CL_GRAYBLUE := Color("4E5663")   # 灰蓝 cluster
-const FLOOR_STRENGTH_CL_WARMGRAY := Color("55504C")   # 暖灰 cluster
+const FLOOR_STRENGTH_CL_WARMGRAY := Color("5A5049")   # 暖灰 cluster
 ## 地板材质 —— 有氧区偏暖灰/蓝灰地面。
-const FLOOR_CARDIO_BASE := Color("7C8288")
-const FLOOR_CARDIO_DOT := Color("71777D")       # 细小重复纹理
+const FLOOR_CARDIO_BASE := Color("827D77")
+const FLOOR_CARDIO_DOT := Color("746E68")       # 细小重复纹理
 const FLOOR_CARDIO_EDGE := Color("666C72")      # 边缘压条
 ## V3.1 P3：有氧区手绘 cluster 色（暖灰/蓝灰 —— 无 4px 规则点阵）。
 const FLOOR_CARDIO_CL_GRAYBLUE := Color("747D87")
-const FLOOR_CARDIO_CL_WARMGRAY := Color("858486")
+const FLOOR_CARDIO_CL_WARMGRAY := Color("8A827C")
 ## 地板材质 —— 瑜伽区暖色木地板（V3 §7 木材暖橙棕）。
 const FLOOR_FLEX_BASE := Color("A9744C")
 const FLOOR_FLEX_PLANK := Color("96653F")       # 木板分隔
@@ -155,8 +157,8 @@ const FLOOR_FLEX_GRAIN := Color("8F5F3B")       # 像素化木纹
 const FLOOR_FLEX_CL_LIGHT := Color("B58055")
 const FLOOR_FLEX_CL_DARK := Color("96633C")
 ## 地板材质 —— 公共通道浅灰/暖灰瓷砖（比训练区亮，有砖缝）。
-const FLOOR_WALK_BASE := Color("D3CBB9")
-const FLOOR_WALK_GROUT := Color("BDB4A0")
+const FLOOR_WALK_BASE := Color("D9CCB7")
+const FLOOR_WALK_GROUT := Color("C2B39B")
 ## V3.1 P3：通道手绘 cluster 色（亮/暗瓷砖 —— 砖缝不规则）。
 const FLOOR_WALK_CL_LIGHT := Color("DDD6C6")
 const FLOOR_WALK_CL_DARK := Color("C6BEA9")
@@ -249,13 +251,13 @@ const CLOCK_FACE := Color("E8E2D4")
 ## 墙钟指针/刻度：深暖灰。
 const CLOCK_HAND := Color("4A443C")
 ## 管道：中暖灰（BACKGROUND）。
-const PIPE_COLOR := Color("8F8A7E")
+const PIPE_COLOR := Color("948779")
 ## 管道法兰/接头：深一档。
 const PIPE_DARK := Color("777267")
 ## 电线槽：浅暖灰细条（V3 §3）。
 const CABLE_DUCT := Color("B0AA9C")
 ## 立柱：暖灰（FOREGROUND，允许遮挡）。
-const COLUMN_COLOR := Color("A59E90")
+const COLUMN_COLOR := Color("AA9C8A")
 ## 立柱暗部。
 const COLUMN_DARK := Color("877F70")
 ## 吊灯灯罩：深暖灰（FOREGROUND，悬于上方）。
