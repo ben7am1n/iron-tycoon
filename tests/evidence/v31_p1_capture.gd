@@ -235,14 +235,26 @@ func _verify_member_volume(img: Image) -> void:
 			break
 	_ok(found,
 		"MEMBER %s at cell %s has body pixels (shirt/skin, not a chess pawn)" % [state, cell])
-	# 会员 sprite 高于地面（脚底贴地，身体立起 —— 与地板不同色）
+	# 会员 sprite 高于地面（脚底贴地，身体立起 —— 与地板不同色）。
+	# 与上方衬衫扫描共用同一窗口（feet-48..66 × ±10px）：窗口内任一点
+	# 与脚底地面中位差 > 0.06 即成立 —— 单点被设备边缘/同伴遮挡不再误报
+	# （帧时序抖动会让 walk 会员与设备投影轻微重叠，见 R1 layer 修复）。
 	var ground_p := world_to_screen(feet)
-	var ground_c := img.get_pixel(ground_p.x, ground_p.y)
-	var body_p := Vector2i(feet_p.x, feet_p.y - 54)
-	var body_c := img.get_pixel(body_p.x, body_p.y)
-	_ok(not _near(ground_c, body_c, 0.06),
-		"MEMBER body pixels differ from ground (standing, has height): %s vs %s" % [
-			body_c.to_html(false), ground_c.to_html(false)])
+	var ground_c := _window_median(img, ground_p, 3)
+	var body_diff := false
+	for dy in [48, 54, 60, 66]:
+		for dx in [-10, -5, 0, 5, 10]:
+			var p := Vector2i(feet_p.x + dx, feet_p.y - dy)
+			if not _in_bounds(img, p):
+				continue
+			var c := img.get_pixel(p.x, p.y)
+			if not _near(c, ground_c, 0.06):
+				body_diff = true
+				break
+		if body_diff:
+			break
+	_ok(body_diff,
+		"MEMBER body pixels differ from ground (standing, has height)")
 
 
 func _find_visible_member() -> Dictionary:
@@ -289,6 +301,21 @@ func _in_bounds(img: Image, p: Vector2i) -> bool:
 
 func _near(a: Color, b: Color, tol: float) -> bool:
 	return _color_distance(a, b) <= tol
+
+
+## 世界矩形窗口中位亮度（median，step 3 —— 与 R1 layer capture 同法）。
+## 用于 ground 参照：单点可能被设备边缘/同伴投影遮挡，中位对少量异常像素鲁棒。
+func _window_median(img: Image, p: Vector2i, radius: int) -> Color:
+	var samples: Array[Color] = []
+	for dy in range(-radius, radius + 1):
+		for dx in range(-radius, radius + 1):
+			var q := Vector2i(p.x + dx, p.y + dy)
+			if _in_bounds(img, q):
+				samples.append(img.get_pixel(q.x, q.y))
+	if samples.is_empty():
+		return Color(0, 0, 0)
+	samples.sort_custom(func(a: Color, b: Color) -> bool: return a.r + a.g + a.b < b.r + b.g + b.b)
+	return samples[samples.size() / 2]
 
 
 func _color_distance(a: Color, b: Color) -> float:
