@@ -151,16 +151,25 @@ func _paint_edge_shadow(img: Image) -> void:
 ## 顶部主光落点：不是径向圆，而是横宽纵窄的 faceted 像素材质区。
 ## 中心热核、八边形分段衰减、hash 缺口共同表达「地板材质被暖光照亮」；
 ## 高处灯泡到这里的方向关系由 projected light map 连续表达。
+## 返工2 R1：光从「色块」变成「有方向的照明」——
+##   - 热核 keep 0.98 → 0.90：中心恢复 hash 缺口（R4 硬门 ring<0.95；
+##     R1 光不是实心暖块）
+##   - 方向性 bias：灯下（北半，y<center）更暖更亮 ×1.12，远离光源
+##     （南半）回落 ×0.88 —— 暖光向远处衰减，形成「灯下亮 → 远处冷灰」的
+##     方向分层
+##   - mid/edge alpha 提高（0.27→0.33 / 0.11→0.15），暖池更可读
 func _paint_light_pools(img: Image) -> void:
 	var seed := 301
 	for light: Dictionary in WorldLayout.HANGING_LIGHTS:
 		_paint_faceted_pool(img,
 			light.get("landing", Vector2.ZERO),
-			light.get("pool_half", Vector2(44, 30)), seed, 1.0)
+			light.get("pool_half", Vector2(52, 36)), seed, 1.0)
 		seed += 97
 
 
 ## 分面暖光落点：metric 是八边形距离，不使用圆/径向 gradient。
+## 返工2 R1 方向性：北半（靠近吊灯，y < center.y）受光更暖更亮，南半
+## （远离光源）回落 —— 配合 edge shadow 的冷灰环境色形成暖→冷方向分层。
 func _paint_faceted_pool(img: Image, center: Vector2, half_size: Vector2,
 		seed: int, strength: float) -> void:
 	var x0 := maxi(int(floor(center.x - half_size.x)) - 2, 0)
@@ -177,24 +186,26 @@ func _paint_faceted_pool(img: Image, center: Vector2, half_size: Vector2,
 			if metric + edge_jitter > 1.0:
 				continue
 			var density := clampf(1.0 - metric, 0.0, 1.0)
-			var keep := 0.38 + 0.46 * density
+			var keep := 0.30 + 0.46 * density
 			if metric < 0.25:
-				keep = 0.98
+				keep = 0.90
 			elif metric < 0.56:
-				keep = 0.84
+				keep = 0.80
 			if float(_hash2(x + seed * 3, y + seed) % 1000) / 1000.0 > keep:
 				continue
 			# 分三档而非平滑透明渐变；每档再用少量 hash 做像素材质变化。
-			var a := 0.11
+			var a := 0.15
 			var warm := Palette.LIGHT_POOL_EDGE
 			if metric < 0.25:
-				a = 0.46
+				a = 0.50
 				warm = Palette.LIGHT_TOP_WARM
 			elif metric < 0.56:
-				a = 0.27
+				a = 0.33
 				warm = Palette.LIGHT_POOL_MID
-			a *= strength * (0.86 + 0.14 * float(_hash2(x + 7, y + 11) % 100) / 100.0)
-			img.set_pixel(x, y, Color(warm.r, warm.g, warm.b, minf(a, 0.46)))
+			# 方向性：北半（灯下，y<center）更亮，南半回落 —— 光有方向。
+			var dir_bias := 1.12 if y < center.y else 0.88
+			a *= strength * dir_bias * (0.86 + 0.14 * float(_hash2(x + 7, y + 11) % 100) / 100.0)
+			img.set_pixel(x, y, Color(warm.r, warm.g, warm.b, minf(a, 0.50)))
 
 
 ## 高处灯泡→地面落点的投影空间光图。与地板 light map 分离：这里不再套

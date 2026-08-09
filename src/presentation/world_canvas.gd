@@ -986,8 +986,15 @@ func _draw_members(foreground: bool) -> void:
 		# 把深色轮廓人物从深灰力量区地面「托起」（远景轮廓可读性）。亮池只
 		# 在中景成员绘制（非 USING 叠加在设备上时会被设备盖住，不额外画）。
 		# V3.1 P1：亮池贴地（floor transform 内椭圆，随地板压缩）。
+		# 返工2 R1（人物-环境互动可读性）：亮池之上加紧凑暗色接触影 ——
+		# 脚踩处地面压暗，人物「落在地面」而非贴图。
 		if not is_using:
 			_draw_member_ground_glow(_flat_feet(cell))
+			_draw_member_contact_shadow(_flat_feet(cell))
+		else:
+			# USING 成员：设备接触点明暗衔接（脚踩踏板压暗 + 手扶处设备微反光）
+			_draw_using_equipment_junction(
+				str(ctx.get("equipment_id", "")), _footprint_of_using(m), draw_pos)
 		draw_texture(tex, draw_pos)
 	# 清理已离场成员的朝向缓存（防止字典无限增长）
 	for member_id in _member_facing.keys():
@@ -1086,6 +1093,96 @@ func _draw_member_ground_glow(flat_feet: Vector2) -> void:
 			pts.append(flat_feet + Vector2(cos(a) * rx, sin(a) * ry))
 		draw_colored_polygon(pts, glow)
 	)
+
+
+## 返工2 R1（人物-环境互动可读性）：会员脚底紧凑暗色接触影 —— 亮池之上
+## 再压一层贴地小椭圆（暗蓝灰，低 alpha），脚踩处地面「压暗」，人物与
+## 地面有明确明暗衔接（不再像贴上去的图形）。画在亮池之后、sprite 之前。
+func _draw_member_contact_shadow(flat_feet: Vector2) -> void:
+	var shadow := Palette.EQUIP_SHADOW
+	shadow.a = 0.30
+	var size := float(_member_sprites.SIZE) if _member_sprites != null else 48.0
+	var rx := size * 0.34
+	var ry := size * 0.10
+	_draw_with_floor_transform(func() -> void:
+		var pts := PackedVector2Array()
+		for i in 16:
+			var a := TAU * float(i) / 16.0
+			pts.append(flat_feet + Vector2(cos(a) * rx, sin(a) * ry))
+		draw_colored_polygon(pts, shadow)
+	)
+
+
+## 返工2 R1（人物-环境互动可读性，USING 成员）：设备接触点明暗衔接。
+##   - 脚踩踏板/车座/垫面处：设备受光面上加紧凑暗色接触影（设备高度
+##     stand_z 投影 —— 脚踩设备，不是浮在设备上空）
+##   - 手扶处：设备正面临近手的位置叠 2-3px 暖色微反光（HIGHLIGHT_WARM
+##     低 alpha —— 手部接触的设备表面「接住灯光」）
+## 与 R2 会员重绘配合（R2 侧重精灵本体；本函数侧重环境侧衔接）。
+## [eq_id] USING 成员的目标设备；[fp] 设备 footprint（世界 Rect2i）；
+## [draw_pos] 会员 sprite 左上角（已投影）。
+func _draw_using_equipment_junction(eq_id: String, fp: Rect2i,
+		draw_pos: Vector2) -> void:
+	if fp.size.x <= 0 or fp.size.y <= 0:
+		return
+	var size := float(_member_sprites.SIZE) if _member_sprites != null else 48.0
+	# 接触影：锚点下方（sprite 脚底）在设备高度压暗 —— 小椭圆。
+	var stand_z: float = 16.0
+	if _equip_art != null:
+		stand_z = _equip_art.height_for(eq_id) * 0.75
+	var feet := draw_pos + Vector2(size * 0.5, size * 0.92)
+	var shadow := Palette.EQUIP_SHADOW
+	shadow.a = 0.26
+	var rx := size * 0.30
+	var ry := size * 0.09
+	var pts := PackedVector2Array()
+	for i in 16:
+		var a := TAU * float(i) / 16.0
+		pts.append(feet + Vector2(cos(a) * rx, sin(a) * ry))
+	draw_colored_polygon(pts, shadow)
+	# 手扶处设备微反光：设备正面临近手的位置叠暖色像素（1-3px，低 alpha）。
+	# 位置 = 设备 footprint 底边中点投影到设备高度 ± 类型微调（手在设备
+	# 前侧）。只加少量像素 —— 反光不是光斑。
+	var grip_world := Vector2(fp.position.x + fp.size.x * 0.5,
+		fp.position.y + fp.size.y * 0.62)
+	var grip_h := stand_z * 0.72
+	match eq_id:
+		"treadmill":
+			# 控制台扶手：跑带南端，手在面板附近（高度略高于站立面）
+			grip_world = Vector2(fp.position.x + fp.size.x * 0.5,
+				fp.position.y + fp.size.y * 0.80)
+			grip_h = stand_z * 0.85
+		"bike":
+			# 车把：车架北端（把手在座位前上方）
+			grip_world = Vector2(fp.position.x + fp.size.x * 0.5,
+				fp.position.y + fp.size.y * 0.30)
+			grip_h = stand_z * 0.95
+		"bench_press":
+			# 杠铃杆：凳面正上方（手托杆）
+			grip_world = Vector2(fp.position.x + fp.size.x * 0.5,
+				fp.position.y + fp.size.y * 0.5)
+			grip_h = stand_z * 1.10
+		"yoga_mat":
+			# 垫面：手按垫（无高出表面 —— 接触影已表达，不叠反光）
+			return
+	# 手扶处暖色微反光（画在设备顶面上方，仍是像素级小反光）
+	var grip := Proj2D.proj(grip_world.x, grip_world.y, grip_h)
+	var glint := Palette.HIGHLIGHT_WARM
+	glint.a = 0.20
+	var snapped := Vector2(roundf(grip.x), roundf(grip.y))
+	draw_rect(Rect2(snapped + Vector2(-2, -1), Vector2(5, 2)), glint, true)
+
+
+## USING 成员的设备 footprint（world Rect2i）—— 从 target_equipment_instance_id
+## 解析；设备丢失时返回零矩形（junction 函数内部跳过）。
+func _footprint_of_using(m: Dictionary) -> Rect2i:
+	var target := int(m.get("target_equipment_instance_id", -1))
+	if target < 0 or _grid == null:
+		return Rect2i()
+	for inst in _grid.get_placed_instances():
+		if inst.instance_id == target:
+			return _footprint_rect(inst.footprint_cells)
+	return Rect2i()
 
 
 ## 会员绘制上下文（V3 §8 设备互动 + §9 微型动态 + 每人外观）：

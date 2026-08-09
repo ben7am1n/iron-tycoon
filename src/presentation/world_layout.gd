@@ -92,13 +92,20 @@ const WINDOWS := [
 const DECOR := {
 	# 跑步机旁：水瓶、毛巾（V3 §12；treadmill(2,2) 右侧空闲格）
 	# R3：towel 搭在水瓶右上角（前后交错遮挡，非孤立悬浮）
+	# 返工2 R1：计时器加入跑步机区叙事道具组（毛巾+水杯+计时器）——
+	# timer 位于 towel 东缘；towel 后画，下摆搭在 timer 左缘（成组小遮挡，
+	# 计时器大部分可见 —— 显示屏仍在画面内）。
 	"water_bottle_t1": Vector2i(132, 70),
+	"timer_treadmill_t1": Vector2i(158, 70),
 	"towel_t1": Vector2i(134, 73),
 	# 力量区：散落小配重、粉笔盒（V3 §12；bench(1,7) 右侧 strength 区）
 	# R3：配重全部错落（无同列对齐）+ plate_s2 半压 plate_s1
+	# 返工2 R1：力量区海报（杠铃片+粉笔盒+海报）—— poster_strength 立在
+	# 粉笔盒东侧，海报左下角压住粉笔盒右上角（成组小遮挡，非孤立）。
 	"dumbbell_s1": Vector2i(127, 231),
 	"dumbbell_s2": Vector2i(139, 245),
 	"chalk_box": Vector2i(121, 261),
+	"poster_strength_s1": Vector2i(150, 260),
 	# 力量区（V3 §15 第一眼密度）：散落壶铃/配重片/药球，填满 strength 区空闲格
 	# R3：kettlebell 对角错落；medicine_ball 与 dumbbell_s3 相触（成组）
 	"kettlebell_s1": Vector2i(38, 102),
@@ -125,8 +132,12 @@ const DECOR := {
 	"plant_f2": Vector2i(367, 121),
 	# 自行车区：风扇、水杯架（V3 §12；bike(2,5) 左侧 walkway）
 	# R3：杯架错开风扇（原同列对齐）
+	# 返工2 R1：单车区叙事道具组（水瓶架+毛巾）—— bottle_rack 立在风扇
+	# 南侧，towel 搭在架顶（成组遮挡，非孤立）。
 	"fan_b1": Vector2i(26, 161),
 	"cup_holder_b1": Vector2i(23, 181),
+	"bottle_rack_b1": Vector2i(16, 144),
+	"towel_b1": Vector2i(20, 148),
 	# 有氧区（V3 §15 密度）：第二台 treadmill 旁毛巾/水瓶 + 中间空闲格水杯
 	# R3：towel 搭在水瓶上（遮挡）；cup_holder 偏移
 	"towel_t2": Vector2i(196, 149),
@@ -194,17 +205,17 @@ const HANGING_LIGHTS := [
 	{
 		"id": "hanging_lamp_1", "rect": Rect2i(72, 0, 28, 36),
 		"height": 78.0, "bulb_local": Vector2(14, 29),
-		"landing": Vector2(86, 170), "pool_half": Vector2(44, 30),
+		"landing": Vector2(86, 170), "pool_half": Vector2(52, 36),
 	},
 	{
 		"id": "hanging_lamp_2", "rect": Rect2i(188, 0, 28, 36),
 		"height": 78.0, "bulb_local": Vector2(14, 29),
-		"landing": Vector2(202, 170), "pool_half": Vector2(44, 30),
+		"landing": Vector2(202, 170), "pool_half": Vector2(52, 36),
 	},
 	{
 		"id": "hanging_lamp_3", "rect": Rect2i(348, 0, 28, 36),
 		"height": 78.0, "bulb_local": Vector2(14, 29),
-		"landing": Vector2(362, 170), "pool_half": Vector2(44, 30),
+		"landing": Vector2(362, 170), "pool_half": Vector2(52, 36),
 	},
 ]
 
