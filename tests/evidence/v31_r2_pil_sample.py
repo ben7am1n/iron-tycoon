@@ -14,9 +14,9 @@
   2. 渲染帧 tests/evidence/v31-r2-sprite.png（window 模式主场景）——
      世界采样验证人物与设备可辨（第二眼标准 V3 §15）：
      E. 人物衬衫通道正确（Sky/Peach/Gray 三态在画面中可采样）
-     F. 设备部件可辨：treadmill 顶面控制台青蓝显示（真控制台）+
-        belt S2S2 高对比履带纹（M2M2 原色接近不可见 → R2 修复）
-        bench 长凳垫段（Z/D 分隔）在顶面纹理中可辨
+     #     F. 设备部件可辨：treadmill 顶面控制台青蓝显示（真控制台）+
+     #        belt 高对比履带纹（1 暗 + 3 亮；原 M2M2 两色接近不可见 → R2 修复）
+     #        bench 长凳垫段（Z/D 分隔）在顶面纹理中可辨
 
 断言（与 src/presentation/member_sprite.gd + equipment_art.gd 同源复算，
 色值来自 src/palette.gd 单一来源；独立脚本，不依赖测试框架）：
@@ -262,8 +262,8 @@ def verify_rendered_scene():
         if found_cyan:
             break
     check(found_cyan, "F1 treadmill console cyan display visible (real console)")
-    # treadmill belt S2 高对比履带：同帧内存在 EQUIP_SHADOW_TONE（S 暗）
-    # 与 EQUIP_BODY（2 中调）—— 原 M2M2 两色接近不可见，R2 修复为可见履带
+    # treadmill belt 高对比履带：同帧内存在 EQUIP_BODY_DARK（1 暗）与
+    # EQUIP_BODY_LIGHT（3 亮）—— 原 M2M2 两色接近不可见，R2 修复为可见履带
     found_s, found_2 = False, False
     for wy in range(102, 120, 2):
         pp = world_to_screen((224, wy), 30.0)
@@ -272,12 +272,12 @@ def verify_rendered_scene():
                 sx, sy = pp[0] + dx, pp[1] + dy
                 if 0 <= sx < img.width and 0 <= sy < img.height:
                     c = px[sx, sy]
-                    if near(c, EQUIP_SHADOW_TONE, 45):
+                    if near(c, (0x49, 0x52, 0x5F), 45):   # EQUIP_BODY_DARK (1)
                         found_s = True
-                    if near(c, EQUIP_BODY, 45):
+                    if near(c, (0x8E, 0x99, 0xA6), 45):   # EQUIP_BODY_LIGHT (3)
                         found_2 = True
     check(found_s and found_2,
-          f"F2 treadmill belt high-contrast tread (S dark {'OK' if found_s else 'MISS'} + mid {'OK' if found_2 else 'MISS'})")
+          f"F2 treadmill belt high-contrast tread (dark 1 {'OK' if found_s else 'MISS'} + light 3 {'OK' if found_2 else 'MISS'})")
 
 
 def main():
