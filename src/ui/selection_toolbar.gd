@@ -98,11 +98,16 @@ var _bridge: SelectionInputBridgeScript
 var _placement: PlacementSystemScript
 var _grid: GridSystemScript
 ## 屏幕空间 cell 尺寸（V3 §2：世界已进 SubViewport + nearest 放大，UI 层
-## 锚定用的 cell_size 是「世界 cell 的屏幕像素尺寸」，float 以保留精确换算
-## ≈72.11px；单位测试/旧调用注入 32 时行为不变）。
-var _cell_size: float = 32.0
+## 锚定用的 cell_size 是「世界 cell 的屏幕像素尺寸」；V3.1 P1 起为 Vector2
+## （x 不压缩 / y 经 oblique FLOOR_SCALE 压缩 ≈72.11×56.16px）。兼容 float
+## 注入（旧调用/单测注入 32 → 视作方形 (32,32)）。
+var _cell_size: Vector2 = Vector2(32, 32)
 var _grid_origin: Vector2 = Vector2.ZERO
 var _viewport_size: Vector2 = Vector2(1280, 720)
+## V3.1 P1：可选 world→screen 投影 Callable（oblique 剪切/压缩换算）。注入
+## 后 footprint 矩形按投影后的 4 角 AABB 计算（与世界上屏位置精确对齐）；
+## 未注入（旧调用/单测）回退 origin + cell*cell_size 均匀换算。
+var _world_to_screen: Callable = Callable()
 var _reduced_motion: bool = false
 var _enter_duration: float = DEFAULT_ENTER_DURATION
 var _exit_duration: float = DEFAULT_EXIT_DURATION
@@ -142,10 +147,11 @@ func init(
 	bridge: SelectionInputBridgeScript,
 	placement: PlacementSystemScript,
 	grid: GridSystemScript,
-	cell_size: float,
+	cell_size: Variant,
 	config: Dictionary = {},
 	grid_origin: Vector2 = Vector2.ZERO,
-	viewport_size: Vector2 = Vector2(1280, 720)
+	viewport_size: Vector2 = Vector2(1280, 720),
+	world_to_screen: Callable = Callable()
 ) -> void:
 	if _initialized:
 		push_error("SelectionToolbar.init() called twice")
@@ -155,9 +161,10 @@ func init(
 	_bridge = bridge
 	_placement = placement
 	_grid = grid
-	_cell_size = cell_size
+	_cell_size = _as_cell_size(cell_size)
 	_grid_origin = grid_origin
 	_viewport_size = viewport_size
+	_world_to_screen = world_to_screen
 	_apply_config(config)
 	_build_buttons()
 	visible = false
@@ -472,6 +479,8 @@ func _refresh_move_disabled() -> void:
 ## Pixel rect of the transformed footprint cells (grid space) — mirrors the
 ## cue's computation; both are thin presentation reads of the SAME
 ## GridSystem transform (never a local re-implementation of rotation math).
+## V3.1 P1：注入 world_to_screen 时，4 角先经 oblique 投影再取 AABB
+## （与世界上屏位置精确对齐；剪切使 footprint 在屏幕上是平行四边形）。
 func _compute_footprint_rect(equipment_def, cell: Vector2i, rotation: int) -> Rect2:
 	if _grid == null or equipment_def == null:
 		return Rect2()
@@ -490,9 +499,42 @@ func _compute_footprint_rect(equipment_def, cell: Vector2i, rotation: int) -> Re
 		min_c.y = min(min_c.y, c.y)
 		max_c.x = max(max_c.x, c.x)
 		max_c.y = max(max_c.y, c.y)
-	var top_left: Vector2 = Vector2(min_c) * float(_cell_size)
-	var bottom_right: Vector2 = Vector2(max_c + Vector2i.ONE) * float(_cell_size)
+	if _world_to_screen.is_valid():
+		# 投影路径：4 角（世界 px = cell × CELL_WORLD_PX）→ 屏幕 → 减去
+		# origin 保持「grid space（pre-origin）」约定（调用方统一加 origin）。
+		var corners := _projected_corners(min_c, max_c)
+		if corners.size() >= 4:
+			var aabb := Rect2(corners[0], Vector2.ZERO)
+			for p in corners:
+				aabb = aabb.expand(p)
+			return Rect2(aabb.position - _grid_origin, aabb.size)
+	# 兜底路径：origin + cell*cell_size 均匀换算（无投影注入 / 单测）。
+	var top_left: Vector2 = Vector2(min_c) * _cell_size
+	var bottom_right: Vector2 = Vector2(max_c + Vector2i.ONE) * _cell_size
 	return Rect2(top_left, bottom_right - top_left)
+
+
+## 世界 cell 尺寸（px）—— 投影 Callable 输入用（与 main.gd CELL_SIZE 一致）。
+const CELL_WORLD_PX := 32
+
+## footprint cell AABB 的 4 角（世界 px）经 world_to_screen 投影。
+func _projected_corners(min_c: Vector2i, max_c: Vector2i) -> PackedVector2Array:
+	var pts := PackedVector2Array()
+	for corner in [
+		Vector2i(min_c.x, min_c.y),
+		Vector2i(max_c.x + 1, min_c.y),
+		Vector2i(max_c.x + 1, max_c.y + 1),
+		Vector2i(min_c.x, max_c.y + 1),
+	]:
+		pts.append(_world_to_screen.call(Vector2(corner) * CELL_WORLD_PX))
+	return pts
+
+
+## 兼容 float / Vector2 的 cell_size 注入（float 视作方形）。
+func _as_cell_size(v: Variant) -> Vector2:
+	if v is Vector2:
+		return v
+	return Vector2(float(v), float(v))
 
 
 # === Query surface (headless tests assert state, never pixels) ===

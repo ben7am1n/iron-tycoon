@@ -186,6 +186,79 @@ func texture_size(equipment_id: String) -> Vector2i:
 	return art_size(equipment_id) * ART_SCALE
 
 
+# === V3.1 P1：体积挤出（顶面 + 正面 + 侧面） ===
+
+## 设备挤出高度（世界 px，V3.1 P1 斜俯视的体积表达）。数据驱动常量，
+## 绘制层与 USING 会员站立高度共用。
+const EQUIP_HEIGHTS := {
+	"treadmill": 30.0,
+	"bike": 36.0,
+	"bench_press": 26.0,
+	"yoga_mat": 6.0,
+}
+const DEFAULT_EQUIP_HEIGHT := 24.0
+
+## 挤出面高度系数（与 oblique_projection.HEIGHT_SCALE 同值 —— 纹理裁剪
+## 高度 = height × 系数，WorldCanvas 用同一系数绘制面四边形）。
+const FACE_HEIGHT_SCALE := 0.62
+
+## 挤出面纹理缓存：key = "eq|zone|rot|face_h" → {"front": tex, "side": tex}。
+var _face_cache: Dictionary = {}
+
+## 设备挤出高度（世界 px）。未知 id 用默认（绝不崩溃）。
+func height_for(equipment_id: String) -> float:
+	return float(EQUIP_HEIGHTS.get(equipment_id, DEFAULT_EQUIP_HEIGHT))
+
+## V3.1 P1：挤出面纹理（缓存）。返回 {"front": ImageTexture, "side":
+## ImageTexture}：
+##   - front = 旋转后 art 的底部 face_h 行（南边条带）变暗 → 正面
+##   - side  = 旋转后 art 的右侧 face_h 列（东边条带）变暗并旋转 90°
+##             → 侧面（沿深度铺开）
+## 变暗方向：正面中调（EQUIP_BODY 混合）、侧面暗调（EQUIP_SHADOW_TONE 混合）
+## —— 顶面亮、正面中、侧面暗，三面分层（V3.1 P1 证据：多层高度色）。
+## 未知设备返回空字典（调用方画实色面兜底，绝不崩溃）。
+func extrusion_faces_for(equipment_id: String, zone: String, rotation: int,
+		height: float) -> Dictionary:
+	var face_h := maxi(2, int(round(height * FACE_HEIGHT_SCALE)))
+	var key := "%s|%s|%d|%d" % [equipment_id, zone, rotation, face_h]
+	if _face_cache.has(key):
+		return _face_cache[key]
+	var result := {"front": null, "side": null}
+	var tex := texture_for(equipment_id, zone, rotation)
+	if tex == null:
+		return result
+	var img := tex.get_image()
+	var w := img.get_width()
+	var h := img.get_height()
+	if w <= 0 or h <= 0:
+		return result
+	var face_h_use := mini(face_h, h)
+	# 正面：底部 face_h 行（南边条带）→ 中调变暗
+	var front := Image.create(w, face_h_use, false, Image.FORMAT_RGBA8)
+	front.blit_rect(img, Rect2i(0, h - face_h_use, w, face_h_use), Vector2i.ZERO)
+	_darken_image(front, Palette.EQUIP_BODY.darkened(0.2), 0.5)
+	# 侧面：右侧 face_h 列（东边条带）→ 旋转 90°（沿深度铺开）→ 暗调变暗
+	var side_cols := mini(face_h_use, w)
+	var side := Image.create(side_cols, h, false, Image.FORMAT_RGBA8)
+	side.blit_rect(img, Rect2i(w - side_cols, 0, side_cols, h), Vector2i.ZERO)
+	side.rotate_90(1)  # 逆时针 → (h × side_cols) = (深度 × 面高)
+	_darken_image(side, Palette.EQUIP_SHADOW_TONE, 0.6)
+	result["front"] = ImageTexture.create_from_image(front)
+	result["side"] = ImageTexture.create_from_image(side)
+	_face_cache[key] = result
+	return result
+
+
+## 整图向 [target] 混合 [amount]（保留 alpha；透明像素跳过）。
+func _darken_image(img: Image, target: Color, amount: float) -> void:
+	for y in img.get_height():
+		for x in img.get_width():
+			var c := img.get_pixel(x, y)
+			if c.a <= 0.0:
+				continue
+			img.set_pixel(x, y, c.lerp(target, amount))
+
+
 ## 把 [base]（R0 图像）旋转到 [rotation] 度。rotate_90 会原地修改并交换宽高，
 ## 所以每次从 base 的 duplicate() 出发。非法 rotation push_error 后原样返回。
 func _rotate_to(base: Image, rotation: int) -> Image:

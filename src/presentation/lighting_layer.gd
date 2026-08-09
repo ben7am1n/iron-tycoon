@@ -22,6 +22,7 @@ class_name LightingLayer extends Node2D
 const Palette := preload("res://src/palette.gd")
 const WorldLayout := preload("res://src/presentation/world_layout.gd")
 const WorldScale := preload("res://src/presentation/world_scale.gd")
+const Proj2D := preload("res://src/presentation/oblique_projection.gd")
 
 ## 发光体类型（emissive 载体，V3 §6）：设备屏幕青蓝/绿 + 饮水机/招牌。
 const GLOW_CYAN := "cyan"
@@ -53,12 +54,16 @@ func init(grid, resolver: Callable, tick_provider: Callable) -> void:
 
 
 # === 渲染（世界像素空间；headless 下引擎不调用 _draw，防御性检查） ===
+# V3.1 P1：光照是贴地氛围（光池/暗角/光锥/辉光都在地面上）—— 全部经
+# floor_transform 投影（光池随地板压缩成椭圆、暗角沿地板边缘）。
 
 func _draw() -> void:
+	draw_set_transform_matrix(Proj2D.floor_transform())
 	_draw_edge_shadows()
 	_draw_light_pools()
 	_draw_window_light()
 	_draw_emissive_glows()
+	draw_set_transform_matrix(Transform2D.IDENTITY)
 
 
 ## 墙边暗角（V3 §6）：四周冷蓝灰半透明带 —— 墙边比中心区域稍暗。

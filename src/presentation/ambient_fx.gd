@@ -23,6 +23,7 @@ class_name AmbientFx extends Node2D
 
 const Palette := preload("res://src/palette.gd")
 const WorldLayout := preload("res://src/presentation/world_layout.gd")
+const Proj2D := preload("res://src/presentation/oblique_projection.gd")
 
 ## 光尘数量（克制：8 个，不铺满）。
 const DUST_COUNT := 8
@@ -52,8 +53,11 @@ func init(member, grid, resolver: Callable, tick_provider: Callable) -> void:
 
 
 # === 渲染（世界像素空间；headless 下引擎不调用 _draw） ===
+# V3.1 P1：动态元素贴地（光尘/汗滴/传送带/飞轮/杯闪都在地面/设备面上）
+# —— 经 floor_transform 投影（位置随地板压缩/剪切）。
 
 func _draw() -> void:
+	draw_set_transform_matrix(Proj2D.floor_transform())
 	var tick: int = 0
 	if _tick_provider.is_valid():
 		tick = _tick_provider.call()
@@ -62,6 +66,7 @@ func _draw() -> void:
 	_draw_belt(tick)
 	_draw_flywheel(tick)
 	_draw_glint(tick)
+	draw_set_transform_matrix(Transform2D.IDENTITY)
 
 
 ## 窗户光尘：每扇窗 2-4 个暖白小点，沿窗口下方缓慢漂移（确定性相位）。

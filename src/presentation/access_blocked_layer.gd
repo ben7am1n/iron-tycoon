@@ -68,6 +68,7 @@ class_name AccessBlockedLayer extends Node2D
 
 ## V3 §2 世界缩放（描边宽度补偿 —— 亚像素描边消失 pitfall，见 world_scale.gd）。
 const WorldScale := preload("res://src/presentation/world_scale.gd")
+const Proj2D := preload("res://src/presentation/oblique_projection.gd")
 
 ## One-line hover tooltip — the fixed copy (GDD Core Rule 5). Never "ERROR" or
 ## exclamation iconography. Public so tests and future localization tooling can
@@ -348,6 +349,7 @@ func _add_icon(instance_id: int, inst: Variant) -> void:
 		return
 	var cell: Vector2i = access_cells[0]
 	var pos: Vector2 = _grid.grid_to_world_center(cell, _cell_size) + Vector2(0.0, -_anchor_offset_px)
+	pos = Proj2D.proj(pos.x, pos.y, 0.0)
 	var fading: bool = _entered and _fade_duration_s > 0.0
 	icons[instance_id] = {
 		"cell": cell,

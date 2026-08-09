@@ -109,6 +109,9 @@ const STRUCTURES := [
 ## 纹理缓存：layer -> ImageTexture。
 var _layer_textures: Dictionary = {}
 
+## V3.1 P1：单个结构纹理缓存（id -> ImageTexture，从所在图层裁剪）。
+var _structure_textures: Dictionary = {}
+
 ## 烘焙中的当前图层（_col() 据此决定是否降对比降饱和）。
 var _current_layer: String = LAYER_BACKGROUND
 
@@ -149,6 +152,29 @@ func structure_rect(id: String) -> Rect2i:
 		if str(s.get("id", "")) == id:
 			return s.get("rect", Rect2i())
 	return Rect2i()
+
+
+## V3.1 P1：返回单个结构的裁剪纹理（只含该结构，透明底；从所在图层烘焙
+## 图像裁剪 rect）。供绘制层做体积挤出（前台/立柱/吊灯）。未知 id 返回 null。
+func structure_texture(id: String) -> ImageTexture:
+	if _structure_textures.has(id):
+		return _structure_textures[id]
+	var rect := structure_rect(id)
+	if rect.size.x <= 0 or rect.size.y <= 0:
+		return null
+	var layer := ""
+	for s in STRUCTURES:
+		if str(s.get("id", "")) == id:
+			layer = str(s.get("layer", ""))
+			break
+	if layer == "":
+		return null
+	var layer_img := layer_texture(layer).get_image()
+	var crop := Image.create(rect.size.x, rect.size.y, false, Image.FORMAT_RGBA8)
+	crop.blit_rect(layer_img, rect, Vector2i.ZERO)
+	var tex := ImageTexture.create_from_image(crop)
+	_structure_textures[id] = tex
+	return tex
 
 
 ## 返回本层实际绘制（painted_by == "self"）的元素数量 —— 测试验证结构层

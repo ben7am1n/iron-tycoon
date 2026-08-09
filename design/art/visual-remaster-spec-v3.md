@@ -187,3 +187,48 @@
 **关键词**：handcrafted pixel art / modern 2.5D pixel game / chunky expressive sprites / rich environmental storytelling / warm indoor lighting / cool colored shadows / pixelated volumetric atmosphere / dense environmental props / clear silhouettes / strong depth separation / subtle emissive pixels / cozy but lively / slightly comedic character proportions / high production-value indie game
 
 **绝对避免**：flat pastel prototype graphics / colored debug tiles / large empty beige background / CSS dashboard aesthetics / HTML-style rounded rectangles / macOS window chrome / developer UI / vector icon aesthetic / equipment as tiny symbols / single-color floor areas / uniform lighting / pure top-down chessboard / thin modern UI typography / anti-aliased world sprites / photorealistic rendering / PBR materials / voxel graphics / Minecraft blocks / generic mobile tycoon aesthetics / flat corporate illustration / oversized empty canvas / every tile outlined / identical gray outlines
+
+---
+
+## 附录 V3.1：从"程序生成感"转向"手绘游戏感"（用户 2026-08-09 反馈）
+
+> 总目标：**不要继续增加细节。当前最大问题不是细节少，而是视觉语言错误。把它从"像素化的室内设计图"转换为"一个由艺术家手绘完成的 2.5D 像素经营游戏场景"。**
+
+### 已确认正确（保留）
+- 完整空间结构（墙/分区/地板材质/植物/灯光/器械/阴影）✓
+- 前中后空间感（不再是棋盘）✓
+
+### 5 个优先级任务（严格按此顺序，勿一次全做）
+
+**P1 — Camera 改 2.5D 斜俯视（最高优先）**
+- 从纯正交俯视（RimWorld/SimCity/编辑器感）→ 30-45 度斜俯视
+- 物体同时显示：顶面 + 正面 + 侧面（有体积）
+- 家具/器械必须有体积；人物不是棋盘棋子
+- 目标：diorama 小世界，非平面地图
+
+**P2 — 设备 sprite 重做（真物体，非图标）**
+- 跑步机：跑带/扶手/控制台/支撑柱/阴影
+- 卧推：长凳厚度/杠铃/杠铃片/架子
+- 动感单车：飞轮/座椅/脚踏/把手
+- 最低要求：3 个方向面（top/front/side）+ 5 层颜色（base/shadow/outline/highlight/accent）+ contact shadow
+- 设备离开地面，不贴地图
+
+**P3 — Pixel density 改手绘感**
+- 从"规则几何像素"（完美直线/矩形/等宽边框/重复规则纹理）→"手绘 pixel art"
+- 增加：不规则像素边缘、手工小色块、局部磨损、随机细节、不完全对称
+- 大型结构由多个 pixel cluster 组成，非一个完整矩形填充
+- 例：地板 = 多个深灰/灰蓝/暖灰 pixel cluster，非纯色 100×100 区域
+- 让每个区域像艺术家逐块绘制，而非程序生成
+
+**P4 — 灯光改 pixel based lighting**
+- 移除大面积圆形 gradient 光斑（Photoshop 光圈感）
+- 改为：墙附近稍暗、灯下稍亮、设备附近局部高光、发光屏幕小范围亮色
+- 光影响材质和颜色，不是画透明白色圆
+
+**P5 — 颜色加高饱和视觉焦点**
+- 保持 70% 环境低饱和，但加入 10-15 个高饱和焦点
+- 例：蓝色设备屏幕/黄色水杯/红色广告牌/绿色植物/橙色健身服/彩色瑜伽用品
+- 不要让整个画面灰蒙蒙
+
+### 负面约束（补充）
+- 禁止：完美直线/完美矩形/等宽边框/重复规则纹理/纯色大面积填充/圆形半透明光斑/CSS 仪表盘 UI/DEBUG 文字/macOS 窗口按钮/设备贴地图/人物像棋子

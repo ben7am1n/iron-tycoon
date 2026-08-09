@@ -42,6 +42,7 @@ class_name CongestionGlyphLayer extends Node2D
 ## Cross-script class reference — preload alias (headless: class_name is
 ## not globally registered; GDD Pinned Engine Caveats).
 const CongGlyphScript := preload("res://src/presentation/congestion_glyph.gd")
+const Proj2D := preload("res://src/presentation/oblique_projection.gd")
 
 ## Config keys (data-driven per Control Manifest — defaults = MVP anchors).
 const CONFIG_GLYPH_WIDTH := "glyph_width"
@@ -214,11 +215,12 @@ func is_overlay_on() -> bool:
 ## over the cell, lifted GLYPH_LIFT px above it. Exposed as a pure method
 ## so the anchoring formula is headless-testable (cell size injected,
 ## never hardcoded).
+## V3.1 P1：扁平世界坐标经 oblique 投影（glyph 层挂在投影后世界空间）。
 func glyph_anchor_position(anchor: Vector2i) -> Vector2:
 	var pos: Vector2 = _grid.grid_to_world_corner(anchor, _cell_size)
 	pos.x += (float(_cell_size) - _glyph_size.x) / 2.0
 	pos.y -= _glyph_size.y + GLYPH_LIFT
-	return pos
+	return Proj2D.proj(pos.x, pos.y, 0.0)
 
 
 ## Shared-toggle follower: the heatmap toggled (via toggle_flow_overlay) —

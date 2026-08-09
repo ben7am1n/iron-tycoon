@@ -155,6 +155,10 @@ func _GLL() -> Script:
 	return load("res://src/presentation/congestion_glyph_layer.gd") as Script
 
 
+func _PROJ() -> Script:
+	return load("res://src/presentation/oblique_projection.gd") as Script
+
+
 func _make_orchestrator() -> Node:
 	var orch: Node = load("res://src/systems/simulation_orchestrator.gd").new()
 	root.add_child(orch)
@@ -678,6 +682,8 @@ func _test_anchor_position_formula() -> void:
 	var expected: Vector2 = gs.call("grid_to_world_corner", anchor, CELL_SIZE)
 	expected.x += (float(CELL_SIZE) - 16.0) / 2.0
 	expected.y -= 20.0 + 2.0
+	# V3.1 P1：glyph 层挂在投影后世界空间 —— 锚点经 oblique 投影。
+	expected = _PROJ().proj(expected.x, expected.y, 0.0)
 	var pos: Vector2 = layer.call("glyph_anchor_position", anchor)
 	_check(pos == expected,
 		"ANCHOR: glyph_anchor_position == grid_to_world_corner + centering/lift (%s)" % str(pos))
@@ -692,6 +698,8 @@ func _test_anchor_position_formula() -> void:
 	var expected16: Vector2 = gs.call("grid_to_world_corner", anchor, 16)
 	expected16.x += (float(16) - 16.0) / 2.0
 	expected16.y -= 20.0 + 2.0
+	# V3.1 P1：锚点经 oblique 投影。
+	expected16 = _PROJ().proj(expected16.x, expected16.y, 0.0)
 	var g16: Object = _glyph(layer16, 91)
 	_check(g16 != null and (g16.get("position") as Vector2) == expected16,
 		"ANCHOR: cell_size 16 repositions the glyph (%s)" % str(g16.get("position") if g16 != null else "null"))

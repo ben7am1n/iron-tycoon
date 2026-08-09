@@ -33,6 +33,7 @@ const CAPTURE_FRAME := 60      # 注入后留帧让 queue_redraw 落帧
 const CELL_SIZE := 32
 
 ## 管线常量（来自 main.gd —— 证据复算与实现同源）。
+const Proj2D := preload("res://src/presentation/oblique_projection.gd")
 const SX := Main.SCREEN_PER_VIEWPORT_X
 const SY := Main.SCREEN_PER_VIEWPORT_Y
 const OFF := Main.WORLD_VIEWPORT_OFFSET
@@ -349,7 +350,8 @@ func _verify_perf() -> void:
 
 ## 世界坐标 → 屏幕坐标（V3 §2 管线换算，独立于 main.gd 实现复算）。
 func world_to_screen(w: Vector2) -> Vector2i:
-	var v := (w * WS + OFF) * Vector2(SX, SY)
+	# V3.1 P1：世界→屏幕走 oblique 投影（main.gd 同源换算，证据独立复算）。
+	var v := Proj2D.world_to_screen(w, OFF, WS, Vector2(SX, SY))
 	return Vector2i(roundi(v.x), roundi(v.y))
 
 

@@ -54,6 +54,7 @@ const EquipmentArtScript := preload("res://src/presentation/equipment_art.gd")
 const SnapPulseScript := preload("res://src/presentation/snap_pulse.gd")
 const WorldCanvasScript := preload("res://src/presentation/world_canvas.gd")
 const WorldScale := preload("res://src/presentation/world_scale.gd")
+const Proj2D := preload("res://src/presentation/oblique_projection.gd")
 const FloorArtScript := preload("res://src/presentation/floor_art.gd")
 const EnvironmentArtScript := preload("res://src/presentation/environment_art.gd")
 const StructureArtScript := preload("res://src/presentation/structure_art.gd")
@@ -89,18 +90,30 @@ const PALETTE_STRIP_H := 88
 const WORLD_VIEWPORT_W := 426
 const WORLD_VIEWPORT_H := 240
 ## 世界像素空间（416×320，CELL_SIZE=32）→ viewport 空间的统一缩放。
-## 32px cell → 24 viewport px（整数倍），世界在 426×240 中满高居中。
+## 32px cell → 24 viewport px（整数倍）；投影后画布（V3.1 P1 oblique
+## bounds ≈ -10.8..528 × -68.2..249.6）经 scale 0.75 恰好适配 426×240。
 ## 单一来源：src/presentation/world_scale.gd（含描边宽度补偿常量）。
 const WORLD_SCALE := WorldScale.WORLD_SCALE
-## 世界原点在 viewport 中的偏移：(426 - 416*0.75)/2 = 57（水平居中，垂直满高）。
-const WORLD_VIEWPORT_OFFSET := Vector2(57.0, 0.0)
+## 世界原点在 viewport 中的偏移（V3.1 P1：由 oblique 投影 bounds 计算 ——
+## 墙顶在 y<0，bounds.position 为负，偏移必须把这些部分拉回屏幕内）：
+##   offset = (viewport - bounds.size*0.75)/2 - bounds.position*0.75
+##         = ((426,240) - (538.8,317.8)*0.75)/2 + (8.1, 51.15)
+##         = (10.95, 0.825) + (8.1, 51.15) = (19.05, 51.975)
+## 与 Proj2D.viewport_offset() 同源（main._ready 冒烟断言复核）。
+const WORLD_VIEWPORT_OFFSET := Vector2(19.05, 51.975)
 ## viewport → 屏幕（1280×720）的非等比放大系数。
 const SCREEN_PER_VIEWPORT_X := 1280.0 / 426.0
 const SCREEN_PER_VIEWPORT_Y := 720.0 / 240.0
-## 世界→屏幕的 UI 锚定参数（供 SelectionCue/SelectionToolbar 注入）：
-## 世界 (0,0) 的屏幕坐标 ≈ (171.27, 0)；一个 world cell 的屏幕尺寸 ≈ 72.11px。
-const GRID_SCREEN_ORIGIN := Vector2(WORLD_VIEWPORT_OFFSET.x * SCREEN_PER_VIEWPORT_X, 0.0)
-const GRID_SCREEN_CELL := float(CELL_SIZE) * WORLD_SCALE * SCREEN_PER_VIEWPORT_X
+## 世界→屏幕的 UI 锚定参数（供 SelectionCue/SelectionToolbar 注入；V3.1 P1
+## 起 world→screen 走 oblique 投影，以下为「无投影注入」的兜底换算）：
+##   世界 (0,0) 的屏幕坐标 ≈ (57.2, 155.9)；一个 world cell 的屏幕尺寸
+##   ≈ (72.1, 56.2)（x 不压缩，y 经 FLOOR_SCALE 0.78 压缩）。
+const GRID_SCREEN_ORIGIN := Vector2(
+	WORLD_VIEWPORT_OFFSET.x * SCREEN_PER_VIEWPORT_X,
+	WORLD_VIEWPORT_OFFSET.y * SCREEN_PER_VIEWPORT_Y)
+const GRID_SCREEN_CELL := Vector2(
+	float(CELL_SIZE) * WORLD_SCALE * SCREEN_PER_VIEWPORT_X,
+	float(CELL_SIZE) * Proj2D.FLOOR_SCALE * WORLD_SCALE * SCREEN_PER_VIEWPORT_Y)
 
 # === 系统引用（供 UI/presentation 注入，orchestrator 持有所有权） ===
 var _orch
@@ -435,11 +448,13 @@ func _assemble_ui() -> void:
 	# toolbar/cue 的 footprint 矩形由此精确对齐低分辨率世界的像素格。
 	_toolbar = SelectionToolbarScript.new()
 	_toolbar.init(selection, sel_bridge, placement, _grid, GRID_SCREEN_CELL,
-		{}, GRID_SCREEN_ORIGIN)
+		{}, GRID_SCREEN_ORIGIN, Vector2(UI_VIEWPORT_W, UI_VIEWPORT_H),
+		_world_to_screen)
 	_ui_canvas.add_child(_toolbar)
 
 	_cue = SelectionCueScript.new()
-	_cue.init(selection, _grid, GRID_SCREEN_CELL, {}, GRID_SCREEN_ORIGIN)
+	_cue.init(selection, _grid, GRID_SCREEN_CELL, {}, GRID_SCREEN_ORIGIN,
+		_world_to_screen)
 	_ui_canvas.add_child(_cue)
 
 	# 拖拽反馈控制器：tooltip 绘制在世界锚定位置 → 注入 world→screen 映射。
@@ -520,13 +535,15 @@ func _on_placed(instance_id: int, equipment_id: String, _footprint_cells: Array)
 	_instance_defs[instance_id] = equipment_id
 
 
-# === 世界 ↔ 屏幕映射（V3 §2 低分辨率管线） ===
+# === 世界 ↔ 屏幕映射（V3 §2 低分辨率管线 + V3.1 P1 oblique 投影） ===
 #
-# 世界像素空间（CELL_SIZE=32，416×320）→ WorldRoot scale 0.75 → SubViewport
+# 扁平世界像素空间（CELL_SIZE=32，416×320）→ oblique 投影（V3.1 P1：
+# 地板剪切+压缩、墙/设备高度挤出）→ WorldRoot scale 0.75 → SubViewport
 # （426×240）→ TextureRect nearest 放大（1280×720）。
-#   屏幕坐标 = (世界坐标 × WORLD_SCALE + WORLD_VIEWPORT_OFFSET) × 屏幕放大
+#   屏幕坐标 = (proj(世界坐标, z) × WORLD_SCALE + WORLD_VIEWPORT_OFFSET) × 屏幕放大
 # 输入桥接（screen→world）与 UI 世界锚定（world→screen）都走这里；数据层
 # GridSystem.world_to_grid() 保持原语义（世界坐标 + cell_size=32）不动。
+# 换算核心在 src/presentation/oblique_projection.gd（单一来源）。
 
 ## --smoke 运行驱动（headless 冒烟验证）：跑满 SMOKE_FRAMES 后打印报告退出。
 func _process(_delta: float) -> void:
@@ -536,20 +553,19 @@ func _process(_delta: float) -> void:
 			_smoke_report()
 			get_tree().quit(0)
 
-## 屏幕坐标 → 世界坐标（输入桥接：鼠标在根 viewport 的 1280×720 屏幕坐标）。
+## 屏幕坐标 → 扁平世界坐标（输入桥接：鼠标在根 viewport 的 1280×720
+## 屏幕坐标；返回扁平世界坐标，供 grid.world_to_grid(cell_size=32)）。
 func _screen_to_world(screen_pos: Vector2) -> Vector2:
-	var vp := Vector2(
-		screen_pos.x / SCREEN_PER_VIEWPORT_X,
-		screen_pos.y / SCREEN_PER_VIEWPORT_Y
-	)
-	return (vp - WORLD_VIEWPORT_OFFSET) / WORLD_SCALE
+	return Proj2D.screen_to_world(
+		screen_pos, WORLD_VIEWPORT_OFFSET, WORLD_SCALE,
+		Vector2(SCREEN_PER_VIEWPORT_X, SCREEN_PER_VIEWPORT_Y))
 
-
-## 世界坐标 → 屏幕坐标（世界锚定 UI：tooltip / cue / toolbar 的高分辨率定位）。
-func _world_to_screen(world_pos: Vector2) -> Vector2:
-	return (world_pos * WORLD_SCALE + WORLD_VIEWPORT_OFFSET) * Vector2(
-		SCREEN_PER_VIEWPORT_X, SCREEN_PER_VIEWPORT_Y
-	)
+## 扁平世界坐标 → 屏幕坐标（世界锚定 UI：tooltip / cue / toolbar 的高分辨率
+## 定位；可选 height_z —— 带高度的点（设备顶面/墙挂饰）投影到对应屏幕位）。
+func _world_to_screen(world_pos: Vector2, height_z: float = 0.0) -> Vector2:
+	return Proj2D.world_to_screen(
+		world_pos, WORLD_VIEWPORT_OFFSET, WORLD_SCALE,
+		Vector2(SCREEN_PER_VIEWPORT_X, SCREEN_PER_VIEWPORT_Y), height_z)
 
 
 # === --smoke 报告 ===

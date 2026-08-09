@@ -85,10 +85,15 @@ const BREATHE_ALPHA_SETTLE := 0.9
 var _selection: SelectionSystemScript
 var _grid: GridSystemScript
 ## 屏幕空间 cell 尺寸（V3 §2：世界已进 SubViewport + nearest 放大，UI 层
-## 锚定用的 cell_size 是「世界 cell 的屏幕像素尺寸」，float 以保留精确换算
-## ≈72.11px；单位测试/旧调用注入 32 时行为不变）。
-var _cell_size: float = 32.0
+## 锚定用的 cell_size 是「世界 cell 的屏幕像素尺寸」；V3.1 P1 起为 Vector2
+## （x 不压缩 / y 经 oblique FLOOR_SCALE 压缩 ≈72.11×56.16px）。兼容 float
+## 注入（旧调用/单测注入 32 → 视作方形 (32,32)）。
+var _cell_size: Vector2 = Vector2(32, 32)
 var _grid_origin: Vector2 = Vector2.ZERO
+## V3.1 P1：可选 world→screen 投影 Callable（oblique 剪切/压缩换算）。注入
+## 后 footprint 矩形按投影后的 4 角 AABB 计算，描边按投影后的平行四边形
+## 绘制（与世界上屏位置精确对齐）；未注入回退 origin + cell*cell_size。
+var _world_to_screen: Callable = Callable()
 var _reduced_motion: bool = false
 var _breathe_duration: float = DEFAULT_BREATHE_DURATION
 
@@ -98,6 +103,10 @@ var _active: bool = false
 ## The pixel rect (in the cue's PARENT coordinate space) covering the
 ## selected footprint cells — the cue positions itself here.
 var _footprint_rect: Rect2 = Rect2()
+
+## V3.1 P1：投影后的 footprint 平行四边形顶点（cue 本地空间；投影注入时
+## 非空 —— _draw 用它画描边，替代 AABB 矩形描边）。
+var _footprint_polygon: PackedVector2Array = PackedVector2Array()
 
 ## The tint derived from the selected def's zone membership.
 var _tint: Color = ZONE_TINT_WARM
@@ -116,9 +125,10 @@ var _initialized: bool = false
 func init(
 	selection: SelectionSystemScript,
 	grid: GridSystemScript,
-	cell_size: float,
+	cell_size: Variant,
 	config: Dictionary = {},
-	grid_origin: Vector2 = Vector2.ZERO
+	grid_origin: Vector2 = Vector2.ZERO,
+	world_to_screen: Callable = Callable()
 ) -> void:
 	if _initialized:
 		push_error("SelectionCue.init() called twice")
@@ -126,14 +136,22 @@ func init(
 	_initialized = true
 	_selection = selection
 	_grid = grid
-	_cell_size = cell_size
+	_cell_size = _as_cell_size(cell_size)
 	_grid_origin = grid_origin
+	_world_to_screen = world_to_screen
 	_apply_config(config)
 	# Hidden until a selection arrives (the cue renders nothing by default).
 	visible = false
 	_active = false
 	if selection != null and not selection.selection_changed.is_connected(_on_selection_changed):
 		selection.selection_changed.connect(_on_selection_changed)
+
+
+## 兼容 float / Vector2 的 cell_size 注入（float 视作方形）。
+func _as_cell_size(v: Variant) -> Vector2:
+	if v is Vector2:
+		return v
+	return Vector2(float(v), float(v))
 
 
 ## Applies data-driven config values; missing keys keep the GDD anchors.
@@ -203,6 +221,9 @@ func _show_cue(p_show: bool, equipment_def = null, cell = null, rotation = null)
 	var pad := float(OUTLINE_WIDTH)
 	position = _grid_origin + _footprint_rect.position - Vector2(pad, pad)
 	size = _footprint_rect.size + Vector2(pad * 2.0, pad * 2.0)
+	# V3.1 P1：投影路径下 footprint 是平行四边形 —— 顶点存本地空间供 _draw
+	# 画真实描边（必须在 position 更新后计算；未注入投影时为空数组）。
+	_footprint_polygon = _compute_footprint_polygon(equipment_def, cell, rotation)
 	_active = true
 	visible = true
 	queue_redraw()
@@ -212,7 +233,49 @@ func _show_cue(p_show: bool, equipment_def = null, cell = null, rotation = null)
 ## Pixel rect of the transformed footprint cells: min/max over
 ## grid.get_transformed_cells(def.footprint, def.access, cell, rotation).
 ## Pure read; never mutates grid state.
+## V3.1 P1：注入 world_to_screen 时，4 角先经 oblique 投影再取 AABB。
 func _compute_footprint_rect(equipment_def, cell: Vector2i, rotation: int) -> Rect2:
+	var b := _footprint_cell_bounds(equipment_def, cell, rotation)
+	if not bool(b.get("ok", false)):
+		return Rect2()
+	var min_c: Vector2i = b["min"]
+	var max_c: Vector2i = b["max"]
+	if _world_to_screen.is_valid():
+		var pts := _projected_corners(min_c, max_c)
+		if pts.size() >= 4:
+			var aabb := Rect2(pts[0], Vector2.ZERO)
+			for p in pts:
+				aabb = aabb.expand(p)
+			return Rect2(aabb.position - _grid_origin, aabb.size)
+	var top_left: Vector2 = Vector2(min_c) * _cell_size
+	var bottom_right: Vector2 = Vector2(max_c + Vector2i.ONE) * _cell_size
+	return Rect2(top_left, bottom_right - top_left)
+
+
+## 世界 cell 尺寸（px）—— 投影 Callable 输入用（与 main.gd CELL_SIZE 一致）。
+const CELL_WORLD_PX := 32
+
+## footprint cell AABB（min/max cell）→ 4 角（世界 px）经 world_to_screen
+## 投影；未注入投影返回空数组。
+func _compute_footprint_polygon(equipment_def, cell: Vector2i, rotation: int) -> PackedVector2Array:
+	if not _world_to_screen.is_valid():
+		return PackedVector2Array()
+	var b := _footprint_cell_bounds(equipment_def, cell, rotation)
+	if not bool(b.get("ok", false)):
+		return PackedVector2Array()
+	var pts := _projected_corners(b["min"], b["max"])
+	if pts.size() < 4:
+		return PackedVector2Array()
+	# 转 cue 本地空间（减去 cue 自身 position = origin + rect.position - pad）
+	var local := PackedVector2Array()
+	for p in pts:
+		local.append(p - position)
+	return local
+
+
+## footprint cell AABB（共享于 rect / polygon 计算）。返回
+## {"ok": bool, "min": Vector2i, "max": Vector2i}。空 footprint 时 ok=false。
+func _footprint_cell_bounds(equipment_def, cell: Vector2i, rotation: int) -> Dictionary:
 	var transformed: TransformedFootprint = _grid.get_transformed_cells(
 		equipment_def.footprint_cells,
 		equipment_def.access_cells,
@@ -220,7 +283,7 @@ func _compute_footprint_rect(equipment_def, cell: Vector2i, rotation: int) -> Re
 		rotation as GridSystemScript.Rotation
 	)
 	if transformed.footprint_cells.is_empty():
-		return Rect2()
+		return {"ok": false}
 	var min_c: Vector2i = transformed.footprint_cells[0]
 	var max_c: Vector2i = min_c
 	for c in transformed.footprint_cells:
@@ -228,9 +291,20 @@ func _compute_footprint_rect(equipment_def, cell: Vector2i, rotation: int) -> Re
 		min_c.y = min(min_c.y, c.y)
 		max_c.x = max(max_c.x, c.x)
 		max_c.y = max(max_c.y, c.y)
-	var top_left: Vector2 = Vector2(min_c) * float(_cell_size)
-	var bottom_right: Vector2 = Vector2(max_c + Vector2i.ONE) * float(_cell_size)
-	return Rect2(top_left, bottom_right - top_left)
+	return {"ok": true, "min": min_c, "max": max_c}
+
+
+## footprint cell AABB 的 4 角（世界 px）经 world_to_screen 投影。
+func _projected_corners(min_c: Vector2i, max_c: Vector2i) -> PackedVector2Array:
+	var pts := PackedVector2Array()
+	for corner in [
+		Vector2i(min_c.x, min_c.y),
+		Vector2i(max_c.x + 1, min_c.y),
+		Vector2i(max_c.x + 1, max_c.y + 1),
+		Vector2i(min_c.x, max_c.y + 1),
+	]:
+		pts.append(_world_to_screen.call(Vector2(corner) * CELL_WORLD_PX))
+	return pts
 
 
 ## Piece tint from zone membership (art-bible semantic colors; FIRST zone
@@ -287,8 +361,15 @@ func _draw() -> void:
 	# Glow: soft tinted halo under the outline (calm highlight, never flash).
 	draw_rect(r, Color(_tint.r, _tint.g, _tint.b, GLOW_ALPHA), true)
 	# 2px Soft Charcoal outline around the footprint.
-	var outline := Rect2(r.position + Vector2(OUTLINE_WIDTH * 0.5, OUTLINE_WIDTH * 0.5), r.size - Vector2(OUTLINE_WIDTH, OUTLINE_WIDTH))
-	draw_rect(outline, OUTLINE_COLOR, false, OUTLINE_WIDTH)
+	# V3.1 P1：投影注入时 footprint 是平行四边形 —— 沿投影顶点画闭合描边
+	#（与世界上屏位置精确对齐）；否则走 AABB 矩形描边（旧路径/单测）。
+	if _footprint_polygon.size() >= 4:
+		var closed := PackedVector2Array(_footprint_polygon)
+		closed.append(_footprint_polygon[0])
+		draw_polyline(closed, OUTLINE_COLOR, OUTLINE_WIDTH, true)
+	else:
+		var outline := Rect2(r.position + Vector2(OUTLINE_WIDTH * 0.5, OUTLINE_WIDTH * 0.5), r.size - Vector2(OUTLINE_WIDTH, OUTLINE_WIDTH))
+		draw_rect(outline, OUTLINE_COLOR, false, OUTLINE_WIDTH)
 	# Corner icon: filled diamond at the top-right (shape carries state).
 	var corner_pos := Vector2(r.end.x - CORNER_ICON_SIZE - OUTLINE_WIDTH, r.position.y + OUTLINE_WIDTH)
 	var font := ThemeDB.fallback_font

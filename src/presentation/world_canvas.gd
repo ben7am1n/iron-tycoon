@@ -38,6 +38,7 @@ const Palette := preload("res://src/palette.gd")
 const WorldScale := preload("res://src/presentation/world_scale.gd")
 const WorldLayout := preload("res://src/presentation/world_layout.gd")
 const StructureArt := preload("res://src/presentation/structure_art.gd")
+const Proj2D := preload("res://src/presentation/oblique_projection.gd")
 
 ## 默认网格可见性（V3 §14）：正常经营模式完全隐藏 grid。
 const DEFAULT_GRID_VISIBLE := false
@@ -208,39 +209,67 @@ func set_grid_visible(visible: bool) -> void:
 	queue_redraw()
 
 
-# === 渲染（世界像素空间；headless 下引擎不调用 _draw，防御性 null 检查） ===
+# === 渲染（投影后世界空间；headless 下引擎不调用 _draw，防御性 null 检查） ===
 
+## V3.1 P1：2.5D 斜俯视绘制顺序（oblique projection，见 oblique_projection.gd）：
+##   画布背景（天花板）→ 地板 pass（floor transform 包裹全部贴地内容：
+##   地板材质/地面装饰/结构 BACKGROUND/网格）→ 体积墙（北墙/东西墙面 +
+##   墙上装饰，画在地板之上 —— 墙脚被地板压住，墙身立起）→ 结构 GAMEPLAY
+##   （前台，挤出）→ 会员中景（billboard 站立，脚底贴地）→ 设备（顶面+
+##   正面+侧面 3 面挤出，有体积）→ USING 会员前景（叠加在设备上）→
+##   结构 FOREGROUND（立柱挤出/吊灯挂高处/小道具贴地）→ 环境前景（大植物）
+##   → 放置幽灵（贴地预览）。
 func _draw() -> void:
 	if _grid == null:
 		return
-	_draw_floor_zones()
-	# Phase 5 环境背景（墙/窗/海报/装饰，V3 §3/§12）先画 —— 结构层 BACKGROUND
-	# （储物柜/镜子/空调/墙钟/通风口/门/踢脚线/电线槽/管道）画在墙面上方。
-	_draw_environment_background()
+	_draw_canvas_background()
+	_draw_floor_pass()
+	_draw_2_5d_walls()
 	if _structure_art != null:
-		_draw_structure_layer(StructureArt.LAYER_BACKGROUND)
-	if _grid_visible:
-		_draw_grid_lines()
-	# 2.5D 空间层级（art-bible-25d §1 + V3 §4 三层 + Phase 4 双层会员）：
-	# 环境背景 → 结构层 GAMEPLAY（前台，Phase 2）→ 会员中景
-	# （walk/idle/tired/satisfied）→ 设备前景 → 使用中的会员叠加在设备上
-	# （V3 §8 与设备互动姿态）→ 结构层 FOREGROUND（立柱/吊灯，Phase 2，
-	# V3 §4 可轻微遮挡）→ 环境前景（大植物可轻微遮挡）→ 幽灵（活动决策
-	# 预览，Core Rule 7 优先级最高）。
-	if _structure_art != null:
-		_draw_structure_layer(StructureArt.LAYER_GAMEPLAY)
+		_draw_structure_gameplay()
 	_draw_members(false)
 	_draw_equipment()
 	_draw_members(true)
-	if _structure_art != null:
-		_draw_structure_layer(StructureArt.LAYER_FOREGROUND)
+	_draw_structure_foreground()
 	_draw_environment_foreground()
 	_draw_placement_ghost()
+
+
+## 画布背景（V3.1 P1）：投影后画布边界外的天花板/背景色 —— 填满 SubViewport，
+## 墙顶/角落不留空洞。颜色取暖灰（WALL_DARK 亮一档，比墙暗、比地板暗，
+## 视觉上是「房间上方」）。
+func _draw_canvas_background() -> void:
+	var b := Proj2D.bounds()
+	draw_rect(Rect2(b.position - Vector2(8, 8), b.size + Vector2(16, 16)),
+		Palette.WALL_BASE.darkened(0.28), true)
+
+
+## 地板 pass：全部贴地内容经 floor_transform 一次性投影（V3.1 P1 ——
+## 扁平坐标绘制代码原样保留，包一层 draw_set_transform_matrix）。
+func _draw_floor_pass() -> void:
+	_draw_with_floor_transform(func() -> void:
+		_draw_floor_zones()
+		_draw_floor_decor()
+		if _structure_art != null:
+			_draw_structure_layer(StructureArt.LAYER_BACKGROUND)
+		if _grid_visible:
+			_draw_grid_lines()
+	)
+
+
+## 在 floor_transform 下执行绘制（V3.1 P1）。draw_set_transform_matrix 设置
+## 画布仿射变换（含剪切）—— 后续 draw_* 全部经地板投影；结束时恢复单位阵。
+## [draw_fn] Callable（闭包绘制体，扁平世界坐标）。
+func _draw_with_floor_transform(draw_fn: Callable) -> void:
+	draw_set_transform_matrix(Proj2D.floor_transform())
+	draw_fn.call()
+	draw_set_transform_matrix(Transform2D.IDENTITY)
 
 
 ## 地板：Phase 5 使用 FloorArt 烘焙的材质贴图（V3 §1 区域地面材质 ——
 ## 力量区深灰橡胶、有氧区暖灰、瑜伽区木地板、通道瓷砖；单次 draw_texture_rect，
 ## 替代旧色块 + 描边）。floor_art 未注入时回退旧色块（保持既有测试兼容）。
+## 在 floor pass 内调用（扁平坐标，经 floor transform 投影）。
 func _draw_floor_zones() -> void:
 	if _floor_art != null:
 		var tex: ImageTexture = _floor_art.texture()
@@ -255,19 +284,12 @@ func _draw_floor_zones() -> void:
 		draw_rect(px_rect, Palette.ZONE_BORDER, false, 1.0 * WorldScale.STROKE_COMPENSATION)
 
 
-## 环境背景（V3 §3 永久环境结构 + §12 场景 storytelling，BACKGROUND 低对比）：
-## 顶墙 + 侧墙（V3 §3 墙壁/窗户）→ 墙上挂饰（海报/计时器/招牌）→ 地面装饰
-## （水瓶/毛巾/配重/粉笔盒/植物/音箱/卷垫/风扇/水杯架/饮水机/垃圾桶/消防栓）。
-## 画在网格线/会员/设备之前 —— 属于空间 BACKGROUND 层（V3 §4）。
-func _draw_environment_background() -> void:
-	_draw_walls()
-	_draw_wall_decor()
-	_draw_floor_decor()
-
-
 ## 结构层（V3 §3/§4/§13，Phase 2 StructureArt）：单次 draw_texture_rect 烘焙
 ## 贴图。BACKGROUND 低对比（降对比降饱和）、GAMEPLAY 前台原色鲜艳、FOREGROUND
 ## 立柱/吊灯允许轻微遮挡 —— 顺序由 _draw() 控制（见文件头注释）。
+## V3.1 P1：BACKGROUND 在 floor pass 内经地板投影 —— 墙上挂饰（镜子/空调/
+## 挂钟/通风口）落在墙基附近会被随后绘制的墙面盖住（隐藏），地面结构
+## （踢脚线/电线槽/门垫/管道/出口招牌）正确落在墙面上可见。
 func _draw_structure_layer(layer: String) -> void:
 	var tex: ImageTexture = _structure_art.layer_texture(layer)
 	if tex == null:
@@ -276,103 +298,253 @@ func _draw_structure_layer(layer: String) -> void:
 		WorldLayout.WORLD_W, WorldLayout.WORLD_H)), false)
 
 
-## 顶墙 + 左右侧墙（V3 §3 墙壁）：暖灰基底 + 墙裙压条 + 窗户。
-## V3 §15 第一眼修复：墙面延展到完整视口宽度（world x -76..492），消除
-## 两侧 ~171 screen px 纯米色空带（门禁 FAIL：large empty beige background）。
-## 顶墙保留入口门洞（x 0..32），侧墙保留出口门洞（y 288..320）。
-func _draw_walls() -> void:
-	# 顶墙：主段 + 左右延展段（延展段用同色，画在门洞之外）
-	draw_rect(WorldLayout.WALL_TOP_RECT, Palette.WALL_BASE, true)
-	draw_rect(WorldLayout.WALL_TOP_LEFT_FILL, Palette.WALL_BASE, true)
-	draw_rect(WorldLayout.WALL_TOP_RIGHT_FILL, Palette.WALL_BASE, true)
-	draw_rect(Rect2i(-76, WorldLayout.WALL_TRIM_Y, WorldLayout.WORLD_W + 152, 4), Palette.WALL_DARK, true)
-	# 侧墙：延展段（覆盖原 WALL_LEFT/RIGHT_RECT 并填满视口边缘）
-	draw_rect(WorldLayout.WALL_LEFT_EXTENDED, Palette.WALL_BASE, true)
-	draw_rect(WorldLayout.WALL_RIGHT_EXTENDED, Palette.WALL_BASE, true)
-	# 延展墙面的结构装饰（V3 §3/§12：管道/镜子/海报/置物架/空调/挂钟/通风口）
-	_draw_side_wall_decor()
-	# 窗户（V3 §6 窗口斜向自然光载体）：窗框 + 冷青灰玻璃
+# === V3.1 P1 结构层体积（前台/立柱/吊灯 —— 不再扁平贴图） ===
+
+## 前台高度（世界 px）。
+const STRUCT_FRONT_DESK_H := 22.0
+## 吊灯悬挂高度（世界 px，接近墙帽 —— 从天花板挂下）。
+const STRUCT_LAMP_H := 95.0
+
+## V3.1 P1 结构 GAMEPLAY：前台（主要交互对象）—— 体积挤出（顶面+正面+侧面）。
+func _draw_structure_gameplay() -> void:
+	if _structure_art == null:
+		return
+	var rect: Rect2i = _structure_art.structure_rect("front_desk")
+	var tex: ImageTexture = _structure_art.structure_texture("front_desk")
+	if rect.size.x <= 0 or tex == null:
+		return
+	_draw_extruded_box(tex, rect, STRUCT_FRONT_DESK_H,
+		Palette.DESK_WOOD.darkened(0.22), Palette.DESK_WOOD.darkened(0.4))
+
+
+## V3.1 P1 结构 FOREGROUND：立柱（体积挤出，近景可遮挡）+ 吊灯（挂在
+## 高处）+ 小道具（贴地）。替代旧的整层贴图绘制 —— 立柱/吊灯不再扁平。
+func _draw_structure_foreground() -> void:
+	if _structure_art == null:
+		return
+	# 立柱 1/2：体积挤出（柱身到墙高）
+	for id in ["column_1", "column_2"]:
+		var rect: Rect2i = _structure_art.structure_rect(id)
+		var tex: ImageTexture = _structure_art.structure_texture(id)
+		if rect.size.x <= 0 or tex == null:
+			continue
+		_draw_extruded_box(tex, rect, Proj2D.WALL_HEIGHT - 10.0,
+			Palette.COLUMN_DARK, Palette.COLUMN_DARK.darkened(0.18))
+	# 吊灯 1/2/3：挂在墙高处（billboard，不挤出）
+	for id in ["hanging_lamp_1", "hanging_lamp_2", "hanging_lamp_3"]:
+		var rect: Rect2i = _structure_art.structure_rect(id)
+		var tex: ImageTexture = _structure_art.structure_texture(id)
+		if rect.size.x <= 0 or tex == null:
+			continue
+		var pos := Proj2D.proj(rect.position.x, rect.position.y, STRUCT_LAMP_H)
+		draw_texture_rect(tex, Rect2(pos, Vector2(rect.size)), false)
+	# 小道具（壶铃/配重片/纸杯/毛巾 —— 贴地，floor transform）
+	_draw_with_floor_transform(func() -> void:
+		for id in ["kettlebell_prop", "plate_prop_1", "plate_prop_2",
+				"paper_cup_1", "paper_cup_2", "towels_1", "towels_2"]:
+			var rect: Rect2i = _structure_art.structure_rect(id)
+			var tex: ImageTexture = _structure_art.structure_texture(id)
+			if rect.size.x <= 0 or tex == null:
+				continue
+			draw_texture_rect(tex, Rect2(rect.position, rect.size), false)
+	)
+
+
+## 通用体积挤出（V3.1 P1）：东侧面 + 正面 + 顶面。结构/设备共用数学。
+## [tex] 顶面纹理（footprint 尺寸，扁平坐标）；[rect] 扁平 footprint；
+## [height] 世界高；[front_color]/[side_color] 正面/侧面实色。
+func _draw_extruded_box(tex: ImageTexture, rect: Rect2i, height: float,
+		front_color: Color, side_color: Color) -> void:
+	var x0 := float(rect.position.x)
+	var y0 := float(rect.position.y)
+	var x1 := x0 + float(rect.size.x)
+	var y1 := y0 + float(rect.size.y)
+	# 东侧面（x=x1，y∈[y0,y1]，z∈[0,h]）—— 阴影侧
+	draw_colored_polygon(PackedVector2Array([
+		Proj2D.proj(x1, y0, 0.0), Proj2D.proj(x1, y1, 0.0),
+		Proj2D.proj(x1, y1, height), Proj2D.proj(x1, y0, height),
+	]), side_color)
+	# 正面（y=y1，x∈[x0,x1]，z∈[0,h]）—— 面向相机
+	draw_colored_polygon(PackedVector2Array([
+		Proj2D.proj(x0, y1, 0.0), Proj2D.proj(x1, y1, 0.0),
+		Proj2D.proj(x1, y1, height), Proj2D.proj(x0, y1, height),
+	]), front_color)
+	# 顶面（z=height）：纹理提升（floor transform + 高度平移）
+	draw_set_transform_matrix(_top_face_transform(height))
+	draw_texture_rect(tex, Rect2(rect.position, rect.size), false)
+	draw_set_transform_matrix(Transform2D.IDENTITY)
+
+
+## 顶面仿射变换：扁平坐标 (x,y) → 投影后坐标（z=height）：floor transform
+## 后再平移 (-EX*h, -H*h)（顶面相对底面左移上移 —— 东侧面/正面因此可见）。
+func _top_face_transform(height: float) -> Transform2D:
+	var f := Proj2D.floor_transform()
+	return Transform2D(f.x, f.y,
+		f.origin + Vector2(-height * Proj2D.EXTRUDE_X, -height * Proj2D.HEIGHT_SCALE))
+
+
+# === V3.1 P1 体积墙（diorama 房间盒） ===
+
+## 体积墙：北墙 + 东西墙面。墙基 = 扁平墙条（WALL_TOP_RECT / 侧墙条），
+## 墙面 = 从墙基提升到 z=WALL_HEIGHT 的平行四边形（含墙帽顶面 + 踢脚线）。
+## 画在地板 pass 之后 —— 墙脚被地板压住，墙身立起（V3.1 P1 墙壁有体积：
+## 正面（墙面）+ 顶面（墙帽）+ 侧面（墙端/门洞）。
+func _draw_2_5d_walls() -> void:
+	_draw_north_wall()
+	_draw_side_wall(true)    # 西墙
+	_draw_side_wall(false)   # 东墙
+
+
+## 北墙（入口 x 0..32 保留门洞）：墙面从墙基 y=24（墙与地板交界）提升到
+## z=WALL_HEIGHT；墙帽（WALL_TRIM 顶面压条）+ 踢脚线（WALL_DARK 墙基压条）。
+func _draw_north_wall() -> void:
+	var w0 := 32.0   # 入口门洞 x 0..32
+	var w1 := float(Proj2D.WORLD_W)
+	var base_y := 24.0  # WALL_TOP_RECT 底边（墙与地板交界）
+	var z := Proj2D.WALL_HEIGHT
+	draw_colored_polygon(PackedVector2Array([
+		Proj2D.proj(w0, base_y, 0.0), Proj2D.proj(w1, base_y, 0.0),
+		Proj2D.proj(w1, base_y, z), Proj2D.proj(w0, base_y, z),
+	]), Palette.WALL_BASE)
+	# 顶面墙帽（4px 压条，V3.1 P1 顶面证据：墙面亮一档）
+	draw_colored_polygon(PackedVector2Array([
+		Proj2D.proj(w0, base_y, z), Proj2D.proj(w1, base_y, z),
+		Proj2D.proj(w1, base_y, z - 4.0), Proj2D.proj(w0, base_y, z - 4.0),
+	]), Palette.WALL_TRIM)
+	# 踢脚线（墙基 5px 压条）
+	draw_colored_polygon(PackedVector2Array([
+		Proj2D.proj(w0, base_y, 0.0), Proj2D.proj(w1, base_y, 0.0),
+		Proj2D.proj(w1, base_y, 5.0), Proj2D.proj(w0, base_y, 5.0),
+	]), Palette.WALL_DARK)
+	_draw_north_wall_decor()
+
+
+## 北墙本地变换：扁平墙条坐标 (fx, fy∈[0,24]) → 墙面屏幕坐标（fy 线性映射
+## 到墙高：fy=24（墙基）→ z=0，fy=0（墙顶）→ z=WALL_HEIGHT）。墙饰按扁平
+## 坐标绘制即自动贴在斜墙面上。
+func _north_wall_transform() -> Transform2D:
+	var kex := Proj2D.WALL_HEIGHT * Proj2D.EXTRUDE_X / 24.0
+	var khe := Proj2D.WALL_HEIGHT * Proj2D.HEIGHT_SCALE / 24.0
+	return Transform2D(Vector2(1, 0), Vector2(kex, khe),
+		Vector2(24.0 * Proj2D.SHEAR - 24.0 * kex,
+			24.0 * Proj2D.FLOOR_SCALE - 24.0 * khe))
+
+
+## 北墙装饰（V3 §3/§6/§12）：窗户（玻璃 + 斜高光）+ 海报/计时器/招牌/电视
+## （0.5x 贴墙）。全部在北墙本地空间绘制。
+func _draw_north_wall_decor() -> void:
+	draw_set_transform_matrix(_north_wall_transform())
+	# 窗户（V3 §6 窗口斜向自然光载体）：窗框 + 冷青灰玻璃 + 斜高光
 	for window_rect in WorldLayout.WINDOWS:
-		draw_rect(window_rect, Palette.WINDOW_FRAME, true)
-		var glass: Rect2i = (window_rect as Rect2i).grow(-2)
+		var wr: Rect2i = window_rect
+		draw_rect(wr, Palette.WINDOW_FRAME, true)
+		var glass: Rect2i = wr.grow(-2)
 		draw_rect(glass, Palette.WINDOW_GLASS, true)
-		# 玻璃高光斜线（冷色高光，V3 §6）
 		draw_line(
 			Vector2(glass.position.x + 4, glass.position.y + 2),
 			Vector2(glass.position.x + 14, glass.position.y + glass.size.y - 2),
 			Palette.METAL_HIGHLIGHT, 2.0 * WorldScale.STROKE_COMPENSATION)
+	# 墙上挂饰（海报/计时器/招牌/电视）：0.5x 贴墙（同旧 _draw_wall_decor）
+	if _env_art != null:
+		var tick: int = 0
+		if _tick_provider.is_valid():
+			tick = _tick_provider.call()
+		for prop_id: String in WorldLayout.WALL_DECOR:
+			var pos: Vector2i = WorldLayout.WALL_DECOR[prop_id]
+			var tex: ImageTexture = _env_art.texture_for(prop_id)
+			if tex == null:
+				continue
+			var size: Vector2i = _env_art.texture_size(prop_id)
+			draw_texture_rect(tex, Rect2(pos, Vector2(size) * 0.5), false)
+			if prop_id == "tv":
+				_draw_tv_screen(pos, tick)
+	# 结构元素（挂钟/空调/通风口/喷淋 —— V3 §3/§4 墙面结构，简单像素块）
+	_draw_north_wall_structure_decor()
+	draw_set_transform_matrix(Transform2D.IDENTITY)
 
 
-## 延展墙面结构装饰（V3 §3/§12，V3 §15 第一眼）：左右两侧延展墙不再是
-## 纯米色空带，而是有管道/镜子/海报/置物架/空调/挂钟/通风口/毛巾架的结构
-## 墙。全部简单像素块（结构装饰，低对比 BACKGROUND 语汇 —— 不抢设备主体）。
-func _draw_side_wall_decor() -> void:
-	for decor_id: String in WorldLayout.WALL_SIDE_DECOR:
-		var pos: Vector2i = WorldLayout.WALL_SIDE_DECOR[decor_id]
-		if decor_id.begins_with("pipe"):
-			# 竖向管道：中暖灰 + 法兰接头（2px 宽）
-			draw_rect(Rect2i(pos, Vector2i(2, 240)), Palette.PIPE_COLOR, true)
-			draw_rect(Rect2i(pos + Vector2i(0, 60), Vector2i(3, 2)), Palette.PIPE_DARK, true)
-			draw_rect(Rect2i(pos + Vector2i(0, 140), Vector2i(3, 2)), Palette.PIPE_DARK, true)
-		elif decor_id.begins_with("mirror"):
-			# 长镜：冷蓝灰镜面 + 斜向高光 + 边框（V3 §6 冷调）
-			draw_rect(Rect2i(pos, Vector2i(14, 80)), Palette.WALL_DARK, true)
-			draw_rect(Rect2i(pos + Vector2i(2, 2), Vector2i(10, 76)), Palette.MIRROR_COLOR, true)
-			for i in 10:
-				draw_rect(Rect2i(pos + Vector2i(2 + i, 2 + i), Vector2i(1, 1)), Palette.MIRROR_HI, true)
-		elif decor_id.begins_with("poster"):
-			# 海报：边框 + 暖色 accent 主色（小面积高饱和，V3 §7）
-			draw_rect(Rect2i(pos, Vector2i(14, 18)), Palette.WALL_DARK, true)
-			var accent := Palette.ACCENT_CYAN if decor_id.ends_with("1") else Palette.ACCENT_ORANGE
-			draw_rect(Rect2i(pos + Vector2i(2, 2), Vector2i(10, 14)), accent, true)
-			draw_rect(Rect2i(pos + Vector2i(2, 11), Vector2i(10, 5)), accent.darkened(0.35), true)
-		elif decor_id.begins_with("shelf"):
-			# 置物架：隔板 + 小物件
-			draw_rect(Rect2i(pos, Vector2i(14, 2)), Palette.WALL_TRIM, true)
-			draw_rect(Rect2i(pos + Vector2i(2, 2), Vector2i(3, 5)), Palette.ACCENT_CYAN, true)
-			draw_rect(Rect2i(pos + Vector2i(8, 2), Vector2i(3, 4)), Palette.ACCENT_YELLOW, true)
-		elif decor_id.begins_with("clock"):
-			# 挂钟：表盘 + 指针
-			draw_rect(Rect2i(pos, Vector2i(12, 12)), Palette.CLOCK_FACE, true)
-			var cx := pos.x + 6
-			var cy := pos.y + 6
-			draw_rect(Rect2i(cx, pos.y + 1, 1, 5), Palette.CLOCK_HAND, true)
-			draw_rect(Rect2i(cx, cy, 5, 1), Palette.CLOCK_HAND, true)
-		elif decor_id.begins_with("ac"):
-			# 空调：暖白机身 + 出风栅 + 显示灯
-			draw_rect(Rect2i(pos, Vector2i(24, 10)), Palette.AC_BODY, true)
-			for i in 3:
-				draw_rect(Rect2i(pos + Vector2i(2, 2 + i * 3), Vector2i(20, 1)), Palette.AC_VENT, true)
-			draw_rect(Rect2i(pos + Vector2i(20, 1), Vector2i(2, 2)), Palette.ACCENT_YELLOW, true)
-		elif decor_id.begins_with("vent"):
-			# 通风口：边框 + 栅条
-			draw_rect(Rect2i(pos, Vector2i(12, 8)), Palette.AC_VENT.darkened(0.2), true)
-			for i in 5:
-				draw_rect(Rect2i(pos + Vector2i(2 + i * 2, 2), Vector2i(1, 4)), Palette.AC_BODY, true)
-		elif decor_id.begins_with("towel_rack"):
-			# 毛巾架：横杆 + 暖橙毛巾
-			draw_rect(Rect2i(pos, Vector2i(12, 1)), Palette.METAL_HIGHLIGHT, true)
-			draw_rect(Rect2i(pos + Vector2i(2, 1), Vector2i(3, 8)), Palette.TOWEL, true)
-			draw_rect(Rect2i(pos + Vector2i(7, 1), Vector2i(3, 8)), Palette.TOWEL.darkened(0.15), true)
+## 北墙结构装饰（简单像素块，替代旧 _draw_side_wall_decor 的延展墙面元素）：
+## 挂钟/空调/通风口/喷淋头。位置（扁平墙条坐标）固定，低对比 BACKGROUND
+## 语汇 —— 不抢设备主体（V3 §14）。
+func _draw_north_wall_structure_decor() -> void:
+	# 挂钟（x 200..212，高挂 fy≈3）
+	draw_rect(Rect2i(200, 3, 12, 10), Palette.CLOCK_FACE, true)
+	draw_rect(Rect2i(205, 5, 1, 5), Palette.CLOCK_HAND, true)
+	draw_rect(Rect2i(205, 8, 4, 1), Palette.CLOCK_HAND, true)
+	# 空调（x 244..272）
+	draw_rect(Rect2i(244, 2, 28, 12), Palette.AC_BODY, true)
+	for i in 3:
+		draw_rect(Rect2i(246, 4 + i * 3, 24, 1), Palette.AC_VENT, true)
+	draw_rect(Rect2i(266, 3, 2, 2), Palette.ACCENT_YELLOW, true)
+	# 通风口（x 156..168 / 248..260）
+	for vx in [156, 248]:
+		draw_rect(Rect2i(vx, 4, 12, 8), Palette.AC_VENT.darkened(0.2), true)
+		for i in 5:
+			draw_rect(Rect2i(vx + 2 + i * 2, 6, 1, 4), Palette.AC_BODY, true)
+	# 喷淋头（3 个）
+	for sx in [80, 194, 348]:
+		draw_rect(Rect2i(sx, 2, 4, 4), Palette.AC_VENT.darkened(0.3), true)
 
 
-## 墙上挂饰（V3 §12 海报/计时器/招牌）：EnvironmentArt 精灵（0.5x 缩放
-## 贴合 24px 顶墙 —— 墙不是 cell 空间，挂饰按墙高缩放）。
-## 电视屏幕内容按 tick 切换（V3 §9 电视画面变化）：在挂饰上叠 3 帧画面色。
-func _draw_wall_decor() -> void:
-	if _env_art == null:
-		return
-	var tick: int = 0
-	if _tick_provider.is_valid():
-		tick = _tick_provider.call()
-	for prop_id: String in WorldLayout.WALL_DECOR:
-		var pos: Vector2i = WorldLayout.WALL_DECOR[prop_id]
-		_draw_decor_prop(prop_id, pos, 0.5)
-		if prop_id == "tv":
-			_draw_tv_screen(pos, tick)
+## 侧墙（西/东）：墙面 = 墙内表面（x=14 / x=402）从墙基（y0..y1）提升到
+## z=WALL_HEIGHT 的平行四边形。西墙 y∈[32..320]（入口门洞 y<32）；东墙
+## y∈[0..288]（出口门洞 y 288..320）。
+func _draw_side_wall(is_west: bool) -> void:
+	var x_in := 14.0 if is_west else float(Proj2D.WORLD_W - 14)
+	var y0 := 32.0
+	var y1 := float(Proj2D.WORLD_H)
+	if not is_west:
+		y0 = 0.0
+		y1 = 288.0
+	var z := Proj2D.WALL_HEIGHT
+	draw_colored_polygon(PackedVector2Array([
+		Proj2D.proj(x_in, y0, 0.0), Proj2D.proj(x_in, y1, 0.0),
+		Proj2D.proj(x_in, y1, z), Proj2D.proj(x_in, y0, z),
+	]), Palette.WALL_BASE)
+	# 顶面墙帽
+	draw_colored_polygon(PackedVector2Array([
+		Proj2D.proj(x_in, y0, z), Proj2D.proj(x_in, y1, z),
+		Proj2D.proj(x_in, y1, z - 4.0), Proj2D.proj(x_in, y0, z - 4.0),
+	]), Palette.WALL_TRIM)
+	# 踢脚线
+	draw_colored_polygon(PackedVector2Array([
+		Proj2D.proj(x_in, y0, 0.0), Proj2D.proj(x_in, y1, 0.0),
+		Proj2D.proj(x_in, y1, 5.0), Proj2D.proj(x_in, y0, 5.0),
+	]), Palette.WALL_DARK)
+	# 侧墙装饰（管道/镜子/海报 —— 墙本地空间 u=沿墙扁平 y，v=墙高 z）
+	draw_set_transform_matrix(_side_wall_transform(x_in))
+	if is_west:
+		# 长镜（冷蓝灰，V3 §6 冷调）：沿墙 u 40..160，墙高 v 18..92
+		draw_rect(Rect2(40, 18, 120, 74), Palette.MIRROR_COLOR, true)
+		draw_rect(Rect2(40, 18, 120, 74), Palette.WALL_DARK, false, 1.0 * WorldScale.STROKE_COMPENSATION)
+		for i in 8:
+			draw_rect(Rect2(42 + i * 2, 20 + i * 2, 1, 1), Palette.MIRROR_HI, true)
+		# 毛巾架 + 暖橙毛巾
+		draw_rect(Rect2(180, 40, 30, 2), Palette.METAL_HIGHLIGHT, true)
+		draw_rect(Rect2(184, 42, 6, 12), Palette.TOWEL, true)
+		draw_rect(Rect2(196, 42, 6, 12), Palette.TOWEL.darkened(0.15), true)
+	else:
+		# 竖向管道（中暖灰 + 法兰）：沿墙 u 40..320
+		draw_rect(Rect2(60, 20, 3, 300), Palette.PIPE_COLOR, true)
+		draw_rect(Rect2(60, 90, 4, 3), Palette.PIPE_DARK, true)
+		draw_rect(Rect2(60, 200, 4, 3), Palette.PIPE_DARK, true)
+		# 海报（暖色 accent 小面积）
+		draw_rect(Rect2(180, 30, 14, 18), Palette.WALL_DARK, true)
+		draw_rect(Rect2(182, 32, 10, 14), Palette.ACCENT_ORANGE, true)
+		draw_rect(Rect2(182, 41, 10, 5), Palette.ACCENT_ORANGE.darkened(0.35), true)
+	draw_set_transform_matrix(Transform2D.IDENTITY)
+
+
+## 侧墙本地变换：墙本地坐标 (u=沿墙扁平 y，v=墙高 z) → 屏幕。
+func _side_wall_transform(x_in: float) -> Transform2D:
+	return Transform2D(
+		Vector2(Proj2D.SHEAR, Proj2D.FLOOR_SCALE),
+		Vector2(-Proj2D.EXTRUDE_X, -Proj2D.HEIGHT_SCALE),
+		Vector2(x_in, 0.0))
 
 
 ## 电视画面变化（V3 §9）：屏幕区域叠 3 帧（青蓝/绿/黄轮换，确定性 tick 驱动）。
+## 在北墙本地空间调用（pos 为扁平墙条坐标）。
 func _draw_tv_screen(pos: Vector2i, tick: int) -> void:
 	var screen_rect := Rect2(pos + Vector2i(3, 3), Vector2i(10, 6))
 	var frame := (tick / 20) % 3
@@ -390,6 +562,7 @@ func _draw_tv_screen(pos: Vector2i, tick: int) -> void:
 
 ## 地面装饰（V3 §12 场景 storytelling）：水瓶/毛巾/配重/粉笔盒/植物/音箱/
 ## 卷垫/风扇/水杯架/饮水机/垃圾桶/消防栓。植物轻微摆动（V3 §9）。
+## 在 floor pass 内调用（扁平坐标）。
 func _draw_floor_decor() -> void:
 	if _env_art == null:
 		return
@@ -407,24 +580,26 @@ func _draw_floor_decor() -> void:
 
 
 ## 环境前景（V3 §4 FOREGROUND：大型植物，可轻微遮挡角色）—— 画在设备之后。
-## V3 §15 修复（P0-4 纵深）：遍历所有 plant_fore_* 装饰（不只硬编码 2 个），
-## 前景元素真实压住 GAMEPLAY 层（前后遮挡强化纵深，门禁 FAIL：遮挡有限）。
+## V3.1 P1：前景植物贴地（floor transform 内扁平绘制，billboard 植物）。
 func _draw_environment_foreground() -> void:
 	if _env_art == null:
 		return
 	var tick: int = 0
 	if _tick_provider.is_valid():
 		tick = _tick_provider.call()
-	for prop_id: String in WorldLayout.DECOR:
-		if not prop_id.begins_with("plant_fore"):
-			continue
-		var pos: Vector2i = WorldLayout.DECOR[prop_id]
-		var sway := Vector2(round(sin(tick * 0.08 + float(prop_id.hash() % 100) * 0.13)), 0)
-		_draw_decor_prop(prop_id, pos + Vector2i(sway))
+	_draw_with_floor_transform(func() -> void:
+		for prop_id: String in WorldLayout.DECOR:
+			if not prop_id.begins_with("plant_fore"):
+				continue
+			var pos: Vector2i = WorldLayout.DECOR[prop_id]
+			var sway := Vector2(round(sin(tick * 0.08 + float(prop_id.hash() % 100) * 0.13)), 0)
+			_draw_decor_prop(prop_id, pos + Vector2i(sway))
+	)
 
 
 ## 绘制单个装饰精灵（纹理存在才画；未知 prop 兜底不画，绝不崩溃）。
 ## [scale] 可选缩放（墙挂饰用 0.5 贴合墙高；地面装饰默认 1.0）。
+## 在调用方设定的画布变换（floor transform / 墙本地变换）下绘制。
 func _draw_decor_prop(prop_id: String, pos: Vector2i, scale: float = 1.0) -> void:
 	if _env_art == null:
 		return
@@ -448,13 +623,13 @@ func _draw_grid_lines() -> void:
 			Palette.GRID_LINE, 1.0 * WorldScale.STROKE_COMPENSATION)
 
 
-## 设备渲染（V3 Phase 3）—— 前景小型场景物件（§5，非图标）。
-##   1. 脚下柔和 contact shadow（§6：设备下方明显但柔和的 contact shadow）：
-##      双层半透明冷蓝灰块（宽软外层 + 贴身内层），替代旧单层大暗面
-##   2. 像素精灵纹理（EquipmentArt 程序化 ImageTexture，32×32/cell，Nearest 全局）
-##   3. Hover（§14）：黄色像素轮廓（EQUIP_HOVER_OUTLINE）+ 精灵轻微上移
-##      （HOVER_LIFT_PX，contact shadow 留原地 —— 设备「抬起」感）
-##   4. access cell 用 Butter 高亮（art-bible §7 拖放反馈；§4 Butter 锚点 ~10%）
+## 设备渲染（V3.1 P1 2.5D）：contact shadow 贴地（floor transform）+ 3 面
+## 挤出（顶面 = 原 art 提升到 z=height；正面 = 南边条带变暗；侧面 = 东边
+## 条带变暗）。物体有体积（顶面+正面+侧面同时可见），不再是贴地图标
+## （V3.1 P1 负面约束：禁止设备贴地图）。
+##   - hover（§14）：黄色像素轮廓（EQUIP_HOVER_OUTLINE）+ 精灵轻微上移
+##     （HOVER_LIFT_PX，contact shadow 留原地 —— 设备「抬起」感）
+##   - access cell 用 Butter 高亮（art-bible §7 拖放反馈；§4 Butter 锚点 ~10%）
 func _draw_equipment() -> void:
 	if _grid == null or _equip_art == null:
 		return
@@ -463,49 +638,132 @@ func _draw_equipment() -> void:
 		if fp_rect.size.x <= 0 or fp_rect.size.y <= 0:
 			continue
 		var is_hovered: bool = inst.instance_id == _hovered_instance_id
-		# V3 §6 contact shadow：宽软外层（柔和，扩散感）+ 贴身内层（明显接触）。
-		var soft_rect := fp_rect.grow(5)
-		soft_rect.position.y += 3
-		var soft := Palette.EQUIP_SHADOW
-		soft.a = 0.22
-		draw_rect(soft_rect, soft, true)
-		var core_rect := fp_rect.grow(2)
-		core_rect.position.y += 2
-		var core := Palette.EQUIP_SHADOW
-		core.a = 0.40
-		draw_rect(core_rect, core, true)
-
 		var eq_id := ""
 		if _resolver.is_valid():
 			eq_id = str(_resolver.call(inst.instance_id))
 		var zone: String = _zone_of(eq_id)
+		var height: float = _equip_art.height_for(eq_id)
 		var tex: ImageTexture = _equip_art.texture_for(eq_id, zone, inst.rotation)
+		# 1. 贴地 contact shadow（V3 §6：双层冷蓝灰 —— 宽软外层 + 贴身内层）
+		_draw_with_floor_transform(func() -> void:
+			var soft_rect := fp_rect.grow(5)
+			soft_rect.position.y += 3
+			var soft := Palette.EQUIP_SHADOW
+			soft.a = 0.22
+			draw_rect(soft_rect, soft, true)
+			var core_rect := fp_rect.grow(2)
+			core_rect.position.y += 2
+			var core := Palette.EQUIP_SHADOW
+			core.a = 0.40
+			draw_rect(core_rect, core, true)
+		)
+		# 2. 3 面体积（顶面 + 正面 + 侧面）
 		if tex != null:
-			var draw_rect := Rect2(fp_rect)
-			if is_hovered:
-				# V3 §14 轻微上移：精灵本体向上抬 HOVER_LIFT_PX，contact shadow
-				# 留在原地 —— 设备「抬起」。
-				draw_rect.position.y -= HOVER_LIFT_PX
-			draw_texture_rect(tex, draw_rect, false)
+			_draw_equipment_volume(eq_id, zone, inst.rotation, fp_rect, height)
 		else:
-			# 兜底（未知 equipment_id）：画 Soft Charcoal 剪影块，绝不崩溃。
-			draw_rect(fp_rect, Palette.CHARCOAL, false, 2.0 * WorldScale.STROKE_COMPENSATION)
-
+			# 兜底（未知 equipment_id）：投影后的剪影盒（侧面+正面+纯色顶），
+			# 绝不崩溃。
+			var x0 := float(fp_rect.position.x)
+			var y0 := float(fp_rect.position.y)
+			var x1 := x0 + float(fp_rect.size.x)
+			var y1 := y0 + float(fp_rect.size.y)
+			draw_colored_polygon(PackedVector2Array([
+				Proj2D.proj(x1, y0, 0.0), Proj2D.proj(x1, y1, 0.0),
+				Proj2D.proj(x1, y1, height), Proj2D.proj(x1, y0, height),
+			]), Palette.CHARCOAL.darkened(0.2))
+			draw_colored_polygon(PackedVector2Array([
+				Proj2D.proj(x0, y1, 0.0), Proj2D.proj(x1, y1, 0.0),
+				Proj2D.proj(x1, y1, height), Proj2D.proj(x0, y1, height),
+			]), Palette.CHARCOAL)
+			draw_set_transform_matrix(_top_face_transform(height))
+			draw_rect(Rect2(fp_rect.position, fp_rect.size), Palette.CHARCOAL, true)
+			draw_set_transform_matrix(Transform2D.IDENTITY)
+		# 3. hover 黄色像素轮廓（沿投影后的 footprint 平行四边形）
 		if is_hovered:
-			# V3 §14 hover 黄色像素轮廓（BUTTER）：围绕 footprint 的像素描边。
-			# 描边宽度乘 STROKE_COMPENSATION：WorldRoot scale 0.75 下 1px 会消失
-			# （4.7.1 pitfall，见 world_scale.gd）。
-			var hover := Palette.EQUIP_HOVER_OUTLINE
-			hover.a = 0.95
-			draw_rect(fp_rect.grow(2), hover, false, 2.0 * WorldScale.STROKE_COMPENSATION)
-
-		# V3 §14 可读性：access cell 星形标记仅 placement mode（grid 可见）或
-		# hover 时出现 —— 正常经营模式静态帧不常驻黄框/星形标记（门禁 FAIL：
-		# 选择/任务标记有调试感）。幽灵的 access cell 在拖拽时由
-		# _draw_placement_ghost 绘制（grid 可见时同路径）。
+			_draw_equipment_hover(fp_rect, height)
+		# 4. access cell 标记（贴地，floor transform；仅 placement/hover 显示）
 		if _grid_visible or is_hovered:
-			for c in inst.access_cells:
-				_draw_access_cell(c)
+			_draw_with_floor_transform(func() -> void:
+				for c in inst.access_cells:
+					_draw_access_cell(c)
+			)
+
+
+## 设备体积（V3.1 P1）：东侧面 + 正面 + 顶面。正面/侧面用 EquipmentArt
+## 挤出面纹理（南边/东边条带变暗 —— 顶面亮、正面中、侧面暗，三层分层）。
+func _draw_equipment_volume(eq_id: String, zone: String, rotation: int,
+		fp: Rect2i, height: float) -> void:
+	var faces: Dictionary = _equip_art.extrusion_faces_for(eq_id, zone, rotation, height)
+	var x0 := float(fp.position.x)
+	var y0 := float(fp.position.y)
+	var x1 := x0 + float(fp.size.x)
+	var y1 := y0 + float(fp.size.y)
+	var face_h := _face_h(height)
+	# 东侧面（x=x1）：先画（被正面/顶面压住的部分自然遮挡）
+	var side_tex: ImageTexture = faces.get("side")
+	if side_tex != null:
+		draw_set_transform_matrix(_side_face_transform(x1, y0, height))
+		draw_texture_rect(side_tex, Rect2(0, 0, float(fp.size.y), face_h), false)
+		draw_set_transform_matrix(Transform2D.IDENTITY)
+	else:
+		draw_colored_polygon(PackedVector2Array([
+			Proj2D.proj(x1, y0, 0.0), Proj2D.proj(x1, y1, 0.0),
+			Proj2D.proj(x1, y1, height), Proj2D.proj(x1, y0, height),
+		]), Palette.EQUIP_SHADOW_TONE)
+	# 正面（y=y1）
+	var front_tex: ImageTexture = faces.get("front")
+	if front_tex != null:
+		draw_set_transform_matrix(_front_face_transform(x0, y1, height))
+		draw_texture_rect(front_tex, Rect2(0, 0, float(fp.size.x), face_h), false)
+		draw_set_transform_matrix(Transform2D.IDENTITY)
+	else:
+		draw_colored_polygon(PackedVector2Array([
+			Proj2D.proj(x0, y1, 0.0), Proj2D.proj(x1, y1, 0.0),
+			Proj2D.proj(x1, y1, height), Proj2D.proj(x0, y1, height),
+		]), Palette.EQUIP_BODY_DARK)
+	# 顶面（z=height）：原 art 提升
+	var top_tex: ImageTexture = _equip_art.texture_for(eq_id, zone, rotation)
+	if top_tex != null:
+		draw_set_transform_matrix(_top_face_transform(height))
+		draw_texture_rect(top_tex, Rect2(fp.position, fp.size), false)
+		draw_set_transform_matrix(Transform2D.IDENTITY)
+
+
+## 挤出面高度（屏幕 px）：height × HEIGHT_SCALE（与 EquipmentArt 同值）。
+func _face_h(height: float) -> float:
+	return height * Proj2D.HEIGHT_SCALE
+
+
+## 正面（南边）仿射变换：纹理坐标 (u∈[0,w], v∈[0,face_h]) → 投影后屏幕。
+## v 对应 z（v = z*HEIGHT_SCALE）—— 正面平行四边形贴合顶面南边。
+func _front_face_transform(x0: float, y1: float, height: float) -> Transform2D:
+	var kx := Proj2D.EXTRUDE_X / Proj2D.HEIGHT_SCALE
+	return Transform2D(Vector2(1, 0), Vector2(-kx, -1.0),
+		Vector2(x0 + y1 * Proj2D.SHEAR, y1 * Proj2D.FLOOR_SCALE))
+
+
+## 东侧面仿射变换：纹理坐标 (u∈[0,d], v∈[0,face_h]) → 投影后屏幕。
+## u 对应沿墙深度（y 方向）—— 侧面平行四边形贴合顶面东边。
+func _side_face_transform(x1: float, y0: float, height: float) -> Transform2D:
+	var kx := Proj2D.EXTRUDE_X / Proj2D.HEIGHT_SCALE
+	return Transform2D(Vector2(Proj2D.SHEAR, Proj2D.FLOOR_SCALE),
+		Vector2(-kx, -1.0),
+		Vector2(x1 + y0 * Proj2D.SHEAR, y0 * Proj2D.FLOOR_SCALE))
+
+
+## hover 黄色轮廓：沿投影后的 footprint 平行四边形描边（V3 §14）。画在
+## 设备体积之上 —— 顶面 + 侧面 + 正面的外轮廓。
+func _draw_equipment_hover(fp: Rect2i, height: float) -> void:
+	var hover := Palette.EQUIP_HOVER_OUTLINE
+	hover.a = 0.95
+	var pts := PackedVector2Array([
+		Proj2D.proj(fp.position.x, fp.position.y, height),
+		Proj2D.proj(fp.position.x + fp.size.x, fp.position.y, height),
+		Proj2D.proj(fp.position.x + fp.size.x, fp.position.y + fp.size.y, 0.0),
+		Proj2D.proj(fp.position.x, fp.position.y + fp.size.y, 0.0),
+	])
+	pts.append(pts[0])
+	draw_polyline(pts, hover, 2.0 * WorldScale.STROKE_COMPENSATION, true)
 
 
 ## access cell 高亮：半透明 Butter 填充 + Butter 描边 + 中央实心 Butter 菱形
@@ -535,6 +793,8 @@ func _draw_access_cell(c: Vector2i) -> void:
 ## 放置预览幽灵（art-bible §7 拖放反馈）：合法 → 柔和高亮 + Butter 网格吸附
 ## 描边；非法 → Dusty Rose 柔和警示。画在最上（活动决策预览，Core Rule 7）；
 ## 无 drag 时无开销（is_dragging O(1)）。
+## V3.1 P1：幽灵是贴地预览（floor transform 内绘制 —— tint 块/精灵/描边/
+## access cell 全部经地板投影）。
 func _draw_placement_ghost() -> void:
 	if _placement == null:
 		return
@@ -559,19 +819,21 @@ func _draw_placement_ghost() -> void:
 		return
 	var valid: bool = _placement.get_drag_preview_valid()
 	var tint: Color = Palette.PLACEMENT_OK_TINT if valid else Palette.PLACEMENT_BAD_TINT
-	draw_rect(rect, tint, true)
-	# 精灵本体（半透明幽灵，让玩家看清要放什么）——先于描边，描边永远可读。
 	var zone: String = _zone_of(eq_id)
-	var tex: ImageTexture = _equip_art.texture_for(eq_id, zone, rotation)
-	if tex != null:
-		var ghost_col := Color(1, 1, 1, 0.65)
-		draw_texture_rect(tex, Rect2(rect), false, ghost_col)
-	# 网格吸附描边（画在最上，覆盖幽灵本体）：合法 → Butter；非法 → Dusty Rose。
-	var edge: Color = Palette.BUTTER if valid else Palette.ROSE
-	edge.a = 0.9
-	draw_rect(rect, edge, false, 2.0 * WorldScale.STROKE_COMPENSATION)
-	for c in tf.access_cells:
-		_draw_access_cell(c)
+	_draw_with_floor_transform(func() -> void:
+		draw_rect(rect, tint, true)
+		# 精灵本体（半透明幽灵，让玩家看清要放什么）——先于描边，描边永远可读。
+		var tex: ImageTexture = _equip_art.texture_for(eq_id, zone, rotation)
+		if tex != null:
+			var ghost_col := Color(1, 1, 1, 0.65)
+			draw_texture_rect(tex, Rect2(rect), false, ghost_col)
+		# 网格吸附描边（画在最上，覆盖幽灵本体）：合法 → Butter；非法 → Dusty Rose。
+		var edge: Color = Palette.BUTTER if valid else Palette.ROSE
+		edge.a = 0.9
+		draw_rect(rect, edge, false, 2.0 * WorldScale.STROKE_COMPENSATION)
+		for c in tf.access_cells:
+			_draw_access_cell(c)
+	)
 
 
 ## 会员渲染（Phase 4 / V3 §8）：2.5D 像素小人（48×48，>cell 32 —— 画面视觉
@@ -629,8 +891,9 @@ func _draw_members(foreground: bool) -> void:
 		# V3 §15（P0-3 人物视觉权重）：脚底亮池 —— 半透明暖白椭圆垫在脚下，
 		# 把深色轮廓人物从深灰力量区地面「托起」（远景轮廓可读性）。亮池只
 		# 在中景成员绘制（非 USING 叠加在设备上时会被设备盖住，不额外画）。
+		# V3.1 P1：亮池贴地（floor transform 内椭圆，随地板压缩）。
 		if not is_using:
-			_draw_member_ground_glow(draw_pos)
+			_draw_member_ground_glow(_flat_feet(cell))
 		draw_texture(tex, draw_pos)
 	# 清理已离场成员的朝向缓存（防止字典无限增长）
 	for member_id in _member_facing.keys():
@@ -658,38 +921,54 @@ func _build_equipment_anchors() -> Dictionary:
 	return anchors
 
 
-## 设备使用锚点：sprite 左上角（48×48），使成员"落在"设备上。
-## 基准：脚底接触点 = 设备 footprint 底边中点（+ 设备类型微调）。
+## 设备使用锚点（V3.1 P1 投影后）：sprite 左上角（48×48），使成员"落在"
+## 设备上。基准：脚底接触点 = 设备 footprint 底边中点（+ 设备类型微调），
+## 投影到设备高度（站立在机器上，billboard 不压缩）。
 func _equipment_anchor(eq_id: String, rect: Rect2i) -> Vector2:
 	var center_x := rect.position.x + rect.size.x / 2.0
 	var feet_y := rect.position.y + rect.size.y
 	var sprite_w := float(_member_sprites.SIZE) if _member_sprites != null else 48.0
+	var flat_anchor: Vector2
 	match eq_id:
 		"treadmill":
 			# 跑带居中：脚在 footprint 底边（跑带下沿），身体微前倾已由姿态表达
-			return Vector2(center_x - sprite_w / 2.0, feet_y - sprite_w)
+			flat_anchor = Vector2(center_x - sprite_w / 2.0, feet_y - sprite_w)
 		"bench_press":
 			# 卧推凳：身体横躺 —— 头在左、躯干向右，锚在 footprint 左上角 +
 			# 下移 26px 让横躺身体（纹理 18..33 行）落在凳面（pad 中段）
-			return Vector2(rect.position.x + 2, rect.position.y + 26)
+			flat_anchor = Vector2(rect.position.x + 2, rect.position.y + 26)
 		"bike":
 			# 车座居中：脚在车架中部（略高于底边），身体坐姿
-			return Vector2(center_x - sprite_w / 2.0, rect.position.y + rect.size.y - 16 - sprite_w * 0.5)
+			flat_anchor = Vector2(center_x - sprite_w / 2.0, rect.position.y + rect.size.y - 16 - sprite_w * 0.5)
 		"yoga_mat":
 			# 垫面居中：脚在垫面底边（盘坐）
-			return Vector2(center_x - sprite_w / 2.0, feet_y - sprite_w * 0.62)
+			flat_anchor = Vector2(center_x - sprite_w / 2.0, feet_y - sprite_w * 0.62)
 		_:
 			# 未知设备兜底：锚定 footprint 底边居中
-			return Vector2(center_x - sprite_w / 2.0, feet_y - sprite_w)
+			flat_anchor = Vector2(center_x - sprite_w / 2.0, feet_y - sprite_w)
+	# 投影：sprite 脚底（flat anchor 底边中心）→ 设备高度（站立在机器上）
+	var flat_feet := flat_anchor + Vector2(sprite_w * 0.5, sprite_w)
+	var stand_z: float = 16.0
+	if _equip_art != null:
+		stand_z = _equip_art.height_for(eq_id) * 0.75
+	var p := Proj2D.proj(flat_feet.x, flat_feet.y, stand_z)
+	return p - Vector2(sprite_w * 0.5, sprite_w)
 
 
-## 普通（非 USING）会员的 cell 锚点：sprite 左上角 = cell 左上角 +
-## 水平居中偏移 + 脚底对齐 cell 底部（头部越出 cell 上方 16px）。
+## 普通（非 USING）会员的 cell 锚点（V3.1 P1 投影后）：sprite 左上角 =
+## 脚底（cell 底部中心）投影后 - (sprite_w/2, sprite_h)。billboard 站立，
+## 头部向上越出 cell（2.5D 人物高于占用格）。
 func _cell_anchor(cell: Vector2i) -> Vector2:
 	var sprite_w := float(_member_sprites.SIZE) if _member_sprites != null else 48.0
-	var x := cell.x * _cell_size + (_cell_size - sprite_w) / 2.0
-	var y := cell.y * _cell_size + _cell_size - sprite_w
-	return Vector2(x, y)
+	var feet := _flat_feet(cell)
+	var p := Proj2D.proj(feet.x, feet.y, 0.0)
+	return p - Vector2(sprite_w * 0.5, sprite_w)
+
+
+## 扁平脚底点（世界坐标）：cell 底部中心。供投影锚点与贴地亮池使用。
+func _flat_feet(cell: Vector2i) -> Vector2:
+	return Vector2(cell.x * _cell_size + _cell_size * 0.5,
+		cell.y * _cell_size + _cell_size)
 
 
 ## V3 §15（P0-3 人物视觉权重）：会员脚底亮池 —— 半透明暖白椭圆垫在脚下，
@@ -699,18 +978,20 @@ func _cell_anchor(cell: Vector2i) -> Vector2:
 ## 纹理像素、不破坏 unit 像素断言；画在 sprite 之下（先画亮池后画人物）。
 ## 4.7.1 注意：draw_ellipse 签名是 (position, radius: float, ...) 无 Vector2
 ## 尺寸 —— 用 draw_colored_polygon 画椭圆多边形（16 段，确定性，低 alpha）。
-func _draw_member_ground_glow(sprite_anchor: Vector2) -> void:
+## V3.1 P1：亮池贴地 —— 扁平脚底坐标 + floor transform（椭圆随地板压缩）。
+func _draw_member_ground_glow(flat_feet: Vector2) -> void:
 	var glow := Palette.HIGHLIGHT_WARM
 	glow.a = 0.10
 	var size := float(_member_sprites.SIZE) if _member_sprites != null else 48.0
-	var center := sprite_anchor + Vector2(size * 0.5, size)
 	var rx := size * 0.62
 	var ry := size * 0.16
-	var pts := PackedVector2Array()
-	for i in 16:
-		var a := TAU * float(i) / 16.0
-		pts.append(center + Vector2(cos(a) * rx, sin(a) * ry))
-	draw_colored_polygon(pts, glow)
+	_draw_with_floor_transform(func() -> void:
+		var pts := PackedVector2Array()
+		for i in 16:
+			var a := TAU * float(i) / 16.0
+			pts.append(flat_feet + Vector2(cos(a) * rx, sin(a) * ry))
+		draw_colored_polygon(pts, glow)
+	)
 
 
 ## 会员绘制上下文（V3 §8 设备互动 + §9 微型动态 + 每人外观）：
