@@ -60,7 +60,46 @@ func world_to_screen(w: Vector2, z: float = 0.0) -> Vector2i:
 func _ready() -> void:
 	_main = MAIN_SCENE.instantiate()
 	add_child(_main)
+	_place_preset_equipment()
 	_placement = _main.get("_orch").placement_system
+
+
+## 显式放置 V3.1 预置设备（treadmill(2,2)(6,3) / bike(2,5) / bench_press(1,7)
+## / yoga_mat(9,2)）—— 证据采样依赖这些设备的场景语义（bench sage / yoga
+## peach / treadmill 跑带 stair-step / console cyan）。main.gd 的初始布局是
+## 经济默认（B2 后改为空房开局），证据脚本不依赖它 —— 已放置则跳过，
+## 未放置则走 PlacementSystem 完整拖放链补齐（同 main.gd _drag_drop）。
+func _place_preset_equipment() -> void:
+	var orch = _main.get("_orch")
+	if orch == null or orch.placement_system == null:
+		return
+	var placement = orch.placement_system
+	var grid = orch.grid_system
+	if grid == null:
+		return
+	if placement.placement_committed.is_connected(_on_placed) == false:
+		placement.placement_committed.connect(_on_placed)
+	var layout := [
+		["treadmill", Vector2i(2, 2)],
+		["bike", Vector2i(2, 5)],
+		["treadmill", Vector2i(6, 3)],
+		["bench_press", Vector2i(1, 7)],
+		["yoga_mat", Vector2i(9, 2)],
+	]
+	var occupied := {}
+	for inst in grid.get_placed_instances():
+		for cell in inst.footprint_cells:
+			occupied[cell] = true
+	for entry in layout:
+		if occupied.has(entry[1]):
+			continue
+		placement.begin_drag(entry[0])
+		placement.on_mouse_moved(entry[1])
+		placement.on_drop()
+
+
+func _on_placed(instance_id: int, equipment_id: String, _footprint_cells: Array) -> void:
+	pass
 
 
 func _process(_delta: float) -> void:
