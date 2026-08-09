@@ -118,7 +118,11 @@ class_name Hud extends Control
 ## 亮色 Butter 描边 + 粗字体 + 描边填充式图标。面板背景在 _draw() 里用
 ## draw_style_box 绘制（不新增子节点 —— hud_layout_test 固定 HUD root
 ## child-count == 1 / MoneyGroup == 2 children，技能 pitfall 已验证）。
+## V3.1 返工 UI：面板改为 PixelPanel 手绘像素纹理（不规则边缘 + 木纹
+## cluster + 非等宽 Butter 断续描边）—— 去 CSS 仪表盘化（V3 §15 / 附录
+## V3.1 负面约束：无完美矩形 / 无等宽边框）。
 const UiTheme := preload("res://src/ui/ui_theme.gd")
+const PixelPanel := preload("res://src/ui/pixel_panel.gd")
 
 ## Data-driven config seams (coding standard: gameplay values never hardcoded).
 const CONFIG_TICKS_PER_DAY := "ticks_per_day"
@@ -199,7 +203,7 @@ const TOP_BAR_HEIGHT_PX := 44
 const MIN_FONT_SIZE_PX := 16
 const METER_WIDTH_PX := 80
 const METER_HEIGHT_PX := 8
-const METER_CORNER_RADIUS_PX := 2  ## rounded fill — reads as a gauge, not a bar
+const METER_CORNER_RADIUS_PX := 1  ## V3.1: 1px 角 —— 像素语言（原 2px rounded）
 
 ## Art-bible palette (design/art/art-bible.md §4).
 const COLOR_BUTTER := Color("f5d97b")
@@ -210,12 +214,20 @@ const COLOR_SKY := Color("8ec5e8")
 ## CREAM_BG #F4E9D8）。深色半透明面板 + 浅色文字保证可读（Exit 条件 1/3）。
 const COLOR_TEXT_LIGHT := Color("f4e9d8")
 
-# === Phase D v2 面板状态（_draw() 绘制，不新增子节点） ===
-## 顶栏面板 stylebox：深色半透明 + Butter 亮色描边（UiTheme.make_panel_style）。
-var _panel_style: StyleBoxFlat = null
+# === V3.1 返工 UI 面板状态（_draw() 绘制，不新增子节点） ===
+## 顶栏面板像素纹理：PixelPanel 手绘木纹条带（不规则边缘 + 材质 cluster +
+## 非等宽 Butter 断续描边），NEAREST 放大到条带矩形。懒生成一次。
+## 设计条带 1256×48 @1.0（margin 16 → 条带 (12,2,1256,48)），texel 4px →
+## 314×12；ui_scale 1.5 时 6px/texel 仍整数倍。
+const PANEL_TEXTURE_SEED := 0x5EED_0C0D
+const PANEL_TEXTURE_TEXEL := 4
+const PANEL_TEXTURE_W := 314
+const PANEL_TEXTURE_H := 12
 ## 面板淡入 alpha（0→PANEL_ALPHA，ANIM_PANEL_FADE）。_draw() 每帧读取；
 ## 测试断言结构/颜色，不读本字段。
 var _panel_alpha: float = UiTheme.PANEL_ALPHA
+## 懒生成的手绘像素面板纹理（null = 未生成；_draw 首次调用时生成）。
+var _panel_texture_tex: ImageTexture = null
 ## 金钱图标脉冲 tween（余额变化时 offset_transform_scale 1→1.15→1，
 ## ANIM_ICON_PULSE）。与 _money_tween/_ack_tween 相互独立。
 var _pulse_tween: Tween = null
@@ -423,19 +435,22 @@ func _build_ui() -> void:
 		_speed_buttons.append(btn)
 		_transport_cluster.add_child(btn)
 
-	# Phase D v2: 顶栏深色半透明面板（_draw() 绘制；UiTheme 单一来源）。
-	# V3 §15（P0-2 UI 降权）：radius 10→2、border 2→3 —— 像素面板语言，
-	# 降低"Web dashboard"圆角矩形观感（门禁 FAIL）。
-	_panel_style = UiTheme.make_panel_style(UiTheme.panel_border(), 2, 3)
+	# V3.1 返工 UI：顶栏面板 = PixelPanel 手绘像素条带（懒生成，见
+	# _panel_texture(); _draw() 里 draw_texture_rect NEAREST 绘制）。替代
+	# 旧 StyleBoxFlat 完美矩形 + 等宽边框（门禁 FAIL：CSS 仪表盘观感）。
 	queue_redraw()
 
 
-## Phase D v2: 顶栏面板背景 —— 深色半透明 + Butter 亮色描边。在 HUD root
-## 的 _draw() 里绘制（不新增子节点：hud_layout_test 固定 root child-count
-## == 1 / TopBar 结构）。面板紧贴顶栏条带，四边留 2px 呼吸边距；描边颜色
-## 与圆角来自 UiTheme（单一来源）。_panel_alpha 由面板淡入动效驱动。
+## V3.1 返工 UI: 顶栏面板背景 —— PixelPanel 手绘木纹像素条带（不规则
+## 边缘 + 材质 cluster + 非等宽 Butter 断续描边），在 HUD root 的 _draw()
+## 里绘制（不新增子节点：hud_layout_test 固定 root child-count == 1 /
+## TopBar 结构）。条带紧贴顶栏，四边留 2px 呼吸边距；_panel_alpha 由面板
+## 淡入动效驱动（调制绘制 alpha，与旧 StyleBoxFlat 最终不透明度 PANEL_ALPHA
+## 等效）。像素纹理 texel 4px NEAREST 放大 —— 手绘像素面板语言，去 CSS
+## 仪表盘化（V3 §15 / 附录 V3.1 负面约束）。
 func _draw() -> void:
-	if _panel_style == null:
+	var tex := _panel_texture()
+	if tex == null:
 		return
 	var margin := _scaled(SAFE_MARGIN_PX)
 	var strip_rect := Rect2(
@@ -444,8 +459,23 @@ func _draw() -> void:
 		size.x - (margin - _scaled(4)) * 2.0,
 		_scaled(TOP_BAR_HEIGHT_PX) + _scaled(4)
 	)
-	_panel_style.bg_color.a = _panel_alpha
-	draw_style_box(_panel_style, strip_rect)
+	draw_texture_rect(tex, strip_rect, false, Color(1.0, 1.0, 1.0, _panel_alpha))
+
+
+## 懒生成顶栏像素面板纹理（确定性 seed；同一 seed 每次运行纹理一致）。
+## 底色 = UiTheme.panel_bg() 的 CHARCOAL 深灰（alpha 由绘制端 modulate
+## _panel_alpha 控制，故纹理底色 alpha 烘焙为 1.0），accent = Butter。
+func _panel_texture() -> ImageTexture:
+	if _panel_texture_tex == null:
+		_panel_texture_tex = PixelPanel.strip_texture(
+			PANEL_TEXTURE_SEED,
+			Vector2i(PANEL_TEXTURE_W, PANEL_TEXTURE_H),
+			UiTheme.panel_bg(),
+			UiTheme.panel_border(),
+			PixelPanel.Style.WOOD,
+			1.0
+		)
+	return _panel_texture_tex
 
 
 ## Two-phase init (ADR-0001 for UI Nodes): stores the injected systems,
@@ -961,15 +991,22 @@ func _make_transport_button(button_name: String, label: String) -> Button:
 
 ## Lazily builds the shared active-cue stylebox: a Butter bright outline
 ## (never color alone — paired with the filled-dot text prefix in
-## _set_button_active). Phase D v2: 亮色描边 = Butter（art-bible-25d §2
-## 10% 锚点）；transport 测试只断言 border_width > 0，颜色换新皮安全。
+## _set_button_active). V3.1 返工 UI：非对称描边（顶/左 3px、右/底 1px）+
+## 非对称圆角（仅左上 1px）—— 手绘像素轮廓，非等宽边框（V3.1 负面约束）。
+## transport 测试只断言 border_width_left > 0，颜色换新皮安全。
 func _get_active_stylebox() -> StyleBoxFlat:
 	if _active_stylebox == null:
 		var sb := StyleBoxFlat.new()
 		sb.bg_color = Color(1.0, 1.0, 1.0, 0.0)
 		sb.border_color = UiTheme.panel_border()
-		sb.set_border_width_all(2)
-		sb.set_corner_radius_all(3)
+		sb.border_width_left = 3
+		sb.border_width_top = 3
+		sb.border_width_right = 1
+		sb.border_width_bottom = 1
+		sb.corner_radius_top_left = 1
+		sb.corner_radius_top_right = 0
+		sb.corner_radius_bottom_left = 0
+		sb.corner_radius_bottom_right = 0
 		_active_stylebox = sb
 	return _active_stylebox
 

@@ -20,65 +20,30 @@
 ## 实现，has_theme_stylebox_override() 保持 false（transport 测试依赖此行为）。
 ## 图标描边填充式：Label 的 font_outline_color + outline_size（headless 安全）。
 ## 粗字体：SystemFont font_weight=700（4.7.1 支持，headless 创建安全）。
+## V3.1 返工 UI：面板/按钮语言已从 StyleBoxFlat 完美矩形+等宽边框迁移到
+## PixelPanel 手绘像素纹理（不规则边缘 + 材质 cluster + 非等宽描边）；文字
+## 渲染关闭抗锯齿/hinting（像素化硬边字形）。见 src/ui/pixel_panel.gd。
 const Palette := preload("res://src/palette.gd")
 
-# === 面板体系（深色半透明 + 亮色描边） ===
+# === 面板体系（V3.1 手绘像素面板：颜色单一来源；纹理生成见 pixel_panel.gd） ===
 
 ## 面板底色不透明度（art-bible-25d：alpha 0.7-0.85，半透明让 2.5D 场景透出）。
 const PANEL_ALPHA := 0.82
 
 ## 面板底色：CHARCOAL 加深后的深灰（同色系派生，非新色）。alpha 由
-## PANEL_ALPHA 控制。返回新 Color（每次调用独立实例，供 stylebox 使用）。
+## PANEL_ALPHA 控制。返回新 Color（每次调用独立实例）。
+## V3.1 返工 UI：本函数供 PixelPanel 纹理生成作底色（HUD 条带 / 建造条
+## 条带 / tile 平板 / 工具栏平板）；面板形状由像素纹理承担，不再有
+## StyleBoxFlat 完美矩形面板（去 CSS 仪表盘化，V3 §15 / 附录 V3.1）。
 static func panel_bg() -> Color:
 	var c := Palette.CHARCOAL.darkened(0.35)
 	c.a = PANEL_ALPHA
 	return c
 
 ## 面板亮色描边：Butter（art-bible-25d「亮色描边 ≈ Butter 或区域亮色」）。
+## V3.1 返工 UI：作为 PixelPanel 纹理的 accent（断续像素线）与按钮描边色。
 static func panel_border() -> Color:
 	return Palette.BUTTER
-
-## 标准面板 stylebox：深色半透明底 + 亮色描边 + 轻微圆角。
-## V3 §15 修复（P0-2 UI 降权）：radius 8→2、border 2→3 —— 像素面板语言
-## （2-3px 明确描边、非圆角或极轻微），避免 HTML/CSS dashboard 圆角矩形感
-## （门禁 FAIL：圆角矩形组合像 Web dashboard）。供 Control._draw() 用
-## draw_style_box() 绘制（HUD/建造面板条带），或直接作为 PanelContainer 的
-## "panel" override（工具栏）。
-static func make_panel_style(
-	border_color: Color = Palette.BUTTER,
-	radius: int = 2,
-	border_width: int = 3
-) -> StyleBoxFlat:
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = panel_bg()
-	sb.border_color = border_color
-	sb.set_border_width_all(border_width)
-	sb.set_corner_radius_all(radius)
-	sb.content_margin_left = 10.0
-	sb.content_margin_right = 10.0
-	sb.content_margin_top = 8.0
-	sb.content_margin_bottom = 8.0
-	return sb
-
-## 深色半透明「芯片」stylebox（图标/标签的底，无边框或 1px 细描边）。
-## V3 §15：radius 6→2（像素直角语言），border 默认 2px（明确描边）。
-static func make_chip_style(
-	border_color: Color = Palette.BUTTER,
-	radius: int = 2,
-	border_width: int = 2
-) -> StyleBoxFlat:
-	var sb := StyleBoxFlat.new()
-	var bg := Palette.CHARCOAL.darkened(0.45)
-	bg.a = PANEL_ALPHA
-	sb.bg_color = bg
-	sb.border_color = border_color
-	sb.set_border_width_all(border_width)
-	sb.set_corner_radius_all(radius)
-	sb.content_margin_left = 6.0
-	sb.content_margin_right = 6.0
-	sb.content_margin_top = 4.0
-	sb.content_margin_bottom = 4.0
-	return sb
 
 # === 文字（浅色 Cream 系，深色面板上可读） ===
 
@@ -103,10 +68,20 @@ static var _bold_font: SystemFont = null
 
 ## 共享粗体 SystemFont（weight 700）。headless 创建安全（probe 验证），
 ## 窗口模式由系统字体渲染。懒加载单例，全 UI 共用同一资源。
+## V3.1 返工 UI：文字像素化渲染 —— 关闭抗锯齿/hinting/subpixel（硬边
+## chunky 字形，非细线现代 UI 字体；V3 §15 绝对避免 thin modern UI
+## typography）。4.7.1 probe 验证：SystemFont 默认 antialiasing=1 /
+## hinting=1 / subpixel=1 / weight=400；置 0/0/0/700 生效且 headless 安全。
+## TextServer.FONT_ANTIALIASING_NONE 常量存在（probe）；hinting/subpixel
+## 的 FONT_* 常量名在 4.7.1 未暴露于类常量表（probe），用数值 0（= NONE /
+## DISABLED，probe 确认可赋值）。
 static func bold_font() -> SystemFont:
 	if _bold_font == null:
 		_bold_font = SystemFont.new()
 		_bold_font.font_weight = 700
+		_bold_font.antialiasing = TextServer.FONT_ANTIALIASING_NONE
+		_bold_font.hinting = 0
+		_bold_font.subpixel_positioning = 0
 	return _bold_font
 
 ## 给 Label 应用粗字体 + 字号（字号覆盖走 theme override，测试可读）。
@@ -147,9 +122,34 @@ static func apply_outlined_fill(
 
 static var _button_theme: Theme = null
 
-## 共享 Button Theme：normal/hover/pressed/focus 全为深色半透明芯片 +
-## 亮色细描边。通过 `btn.theme = button_theme()` 挂到按钮上 —— 这是
-## 4.7.1 的「主题级 stylebox」路径（probe 验证：Control 无 add_theme_stylebox()；
+## 像素芯片按钮 stylebox：非对称描边（顶/左 2px、右/底 1px）+ 非对称圆角
+## （仅左上/右下 1px，切掉另外两角）—— 手绘像素按钮语言，非 macOS 圆角
+## 芯片、非等宽边框（V3.1 负面约束）。[bg_boost] 额外提高底色不透明度
+## （hover 提亮用）。
+static func make_pixel_chip_style(border_color: Color, bg_boost: float = 0.0) -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	var bg := Palette.CHARCOAL.darkened(0.45)
+	bg.a = clampf(PANEL_ALPHA + bg_boost, 0.0, 1.0)
+	sb.bg_color = bg
+	sb.border_color = border_color
+	sb.border_width_left = 2
+	sb.border_width_top = 2
+	sb.border_width_right = 1
+	sb.border_width_bottom = 1
+	sb.corner_radius_top_left = 1
+	sb.corner_radius_bottom_right = 1
+	sb.corner_radius_top_right = 0
+	sb.corner_radius_bottom_left = 0
+	sb.content_margin_left = 8.0
+	sb.content_margin_right = 8.0
+	sb.content_margin_top = 4.0
+	sb.content_margin_bottom = 4.0
+	return sb
+
+## 共享 Button Theme：normal/hover/pressed/focus 全为像素芯片（非对称
+## 描边/圆角 —— V3.1 返工 UI，替代旧 rounded chip）。通过
+## `btn.theme = button_theme()` 挂到按钮上 —— 这是 4.7.1 的「主题级
+## stylebox」路径（probe 验证：Control 无 add_theme_stylebox()；
 ## Theme.set_stylebox() + control.theme 后 has_theme_stylebox_override() 保持
 ## false，transport 测试的「inactive 无 override」断言依赖此行为）。
 ## 按钮文字用 theme color override（浅 Cream）+ 粗字体，见
@@ -157,28 +157,21 @@ static var _button_theme: Theme = null
 static func button_theme() -> Theme:
 	if _button_theme == null:
 		_button_theme = Theme.new()
-		var normal := make_chip_style(Palette.BUTTER, 6, 1)
-		normal.content_margin_left = 8.0
-		normal.content_margin_right = 8.0
-		normal.content_margin_top = 4.0
-		normal.content_margin_bottom = 4.0
-		var hover := make_chip_style(Palette.BUTTER, 6, 2)
-		hover.bg_color.a = PANEL_ALPHA + 0.06
-		hover.content_margin_left = 8.0
-		hover.content_margin_right = 8.0
-		hover.content_margin_top = 4.0
-		hover.content_margin_bottom = 4.0
-		var pressed := make_chip_style(Palette.BUTTER, 6, 2)
+		var normal := make_pixel_chip_style(Palette.BUTTER, 0.0)
+		var hover := make_pixel_chip_style(Palette.BUTTER, 0.06)
+		hover.border_width_left = 3
+		hover.border_width_top = 3
+		var pressed := make_pixel_chip_style(Palette.BUTTER, 0.0)
 		pressed.bg_color = Palette.BUTTER.darkened(0.55)
 		pressed.bg_color.a = 0.9
-		pressed.content_margin_left = 8.0
-		pressed.content_margin_right = 8.0
-		pressed.content_margin_top = 4.0
-		pressed.content_margin_bottom = 4.0
+		pressed.border_width_left = 1  # 按下：上/左描边内陷（物理按压感）
+		pressed.border_width_top = 1
+		pressed.border_width_right = 2
+		pressed.border_width_bottom = 2
 		_button_theme.set_stylebox("normal", "Button", normal)
 		_button_theme.set_stylebox("hover", "Button", hover)
 		_button_theme.set_stylebox("pressed", "Button", pressed)
-		_button_theme.set_stylebox("focus", "Button", make_chip_style(Palette.BUTTER, 6, 1))
+		_button_theme.set_stylebox("focus", "Button", make_pixel_chip_style(Palette.BUTTER, 0.0))
 		_button_theme.set_color("font_color", "Button", Palette.CREAM_BG)
 		_button_theme.set_color("font_hover_color", "Button", Palette.CREAM_BG)
 		_button_theme.set_color("font_pressed_color", "Button", Palette.CREAM_BG)

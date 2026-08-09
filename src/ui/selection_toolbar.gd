@@ -81,8 +81,10 @@ const COLOR_WARM_CREAM := Color("f4e9d8")
 
 # Phase D v2 现代 UI 皮肤（art-bible-25d-style §1/§2）—— 工具栏面板 =
 # 深色半透明 + Butter 亮色描边 + 粗字体按钮。
-# V3 §15（P0-2 UI 降权）：radius 6→2、border 1→2 —— 像素面板语言。
+# V3.1 返工 UI：面板改为 PixelPanel 手绘木纹像素平板（不规则边缘 + 材质
+# cluster + 非等宽 Butter 断续描边）；按钮走 UiTheme 像素芯片主题。
 const UiTheme := preload("res://src/ui/ui_theme.gd")
+const PixelPanel := preload("res://src/ui/pixel_panel.gd")
 
 ## Gap (px) between the piece's footprint edge and the toolbar.
 const ANCHOR_GAP_PX := 12
@@ -126,6 +128,13 @@ var _footprint_rect: Rect2 = Rect2()
 
 ## The active enter/exit tween (null when static).
 var _anim_tween: Tween = null
+
+## V3.1 返工 UI — 像素平板纹理状态（_draw 懒生成；尺寸变化时重建）。
+## 工具栏尺寸由按钮行内容驱动（sell-confirm 变长会改变尺寸）。
+const PLATE_TEXEL := 4
+const PLATE_SEED := 0x71E_B4A
+var _plate_texture_tex: ImageTexture = null
+var _plate_texel_size: Vector2i = Vector2i.ZERO
 
 # === Buttons (built in _init(), named for tests) ===
 var _inspect_button: Button
@@ -242,12 +251,51 @@ func _build_buttons() -> void:
 
 
 func _make_background_style() -> StyleBoxFlat:
-	var sb := UiTheme.make_panel_style(UiTheme.panel_border(), 2, 2)
+	# V3.1 返工 UI：面板 stylebox 透明（保留 content margins 供按钮行布局），
+	# 手绘像素平板由 _draw() 绘制（PixelPanel 木纹：不规则边缘 + 材质 cluster
+	# + 非等宽 Butter 断续描边）。
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.0, 0.0, 0.0, 0.0)
+	sb.border_width_left = 0
+	sb.border_width_top = 0
+	sb.border_width_right = 0
+	sb.border_width_bottom = 0
 	sb.content_margin_left = 8.0
 	sb.content_margin_right = 8.0
 	sb.content_margin_top = 6.0
 	sb.content_margin_bottom = 6.0
 	return sb
+
+
+## V3.1 返工 UI：工具栏平板绘制 —— PixelPanel 手绘木纹像素平板铺满整个
+## 面板（PanelContainer 的透明 stylebox 先画，本 _draw 在其上绘制纹理；
+## 子按钮行绘制在两者之上）。尺寸变化（sell-confirm 变长）时重建纹理。
+func _draw() -> void:
+	var tex := _plate_texture()
+	if tex == null:
+		return
+	draw_texture_rect(tex, Rect2(Vector2.ZERO, size), false)
+
+
+## 懒生成/按需重建工具栏像素平板纹理。底色 = panel_bg() 深灰（alpha
+## PANEL_ALPHA，半透明让场景透出）、accent = Butter、材质 = WOOD（与顶栏
+## 同语言，贴近器械的木质信息板）。
+func _plate_texture() -> ImageTexture:
+	var want := Vector2i(
+		maxi(1, ceili(size.x / PLATE_TEXEL)),
+		maxi(1, ceili(size.y / PLATE_TEXEL))
+	)
+	if _plate_texture_tex == null or _plate_texel_size != want:
+		_plate_texture_tex = PixelPanel.plate_texture(
+			PLATE_SEED,
+			want,
+			UiTheme.panel_bg(),
+			UiTheme.panel_border(),
+			PixelPanel.Style.WOOD,
+			UiTheme.PANEL_ALPHA
+		)
+		_plate_texel_size = want
+	return _plate_texture_tex
 
 
 # === Signal handlers ===
