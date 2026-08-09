@@ -236,12 +236,18 @@ func _draw() -> void:
 
 
 ## 画布背景（V3.1 P1）：投影后画布边界外的天花板/背景色 —— 填满 SubViewport，
-## 墙顶/角落不留空洞。颜色取暖灰（WALL_DARK 亮一档，比墙暗、比地板暗，
-## 视觉上是「房间上方」）。
+## 墙顶/角落不留空洞。V3.1 P3：天花板也是大面积区域 —— 用手绘 cluster 纹理
+## （非纯色填充；V3.1 负面约束「纯色大面积填充」）。structure_art 未注入时
+## 回退旧纯色填充（保持测试构造兼容）。
 func _draw_canvas_background() -> void:
 	var b := Proj2D.bounds()
-	draw_rect(Rect2(b.position - Vector2(8, 8), b.size + Vector2(16, 16)),
-		Palette.WALL_BASE.darkened(0.28), true)
+	var rect := Rect2(b.position - Vector2(8, 8), b.size + Vector2(16, 16))
+	if _structure_art != null:
+		var tex: ImageTexture = _structure_art.ceiling_texture()
+		if tex != null:
+			draw_texture_rect(tex, rect, false)
+			return
+	draw_rect(rect, Palette.WALL_BASE.darkened(0.28), true)
 
 
 ## 地板 pass：全部贴地内容经 floor_transform 一次性投影（V3.1 P1 ——
@@ -396,26 +402,19 @@ func _draw_2_5d_walls() -> void:
 
 
 ## 北墙（入口 x 0..32 保留门洞）：墙面从墙基 y=24（墙与地板交界）提升到
-## z=WALL_HEIGHT；墙帽（WALL_TRIM 顶面压条）+ 踢脚线（WALL_DARK 墙基压条）。
+## z=WALL_HEIGHT。V3.1 P3：墙面 = 手绘粉刷纹理（cluster + jagged 墙帽/踢脚线）
+## 经 _north_wall_transform 一次贴图 —— 替代旧的 3 个纯色多边形（面 + 墙帽 +
+## 踢脚线），draw call 3→1 且大面积墙面不再纯色填充。
 func _draw_north_wall() -> void:
-	var w0 := 32.0   # 入口门洞 x 0..32
-	var w1 := float(Proj2D.WORLD_W)
-	var base_y := 24.0  # WALL_TOP_RECT 底边（墙与地板交界）
-	var z := Proj2D.WALL_HEIGHT
-	draw_colored_polygon(PackedVector2Array([
-		Proj2D.proj(w0, base_y, 0.0), Proj2D.proj(w1, base_y, 0.0),
-		Proj2D.proj(w1, base_y, z), Proj2D.proj(w0, base_y, z),
-	]), Palette.WALL_BASE)
-	# 顶面墙帽（4px 压条，V3.1 P1 顶面证据：墙面亮一档）
-	draw_colored_polygon(PackedVector2Array([
-		Proj2D.proj(w0, base_y, z), Proj2D.proj(w1, base_y, z),
-		Proj2D.proj(w1, base_y, z - 4.0), Proj2D.proj(w0, base_y, z - 4.0),
-	]), Palette.WALL_TRIM)
-	# 踢脚线（墙基 5px 压条）
-	draw_colored_polygon(PackedVector2Array([
-		Proj2D.proj(w0, base_y, 0.0), Proj2D.proj(w1, base_y, 0.0),
-		Proj2D.proj(w1, base_y, 5.0), Proj2D.proj(w0, base_y, 5.0),
-	]), Palette.WALL_DARK)
+	if _structure_art == null:
+		return
+	var tex: ImageTexture = _structure_art.wall_face_texture("north")
+	if tex == null:
+		return
+	draw_set_transform_matrix(_north_wall_transform())
+	draw_texture_rect(tex, Rect2(32, 0, StructureArt.WALL_NORTH_TEX.x,
+		StructureArt.WALL_NORTH_TEX.y), false)
+	draw_set_transform_matrix(Transform2D.IDENTITY)
 	_draw_north_wall_decor()
 
 
@@ -486,31 +485,26 @@ func _draw_north_wall_structure_decor() -> void:
 		draw_rect(Rect2i(sx, 2, 4, 4), Palette.AC_VENT.darkened(0.3), true)
 
 
-## 侧墙（西/东）：墙面 = 墙内表面（x=14 / x=402）从墙基（y0..y1）提升到
-## z=WALL_HEIGHT 的平行四边形。西墙 y∈[32..320]（入口门洞 y<32）；东墙
+## 侧墙（西/东）：墙面 = 手绘粉刷纹理（cluster + jagged 墙帽/踢脚线）经
+## _side_wall_transform 一次贴图 —— 替代旧的 3 个纯色多边形（面 + 墙帽 +
+## 踢脚线），draw call 3→1。西墙 y∈[32..320]（入口门洞 y<32）；东墙
 ## y∈[0..288]（出口门洞 y 288..320）。
 func _draw_side_wall(is_west: bool) -> void:
+	if _structure_art == null:
+		return
+	var kind := "west" if is_west else "east"
+	var tex: ImageTexture = _structure_art.wall_face_texture(kind)
+	if tex == null:
+		return
 	var x_in := 14.0 if is_west else float(Proj2D.WORLD_W - 14)
 	var y0 := 32.0
-	var y1 := float(Proj2D.WORLD_H)
 	if not is_west:
 		y0 = 0.0
-		y1 = 288.0
-	var z := Proj2D.WALL_HEIGHT
-	draw_colored_polygon(PackedVector2Array([
-		Proj2D.proj(x_in, y0, 0.0), Proj2D.proj(x_in, y1, 0.0),
-		Proj2D.proj(x_in, y1, z), Proj2D.proj(x_in, y0, z),
-	]), Palette.WALL_BASE)
-	# 顶面墙帽
-	draw_colored_polygon(PackedVector2Array([
-		Proj2D.proj(x_in, y0, z), Proj2D.proj(x_in, y1, z),
-		Proj2D.proj(x_in, y1, z - 4.0), Proj2D.proj(x_in, y0, z - 4.0),
-	]), Palette.WALL_TRIM)
-	# 踢脚线
-	draw_colored_polygon(PackedVector2Array([
-		Proj2D.proj(x_in, y0, 0.0), Proj2D.proj(x_in, y1, 0.0),
-		Proj2D.proj(x_in, y1, 5.0), Proj2D.proj(x_in, y0, 5.0),
-	]), Palette.WALL_DARK)
+	# 纹理在墙本地空间 (u=沿墙 y, v=墙高 z)；u 从 y0 起（西墙 32..320 / 东墙 0..288）
+	draw_set_transform_matrix(_side_wall_transform(x_in))
+	draw_texture_rect(tex, Rect2(y0, 0, StructureArt.WALL_SIDE_TEX.x,
+		StructureArt.WALL_SIDE_TEX.y), false)
+	draw_set_transform_matrix(Transform2D.IDENTITY)
 	# 侧墙装饰（管道/镜子/海报 —— 墙本地空间 u=沿墙扁平 y，v=墙高 z）
 	draw_set_transform_matrix(_side_wall_transform(x_in))
 	if is_west:

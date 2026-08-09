@@ -137,17 +137,29 @@ const FLOOR_STRENGTH_BLOCK := Color("454952")   # 略有色差的橡胶块
 const FLOOR_STRENGTH_SEAM := Color("3C4047")    # 接缝
 const FLOOR_STRENGTH_WEAR := Color("5A5F68")    # 磨损/高光
 const FLOOR_STRENGTH_STAIN := Color("383C44")   # 汗渍
+## V3.1 P3：力量区手绘 cluster 色（深灰/灰蓝/暖灰 —— 非纯色大块填充）。
+const FLOOR_STRENGTH_CL_GRAYBLUE := Color("4E5663")   # 灰蓝 cluster
+const FLOOR_STRENGTH_CL_WARMGRAY := Color("55504C")   # 暖灰 cluster
 ## 地板材质 —— 有氧区偏暖灰/蓝灰地面。
 const FLOOR_CARDIO_BASE := Color("7C8288")
 const FLOOR_CARDIO_DOT := Color("71777D")       # 细小重复纹理
 const FLOOR_CARDIO_EDGE := Color("666C72")      # 边缘压条
+## V3.1 P3：有氧区手绘 cluster 色（暖灰/蓝灰 —— 无 4px 规则点阵）。
+const FLOOR_CARDIO_CL_GRAYBLUE := Color("747D87")
+const FLOOR_CARDIO_CL_WARMGRAY := Color("858486")
 ## 地板材质 —— 瑜伽区暖色木地板（V3 §7 木材暖橙棕）。
 const FLOOR_FLEX_BASE := Color("A9744C")
 const FLOOR_FLEX_PLANK := Color("96653F")       # 木板分隔
 const FLOOR_FLEX_GRAIN := Color("8F5F3B")       # 像素化木纹
+## V3.1 P3：瑜伽区手绘 cluster 色（亮/暗木板 —— 木纹不规则）。
+const FLOOR_FLEX_CL_LIGHT := Color("B58055")
+const FLOOR_FLEX_CL_DARK := Color("96633C")
 ## 地板材质 —— 公共通道浅灰/暖灰瓷砖（比训练区亮，有砖缝）。
 const FLOOR_WALK_BASE := Color("D3CBB9")
 const FLOOR_WALK_GROUT := Color("BDB4A0")
+## V3.1 P3：通道手绘 cluster 色（亮/暗瓷砖 —— 砖缝不规则）。
+const FLOOR_WALK_CL_LIGHT := Color("DDD6C6")
+const FLOOR_WALK_CL_DARK := Color("C6BEA9")
 
 ## 植物叶色：中等饱和绿（V3 §7；比旧 Sage 更深更实，脱离 pastel）。
 const PLANT_GREEN := Color("4E8A5A")

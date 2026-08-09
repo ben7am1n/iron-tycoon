@@ -185,22 +185,33 @@ func _test_background_dimmed() -> void:
 	print("\n-- V3 §4 BACKGROUND 降对比（GAMEPLAY 前台 vs BACKGROUND 同色）--")
 	var art = StructureArtScript.new()
 	# 前台在 GAMEPLAY 层 —— 原色鲜艳；同结构若出现在 BACKGROUND 层应降饱和。
-	# 直接验证烘焙像素：前台 desk 中心点 = DESK_WOOD（GAMEPLAY 层原色）。
+	# V3.1 P3：结构表面有手工小色块/jagged 边缘 —— 改用区域内搜索主色
+	# （base 填充占绝对多数），不再 pin 单个像素。
 	var desk_rect: Rect2i = art.structure_rect("front_desk")
 	var gp_img := art.layer_texture(StructureArtScript.LAYER_GAMEPLAY).get_image()
-	var px := gp_img.get_pixel(desk_rect.position.x + 4, desk_rect.position.y + 6)
 	var expected: Color = PaletteScript.DESK_WOOD
-	_check(absf(px.r - expected.r) < 0.02 and absf(px.g - expected.g) < 0.02 and absf(px.b - expected.b) < 0.02,
-		"GAMEPLAY 前台 desk 原色（got %s expect %s）" % [str(px), str(expected)])
+	var desk_found := _rect_contains_color(gp_img, desk_rect, expected, 0.02)
+	_check(desk_found, "GAMEPLAY 前台 desk 原色（区域内找到 DESK_WOOD）")
 	# BACKGROUND 层 lockers 色 = _col(LOCKER_COLOR) 应比原色更接近中性灰。
 	var locker_rect: Rect2i = art.structure_rect("lockers")
 	var bg_img := art.layer_texture(StructureArtScript.LAYER_BACKGROUND).get_image()
-	var bg_px := bg_img.get_pixel(locker_rect.position.x + 2, locker_rect.position.y + 6)
 	var raw: Color = PaletteScript.LOCKER_COLOR
 	var neutral := Color(raw.get_luminance(), raw.get_luminance(), raw.get_luminance())
 	var dimmed := raw.lerp(neutral, 0.45).darkened(0.10)
-	_check(absf(bg_px.r - dimmed.r) < 0.02 and absf(bg_px.g - dimmed.g) < 0.02 and absf(bg_px.b - dimmed.b) < 0.02,
-		"BACKGROUND lockers 降对比降饱和（got %s expect %s）" % [str(bg_px), str(dimmed)])
+	var locker_found := _rect_contains_color(bg_img, locker_rect, dimmed, 0.02)
+	_check(locker_found, "BACKGROUND lockers 降对比降饱和（区域内找到 dimmed LOCKER_COLOR）")
+
+
+## 矩形区域内是否含目标色（容差 tol）—— P3 表面不规则后不再 pin 单像素。
+func _rect_contains_color(img: Image, rect: Rect2i, color: Color, tol: float) -> bool:
+	for y in range(rect.position.y, rect.position.y + rect.size.y):
+		for x in range(rect.position.x, rect.position.x + rect.size.x):
+			if x < 0 or y < 0 or x >= img.get_width() or y >= img.get_height():
+				continue
+			var p := img.get_pixel(x, y)
+			if absf(p.r - color.r) < tol and absf(p.g - color.g) < tol and absf(p.b - color.b) < tol:
+				return true
+	return false
 
 
 # === 确定性 ===

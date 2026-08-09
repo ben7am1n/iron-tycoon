@@ -45,27 +45,28 @@ const ART_MAPS := {
 		"........",
 		"........",
 	],
-	# 跑步海报（墙上）：暖底 + 简单人物剪影
+	# 跑步海报（墙上）：暖底 + 简单人物剪影 —— V3.1 P3 无等宽边框（非完整
+	# 外框环：左上/右下缺角，模拟手绘贴纸边缘）
 	"poster_run": [
-		"OOOOOOOO",
+		"OOWWWWWO",
 		"OWWWWWWO",
 		"OWWWWWWO",
 		"OWBWWWWO",
 		"OWWWWWWO",
 		"OWWWWBWO",
-		"OWWWWWWO",
-		"OOOOOOOO",
+		"OWWWWWW.",
+		".WWWWWO.",
 	],
-	# 瑜伽海报（墙上）：暖底 + 圆点（树式剪影暗示）
+	# 瑜伽海报（墙上）：暖底 + 圆点（树式剪影暗示）—— P3 无等宽边框
 	"poster_yoga": [
-		"OOOOOOOO",
+		"OOWWWWWO",
 		"OWWWWWWO",
 		"OWWWWWWO",
 		"OWWBWWWO",
 		"OWWBWWWO",
 		"OWWWWWWO",
-		"OWWWWWWO",
-		"OOOOOOOO",
+		"OWWWWW..",
+		"OWWWWOO.",
 	],
 	# 小配重（散落杠铃片）：金属圆片
 	"dumbbell": [
@@ -78,12 +79,12 @@ const ART_MAPS := {
 		"........",
 		"........",
 	],
-	# 粉笔盒：小方盒
+	# 粉笔盒：小方盒 —— P3 边缘不规则（非完整等宽外框）
 	"chalk_box": [
-		"..OOOO..",
+		"..O.OO..",
 		".OBBBBO.",
 		".OBBBBO.",
-		".OBBBBO.",
+		".OBBBB.O",
 		"..OOOO..",
 		"........",
 		"........",
