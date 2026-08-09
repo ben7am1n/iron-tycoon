@@ -18,10 +18,10 @@ const CONFIG_REVENUE_PER_LEVEL := "revenue_per_level"
 # Defensive fallbacks. The playable build loads the authoritative values from
 # data/equipment_upgrades.json; tests inject the same shape directly.
 const DEFAULT_MAX_LEVEL := 5
-const DEFAULT_BASE_COST_RATIO := 0.5
-const DEFAULT_COST_GROWTH := 2.0
+const DEFAULT_BASE_COST_RATIO := 0.25
+const DEFAULT_COST_GROWTH := 1.5
 const DEFAULT_ATTRACTION_PER_LEVEL := 0.15
-const DEFAULT_REVENUE_PER_LEVEL := 0.10
+const DEFAULT_REVENUE_PER_LEVEL := 0.1667
 
 var _grid: GridSystem
 var _max_level: int = DEFAULT_MAX_LEVEL
@@ -104,7 +104,7 @@ func attraction_multiplier_for_level(level: int) -> float:
 	return 1.0 + _attraction_per_level * float(maxi(level, 1) - 1)
 
 
-## Revenue multiplier: 1 + 0.10 × (level-1) with default tuning.
+## Revenue multiplier: 1 + 0.1667 × (level-1) with default tuning.
 func revenue_multiplier_for_level(level: int) -> float:
 	if not _assert_initialized():
 		return 1.0
@@ -115,7 +115,15 @@ func revenue_multiplier_for_level(level: int) -> float:
 func revenue_for_visit(base_revenue: int, level: int) -> int:
 	if not _assert_initialized():
 		return base_revenue
-	return maxi(0, int(round(float(base_revenue) * revenue_multiplier_for_level(level))))
+	return revenue_for_visit_multiplier(base_revenue, revenue_multiplier_for_level(level))
+
+
+## Integer completed-visit revenue using a multiplier already averaged and
+## snapshotted by MemberSim across the visit's successfully completed uses.
+func revenue_for_visit_multiplier(base_revenue: int, average_multiplier: float) -> int:
+	if not _assert_initialized():
+		return base_revenue
+	return maxi(0, int(round(float(base_revenue) * maxf(average_multiplier, 0.0))))
 
 
 ## Player-triggered deterministic upgrade transaction. The method validates

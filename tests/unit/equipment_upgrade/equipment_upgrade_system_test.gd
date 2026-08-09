@@ -18,10 +18,10 @@ const R0 := 0
 class CompletedVisitMemberStub:
 	extends RefCounted
 
-	var completed_level: int = 1
+	var completed_multiplier: float = 1.0
 
-	func get_completed_visit_equipment_level(_member_id: int) -> int:
-		return completed_level
+	func get_completed_visit_revenue_multiplier(_member_id: int) -> float:
+		return completed_multiplier
 
 
 var _pass := 0
@@ -48,6 +48,7 @@ func run_all() -> Dictionary:
 	_test_legacy_grid_record_defaults_to_level_one()
 	_test_target_weight_applies_attraction_multiplier()
 	_test_economy_applies_upgraded_revenue()
+	_test_b2_catalog_prices()
 
 	_free_nodes()
 	print("\n=== EQUIPMENT UPGRADE TEST: %d passed, %d failed ===\n" % [_pass, _fail])
@@ -108,36 +109,38 @@ func _make_upgrade(grid: RefCounted) -> RefCounted:
 	var upgrade: RefCounted = (load("res://src/systems/equipment_upgrade_system.gd") as Script).new()
 	upgrade.call("init", grid, {
 		"max_level": 5,
-		"base_cost_ratio": 0.5,
-		"cost_growth": 2.0,
+		"base_cost_ratio": 0.25,
+		"cost_growth": 1.5,
 		"attraction_per_level": 0.15,
-		"revenue_per_level": 0.10,
+		"revenue_per_level": 0.1667,
 	})
 	return upgrade
 
 
 func _test_cost_formula_and_max_level() -> void:
-	print("\n[cost] base × 0.5 × 2^(level-1)")
+	print("\n[cost] base × 0.25 × 1.5^(level-1)")
 	var grid := _make_grid()
 	_commit_one(grid)
 	var upgrade := _make_upgrade(grid)
-	_check(int(upgrade.call("upgrade_cost_for_level", 200, 1)) == 100, "L1→L2 costs 50% of purchase price")
-	_check(int(upgrade.call("upgrade_cost_for_level", 200, 2)) == 200, "L2→L3 doubles to 200")
-	_check(int(upgrade.call("upgrade_cost_for_level", 200, 3)) == 400, "L3→L4 doubles to 400")
-	_check(int(upgrade.call("upgrade_cost_for_level", 200, 4)) == 800, "L4→L5 doubles to 800")
+	_check(int(upgrade.call("upgrade_cost_for_level", 200, 1)) == 50, "L1→L2 costs 25% of purchase price")
+	_check(int(upgrade.call("upgrade_cost_for_level", 200, 2)) == 75, "L2→L3 grows to 75")
+	_check(int(upgrade.call("upgrade_cost_for_level", 200, 3)) == 113, "L3→L4 rounds 112.5 to 113")
+	_check(int(upgrade.call("upgrade_cost_for_level", 200, 4)) == 169, "L4→L5 rounds 168.75 to 169")
 	_check(int(upgrade.call("upgrade_cost_for_level", 200, 5)) == 0, "max level has no further upgrade cost")
 
 
 func _test_effect_multipliers() -> void:
-	print("\n[effects] attraction +15%/level, revenue +10%/level")
+	print("\n[effects] attraction +15%/level, revenue +16.67%/level")
 	var grid := _make_grid()
 	_commit_one(grid)
 	var upgrade := _make_upgrade(grid)
 	_check(is_equal_approx(float(upgrade.call("attraction_multiplier_for_level", 1)), 1.0), "L1 attraction is neutral")
 	_check(is_equal_approx(float(upgrade.call("attraction_multiplier_for_level", 3)), 1.30), "L3 attraction multiplier is 1.30")
-	_check(is_equal_approx(float(upgrade.call("revenue_multiplier_for_level", 4)), 1.30), "L4 revenue multiplier is 1.30")
-	_check(int(upgrade.call("revenue_for_visit", 12, 2)) == 13, "$12 visit at L2 rounds to $13")
-	_check(int(upgrade.call("revenue_for_visit", 12, 5)) == 17, "$12 visit at L5 rounds to $17")
+	_check(absf(float(upgrade.call("revenue_multiplier_for_level", 4)) - 1.5001) < 1e-9, "L4 revenue multiplier is 1.5001")
+	var curve: Array[int] = []
+	for level in range(1, 6):
+		curve.append(int(upgrade.call("revenue_for_visit", 12, level)))
+	_check(curve == [12, 14, 16, 18, 20], "$12 L1-L5 revenue curve is 12/14/16/18/20 (got %s)" % [curve])
 
 
 func _test_upgrade_spends_atomically() -> void:
@@ -150,7 +153,7 @@ func _test_upgrade_spends_atomically() -> void:
 	var ok: bool = bool(upgrade.call("try_upgrade", 7, 200, economy))
 	_check(ok, "affordable L1→L2 upgrade succeeds")
 	_check(int(grid.call("get_equipment_level", 7)) == 2, "instance level becomes 2")
-	_check(int(economy.get("balance")) == 400, "exact $100 upgrade cost deducted")
+	_check(int(economy.get("balance")) == 450, "exact $50 upgrade cost deducted")
 	var before_level := int(grid.call("get_equipment_level", 7))
 	var before_balance := int(economy.get("balance"))
 	var failed: bool = bool(upgrade.call("try_upgrade", 999, 200, economy))
@@ -206,7 +209,7 @@ func _test_target_weight_applies_attraction_multiplier() -> void:
 
 
 func _test_economy_applies_upgraded_revenue() -> void:
-	print("\n[revenue] completed visit applies snapshotted equipment level")
+	print("\n[revenue] completed visit applies mean snapshotted multiplier")
 	var grid := _make_grid()
 	_commit_one(grid)
 	var upgrade := _make_upgrade(grid)
@@ -214,11 +217,29 @@ func _test_economy_applies_upgraded_revenue() -> void:
 	var orch: Node = rig["orchestrator"]
 	var economy: RefCounted = rig["economy"]
 	var member_stub := CompletedVisitMemberStub.new()
-	member_stub.completed_level = 3
+	# Mean of an L1 use (1.0) and L5 use (1.6668). A last-device rule would
+	# pay $20; the visit mean pays round(12 × 1.3334) = $16.
+	member_stub.completed_multiplier = (1.0 + 1.6668) / 2.0
 	orch.set("member_sim", member_stub)
 	economy.set("_upgrade_reader", upgrade)
 	economy.call("on_member_completed_visit", 42)
-	_check(int(economy.get("balance")) == 514, "L3 completed visit earns round($12×1.2) = $14")
+	_check(int(economy.get("balance")) == 516,
+		"mixed L1/L5 visit earns average-multiplier $16, not last-device $20")
+
+
+func _test_b2_catalog_prices() -> void:
+	print("\n[B2 prices] tuned catalog removes Yoga capital-price dominance")
+	var parsed: Variant = JSON.parse_string(
+		FileAccess.get_file_as_string("res://data/equipment_catalog.json"))
+	var prices: Dictionary = {}
+	for entry in (parsed as Dictionary)["equipment"]:
+		prices[str(entry["id"])] = int(entry["cost"])
+	_check(prices == {
+		"treadmill": 200,
+		"bike": 220,
+		"bench_press": 240,
+		"yoga_mat": 240,
+	}, "catalog prices are Treadmill/Bike/Bench/Yoga = 200/220/240/240 (got %s)" % [prices])
 
 
 func _free_nodes() -> void:

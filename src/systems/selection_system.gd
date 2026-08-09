@@ -281,6 +281,14 @@ func sell_selected() -> bool:
 	if _grid.get_occupant_id(anchor_cell) != instance_id:
 		push_error("SelectionSystem.sell_selected() — instance_id %d mapped but absent from the grid at %s (data desync; no sale)." % [instance_id, anchor_cell])
 		return false
+	# B2 anti-deadlock guard: selling the final placed machine is only legal
+	# when the post-refund balance can still buy the cheapest always-unlocked
+	# catalog item. This gate lives at the transaction entry so toolbar,
+	# keyboard, and direct calls cannot bypass it.
+	if _mapping.size() == 1:
+		var recovery_cost := _minimum_recovery_equipment_cost()
+		if recovery_cost > 0 and _economy.balance + refund < recovery_cost:
+			return false
 	# Remove the piece. grid_changed fires → reconciliation drops the mapping
 	# entry (AC14) and clears the selection + selection_changed(null)
 	# (AC5/AC13) — exactly the AC11 external-invalidation path.
@@ -303,6 +311,21 @@ func get_sell_refund(def: EquipmentDef) -> int:
 		push_error("SelectionSystem.get_sell_refund() — null def.")
 		return 0
 	return int(round(REFUND_RATE * def.cost))
+
+
+## Cheapest equipment the current catalog exposes without an unlock gate.
+## A free recovery item returns 0 and naturally disables the sale block.
+func _minimum_recovery_equipment_cost() -> int:
+	var minimum := -1
+	for equipment_id in _catalog.get_all_ids():
+		var def := _catalog.get_definition(equipment_id)
+		if def == null or def.unlock_requirement != "" or def.cost < 0:
+			continue
+		if def.cost == 0:
+			return 0
+		if minimum < 0 or def.cost < minimum:
+			minimum = def.cost
+	return maxi(minimum, 0)
 
 
 ## Current selected instance_id, or -1 when none. 0 is a legal selection —

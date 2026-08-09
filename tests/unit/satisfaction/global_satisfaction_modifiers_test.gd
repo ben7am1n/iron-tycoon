@@ -67,6 +67,7 @@ func run_all() -> Dictionary:
 	_test_ac14_no_silent_drift()
 	_test_ac16_defensive_clamp()
 	_test_damp_config_override()
+	_test_member_sim_feedback_wiring()
 
 	print("\n=== GLOBAL SATISFACTION MODIFIERS TEST: %d passed, %d failed ===\n" % [_pass, _fail])
 	return {"pass": _pass, "fail": _fail}
@@ -147,6 +148,24 @@ func _make_rig(zone_totals: Dictionary = {}, member_sim: FakeMemberSim = null, c
 	sat.call("init", orch, srg, member_sim, cong, zone_reader, config)
 
 	return {"sat": sat, "congestion": cong, "member_sim": member_sim}
+
+
+## Real MemberSim + Satisfaction wired through the real orchestrator boundary.
+## A zero exercise stddev makes visit-length expectations exact while all B2
+## volume defaults remain unoverridden and therefore directly testable.
+func _make_feedback_rig() -> Dictionary:
+	var orch := _make_orchestrator()
+	var srg: RefCounted = _SRG().new()
+	srg.call("init", 0xB2EC0)
+	var member: RefCounted = load("res://src/systems/member_sim.gd").new()
+	member.call("init", orch, srg, null, null, null,
+		Vector2i(-1, -1), Vector2i(-1, -1), {"exercises_stddev": 0.0})
+	var sat: RefCounted = _ST().new()
+	sat.call("init", orch, srg, member)
+	orch.set("member_sim", member)
+	orch.set("satisfaction", sat)
+	orch.set("_tick_systems", [])
+	return {"orch": orch, "member": member, "sat": sat}
 
 
 # === AC2: modifier bounds + anti-spiral floor ===
@@ -429,3 +448,39 @@ func _test_damp_config_override() -> void:
 	_check_float(v0, 1.0 + (0.5 - 1.0) * 0.3, "damp=0.3: G=0 -> 1 - 0.15 == 0.85")
 	_check_float(v1, 1.0 + (2.0 - 1.0) * 0.3, "damp=0.3: G=1 -> 1 + 0.3 == 1.3")
 	_check(float(sat.call("satisfaction_modifier", 0.5)) == 1.0, "damp override does NOT touch satisfaction_modifier (G=0.5 still exactly 1.0)")
+
+
+func _test_member_sim_feedback_wiring() -> void:
+	print("\n[B2 feedback] default volume + tick-boundary G -> arrival/visit modifiers")
+	var rig := _make_feedback_rig()
+	var orch: Node = rig["orch"]
+	var member: RefCounted = rig["member"]
+	var sat: RefCounted = rig["sat"]
+
+	_check_float(float(member.get("_base_arrival_rate_per_min")), 4.0,
+		"B2 default base arrival is 4/min")
+	_check(int(member.get("_max_concurrent_members")) == 17,
+		"B2 default concurrent-member cap is 17")
+	_check_float(float(member.get("_exercises_mean")), 3.0,
+		"B2 default exercises mean is 3")
+	_check(int(member.get("_exercises_min")) == 1 and int(member.get("_exercises_max")) == 5,
+		"B2 default exercises range is 1..5")
+
+	var probabilities: Array[float] = []
+	var exercise_counts: Array[int] = []
+	for g in [0.0, 0.5, 1.0]:
+		sat.set("global_satisfaction", g)
+		orch.call("_advance_tick")
+		probabilities.append(float(member.call("_arrival_probability")))
+		exercise_counts.append(int(member.call("_roll_exercises_per_visit")))
+
+	_check(probabilities[0] < probabilities[1] and probabilities[1] < probabilities[2],
+		"G=0/0.5/1 produces strictly increasing arrival probability (%s)" % [probabilities])
+	_check_float(probabilities[0], 4.0 / 60.0 * 0.1 * 0.5,
+		"G=0 writes arrival modifier 0.5")
+	_check_float(probabilities[1], 4.0 / 60.0 * 0.1,
+		"G=0.5 writes neutral arrival modifier 1.0")
+	_check_float(probabilities[2], 4.0 / 60.0 * 0.1 * 2.0,
+		"G=1 writes arrival modifier 2.0")
+	_check(exercise_counts == [2, 3, 5],
+		"visit modifier 0.75/1.0/1.5 reaches exercise roll (got %s)" % [exercise_counts])

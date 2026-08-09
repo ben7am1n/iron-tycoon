@@ -85,6 +85,7 @@ func run_all() -> Dictionary:
 	_test_ac14_retired_id_does_not_resolve()
 	_test_ac14_new_placement_future_id_no_collision()
 	_test_ac15_odd_cost_rounds_away_from_zero()
+	_test_b2_final_equipment_death_guard()
 	_test_sell_no_selection_silent_noop()
 	_test_sell_without_economy_loud_error()
 	_test_confirm_without_pending_window_noop()
@@ -214,7 +215,7 @@ func _make_placement(grid: RefCounted, catalog: RefCounted) -> RefCounted:
 ## — starting_capital 500, r_visit 12). The orchestrator is added to the
 ## tree for a synchronous _ready (established pattern; the orchestrator is
 ## the Economy init dependency and nothing else is needed here).
-func _make_economy(seed: int) -> RefCounted:
+func _make_economy(seed: int, starting_capital: int = 500) -> RefCounted:
 	var srg: RefCounted = (load(SRG_SCRIPT) as Script).new()
 	srg.call("init", seed)
 	var orch: Node = load("res://src/systems/simulation_orchestrator.gd").new()
@@ -222,7 +223,7 @@ func _make_economy(seed: int) -> RefCounted:
 	orch.call("_ready")
 	_nodes_to_free.append(orch)
 	var econ: RefCounted = (load(ECON_SCRIPT) as Script).new()
-	econ.call("init", orch, srg)
+	econ.call("init", orch, srg, {"starting_capital": starting_capital})
 	orch.set("economy", econ)
 	return econ
 
@@ -269,14 +270,14 @@ func _free_test_nodes() -> void:
 
 ## Standard world: 10×10 open grid, catalog with [costs], economy, real
 ## selection + bridge wired end-to-end. Returns the rig dict.
-func _make_world(costs: Array) -> Dictionary:
+func _make_world(costs: Array, starting_capital: int = 500) -> Dictionary:
 	var defs: Array = []
 	for c in costs:
 		defs.append(_make_def(int(c)))
 	var grid := _make_grid(10, 10)
 	var catalog := _make_catalog(defs)
 	var placement := _make_placement(grid, catalog)
-	var economy := _make_economy(0x5E11003)
+	var economy := _make_economy(0x5E11003, starting_capital)
 	var selection := _make_selection(grid, placement, catalog, economy)
 	var bridge = _make_bridge(selection, grid, placement)
 	return {
@@ -603,6 +604,34 @@ func _test_ac15_odd_cost_rounds_away_from_zero() -> void:
 	_check(bal_spy.count() == 1, "AC15 — credit fired once (got %d)" % bal_spy.count())
 	if bal_spy.count() == 1:
 		_check(int(bal_spy.emissions[0][1]) == 101, "AC15 — delta == +101 (int, got %d)" % int(bal_spy.emissions[0][1]))
+
+
+func _test_b2_final_equipment_death_guard() -> void:
+	print("\n[B2 death guard] final sale cannot leave balance below cheapest replacement")
+	var blocked := _make_world([240], 0)
+	var blocked_grid: RefCounted = blocked["grid"]
+	var blocked_placement: RefCounted = blocked["placement"]
+	var blocked_economy: RefCounted = blocked["economy"]
+	var blocked_selection: RefCounted = blocked["selection"]
+	var blocked_id := _place(blocked_placement, "piece_240", Vector2i(2, 2))
+	blocked_selection.call("on_cell_clicked", Vector2i(2, 2))
+	_check(not bool(blocked_selection.call("sell_selected")),
+		"last $240 equipment sale is blocked when $0 + $120 refund cannot replace it")
+	_check(int(blocked_grid.call("get_occupant_id", Vector2i(2, 2))) == blocked_id,
+		"blocked sale keeps final equipment on grid")
+	_check(int(blocked_economy.get("balance")) == 0,
+		"blocked sale does not credit or otherwise mutate balance")
+
+	var recoverable := _make_world([200, 240], 80)
+	var recoverable_placement: RefCounted = recoverable["placement"]
+	var recoverable_selection: RefCounted = recoverable["selection"]
+	var recoverable_economy: RefCounted = recoverable["economy"]
+	_place(recoverable_placement, "piece_240", Vector2i(3, 3))
+	recoverable_selection.call("on_cell_clicked", Vector2i(3, 3))
+	_check(bool(recoverable_selection.call("sell_selected")),
+		"final sale proceeds when balance + refund reaches cheapest $200 replacement")
+	_check(int(recoverable_economy.get("balance")) == 200,
+		"allowed final sale lands exact recovery balance $200")
 
 
 # === Guards ===

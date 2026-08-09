@@ -77,9 +77,9 @@ var _orchestrator: SimulationOrchestrator
 ## (ADR-0004 / save-load AC7 contract).
 var _seeded_rng: SeededRNG
 
-## Optional A2 formula reader. MemberSim snapshots the final completed
-## equipment level; this reader converts the base visit fee to upgraded integer
-## revenue. Null keeps the original flat-fee behavior exactly.
+## Optional A2 formula reader. MemberSim snapshots and averages the revenue
+## multipliers of every completed exercise in a visit; this reader converts
+## that average to integer revenue. Null keeps flat-fee behavior exactly.
 var _upgrade_reader: Variant = null
 
 ## Per-tick progression counter — the stub-era observable, preserved as a
@@ -165,10 +165,20 @@ func on_member_completed_visit(member_id: int) -> void:
 		return
 	var revenue := _r_visit
 	if _upgrade_reader != null \
+		and _orchestrator != null \
+		and _orchestrator.member_sim != null \
+		and _upgrade_reader.has_method("revenue_for_visit_multiplier") \
+		and _orchestrator.member_sim.has_method("get_completed_visit_revenue_multiplier"):
+		var average_multiplier := float(_orchestrator.member_sim.call(
+			"get_completed_visit_revenue_multiplier", member_id))
+		revenue = int(_upgrade_reader.call(
+			"revenue_for_visit_multiplier", _r_visit, average_multiplier))
+	elif _upgrade_reader != null \
 		and _upgrade_reader.has_method("revenue_for_visit") \
 		and _orchestrator != null \
 		and _orchestrator.member_sim != null \
 		and _orchestrator.member_sim.has_method("get_completed_visit_equipment_level"):
+		# Compatibility for old test doubles and pre-B2 integrations.
 		var level := int(_orchestrator.member_sim.call("get_completed_visit_equipment_level", member_id))
 		revenue = int(_upgrade_reader.call("revenue_for_visit", _r_visit, level))
 	balance += revenue

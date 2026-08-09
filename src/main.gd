@@ -260,17 +260,17 @@ func _assemble_systems() -> void:
 ## 此处仅兜底）。数据驱动，非硬编码。
 func _member_config() -> Dictionary:
 	return {
-		"base_arrival_rate_per_min": 60.0,
-		"max_concurrent_members": 20,
+		"base_arrival_rate_per_min": 4.0,
+		"max_concurrent_members": 17,
 		"use_duration_mean_ticks": 40,
 		"use_duration_stddev_ticks": 8,
 		"use_duration_min_ticks": 20,
 		"use_duration_max_ticks": 80,
 		"leaving_timeout_ticks": 300,
-		"exercises_mean": 1.0,
-		"exercises_stddev": 0.0,
+		"exercises_mean": 3.0,
+		"exercises_stddev": 1.0,
 		"exercises_min": 1,
-		"exercises_max": 1,
+		"exercises_max": 5,
 		"patience_min_ticks": 30,
 		"patience_max_ticks": 80,
 		"k_congestion": 5.0,
@@ -505,16 +505,11 @@ func _assemble_ui() -> void:
 	sel_bridge.set_screen_to_world(_screen_to_world)
 
 
-# === 初始布局：预置设备（clumped，让 congestion 开场即有表现） ===
+# === 初始布局：空房开局，让玩家亲手完成首次购买与放置 ===
 
 func _initial_layout() -> void:
 	var placement = _orch.placement_system
 	placement.placement_committed.connect(_on_placed)
-	_drag_drop(placement, "treadmill", Vector2i(2, 2))
-	_drag_drop(placement, "bike", Vector2i(2, 5))
-	_drag_drop(placement, "treadmill", Vector2i(6, 3))
-	_drag_drop(placement, "bench_press", Vector2i(1, 7))
-	_drag_drop(placement, "yoga_mat", Vector2i(9, 2))
 	# 世界绘制已迁至 WorldCanvas；grid_changed 信号驱动其重绘（见 _assemble_ui）。
 
 

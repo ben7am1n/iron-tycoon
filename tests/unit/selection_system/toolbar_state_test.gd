@@ -313,12 +313,12 @@ func _test_upgrade_button_cost_and_purchase() -> void:
 	var w := _make_world([200])
 	var id := _place(w["placement"], "piece_200", Vector2i(3, 3))
 	w["selection"].call("on_cell_clicked", Vector2i(3, 3))
-	_check(str(w["toolbar"].call("get_upgrade_label")) == "Upgrade L2 $100", "A2 — label shows L2 and $100 cost")
+	_check(str(w["toolbar"].call("get_upgrade_label")) == "Upgrade L2 $50", "A2 — label shows L2 and $50 cost")
 	_check(not bool(w["toolbar"].call("is_upgrade_disabled")), "A2 — affordable upgrade is enabled")
 	w["toolbar"].call("_on_upgrade_pressed")
 	_check(int(w["grid"].call("get_equipment_level", id)) == 2, "A2 — selected instance upgraded to L2")
-	_check(int(w["economy"].get("balance")) == 400, "A2 — upgrade deducted $100")
-	_check(str(w["toolbar"].call("get_upgrade_label")) == "Upgrade L3 $200", "A2 — label refreshes to next cost")
+	_check(int(w["economy"].get("balance")) == 450, "A2 — upgrade deducted $50")
+	_check(str(w["toolbar"].call("get_upgrade_label")) == "Upgrade L3 $75", "A2 — label refreshes to next cost")
 
 
 func _test_buttons_near_piece_anchor() -> void:

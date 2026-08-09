@@ -242,7 +242,7 @@ const STATE_MEMBER_INT_KEYS: Array[String] = [
 	"exercises_done", "exercises_per_visit", "target_equipment_instance_id",
 	"cached_path_grid_version", "repath_failures", "patience_ticks_remaining",
 	"leaving_timeout_ticks", "use_ticks_remaining",
-	"last_completed_equipment_level",
+	"last_completed_equipment_level", "visit_revenue_multiplier_count",
 ]
 
 ## Why a member left the gym (drives S5 emission — quota-met departures only).
@@ -257,6 +257,7 @@ const REASON_PATH_BLOCKED := "path_blocked"
 const CONFIG_MAX_CONCURRENT_MEMBERS := "max_concurrent_members"
 const CONFIG_BASE_ARRIVAL_RATE_PER_MIN := "base_arrival_rate_per_min"
 const CONFIG_SATISFACTION_MODIFIER := "satisfaction_modifier"
+const CONFIG_VISIT_LENGTH_MODIFIER := "visit_length_modifier"
 const CONFIG_USE_DURATION_MEAN_TICKS := "use_duration_mean_ticks"
 const CONFIG_USE_DURATION_STDDEV_TICKS := "use_duration_stddev_ticks"
 const CONFIG_USE_DURATION_MIN_TICKS := "use_duration_min_ticks"
@@ -380,9 +381,10 @@ var _equipment_id_resolver: Callable = Callable()
 var _upgrade_reader: Variant = null
 
 # === Tuning values (GDD Tuning Knobs anchors; see class header) ===
-var _max_concurrent_members: int = 15
+var _max_concurrent_members: int = 17
 var _base_arrival_rate_per_min: float = 4.0
-var _satisfaction_modifier: float = 1.0  # placeholder until Satisfaction #10 (OQ3)
+var _satisfaction_modifier: float = 1.0
+var _visit_length_modifier: float = 1.0
 var _use_duration_mean_ticks: int = 200
 var _use_duration_stddev_ticks: int = 35
 var _use_duration_min_ticks: int = 100
@@ -474,7 +476,10 @@ func init(
 func _apply_config(config: Dictionary) -> void:
 	_max_concurrent_members = int(config.get(CONFIG_MAX_CONCURRENT_MEMBERS, _max_concurrent_members))
 	_base_arrival_rate_per_min = float(config.get(CONFIG_BASE_ARRIVAL_RATE_PER_MIN, _base_arrival_rate_per_min))
-	_satisfaction_modifier = float(config.get(CONFIG_SATISFACTION_MODIFIER, _satisfaction_modifier))
+	_satisfaction_modifier = clampf(
+		float(config.get(CONFIG_SATISFACTION_MODIFIER, _satisfaction_modifier)), 0.5, 2.0)
+	_visit_length_modifier = clampf(
+		float(config.get(CONFIG_VISIT_LENGTH_MODIFIER, _visit_length_modifier)), 0.75, 1.5)
 	_use_duration_mean_ticks = int(config.get(CONFIG_USE_DURATION_MEAN_TICKS, _use_duration_mean_ticks))
 	_use_duration_stddev_ticks = int(config.get(CONFIG_USE_DURATION_STDDEV_TICKS, _use_duration_stddev_ticks))
 	_use_duration_min_ticks = int(config.get(CONFIG_USE_DURATION_MIN_TICKS, _use_duration_min_ticks))
@@ -505,6 +510,16 @@ func _apply_config(config: Dictionary) -> void:
 
 func system_name() -> String:
 	return "MemberSim"
+
+
+## Applies Satisfaction's two feedback legs at a tick boundary. The
+## orchestrator calls this before MemberSim's tick, so both the arrival roll
+## and any visit spawned on that tick observe one coherent G snapshot.
+func set_satisfaction_feedback(arrival_modifier: float, visit_length_modifier: float) -> void:
+	if not _assert_initialized():
+		return
+	_satisfaction_modifier = clampf(arrival_modifier, 0.5, 2.0)
+	_visit_length_modifier = clampf(visit_length_modifier, 0.75, 1.5)
 
 
 ## True when every hard upstream dependency has been supplied, i.e. the
@@ -881,6 +896,16 @@ func _upgrade_level(instance_id: int) -> int:
 	return maxi(1, int(_upgrade_reader.call("get_level", instance_id)))
 
 
+## Revenue effect for one completed use, snapshotted alongside its level so
+## later upgrades cannot retroactively change a visit already in progress.
+func _upgrade_revenue_multiplier(level: int) -> float:
+	if _upgrade_reader == null \
+		or not _upgrade_reader.has_method("revenue_multiplier_for_level"):
+		return 1.0
+	return maxf(0.0, float(_upgrade_reader.call(
+		"revenue_multiplier_for_level", maxi(level, 1))))
+
+
 ## Reads Congestion(t-1) for [instance_id] through the injected reader (the
 ## `prev` buffer contract — AC11). Absent reader -> 0.0 (neutral). Clamped to
 ## [0,1] defensively (the real Congestion system guarantees this range).
@@ -1236,7 +1261,13 @@ func _on_using(member: Dictionary) -> void:
 	if int(member["target_equipment_instance_id"]) >= 0:
 		var completed_instance_id := int(member["target_equipment_instance_id"])
 		_record_recently_used(member, completed_instance_id)
-		member["last_completed_equipment_level"] = _upgrade_level(completed_instance_id)
+		var completed_level := _upgrade_level(completed_instance_id)
+		member["last_completed_equipment_level"] = completed_level
+		member["visit_revenue_multiplier_sum"] = \
+			float(member.get("visit_revenue_multiplier_sum", 0.0)) \
+			+ _upgrade_revenue_multiplier(completed_level)
+		member["visit_revenue_multiplier_count"] = \
+			int(member.get("visit_revenue_multiplier_count", 0)) + 1
 	member["exercises_done"] = int(member["exercises_done"]) + 1
 	member["target_equipment_instance_id"] = -1
 	member["cached_path"] = []
@@ -1368,6 +1399,8 @@ func _spawn_member() -> void:
 		"patience_ticks_remaining": 0,  # Story 003: rolled on entering QUEUEING
 		"recently_used_ids": [],
 		"last_completed_equipment_level": 1,
+		"visit_revenue_multiplier_sum": 0.0,
+		"visit_revenue_multiplier_count": 0,
 	}
 	members.append(member)
 
@@ -1384,6 +1417,23 @@ func get_completed_visit_equipment_level(member_id: int) -> int:
 	return 1
 
 
+## Returns the mean revenue multiplier across every successfully completed
+## exercise in this visit. Economy reads it synchronously from S5 while the
+## member is still in the roster. Legacy saves without the accumulator fall
+## back to their last-equipment snapshot for backward compatibility.
+func get_completed_visit_revenue_multiplier(member_id: int) -> float:
+	if not _assert_initialized():
+		return 1.0
+	for member in members:
+		if member is Dictionary and int(member.get("member_id", -1)) == member_id:
+			var count := int(member.get("visit_revenue_multiplier_count", 0))
+			if count > 0:
+				return float(member.get("visit_revenue_multiplier_sum", float(count))) / float(count)
+			return _upgrade_revenue_multiplier(
+				maxi(1, int(member.get("last_completed_equipment_level", 1))))
+	return 1.0
+
+
 ## Number of active (non-removed) members. GONE members are removed at the
 ## end of the tick they leave, so roster size IS the active count.
 func _active_count() -> int:
@@ -1391,10 +1441,11 @@ func _active_count() -> int:
 
 
 ## TR-MS-010: exercises_per_visit = round(clamp(randfn(mean * visit_length_
-## modifier, stddev), min, max)). visit_length_modifier is the satisfaction
-## hook (OQ3, placeholder 1.0 for now). Drawn once on entry.
+## modifier, stddev), min, max)). Drawn once on entry from the same tick-
+## boundary Satisfaction snapshot used by the arrival roll.
 func _roll_exercises_per_visit() -> int:
-	var raw: float = _rng().randfn(_exercises_mean, _exercises_stddev)
+	var raw: float = _rng().randfn(
+		_exercises_mean * _visit_length_modifier, _exercises_stddev)
 	return clampi(roundi(raw), _exercises_min, _exercises_max)
 
 
@@ -1824,6 +1875,9 @@ func _validate_state_member(member: Dictionary, i: int, member_id: int, known_in
 	for key in STATE_MEMBER_INT_KEYS:
 		if member.has(key) and not _is_numeric(member[key]):
 			result.errors.append("MemberSim: member %d '%s' must be numeric" % [i, key])
+	if member.has("visit_revenue_multiplier_sum") \
+		and not _is_numeric(member["visit_revenue_multiplier_sum"]):
+		result.errors.append("MemberSim: member %d 'visit_revenue_multiplier_sum' must be numeric" % i)
 	if member.has("preference_profile") and not (member["preference_profile"] is Dictionary):
 		result.errors.append("MemberSim: member %d preference_profile must be a Dictionary" % i)
 	if member.has("give_up_blacklist"):
@@ -1927,6 +1981,9 @@ func _normalize_member_record(member: Dictionary) -> Dictionary:
 	for key in STATE_MEMBER_INT_KEYS:
 		if member.has(key) and _is_numeric(member[key]):
 			norm[key] = int(member[key])
+	if member.has("visit_revenue_multiplier_sum") \
+		and _is_numeric(member["visit_revenue_multiplier_sum"]):
+		norm["visit_revenue_multiplier_sum"] = float(member["visit_revenue_multiplier_sum"])
 	if member.has("preference_profile") and member["preference_profile"] is Dictionary:
 		norm["preference_profile"] = (member["preference_profile"] as Dictionary).duplicate(true)
 	if member.has("give_up_blacklist") and member["give_up_blacklist"] is Dictionary:

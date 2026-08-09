@@ -164,10 +164,29 @@ func serialize() -> Dictionary:
 func _advance_tick() -> void:
 	if not _guard_initialized():
 		return
+	_sync_satisfaction_feedback()
 	for system in _tick_systems:
 		system.on_tick(_tick_count)  # direct call — contract: on_tick(tick_count: int) -> void
 	_tick_count += 1
 	tick_completed.emit(_tick_count)
+
+
+## Closes the Satisfaction -> MemberSim feedback edge at the safe tick
+## boundary. Satisfaction's current G is the completed result of the previous
+## tick; both modifiers are derived from that same snapshot before MemberSim
+## performs this tick's arrival roll or visit-length roll.
+func _sync_satisfaction_feedback() -> void:
+	if member_sim == null or satisfaction == null:
+		return
+	if not member_sim.has_method("set_satisfaction_feedback") \
+		or not satisfaction.has_method("satisfaction_modifier") \
+		or not satisfaction.has_method("visit_length_modifier"):
+		return
+	var g := float(satisfaction.get("global_satisfaction"))
+	member_sim.call(
+		"set_satisfaction_feedback",
+		float(satisfaction.call("satisfaction_modifier", g)),
+		float(satisfaction.call("visit_length_modifier", g)))
 
 
 ## Render-frame driver. Forwards accumulated wall time to TimeSystem's
