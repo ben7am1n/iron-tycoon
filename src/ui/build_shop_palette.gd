@@ -112,9 +112,18 @@ const RETURN_CUE_MODULATE := Color(1.0, 0.99, 0.93)
 
 ## Phase D v2 现代 UI 皮肤（art-bible-25d-style §1/§2）—— 建造商店条带 =
 ## 深色半透明面板 + Butter 亮色描边（_draw() 绘制，不新增子节点）。
+## V3.1 返工 UI：条带改为 PixelPanel 手绘金属像素纹理（不规则边缘 + 拉丝
+## cluster + 铆钉 + 非等宽 Butter 断续描边）—— 去 CSS 卡片式矩形。
 const UiTheme := preload("res://src/ui/ui_theme.gd")
-## 条带面板 stylebox（_draw() 使用；UiTheme 单一来源）。
-var _strip_style: StyleBoxFlat = null
+const PixelPanel := preload("res://src/ui/pixel_panel.gd")
+## 条带像素纹理（_draw() 使用；PixelPanel 生成，懒缓存）。
+var _strip_texture_tex: ImageTexture = null
+
+## 条带像素纹理参数：设计条带 1272×80 @1.0（rect (4,4,1272,80)），
+## texel 4px → 318×20。确定性 seed。
+const STRIP_TEXTURE_SEED := 0x5EED_51DE
+const STRIP_TEXTURE_W := 318
+const STRIP_TEXTURE_H := 20
 
 ## Injected read-only catalog (composition-root owned).
 var _catalog: EquipmentCatalog
@@ -293,6 +302,10 @@ func _poll_drag_resolution() -> void:
 		# and show the return cue so the resolution is visible.
 		_availability.notify_silent_cancel()
 		_start_return_cue(_drag_equipment_id)
+	# V3.1 返工 UI：拖拽结束，清除拖起 tile 的「选中」角标。
+	var resolved_tile: PaletteTileScript = _tiles.get(_drag_equipment_id)
+	if resolved_tile != null:
+		resolved_tile.set_drag_active(false)
 	_drag_in_flight = false
 	_drag_equipment_id = ""
 	# AC7: re-grey against the CURRENT balance. Idempotent — after a commit
@@ -438,6 +451,10 @@ func on_tile_mouse_down(equipment_id: String) -> bool:
 	_placement.begin_drag(equipment_id)
 	_drag_in_flight = true
 	_drag_equipment_id = equipment_id  # STORY 004: palette-local purchase tracking
+	# V3.1 返工 UI：拖起中的 tile 显示「选中」像素角标（V3 §14 Selected 语言）。
+	var tile: PaletteTileScript = _tiles.get(equipment_id)
+	if tile != null:
+		tile.set_drag_active(true)
 	modulate = DRAG_BLOCKED_MODULATE
 	return true
 
@@ -466,11 +483,9 @@ func _hit_test_tile(pos: Vector2) -> String:
 func _build_ui() -> void:
 	# 节点命名（与 HUD 的 `name = "Hud"` 同约定）：证据捕获/调试按名定位。
 	name = "BuildShopPalette"
-	# V3 §15（P0-2 UI 降权）：radius 10→2、border 2→3 —— 底部购买栏改像素
-	# 面板语言（2-3px 明确描边、非圆角），避免 HTML/CSS dashboard 观感
-	# （门禁 FAIL）。条带高度同步收紧：PALETTE_STRIP_H 96→88，顶部 HUD
-	# 48→44 —— 减小常驻 UI 占幅，露出更多世界内容。
-	_strip_style = UiTheme.make_panel_style(UiTheme.panel_border(), 2, 3)
+	# V3.1 返工 UI：条带面板 = PixelPanel 手绘金属像素纹理（懒生成，见
+	# _strip_texture(); _draw() 里 draw_texture_rect NEAREST 绘制）。替代
+	# 旧 StyleBoxFlat 完美矩形 + 等宽边框（门禁 FAIL：CSS 卡片式矩形）。
 	for id in _catalog.get_all_ids():
 		var def := _catalog.get_definition(id)
 		var tile: PaletteTileScript = PaletteTileScript.new()
@@ -494,12 +509,30 @@ func _build_ui() -> void:
 	queue_redraw()
 
 
-## Phase D v2: 建造商店条带背景 —— 深色半透明 + Butter 亮色描边。在条带
-## root 的 _draw() 里绘制（不新增子节点，HBox 布局与 hit-test 不受影响）。
+## V3.1 返工 UI：建造商店条带背景 —— PixelPanel 手绘金属像素条带（不规则
+## 边缘 + 拉丝 cluster + 铆钉 + 非等宽 Butter 断续描边）。在条带 root 的
+## _draw() 里绘制（不新增子节点，HBox 布局与 hit-test 不受影响）。纹理
+## 底色 alpha 烘焙为 PANEL_ALPHA（半透明让场景透出，同旧 StyleBoxFlat）。
 func _draw() -> void:
-	if _strip_style == null:
+	var tex := _strip_texture()
+	if tex == null:
 		return
-	draw_style_box(_strip_style, Rect2(4, 4, size.x - 8, size.y - 8))
+	draw_texture_rect(tex, Rect2(4, 4, size.x - 8, size.y - 8), false)
+
+
+## 懒生成条带像素纹理（确定性 seed）。底色 = UiTheme.panel_bg() 深灰、
+## accent = Butter、材质 = METAL（拉丝 + 铆钉，器械区面板语言）。
+func _strip_texture() -> ImageTexture:
+	if _strip_texture_tex == null:
+		_strip_texture_tex = PixelPanel.strip_texture(
+			STRIP_TEXTURE_SEED,
+			Vector2i(STRIP_TEXTURE_W, STRIP_TEXTURE_H),
+			UiTheme.panel_bg(),
+			UiTheme.panel_border(),
+			PixelPanel.Style.METAL,
+			UiTheme.PANEL_ALPHA
+		)
+	return _strip_texture_tex
 
 
 ## Re-derives every tile's state through the injected query layer, then

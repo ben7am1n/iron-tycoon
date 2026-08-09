@@ -26,7 +26,11 @@ class_name PaletteTile extends PanelContainer
 ## Phase D v2 现代 UI 皮肤（art-bible-25d-style §1/§2）—— tile 面板 =
 ## 深色半透明 + Butter 亮色描边 + 粗字体 + Peach 描边填充式图标（商店→Peach）。
 ## 状态视觉（modulate 灰化 / 锁图标）保持 art-bible §7 色盲安全契约不变。
+## V3.1 返工 UI：面板改为 PixelPanel 手绘金属像素平板（不规则边缘 + 拉丝
+## cluster + 铆钉 + 非等宽 Butter 断续描边），hover/选中态用断续黄色像素
+## 轮廓 + 角标 —— 去 CSS 卡片式矩形（V3 §15 / 附录 V3.1 负面约束）。
 const UiTheme := preload("res://src/ui/ui_theme.gd")
+const PixelPanel := preload("res://src/ui/pixel_panel.gd")
 
 ## The three availability states. LOCKED deliberately has its OWN enum value:
 ## a locked item must render differently from a merely-unaffordable one
@@ -70,11 +74,24 @@ const HOVER_OUTLINE_COLOR := Color("f5d97b")  # Butter
 ## V3 §10 hover 上移量（px）：缩略图 icon 向上移，视觉「轻轻抬起」。
 const HOVER_LIFT := 3
 
+## V3.1 返工 UI — 手绘像素平板纹理参数：设计 tile 88×88 @1.0，texel 4px
+## → 22×22。确定性 seed（由 equipment_id hash 派生，每 tile 纹理不同）。
+const PLATE_TEXEL := 4
+const PLATE_W := 22
+const PLATE_H := 22
+
 var _icon_label: Label
 var _icon_texture: TextureRect
 var _name_label: Label
 var _price_label: Label
 var _lock_label: Label
+
+## V3.1 返工 UI：懒生成的像素平板纹理（null = 未生成；_draw 首次调用生成）。
+var _plate_texture_tex: ImageTexture = null
+## V3.1 返工 UI：本 tile 是否处于「拖拽选中」态（建造条拖起中的设备；
+## 由 BuildShopPalette 在 begin_drag / 拖拽结束时设置）。选中视觉 = 黄色
+## 像素角标（V3 §14 Selected 语言，非模态）。
+var _drag_active: bool = false
 
 
 ## One-time construction: builds the icon/name/price/lock child hierarchy and
@@ -115,6 +132,20 @@ func get_hover_outline_color() -> Color:
 ## V3 §10 thumbnail 查询（测试：非占位符像素精灵缩略图）。
 func get_thumbnail() -> Texture2D:
 	return _thumbnail
+
+
+## V3.1 返工 UI：设置「拖拽选中」态（BuildShopPalette 在拖起/结束时调用）。
+## 选中视觉 = 黄色像素角标（_draw 绘制）。纯 presentation，不碰 availability。
+func set_drag_active(active: bool) -> void:
+	if _drag_active == active:
+		return
+	_drag_active = active
+	queue_redraw()
+
+
+## V3.1 返工 UI：拖拽选中态查询（headless 断言 state，不碰像素）。
+func is_drag_active() -> bool:
+	return _drag_active
 
 
 ## Applies the hover visual to the child controls (layout-safe: only the
@@ -173,11 +204,20 @@ func _build_children(p_display_name: String, p_cost: int) -> void:
 	# V3 §15（P0-2 UI 降权）：tile 最小尺寸 96×96 → 88×88 —— 底部购买栏
 	# 条带高度同步收紧（main.gd PALETTE_STRIP_H 96→88）。
 	custom_minimum_size = Vector2(88, 88)
-	# Phase D v2: 深色半透明 tile 面板 + Butter 亮色描边 + 轻微圆角。
-	# 状态灰化走 modulate（_apply_state_visual，色盲安全契约不变），
-	# stylebox 颜色不参与状态判定。
-	# V3 §15（P0-2 UI 降权）：radius 8→2、border 2→3 —— 像素面板语言。
-	var sb := UiTheme.make_panel_style(UiTheme.panel_border(), 2, 3)
+	# V3.1 返工 UI：面板 stylebox 透明（保留 content margins 供子节点布局），
+	# 像素平板由 _draw() 绘制（PixelPanel 手绘金属平板：不规则边缘 + 拉丝
+	# cluster + 铆钉 + 非等宽 Butter 断续描边）。状态灰化走 modulate
+	# （_apply_state_visual，色盲安全契约不变），绘制内容随 modulate 一起灰。
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.0, 0.0, 0.0, 0.0)
+	sb.border_width_left = 0
+	sb.border_width_top = 0
+	sb.border_width_right = 0
+	sb.border_width_bottom = 0
+	sb.content_margin_left = 4.0
+	sb.content_margin_right = 4.0
+	sb.content_margin_top = 4.0
+	sb.content_margin_bottom = 4.0
 	add_theme_stylebox_override("panel", sb)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	focus_mode = Control.FOCUS_ALL
@@ -256,16 +296,71 @@ func _apply_state_visual() -> void:
 		modulate = base
 
 
-## V3 §10 hover 黄色像素描边：仅 hover 时画 2px Butter outline 于 tile 面板
-## 内侧（Control 不动，HBox 布局安全）。draw 在 children 之下 —— outline 位于
-## tile 边缘，不遮挡缩略图/文字。
+## V3.1 返工 UI：tile 绘制 = 像素金属平板（PixelPanel，懒生成）+
+## hover 断续黄色像素轮廓（V3 §14 Hover 语言，手绘非连续矩形）+ 拖拽选中
+## 黄色像素角标（V3 §14 Selected 语言）。draw 在 children 之下 —— 平板与
+## 轮廓位于 tile 边缘，不遮挡缩略图/文字。
 func _draw() -> void:
-	if not _hovered:
-		return
-	var r := Rect2(Vector2(2, 2), size - Vector2(4, 4))
+	var tex := _plate_texture()
+	if tex != null:
+		draw_texture_rect(tex, Rect2(Vector2.ZERO, size), false)
+	if _hovered:
+		_draw_pixel_outline()
+	if _drag_active:
+		_draw_drag_markers()
+
+
+## 懒生成像素金属平板纹理（seed 由 equipment_id 派生 —— 每 tile 纹理不同；
+## 同一 equipment_id 每次运行纹理一致）。底色 = panel_bg() 再压暗（比条带
+## 深，tile 与条带层次分离），accent = Butter。
+func _plate_texture() -> ImageTexture:
+	if _plate_texture_tex == null:
+		var base := UiTheme.panel_bg().darkened(0.1)
+		_plate_texture_tex = PixelPanel.plate_texture(
+			abs(hash(equipment_id)) if equipment_id != "" else 0x71E,
+			Vector2i(PLATE_W, PLATE_H),
+			base,
+			COLOR_BUTTER,
+			PixelPanel.Style.METAL,
+			0.85
+		)
+	return _plate_texture_tex
+
+
+## 断续黄色像素轮廓：沿四边画 2px 粗、6px 长的段（间隔 4px 缺口）+ 两角
+## 3×3 色块 —— 手绘「黄色像素轮廓」，绝非等宽闭合矩形边框（V3 §14 /
+## V3.1 负面约束）。
+func _draw_pixel_outline() -> void:
 	var c := HOVER_OUTLINE_COLOR
 	c.a = 0.9
-	draw_rect(r, c, false, 2.0)
+	var w := size.x
+	var h := size.y
+	var seg := 6
+	var gap := 4
+	for x0 in range(2, w - 2, seg + gap):
+		var x1 := mini(x0 + seg, w - 3)
+		draw_rect(Rect2(x0, 1, x1 - x0, 2), c, true)
+	for x0 in range(2, w - 2, seg + gap):
+		var x1 := mini(x0 + seg, w - 3)
+		draw_rect(Rect2(x0, h - 3, x1 - x0, 2), c, true)
+	for y0 in range(2, h - 2, seg + gap):
+		var y1 := mini(y0 + seg, h - 3)
+		draw_rect(Rect2(1, y0, 2, y1 - y0), c, true)
+	for y0 in range(2, h - 2, seg + gap):
+		var y1 := mini(y0 + seg, h - 3)
+		draw_rect(Rect2(w - 3, y0, 2, y1 - y0), c, true)
+	# 两角 3×3 色块（不对称手绘收尾）
+	draw_rect(Rect2(1, 1, 3, 3), c, true)
+	draw_rect(Rect2(w - 4, h - 4, 3, 3), c, true)
+
+
+## 拖拽选中角标：三枚 2×2 Butter 像素钉（缺右下角 —— 不对称，手绘细节）。
+func _draw_drag_markers() -> void:
+	var c := HOVER_OUTLINE_COLOR
+	c.a = 1.0
+	draw_rect(Rect2(2, 2, 2, 2), c, true)
+	draw_rect(Rect2(size.x - 4, 2, 2, 2), c, true)
+	draw_rect(Rect2(2, size.y - 4, 2, 2), c, true)
 
 
 ## First rune of the display name — a stable per-item placeholder glyph.

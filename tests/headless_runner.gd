@@ -103,6 +103,7 @@ const TEST_FILES := [
 	"tests/unit/world_canvas/world_canvas_structure_layer_test.gd",
 	"tests/unit/world_canvas/world_canvas_hover_test.gd",
 	"tests/unit/build_shop_ui/palette_thumbnail_test.gd",
+	"tests/unit/build_shop_ui/tile_drag_active_test.gd",
 	"tests/unit/build_shop_ui/purchase_gate_test.gd",
 	"tests/unit/build_shop_ui/drag_feedback_test.gd",
 	"tests/integration/build_shop_ui/mode_arbitration_test.gd",
