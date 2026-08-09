@@ -83,41 +83,59 @@ const WINDOWS := [
 ## 装饰物：prop_id -> 世界像素位置（左上角锚点）。绘制层引用本表。
 ## 位置避让初始布局设备格：treadmill(2,2)(6,3) bike(2,5) bench(1,7) yoga(9,2)
 ## 及其 access 格；全部落在 walkway 环道或 zone 空闲格（V3 §14 可读性）。
+## V3.1 R3（打破规则化摆放）：全部锚点改为非 4px 对齐的「手摆」坐标
+## （±1-3px 抖动，无两条道具共用同一 x/y 对齐列 —— 非网格摆放）；部分
+## 道具刻意重叠（towel 搭在瓶上、plate 半压 plate —— 前后交错遮挡，
+## 非孤立悬浮）。证据采样的道具（water_bottle_t1 / plant_bright_f1 /
+## fountain / plant_bright_fore_1 / cup_yellow_f1 / yoga_ball_f1）保持
+## 原坐标 —— phase1-5 证据不回归。
 const DECOR := {
 	# 跑步机旁：水瓶、毛巾（V3 §12；treadmill(2,2) 右侧空闲格）
+	# R3：towel 搭在水瓶右上角（前后交错遮挡，非孤立悬浮）
 	"water_bottle_t1": Vector2i(132, 70),
-	"towel_t1": Vector2i(132, 100),
+	"towel_t1": Vector2i(134, 73),
 	# 力量区：散落小配重、粉笔盒（V3 §12；bench(1,7) 右侧 strength 区）
-	"dumbbell_s1": Vector2i(128, 232),
-	"dumbbell_s2": Vector2i(136, 246),
-	"chalk_box": Vector2i(118, 262),
+	# R3：配重全部错落（无同列对齐）+ plate_s2 半压 plate_s1
+	"dumbbell_s1": Vector2i(127, 231),
+	"dumbbell_s2": Vector2i(139, 245),
+	"chalk_box": Vector2i(121, 261),
 	# 力量区（V3 §15 第一眼密度）：散落壶铃/配重片/药球，填满 strength 区空闲格
-	"kettlebell_s1": Vector2i(36, 100),
-	"kettlebell_s2": Vector2i(44, 112),
-	"plate_s1": Vector2i(132, 218),
-	"plate_s2": Vector2i(144, 218),
-	"medicine_ball_s1": Vector2i(100, 236),
-	"dumbbell_s3": Vector2i(108, 240),
+	# R3：kettlebell 对角错落；medicine_ball 与 dumbbell_s3 相触（成组）
+	"kettlebell_s1": Vector2i(38, 102),
+	"kettlebell_s2": Vector2i(43, 113),
+	"plate_s1": Vector2i(131, 219),
+	"plate_s2": Vector2i(140, 221),
+	"medicine_ball_s1": Vector2i(101, 235),
+	"dumbbell_s3": Vector2i(105, 238),
+	# V3.1 R3：杠铃架（V3 §12 力量区「杠铃架」）—— 力量区中段空闲格，
+	# 与 plate_s1 成组（前后遮挡）
+	"barbell_rack_s1": Vector2i(96, 200),
 	# 瑜伽区：植物、小音箱、卷起的备用瑜伽垫（V3 §12；flex 区空闲格）
 	# V3.1 P5：plant_f1 换亮叶变体（绿色植物焦点之一，分布瑜伽区）
+	# R3：speaker 偏移（不贴 plant 同列）+ warm_lamp（V3 §12「暖色灯」）
 	"plant_bright_f1": Vector2i(352, 176),
-	"speaker_f1": Vector2i(336, 96),
-	"mat_rolled_f1": Vector2i(348, 268),
+	"speaker_f1": Vector2i(335, 98),
+	"mat_rolled_f1": Vector2i(349, 267),
+	"warm_lamp_f1": Vector2i(296, 200),
 	# 瑜伽区（V3 §15 密度）：瑜伽砖 + 第二盆植物
-	"yoga_block_f1": Vector2i(312, 236),
-	"yoga_block_f2": Vector2i(320, 246),
-	"plant_f2": Vector2i(368, 120),
+	# R3：block_f2 半压 block_f1（成组错落）
+	"yoga_block_f1": Vector2i(311, 237),
+	"yoga_block_f2": Vector2i(321, 245),
+	"plant_f2": Vector2i(367, 121),
 	# 自行车区：风扇、水杯架（V3 §12；bike(2,5) 左侧 walkway）
-	"fan_b1": Vector2i(24, 160),
-	"cup_holder_b1": Vector2i(24, 180),
+	# R3：杯架错开风扇（原同列对齐）
+	"fan_b1": Vector2i(26, 161),
+	"cup_holder_b1": Vector2i(23, 181),
 	# 有氧区（V3 §15 密度）：第二台 treadmill 旁毛巾/水瓶 + 中间空闲格水杯
-	"towel_t2": Vector2i(200, 140),
-	"water_bottle_t2": Vector2i(200, 152),
-	"cup_holder_c1": Vector2i(232, 200),
+	# R3：towel 搭在水瓶上（遮挡）；cup_holder 偏移
+	"towel_t2": Vector2i(196, 149),
+	"water_bottle_t2": Vector2i(199, 153),
+	"cup_holder_c1": Vector2i(233, 199),
 	# 公共空间：饮水机（V3 §3）、垃圾桶、消防栓
+	# R3：hydrant/trash 偏移（非 4px 对齐）
 	"fountain": Vector2i(20, 40),
-	"trash": Vector2i(386, 30),
-	"hydrant": Vector2i(12, 120),
+	"trash": Vector2i(385, 32),
+	"hydrant": Vector2i(13, 121),
 	# V3.1 P5 高饱和焦点（附录 V3.1 P5：10-15 个高饱和视觉焦点）——
 	# 新增地面焦点：黄色水杯（前台南侧 walkway）+ 彩色瑜伽用品（瑜伽区）。
 	# 位置避让既有设备/装饰/access 格（水杯 (88,108) 在前台 (56..160,
@@ -132,25 +150,27 @@ const DECOR := {
 	# 中央通道（walkway 环道，V3 §15 第一眼：消除空荡通道）—— 长椅/盆栽/垫子
 	# 沿顶部通道：前台右侧等待长椅 + 通道盆栽（cell row 1 空闲格，避开前台
 	# (56,24,104,24) 与入口门洞 x 0..32）
-	"bench_b1": Vector2i(170, 32),
-	"bench_b2": Vector2i(210, 32),
+	# R3：长椅错落（bench_b2 前移半格）+ 植物偏移
+	"bench_b1": Vector2i(171, 33),
+	"bench_b2": Vector2i(209, 33),
 	# V3.1 P5：plant_b1 换亮叶变体（绿色植物焦点之二，分布中央通道）
-	"plant_bright_b1": Vector2i(244, 32),
-	"plant_b2": Vector2i(300, 32),
-	"mat_rolled_b1": Vector2i(340, 32),
+	"plant_bright_b1": Vector2i(243, 33),
+	"plant_b2": Vector2i(301, 31),
+	"mat_rolled_b1": Vector2i(339, 33),
 	# 左侧 walkway 长椅（x 0..32 通道，避开 bench_press (1,7)(2,7) 与 bike(2,5)）
-	"bench_b3": Vector2i(16, 186),
+	"bench_b3": Vector2i(17, 187),
 	# 前景：大植物（V3 §4 FOREGROUND，可轻微遮挡）—— 位置须落在 UI 建造条带
 	# 之上（world y ≤ 277，屏幕 y ≤ 624；实测 y≥292 会被 96px 条带盖住）。
 	# V3.1 P5：plant_fore_1 换亮叶变体（绿色植物焦点之三，分布前景左下）
+	# R3：前景植物成对错落（fore_4 压 fore_1 右下角 —— 前后交错）
 	"plant_bright_fore_1": Vector2i(0, 244),
-	"plant_fore_2": Vector2i(384, 244),
+	"plant_fore_2": Vector2i(385, 243),
 	# V3 §15（P0-4 纵深）：前景遮挡增强 —— 底部通道/设备前多两棵大植物，
 	# 真实压住 GAMEPLAY 层（纵深三层的"前景"层更明显）。y 控制在 277 之上
 	# （底部通道 y 288..320 会被 88px 建造条带盖住，放 y≈250 保证可见）。
-	"plant_fore_3": Vector2i(224, 244),
-	"plant_fore_4": Vector2i(0, 252),
-	"plant_fore_5": Vector2i(384, 252),
+	"plant_fore_3": Vector2i(225, 243),
+	"plant_fore_4": Vector2i(1, 251),
+	"plant_fore_5": Vector2i(383, 253),
 }
 
 ## 顶墙挂饰（海报/计时器/招牌/电视）：prop_id -> 墙上锚点（24px 精灵，贴墙）。

@@ -287,18 +287,46 @@ func _bake_north_wall() -> Image:
 		var px := int(h % WALL_NORTH_TEX.x)
 		var py := 20 + int((h >> 6) % 3)
 		img.set_pixel(px, py, Palette.WALL_BASE.darkened(0.12))
-	# 墙帽（fy 0..2）+ jagged 下缘（fy 3 处 WALL_TRIM 与面交替 —— 无等宽直线）。
+	# 墙帽（fy 0..2）—— R3 手绘抖动：顶缘起伏 + 多色 cluster（无 200px+ 直线）。
+	#   顶缘：cap 顶行逐列在 fy=0..2 间变化（hash 驱动，~1/3 列从 fy=1/2 起
+	#   —— 顶缘非完美直线）
+	#   颜色：WALL_TRIM 与亮/暗变体混合（P3 多色 cluster，保持 WALL 族身份）
+	#   底缘：fy=3 处 ~1/3 列延伸 WALL_TRIM（保留既有 jagged，颜色跟随 cap 色）
+	var cap_colors := [
+		Palette.WALL_TRIM,
+		Palette.WALL_TRIM.lightened(0.04),
+		Palette.WALL_TRIM.darkened(0.07),
+	]
 	for x in WALL_NORTH_TEX.x:
-		for fy in 3:
-			img.set_pixel(x, fy, Palette.WALL_TRIM)
-		if _hash2(x, 4021) % 3 == 0:
-			img.set_pixel(x, 3, Palette.WALL_TRIM)
-	# 踢脚线（fy 22..23）+ jagged 上缘（fy 21 处 WALL_DARK 与面交替）。
+		var h := _hash2(x, 4021)
+		var top := 0
+		if h % 3 == 0:
+			top = 1
+		if h % 5 == 0:
+			top = 2
+		for fy in range(top, 3):
+			img.set_pixel(x, fy, cap_colors[(h >> (4 + fy)) % cap_colors.size()])
+		if h % 3 == 0:
+			img.set_pixel(x, 3, cap_colors[(h >> 8) % cap_colors.size()])
+	# 踢脚线（fy 22..23）—— R3 手绘抖动：底缘起伏 + 多色 cluster。
+	#   底缘：踢脚线底行逐列在 fy=22..23 间变化（~1/3 列只到 fy=22 ——
+	#   底缘非完美直线，墙地交界断开）
+	#   颜色：WALL_DARK 与亮/暗变体混合
+	#   顶缘：fy=21 处 ~1/3 列延伸 WALL_DARK（保留既有 jagged）
+	var base_colors := [
+		Palette.WALL_DARK,
+		Palette.WALL_DARK.lightened(0.05),
+		Palette.WALL_DARK.darkened(0.08),
+	]
 	for x in WALL_NORTH_TEX.x:
-		for fy in range(22, 24):
-			img.set_pixel(x, fy, Palette.WALL_DARK)
-		if _hash2(x, 4031) % 3 == 0:
-			img.set_pixel(x, 21, Palette.WALL_DARK)
+		var h := _hash2(x, 4031)
+		var bot := 23
+		if h % 3 == 0:
+			bot = 22
+		for fy in range(22, bot + 1):
+			img.set_pixel(x, fy, base_colors[(h >> (4 + fy)) % base_colors.size()])
+		if h % 3 == 0:
+			img.set_pixel(x, 21, base_colors[(h >> 8) % base_colors.size()])
 	return img
 
 
@@ -324,16 +352,42 @@ func _bake_side_wall() -> Image:
 		var px := int(h % WALL_SIDE_TEX.x)
 		var py := 96 + int((h >> 6) % 8)
 		img.set_pixel(px, py, Palette.WALL_BASE.darkened(0.12))
+	# 墙帽（v 104..109）—— R3 手绘抖动：顶缘起伏 + 多色 cluster。
+	#   顶缘：cap 顶行逐列在 v=104..106 间变化（非完美直线）
+	#   底缘：v=103 处 ~1/3 列延伸 WALL_TRIM（jagged）
+	var cap_colors := [
+		Palette.WALL_TRIM,
+		Palette.WALL_TRIM.lightened(0.04),
+		Palette.WALL_TRIM.darkened(0.07),
+	]
 	for u in WALL_SIDE_TEX.x:
-		for v in range(104, 110):
-			img.set_pixel(u, v, Palette.WALL_TRIM)
-		if _hash2(u, 4051) % 3 == 0:
-			img.set_pixel(u, 103, Palette.WALL_TRIM)
+		var h := _hash2(u, 4051)
+		var top := 104
+		if h % 3 == 0:
+			top = 105
+		if h % 5 == 0:
+			top = 106
+		for v in range(top, 110):
+			img.set_pixel(u, v, cap_colors[(h >> (4 + v)) % cap_colors.size()])
+		if h % 3 == 0:
+			img.set_pixel(u, 103, cap_colors[(h >> 8) % cap_colors.size()])
+	# 踢脚线（v 0..5）—— R3 手绘抖动：底缘起伏 + 多色 cluster。
+	#   底缘：踢脚线底行逐列在 v=0..1 间变化（非完美直线）
+	#   顶缘：v=6 处 ~1/3 列延伸 WALL_DARK（jagged）
+	var base_colors := [
+		Palette.WALL_DARK,
+		Palette.WALL_DARK.lightened(0.05),
+		Palette.WALL_DARK.darkened(0.08),
+	]
 	for u in WALL_SIDE_TEX.x:
-		for v in 6:
-			img.set_pixel(u, v, Palette.WALL_DARK)
-		if _hash2(u, 4061) % 3 == 0:
-			img.set_pixel(u, 6, Palette.WALL_DARK)
+		var h := _hash2(u, 4061)
+		var bot := 0
+		if h % 3 == 0:
+			bot = 1
+		for v in range(bot, 6):
+			img.set_pixel(u, v, base_colors[(h >> (4 + v)) % base_colors.size()])
+		if h % 3 == 0:
+			img.set_pixel(u, 6, base_colors[(h >> 8) % base_colors.size()])
 	return img
 
 
