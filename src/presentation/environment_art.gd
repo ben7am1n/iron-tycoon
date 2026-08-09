@@ -23,6 +23,7 @@ const ART_SCALE := 4
 ##   B Butter | P 植物绿 | p 植物深绿 | L 植物亮绿 | T 陶盆 | Y ACCENT_YELLOW
 ##   C ACCENT_CYAN | R ACCENT_ORANGE | K 暖黑(深棕/炭灰)
 ##   F FOCAL_RED（红色广告牌） | X FOCAL_PINK | V FOCAL_PURPLE | Q FOCAL_TEAL
+##   D FOCAL_YELLOW | N FOCAL_GREEN_LIGHT
 ##   （V3.1 P5 高饱和焦点色：红广告牌/彩色瑜伽用品 —— 只用于小型装饰）
 const ART_MAPS := {
 	# 水瓶：小瓶身 + 瓶盖（accents 低饱和，不刺眼）
@@ -108,10 +109,10 @@ const ART_MAPS := {
 	# （DECOR 表 plant_bright_*），让「绿色植物」成为少数跳出的焦点，
 	# 其余植物保持低饱和（V3.1 P5 精选 10-15 焦点，不整环境提饱和）。
 	"plant_bright": [
-		"..pNpN..",
-		".pPNNPp.",
-		".PNpNPP.",
-		"..PPpP..",
+		"..NNNN..",
+		".pNNNNp.",
+		".NNpNNN.",
+		"..PNNP..",
 		"..TTTT..",
 		".TTTTTT.",
 		"........",
@@ -196,12 +197,12 @@ const ART_MAPS := {
 	],
 	# 招牌（前台方向）：暖底 + 字（视觉上像 gym 招牌）
 	"sign_entrance": [
-		"OOOYYOOO",
-		"OYYYYYYO",
-		"OYYYYYYO",
-		"OYYYYYYO",
-		"OYYYYYYO",
-		"OOOYYOOO",
+		"OOODDOOO",
+		"ODDDYDDO",
+		"ODDDDDDO",
+		"ODDDDDDO",
+		"ODDDDDDO",
+		"OOODDOOO",
 		"........",
 		"........",
 	],
@@ -238,18 +239,18 @@ const ART_MAPS := {
 		".OM..MO.",
 		"........",
 	],
-	# V3.1 P5 红色广告牌（挂墙）：高饱和红底 + 暖白字条 + 深红下沿。
-	# 红广告牌是 P5 例子「红色广告牌」—— 小型高饱和焦点（V3 §7 高饱和
-	# 仅小型装饰）。无等宽边框（P3：左上/右下缺角）。
+	# V3.1 R4/R5 精修：红广告改为墙面主视觉横幅。大轮廓仍是手绘像素
+	# 缺角/断边，暖白字形和黄色价签切开红底；它代替原来的 1-2px 点缀，
+	# 成为局部视线统领块，但不扩散到地板/墙面基底。
 	"ad_red": [
-		"FF.FFFF.",
-		"FFFFFFFF",
-		"FWWWFFWF",
-		"FFFFFFFF",
-		"FWFFFWWF",
-		"FFFFFFFF",
-		"FFFFFFF.",
-		".FFFFFF.",
+		"..FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF.",
+		".FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF",
+		"FFFFFWWWFFWFFWWWFFFFFWWWFWWWFFFFDDDDFFFF",
+		"FFFFFWFFFFWFFWFFFFFFWFFFFFWFFFFDDDDFFFFF",
+		"FFFFFWWWFFWFFWWWFFFFFWWWFWWWFFFFDDDDFFFF",
+		"FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF",
+		".FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF.",
+		"...FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF...",
 	],
 	# V3.1 P5 黄色水杯（地面，等待区/前台）：高饱和黄杯身 + 吸管。
 	# P5 例子「黄色水杯」—— 高饱和焦点。杯身用 FOCAL_YELLOW（D 字符，
@@ -257,12 +258,12 @@ const ART_MAPS := {
 	# 环境分离：只杯身跳出来）。
 	"cup_yellow": [
 		"........",
-		"..QQ....",
-		".DDDD...",
-		".DDDD...",
-		".DDDD...",
-		".DD.D...",
 		"..DD....",
+		".DDDDD..",
+		".DDDDD..",
+		".DDDDD..",
+		".DDDDD..",
+		"..DDD...",
 		"........",
 	],
 	# V3.1 P5 彩色瑜伽球（瑜伽区）：粉/紫高饱和小球 + 高光。
@@ -270,22 +271,22 @@ const ART_MAPS := {
 	# V3.1 P3 负面约束；P5 焦点是小装饰，不铺满 8×8）。
 	"yoga_ball": [
 		"........",
-		"...VV...",
-		"..VXVV..",
 		"..VVVV..",
+		".VVXXVV.",
+		".VXXXXV.",
+		".VVXXVV.",
 		"..VVVV..",
-		"...VV...",
 		"........",
 		"........",
 	],
 	# V3.1 P5 彩色瑜伽带（瑜伽区）：青/紫条纹卷带。小面积高饱和焦点。
 	"yoga_strap": [
 		"........",
-		"........",
+		"..QQVV..",
 		".QQVVQQ.",
 		".QQVVQQ.",
 		".VVQQVV.",
-		"........",
+		"....QQ..",
 		"........",
 		"........",
 	],

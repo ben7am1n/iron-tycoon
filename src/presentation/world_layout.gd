@@ -111,9 +111,10 @@ const DECOR := {
 	# 与 plate_s1 成组（前后遮挡）
 	"barbell_rack_s1": Vector2i(96, 200),
 	# 瑜伽区：植物、小音箱、卷起的备用瑜伽垫（V3 §12；flex 区空闲格）
-	# V3.1 P5：plant_f1 换亮叶变体（绿色植物焦点之一，分布瑜伽区）
+	# V3.1 R4/R5 精修：瑜伽区保留中饱和叶色，避免与粉紫用品挤成焦点碎簇；
+	# 两盆亮叶焦点仍分布在中央通道和前景左下。
 	# R3：speaker 偏移（不贴 plant 同列）+ warm_lamp（V3 §12「暖色灯」）
-	"plant_bright_f1": Vector2i(352, 176),
+	"plant_f1": Vector2i(352, 176),
 	"speaker_f1": Vector2i(335, 98),
 	"mat_rolled_f1": Vector2i(349, 267),
 	"warm_lamp_f1": Vector2i(296, 200),
@@ -175,13 +176,13 @@ const DECOR := {
 
 ## 顶墙挂饰（海报/计时器/招牌/电视）：prop_id -> 墙上锚点（24px 精灵，贴墙）。
 const WALL_DECOR := {
-	"poster_run": Vector2i(168, 1),
-	"poster_yoga": Vector2i(220, 1),
+	"poster_run": Vector2i(140, 1),
+	"poster_yoga": Vector2i(260, 1),
 	"timer_bike": Vector2i(52, 1),
 	"sign_entrance": Vector2i(36, 1),
 	"tv": Vector2i(320, 1),
-	# V3.1 P5 高饱和焦点：红色广告牌挂墙（两海报之间，x≈192 空闲墙段）。
-	"ad_red": Vector2i(192, 1),
+	# V3.1 R4/R5 精修：红色促销横幅占据顶墙中部，成为墙面主焦点。
+	"ad_red": Vector2i(164, 1),
 }
 
 # === V3 §6 / V3.1 R4 灯光锚点 ===
@@ -228,8 +229,8 @@ const LIGHT_POOLS := [
 ]
 ## 灯光池半径。
 const LIGHT_POOL_RADIUS := 46.0
-## 墙边暗角带（四周，宽度 20px）。
-const EDGE_SHADOW_WIDTH := 20
+## 墙边冷暗带（四周，宽度 26px）：比 R4 更明确地切开中心暖光。
+const EDGE_SHADOW_WIDTH := 26
 
 ## 判断世界坐标是否在墙边暗角带内（距离墙 ≤ EDGE_SHADOW_WIDTH）。
 static func in_edge_shadow(pos: Vector2) -> bool:

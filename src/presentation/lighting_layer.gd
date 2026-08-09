@@ -18,7 +18,7 @@
 # 层级：本节点是 WorldRoot 的子节点（z_index=1，画在 WorldCanvas 之上，
 # 但仍在同一低分辨率 pixel space，经 WorldRoot scale 0.75 进 SubViewport）。
 # 叠加在成员/设备之上：暖亮像素让受光面偏暖，冷暗像素让墙边偏冷 —— 氛围
-# 效果，不遮挡信息（alpha ≤ 0.22）。
+# 效果，不遮挡信息（热核局部 alpha ≤ 0.46，边缘/暗面 ≤ 0.28）。
 #
 # 确定性：所有发光/闪烁都由 tick（注入的 tick_provider）驱动 —— headless
 # 测试可断言（同 tick 同输出），渲染也稳定。闪烁用 sin(tick) 相位，缓慢
@@ -139,13 +139,13 @@ func _paint_edge_shadow(img: Image) -> void:
 			# 散射：近墙覆盖率高，内缘抖动 —— 不规则边界，非完美矩形
 			if _hash2(x, y) % 100 >= 82 + int(16.0 * t):
 				continue
-			var a := 0.08 + 0.10 * t * (0.4 + 0.6 * float(_hash2(x + 31, y + 17) % 100) / 100.0)
+			var a := 0.12 + 0.13 * t * (0.5 + 0.5 * float(_hash2(x + 31, y + 17) % 100) / 100.0)
 			# 角落再压一层（空间纵深，V3 §4/§6）
 			if x < edge and y < edge or x >= w - edge and y < edge \
 					or x < edge and y >= h - edge or x >= w - edge and y >= h - edge:
-				a += 0.04
+				a += 0.045
 			var c := Palette.LIGHT_EDGE_SHADOW
-			img.set_pixel(x, y, Color(c.r, c.g, c.b, minf(a, 0.22)))
+			img.set_pixel(x, y, Color(c.r, c.g, c.b, minf(a, 0.28)))
 
 
 ## 顶部主光落点：不是径向圆，而是横宽纵窄的 faceted 像素材质区。
@@ -177,24 +177,24 @@ func _paint_faceted_pool(img: Image, center: Vector2, half_size: Vector2,
 			if metric + edge_jitter > 1.0:
 				continue
 			var density := clampf(1.0 - metric, 0.0, 1.0)
-			var keep := 0.24 + 0.48 * density
-			if metric < 0.27:
-				keep = 0.88
-			elif metric < 0.55:
-				keep = 0.68
+			var keep := 0.38 + 0.46 * density
+			if metric < 0.25:
+				keep = 0.98
+			elif metric < 0.56:
+				keep = 0.84
 			if float(_hash2(x + seed * 3, y + seed) % 1000) / 1000.0 > keep:
 				continue
 			# 分三档而非平滑透明渐变；每档再用少量 hash 做像素材质变化。
-			var a := 0.065
-			if metric < 0.27:
-				a = 0.30
-			elif metric < 0.55:
-				a = 0.15
-			else:
-				a = 0.085
+			var a := 0.11
+			var warm := Palette.LIGHT_POOL_EDGE
+			if metric < 0.25:
+				a = 0.46
+				warm = Palette.LIGHT_TOP_WARM
+			elif metric < 0.56:
+				a = 0.27
+				warm = Palette.LIGHT_POOL_MID
 			a *= strength * (0.86 + 0.14 * float(_hash2(x + 7, y + 11) % 100) / 100.0)
-			var warm := Palette.LIGHT_TOP_WARM
-			img.set_pixel(x, y, Color(warm.r, warm.g, warm.b, minf(a, 0.38)))
+			img.set_pixel(x, y, Color(warm.r, warm.g, warm.b, minf(a, 0.46)))
 
 
 ## 高处灯泡→地面落点的投影空间光图。与地板 light map 分离：这里不再套
@@ -392,13 +392,17 @@ func _draw_equipment_light_hits() -> void:
 			continue
 		var p: Vector2 = hit.get("point", Vector2.ZERO)
 		var strength := float(hit.get("strength", 0.0))
-		var warm := Palette.LAMP_SHADE_LIT
-		warm.a = 0.18 + 0.18 * strength
+		var warm := Palette.LIGHT_POOL_MID
+		warm.a = 0.24 + 0.18 * strength
 		var snapped := Vector2(roundf(p.x), roundf(p.y))
-		draw_rect(Rect2(snapped - Vector2(2, 1), Vector2(5, 2)), warm, true)
+		# 9x3 暖中层 + 5x2 奶油热核：两档明度让设备顶面真正“接住”灯光。
+		draw_rect(Rect2(snapped - Vector2(4, 1), Vector2(9, 3)), warm, true)
 		var glint := Palette.LAMP_BULB
-		glint.a = 0.16 + 0.12 * strength
-		draw_rect(Rect2(snapped + Vector2(-1, -2), Vector2(2, 1)), glint, true)
+		glint.a = 0.28 + 0.16 * strength
+		draw_rect(Rect2(snapped + Vector2(-2, -2), Vector2(5, 2)), glint, true)
+		var cool_cut := Palette.LIGHT_EDGE_SHADOW
+		cool_cut.a = 0.12
+		draw_rect(Rect2(snapped + Vector2(3, 2), Vector2(3, 1)), cool_cut, true)
 
 
 ## 设备暖反射计算（测试可直接调用）：返回投影后点与距离衰减。
