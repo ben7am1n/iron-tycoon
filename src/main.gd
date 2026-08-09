@@ -91,23 +91,27 @@ const WORLD_VIEWPORT_W := 426
 const WORLD_VIEWPORT_H := 240
 ## 世界像素空间（416×320，CELL_SIZE=32）→ viewport 空间的统一缩放。
 ## 32px cell → 24 viewport px（整数倍）；投影后画布（V3.1 P1 oblique
-## bounds ≈ -10.8..528 × -68.2..249.6）经 scale 0.75 恰好适配 426×240。
-## 单一来源：src/presentation/world_scale.gd（含描边宽度补偿常量）。
+## bounds ≈ -10.8..528 × -86.9..198.4，R1 修正投影后总高 285.3）经 scale
+## 0.75 恰好适配 426×240。单一来源：src/presentation/world_scale.gd
+## （含描边宽度补偿常量）。
 const WORLD_SCALE := WorldScale.WORLD_SCALE
 ## 世界原点在 viewport 中的偏移（V3.1 P1：由 oblique 投影 bounds 计算 ——
 ## 墙顶在 y<0，bounds.position 为负，偏移必须把这些部分拉回屏幕内）：
 ##   offset = (viewport - bounds.size*0.75)/2 - bounds.position*0.75
-##         = ((426,240) - (538.8,317.8)*0.75)/2 + (8.1, 51.15)
-##         = (10.95, 0.825) + (8.1, 51.15) = (19.05, 51.975)
+##         = ((426,240) - (538.8,285.3)*0.75)/2 + (8.1, 65.175)
+##         = (10.95, 13.0125) + (8.1, 65.175) = (19.05, 78.1875)
+## V3.1 R1：HEIGHT_SCALE 0.62→0.79 使墙顶更高（min_y -68.2→-86.9），
+## FLOOR_SCALE 0.78→0.62 使地板更压缩（max_y 249.6→198.4）—— 画布总高
+## 317.8→285.3，偏移 y 由 51.975 重算为 78.1875。
 ## 与 Proj2D.viewport_offset() 同源（main._ready 冒烟断言复核）。
-const WORLD_VIEWPORT_OFFSET := Vector2(19.05, 51.975)
+const WORLD_VIEWPORT_OFFSET := Vector2(19.05, 78.1875)
 ## viewport → 屏幕（1280×720）的非等比放大系数。
 const SCREEN_PER_VIEWPORT_X := 1280.0 / 426.0
 const SCREEN_PER_VIEWPORT_Y := 720.0 / 240.0
 ## 世界→屏幕的 UI 锚定参数（供 SelectionCue/SelectionToolbar 注入；V3.1 P1
 ## 起 world→screen 走 oblique 投影，以下为「无投影注入」的兜底换算）：
-##   世界 (0,0) 的屏幕坐标 ≈ (57.2, 155.9)；一个 world cell 的屏幕尺寸
-##   ≈ (72.1, 56.2)（x 不压缩，y 经 FLOOR_SCALE 0.78 压缩）。
+##   世界 (0,0) 的屏幕坐标 ≈ (57.2, 234.6)；一个 world cell 的屏幕尺寸
+##   ≈ (72.1, 44.6)（x 不压缩，y 经 FLOOR_SCALE 0.62 压缩）。
 const GRID_SCREEN_ORIGIN := Vector2(
 	WORLD_VIEWPORT_OFFSET.x * SCREEN_PER_VIEWPORT_X,
 	WORLD_VIEWPORT_OFFSET.y * SCREEN_PER_VIEWPORT_Y)

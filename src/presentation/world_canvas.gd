@@ -624,6 +624,12 @@ func _draw_grid_lines() -> void:
 ## 挤出（顶面 = 原 art 提升到 z=height；正面 = 南边条带变暗；侧面 = 东边
 ## 条带变暗）。物体有体积（顶面+正面+侧面同时可见），不再是贴地图标
 ## （V3.1 P1 负面约束：禁止设备贴地图）。
+## V3.1 R1（物体/背景分离）：设备脚下加暖色亮池（HIGHLIGHT_WARM 低 alpha
+## 椭圆 —— 与会员脚底亮池同源，V3 §15 P0-3 同一视觉语言），把深色设备
+## （EQUIP_OUTLINE/BODY 深蓝灰）从深灰橡胶力量区地面（#4B4F57）「托起」：
+## 亮池 + 其上双层接触影（宽软外层 + 贴身内层）→ 设备 silhouette 与地面
+## 明度分离、落地位强化。纯 presentation 层效果（不改纹理像素、不破坏
+## unit 像素断言）；亮池先画、接触影后画（影在亮池上可读）。
 ##   - hover（§14）：黄色像素轮廓（EQUIP_HOVER_OUTLINE）+ 精灵轻微上移
 ##     （HOVER_LIFT_PX，contact shadow 留原地 —— 设备「抬起」感）
 ##   - access cell 用 Butter 高亮（art-bible §7 拖放反馈；§4 Butter 锚点 ~10%）
@@ -641,6 +647,10 @@ func _draw_equipment() -> void:
 		var zone: String = _zone_of(eq_id)
 		var height: float = _equip_art.height_for(eq_id)
 		var tex: ImageTexture = _equip_art.texture_for(eq_id, zone, inst.rotation)
+		# 1a. V3.1 R1：设备脚下暖色亮池（与会员脚底亮池同源 —— 深色设备
+		# 从深色地面「托起」，silhouette 分离）。亮池先画（低 alpha 暖白，
+		# V3 §6 顶部暖白光），接触影随后压在其上。
+		_draw_equipment_ground_pool(fp_rect)
 		# 1. 贴地 contact shadow（V3 §6：双层冷蓝灰 —— 宽软外层 + 贴身内层）
 		_draw_with_floor_transform(func() -> void:
 			var soft_rect := fp_rect.grow(5)
@@ -684,6 +694,31 @@ func _draw_equipment() -> void:
 				for c in inst.access_cells:
 					_draw_access_cell(c)
 			)
+
+
+## V3.1 R1：设备脚下暖色亮池 —— 半透明暖白椭圆垫在设备 footprint 下方，
+## 把深色设备轮廓从深灰橡胶地面「托起」（与会员脚底亮池 _draw_member_ground_glow
+## 同源：V3 §15 P0-3 人物视觉权重 → 设备同样分离）。亮池经 floor transform
+## 贴地（随地板压缩成椭圆），画在接触影之前（影在亮池上可读）。
+## 4.7.1 注意：同 _draw_member_ground_glow —— draw_ellipse 签名是
+## (position, radius: float) 无 Vector2 尺寸，用 draw_colored_polygon 画
+## 16 段椭圆多边形（确定性，低 alpha）。
+func _draw_equipment_ground_pool(fp: Rect2i) -> void:
+	var glow := Palette.HIGHLIGHT_WARM
+	glow.a = 0.12
+	var cx := fp.position.x + fp.size.x / 2.0
+	var cy := fp.position.y + fp.size.y / 2.0
+	# 亮池略大于 footprint（宽 0.72 / 高 0.62 —— 非全 footprint，避免亮池
+	# 把设备周边地板全部提亮成平台；保留深色地面作为设备底边对比）。
+	var rx := fp.size.x * 0.72 + 4.0
+	var ry := fp.size.y * 0.62 + 4.0
+	_draw_with_floor_transform(func() -> void:
+		var pts := PackedVector2Array()
+		for i in 16:
+			var a := TAU * float(i) / 16.0
+			pts.append(Vector2(cx + cos(a) * rx, cy + sin(a) * ry))
+		draw_colored_polygon(pts, glow)
+	)
 
 
 ## 设备体积（V3.1 P1）：东侧面 + 正面 + 顶面。正面/侧面用 EquipmentArt

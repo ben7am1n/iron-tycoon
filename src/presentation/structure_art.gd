@@ -209,7 +209,7 @@ const WALL_NORTH_TEX := Vector2i(384, 24)
 ## 侧墙纹理尺寸（墙本地空间：u=沿墙世界 y × v=墙高 z，v=0 底/z=0）。
 const WALL_SIDE_TEX := Vector2i(288, 110)
 ## 天花板纹理尺寸（画布背景 —— 投影边界外扩 8px，见 world_canvas
-## _draw_canvas_background）。bounds() ≈ (-10.8,-68.2,538.8,317.8) +
+## _draw_canvas_background()）。bounds() ≈ (-10.8,-86.9,538.8,285.3) +
 ## 16px 外扩 → ceil 556×334。V3.1 P3：天花板也是大面积区域 —— 需多色
 ## cluster（非纯色填充，V3.1 负面约束「纯色大面积填充」）。
 const CEILING_TEX := Vector2i(556, 334)

@@ -32,11 +32,11 @@ LIGHTMAP = os.path.join(EVIDENCE_DIR, "v31-p4-lightmap.png")
 
 # === 投影常量（与 oblique_projection.gd / main.gd 同源复算） ===
 SHEAR = 0.35
-FLOOR_SCALE = 0.78
-HEIGHT_SCALE = 0.62
+FLOOR_SCALE = 0.62
+HEIGHT_SCALE = 0.79
 EXTRUDE_X = 0.20
 WORLD_SCALE = 0.75
-VIEWPORT_OFFSET = (19.05, 51.975)
+VIEWPORT_OFFSET = (19.05, 78.1875)
 SCREEN_PER_VIEWPORT = (1280.0 / 426.0, 720.0 / 240.0)
 
 # === palette.gd 设备高光/屏幕色 ===

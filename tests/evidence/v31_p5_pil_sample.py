@@ -33,11 +33,11 @@ PNG = os.path.join(EVIDENCE_DIR, "v31-p5-color.png")
 
 # === 投影常量（与 oblique_projection.gd / main.gd 同源复算） ===
 SHEAR = 0.35
-FLOOR_SCALE = 0.78
-HEIGHT_SCALE = 0.62
+FLOOR_SCALE = 0.62
+HEIGHT_SCALE = 0.79
 EXTRUDE_X = 0.20
 WORLD_SCALE = 0.75
-VIEWPORT_OFFSET = (19.05, 51.975)
+VIEWPORT_OFFSET = (19.05, 78.1875)
 SCREEN_PER_VIEWPORT = (1280.0 / 426.0, 720.0 / 240.0)
 
 # === palette.gd P5 焦点色（8bit） ===
@@ -66,11 +66,14 @@ TARGET_MAX = 15
 
 # 焦点锚点（世界坐标，与 v31_p5_capture.gd 一致）→ (x, y, z, 容差窗口半径, 色)
 # z：设备屏幕锚点带高度（顶面 z=30），地面装饰 z=0。
+# V3.1 R1（投影修正）：红广告牌 WALL_DECOR.ad_red=(192,1) 挂墙 —— 墙条 fy=1
+# → 墙面 z≈105。此前按 z=0 近似在 HEIGHT_SCALE 0.79 下窗口偏移出广告牌
+# （墙更高）—— 改为 z=105 采样（与 v31_p5_capture.gd AD_ANCHOR_Z 同源）。
 ANCHORS = [
-    ("red_ad_board", (192, 20), 0, 22, FOCAL_RED),
+    ("red_ad_board", (192, 24), 105, 22, FOCAL_RED),
     ("yellow_cup", (88, 108), 0, 20, FOCAL_YELLOW),
-    ("yoga_ball", (288, 96), 0, 22, FOCAL_PINK),
-    ("yoga_ball_purple", (288, 96), 0, 22, FOCAL_PURPLE),
+    ("yoga_ball", (320, 136), 0, 22, FOCAL_PINK),
+    ("yoga_ball_purple", (320, 136), 0, 22, FOCAL_PURPLE),
     ("treadmill_screen", (80, 92), 30, 14, EQUIP_ACCENT_CYAN),
     ("plant_green", (352, 176), 0, 26, PLANT_GREEN_LIGHT),
 ]

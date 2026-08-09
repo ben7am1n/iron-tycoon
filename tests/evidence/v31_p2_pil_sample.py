@@ -30,11 +30,11 @@ FACES_PATTERN = os.path.join(EVIDENCE_DIR, "v31-p2-faces-%s.png")
 
 # === 投影常量（与 oblique_projection.gd / main.gd 同源复算） ===
 SHEAR = 0.35
-FLOOR_SCALE = 0.78
-HEIGHT_SCALE = 0.62
+FLOOR_SCALE = 0.62
+HEIGHT_SCALE = 0.79
 EXTRUDE_X = 0.20
 WORLD_SCALE = 0.75
-VIEWPORT_OFFSET = (19.05, 51.975)
+VIEWPORT_OFFSET = (19.05, 78.1875)
 SCREEN_PER_VIEWPORT = (1280.0 / 426.0, 720.0 / 240.0)
 
 # === palette.gd 层色（单一来源复算；容差按渲染光照污染放宽） ===
@@ -46,7 +46,7 @@ EQUIP_SHADOW_TONE = (0x3A / 255, 0x43 / 255, 0x50 / 255)
 EQUIP_OUTLINE = (0x3B / 255, 0x45 / 255, 0x52 / 255)
 EQUIP_HIGHLIGHT = (0xEA / 255, 0xDF / 255, 0xB8 / 255)
 METAL_HIGHLIGHT = (0xB7 / 255, 0xD4 / 255, 0xEC / 255)
-EQUIP_ACCENT_CYAN = (0x5E / 255, 0xD4 / 255, 0xE8 / 255)
+EQUIP_ACCENT_CYAN = (0x2F / 255, 0xC4 / 255, 0xE8 / 255)  # 2FC4E8（P5 提高饱和后的 palette 单一来源）
 EMISSIVE_CYAN = (0x4F / 255, 0xD8 / 255, 0xE8 / 255)
 ZONE_COLORS = {
     "cardio": (0x8E / 255, 0xC5 / 255, 0xE8 / 255),     # SKY
