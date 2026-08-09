@@ -89,9 +89,9 @@ const STRUCTURES := [
 	{"id": "baseboard_east", "kind": "baseboard", "layer": LAYER_BACKGROUND, "size": "small", "rect": Rect2i(402, 24, 2, 264), "painted_by": "self"},
 	{"id": "pipe_vertical", "kind": "pipe", "layer": LAYER_BACKGROUND, "size": "small", "rect": Rect2i(410, 64, 4, 224), "painted_by": "self"},
 	{"id": "pipe_horizontal", "kind": "pipe", "layer": LAYER_BACKGROUND, "size": "small", "rect": Rect2i(0, 296, 400, 2), "painted_by": "self"},
-	{"id": "hanging_lamp_1", "kind": "lamp", "layer": LAYER_FOREGROUND, "size": "small", "rect": Rect2i(76, 12, 20, 20), "painted_by": "self"},
-	{"id": "hanging_lamp_2", "kind": "lamp", "layer": LAYER_FOREGROUND, "size": "small", "rect": Rect2i(192, 12, 20, 20), "painted_by": "self"},
-	{"id": "hanging_lamp_3", "kind": "lamp", "layer": LAYER_FOREGROUND, "size": "small", "rect": Rect2i(352, 12, 20, 20), "painted_by": "self"},
+	{"id": "hanging_lamp_1", "kind": "lamp", "layer": LAYER_FOREGROUND, "size": "small", "rect": Rect2i(72, 0, 28, 36), "painted_by": "self"},
+	{"id": "hanging_lamp_2", "kind": "lamp", "layer": LAYER_FOREGROUND, "size": "small", "rect": Rect2i(188, 0, 28, 36), "painted_by": "self"},
+	{"id": "hanging_lamp_3", "kind": "lamp", "layer": LAYER_FOREGROUND, "size": "small", "rect": Rect2i(348, 0, 28, 36), "painted_by": "self"},
 	{"id": "door_mat_entrance", "kind": "door_mat", "layer": LAYER_BACKGROUND, "size": "small", "rect": Rect2i(10, 16, 24, 8), "painted_by": "self"},
 	{"id": "door_mat_exit", "kind": "door_mat", "layer": LAYER_BACKGROUND, "size": "small", "rect": Rect2i(360, 300, 28, 8), "painted_by": "self"},
 	{"id": "wall_hooks_1", "kind": "hooks", "layer": LAYER_BACKGROUND, "size": "small", "rect": Rect2i(2, 140, 8, 2), "painted_by": "self"},
@@ -771,58 +771,51 @@ func _paint_plant(img: Image, r: Rect2i) -> void:
 	_fill_irregular(img, Rect2i(r.position.x + r.size.x / 2 - 2, leaf_top - 2, 4, 2), _col(Palette.PLANT_GREEN_LIGHT), 205)
 
 
-## 吊灯（V3.1 R4 光源可辨识）：发光灯罩 + 灯泡核心 + 暖光晕（FOREGROUND，悬于上方）。
-## R4 修复门禁「无可辨识暖色室内灯光源」：灯罩本体用暖橙金受光体（LAMP_SHADE_LIT
-## —— 不再暗色剪影）、底部近白暖灯泡核心（LAMP_BULB）、灯下暖光晕行 + 灯罩周围
-## 散射暖像素 —— 光来自灯具，可归属来源（V3 §6 顶部暖白灯；V3.1 P4 光影响材质
-## 颜色，非画透明白色圆）。
+## 吊灯（V3.1 R4 光源可辨识）：吊线 + 顶盖 + 发光灯罩 + 灯泡核心。
+## 整个轮廓都画在结构 rect 内，避免旧实现把 rect 上方吊线裁掉后只剩「黄块」。
+## 28×36 世界像素经低分辨率 nearest 管线仍保留明确的悬吊/罩体/开口语义。
 func _paint_lamp(img: Image, r: Rect2i) -> void:
-	# 电线（悬吊线，暗色）
-	_jagged_vline(img, r.position.x + r.size.x / 2 - 1, r.position.y - 10, r.position.y - 4, _col(Palette.CHARCOAL), 211)
-	# 灯罩受光体（暖橙金本体 + 暗色描边）：不规则梯形 —— 顶窄底宽，手绘感
-	var top_y := r.position.y + 2
-	var bottom_y := r.position.y + r.size.y - 6
-	var half_top := maxi(2, r.size.x / 4 - 1)
-	var half_bottom := maxi(3, r.size.x / 2 - 1)
+	var cx := r.position.x + r.size.x / 2
+	# 吊线与顶盖：2px 线 + 7px 顶盖，完整包含在裁剪纹理内。
+	_jagged_vline(img, cx, r.position.y + 1, r.position.y + 9,
+		_col(Palette.CHARCOAL), 211)
+	_fill_irregular(img, Rect2i(cx - 3, r.position.y + 9, 7, 3),
+		_col(Palette.LAMP_SHADE), 212)
+	# 灯罩受光体：顶窄底宽的手绘梯形，暗边包住暖橙金内胆。
+	var top_y := r.position.y + 12
+	var bottom_y := r.position.y + 27
+	var half_top := 4
+	var half_bottom := 11
 	for y in range(top_y, bottom_y):
 		var t := float(y - top_y) / float(maxi(1, bottom_y - top_y))
 		var half_w := int(lerpf(float(half_top), float(half_bottom), t))
-		var x0 := r.position.x + r.size.x / 2 - half_w
-		var x1 := r.position.x + r.size.x / 2 + half_w
+		var x0 := cx - half_w
+		var x1 := cx + half_w
 		for x in range(x0, x1 + 1):
-			# 手绘边缘抖动（P3）：底缘/顶缘不规则，非完美梯形
 			var jitter := (_hash2(x, y) % 3) - 1
 			if y == bottom_y - 1 and jitter < 0:
 				continue
 			if y == top_y and jitter > 0:
 				continue
-			# 受光体：中间亮（LAMP_SHADE_LIT），边缘暗（LAMP_SHADE）
-			var edge := mini(absf(x - (r.position.x + r.size.x / 2)), half_w)
+			var edge := mini(absf(x - cx), half_w)
 			var c := Palette.LAMP_SHADE_LIT
-			if edge <= 1 or y >= bottom_y - 2:
+			if edge >= half_w - 1 or y == top_y:
 				c = Palette.LAMP_SHADE
 			if x >= 0 and y >= 0 and x < img.get_width() and y < img.get_height():
 				img.set_pixel(x, y, _col(c))
-	# 灯罩底缘：暖色渐变收口（受光体到灯泡的过渡）
-	_fill_irregular(img, Rect2i(r.position.x + r.size.x / 2 - 2, bottom_y, 4, 1), _col(Palette.LAMP_SHADE_LIT), 213)
-	# 灯泡核心：近白暖 2×2（小范围亮色 —— V3.1 P4「发光屏幕小范围亮色」同理）
-	_fill_irregular(img, Rect2i(r.position.x + r.size.x / 2 - 1, bottom_y + 1, 2, 2), _col(Palette.LAMP_BULB), 214)
-	# 灯下暖光晕行（光源向下投射的辉光 —— 非圆形光斑，行状 + hash 散射）
+	# 灯罩开口 + 4×3 灯泡核心：白暖核心被深色开口托住，光源一眼可读。
+	_fill_irregular(img, Rect2i(cx - 10, bottom_y, 20, 2),
+		_col(Palette.LAMP_SHADE), 213)
+	_fill_irregular(img, Rect2i(cx - 5, bottom_y, 10, 2),
+		_col(Palette.LAMP_SHADE_LIT), 214)
+	_fill_irregular(img, Rect2i(cx - 2, bottom_y + 2, 4, 3),
+		_col(Palette.LAMP_BULB), 215)
+	# 向下出光的断续像素行；真正的方向光束由 LightingLayer 投影图连接落点。
 	var glow := Palette.LAMP_GLOW
-	for i in 3:
-		glow.a = Palette.LAMP_GLOW.a * (0.85 - i * 0.22)
-		var gy := bottom_y + 3 + i * 2
-		_fill_irregular(img, Rect2i(r.position.x + r.size.x / 2 - 3 + i, gy, 6 - i * 2, 1), glow, 215 + i)
-	# 灯罩周围散射暖像素（光源氛围 —— 少量 1px，非圆形 halo）
-	for i in 5:
-		var ox := (_hash2(r.position.x + i * 7, r.position.y + i * 3) % 7) - 3
-		var oy := (_hash2(i * 11, r.position.y + i * 5) % 5) - 2
-		var sx := r.position.x + r.size.x / 2 + ox
-		var sy := top_y + oy
-		if sx >= 0 and sy >= 0 and sx < img.get_width() and sy < img.get_height():
-			var h := Palette.LAMP_GLOW
-			h.a = 0.18 + 0.10 * float(_hash2(sx, sy) % 100) / 100.0
-			img.set_pixel(sx, sy, h)
+	for i in 2:
+		glow.a = 0.30 - i * 0.10
+		_fill_irregular(img, Rect2i(cx - 3 + i, bottom_y + 5 + i * 2,
+			6 - i * 2, 1), glow, 216 + i)
 
 
 ## 电线槽：浅暖灰细条（jagged）。

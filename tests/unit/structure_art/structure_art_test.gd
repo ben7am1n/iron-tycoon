@@ -20,6 +20,7 @@ const RUNNER_META := "gym_manager_test_runner_active"
 
 const StructureArtScript := preload("res://src/presentation/structure_art.gd")
 const PaletteScript := preload("res://src/palette.gd")
+const WorldLayout := preload("res://src/presentation/world_layout.gd")
 
 var _pass := 0
 var _fail := 0
@@ -40,6 +41,7 @@ func run_all() -> Dictionary:
 	_test_density_ranges()
 	_test_three_layers_present()
 	_test_required_structures()
+	_test_light_fixture_layout_contract()
 	_test_rects_in_bounds()
 	_test_painted_by_split()
 	_test_textures_bake()
@@ -126,6 +128,18 @@ func _test_required_structures() -> void:
 		if not ids.has(id):
 			missing.append(id)
 	_check(missing.is_empty(), "必需结构齐全（缺 %s）" % str(missing))
+
+
+## V3.1 R4：光源物件 rect 与投光布局必须是同一物件，不能各自漂移。
+func _test_light_fixture_layout_contract() -> void:
+	var art = StructureArtScript.new()
+	for light: Dictionary in WorldLayout.HANGING_LIGHTS:
+		var id := str(light.get("id", ""))
+		var expected: Rect2i = light.get("rect", Rect2i())
+		_check(art.structure_rect(id) == expected,
+			"%s structure rect matches lighting source anchor" % id)
+		_check(float(light.get("height", 0.0)) > 0.0,
+			"%s has explicit hanging height" % id)
 
 
 # === 结构矩形边界 ===

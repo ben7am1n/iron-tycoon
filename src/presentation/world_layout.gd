@@ -184,12 +184,43 @@ const WALL_DECOR := {
 	"ad_red": Vector2i(192, 1),
 }
 
-# === V3 §6 灯光锚点 ===
-## 顶部主光池（3 个：力量/有氧/瑜伽区中心）：中心点（世界像素空间）。
-## V3 §15 修复（P0-4 光照逻辑）：光池中心对齐吊灯位置（hanging_lamp_1/2/3
-## 位于 structure FOREGROUND x=80/196/356，灯罩底部 y≈30）—— 光池不再是
-## "透明圆形蒙版"，而是每盏吊灯照到地面的光斑（可归属来源，门禁 FAIL：
-## 光池像透明圆形蒙版而非灯具逻辑照明）。
+# === V3 §6 / V3.1 R4 灯光锚点 ===
+## 吊灯完整投光规格（单一来源）：结构物件 rect、悬挂高度、纹理内灯泡位置与
+## 地面落点必须成套出现。LightingLayer 用同一数据把高处灯泡连到地面落点，
+## WorldCanvas 用同一 height 绘制灯具，避免上一版「灯在墙顶、锥在地板」的
+## 屏幕空间断裂。rect 与 StructureArt.STRUCTURES 中对应条目由测试交叉验证。
+const HANGING_LIGHTS := [
+	{
+		"id": "hanging_lamp_1", "rect": Rect2i(72, 0, 28, 36),
+		"height": 78.0, "bulb_local": Vector2(14, 29),
+		"landing": Vector2(86, 170), "pool_half": Vector2(44, 30),
+	},
+	{
+		"id": "hanging_lamp_2", "rect": Rect2i(188, 0, 28, 36),
+		"height": 78.0, "bulb_local": Vector2(14, 29),
+		"landing": Vector2(202, 170), "pool_half": Vector2(44, 30),
+	},
+	{
+		"id": "hanging_lamp_3", "rect": Rect2i(348, 0, 28, 36),
+		"height": 78.0, "bulb_local": Vector2(14, 29),
+		"landing": Vector2(362, 170), "pool_half": Vector2(44, 30),
+	},
+]
+
+## 瑜伽区落地灯：base 是灯脚触地点；灯体由 WorldCanvas 作为竖直 billboard
+## 绘制，bulb_local 是相对灯体顶点的灯泡像素位置。短斜投光落到东南侧地面，
+## 使「灯罩亮 → 地面暖」而非原先孤立橙块。
+const FLOOR_LIGHT := {
+	"decor_id": "warm_lamp_f1",
+	"base": Vector2(312, 228),
+	"height": 48.0,
+	"bulb_local": Vector2(0, 13),
+	"landing": Vector2(330, 242),
+	"pool_half": Vector2(24, 17),
+}
+
+## 顶部主光池（3 个：力量/有氧/瑜伽区中心）：与 HANGING_LIGHTS.landing
+## 保持一致，兼容既有测试/证据读取。
 const LIGHT_POOLS := [
 	Vector2(86, 170),
 	Vector2(202, 170),
@@ -197,14 +228,6 @@ const LIGHT_POOLS := [
 ]
 ## 灯光池半径。
 const LIGHT_POOL_RADIUS := 46.0
-## 吊灯光锥：从灯罩底部（y≈32，R4 灯罩改大后底缘）斜向地面（y≈180）的四边形
-## —— 光池的「来源」可见（V3 §6 顶部暖白灯 + §4 纵深）。键 = 灯 id，值 = 光锥
-## 多边形（世界像素空间，由 LightingLayer 绘制）。
-const LAMP_CONES := [
-	[Vector2(74, 32), Vector2(98, 32), Vector2(108, 180), Vector2(64, 180)],
-	[Vector2(190, 32), Vector2(214, 32), Vector2(224, 180), Vector2(180, 180)],
-	[Vector2(350, 32), Vector2(374, 32), Vector2(384, 180), Vector2(340, 180)],
-]
 ## 墙边暗角带（四周，宽度 20px）。
 const EDGE_SHADOW_WIDTH := 20
 

@@ -308,9 +308,6 @@ func _draw_structure_layer(layer: String) -> void:
 
 ## 前台高度（世界 px）。
 const STRUCT_FRONT_DESK_H := 22.0
-## 吊灯悬挂高度（世界 px，接近墙帽 —— 从天花板挂下）。
-const STRUCT_LAMP_H := 95.0
-
 ## V3.1 P1 结构 GAMEPLAY：前台（主要交互对象）—— 体积挤出（顶面+正面+侧面）。
 ## V3.1 R3（P3 手绘感）：正面不再纯色填充 —— 挤出面之上叠确定性手工木纹
 ## cluster（暗/亮小色块），打破大面积单色（P3「纯色大面积填充」禁令）。
@@ -375,14 +372,20 @@ func _draw_structure_foreground() -> void:
 			continue
 		_draw_extruded_box(tex, rect, Proj2D.WALL_HEIGHT - 10.0,
 			Palette.COLUMN_DARK, Palette.COLUMN_DARK.darkened(0.18))
-	# 吊灯 1/2/3：挂在墙高处（billboard，不挤出）
-	for id in ["hanging_lamp_1", "hanging_lamp_2", "hanging_lamp_3"]:
+	# 吊灯 1/2/3：rect/高度来自 WorldLayout.HANGING_LIGHTS，与 LightingLayer
+	# 的灯泡→落点投光共用锚点，防止灯具与光束屏幕空间断开。
+	for light: Dictionary in WorldLayout.HANGING_LIGHTS:
+		var id := str(light.get("id", ""))
 		var rect: Rect2i = _structure_art.structure_rect(id)
 		var tex: ImageTexture = _structure_art.structure_texture(id)
 		if rect.size.x <= 0 or tex == null:
 			continue
-		var pos := Proj2D.proj(rect.position.x, rect.position.y, STRUCT_LAMP_H)
+		var height := float(light.get("height", 78.0))
+		var pos := Proj2D.proj(rect.position.x, rect.position.y, height)
 		draw_texture_rect(tex, Rect2(pos, Vector2(rect.size)), false)
+	# 瑜伽区落地灯：竖直 billboard，灯脚落地、灯罩抬高。旧版在 floor pass
+	# 中绘制导致 8×8 灯被压成一小块橙色地砖，无法识别为光源。
+	_draw_floor_light_fixture()
 	# 小道具（壶铃/配重片/纸杯/毛巾 —— 贴地，floor transform）
 	_draw_with_floor_transform(func() -> void:
 		for id in ["kettlebell_prop", "plate_prop_1", "plate_prop_2",
@@ -393,6 +396,23 @@ func _draw_structure_foreground() -> void:
 				continue
 			draw_texture_rect(tex, Rect2(rect.position, rect.size), false)
 	)
+
+
+## V3.1 R4 落地灯物件：使用 EnvironmentArt 的手绘灯体，但在投影后空间
+## 竖直绘制。top 对齐 base 的指定高度，纹理下缘回到地面接触点附近。
+func _draw_floor_light_fixture() -> void:
+	if _env_art == null:
+		return
+	var cfg: Dictionary = WorldLayout.FLOOR_LIGHT
+	var decor_id := str(cfg.get("decor_id", ""))
+	var tex: ImageTexture = _env_art.texture_for(decor_id)
+	if tex == null:
+		return
+	var size := Vector2(_env_art.texture_size(decor_id))
+	var base: Vector2 = cfg.get("base", Vector2.ZERO)
+	var height := float(cfg.get("height", 48.0))
+	var top := Proj2D.proj(base.x, base.y, height)
+	draw_texture_rect(tex, Rect2(top - Vector2(size.x * 0.5, 0), size), false)
 
 
 ## 通用体积挤出（V3.1 P1）：东侧面 + 正面 + 顶面。结构/设备共用数学。
@@ -603,6 +623,9 @@ func _draw_floor_decor() -> void:
 	if _tick_provider.is_valid():
 		tick = _tick_provider.call()
 	for prop_id: String in WorldLayout.DECOR:
+		# 暖色落地灯需保持竖直 silhouette，在 foreground billboard pass 绘制。
+		if prop_id == str(WorldLayout.FLOOR_LIGHT.get("decor_id", "")):
+			continue
 		var pos: Vector2i = WorldLayout.DECOR[prop_id]
 		var sway := Vector2.ZERO
 		if prop_id.begins_with("plant"):

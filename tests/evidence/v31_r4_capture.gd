@@ -5,6 +5,7 @@
 #   1. tests/evidence/v31-r4-lighting.png —— 渲染帧（光源物件 + 灯下投光关系，
 #      冷色阴影）
 #   2. tests/evidence/v31-r4-lightmap.png —— LightingLayer 静态 light map
+#   3. tests/evidence/v31-r4-projected-lightmap.png —— 投影空间灯泡→落点光束
 #
 # 验收对照（附录 V3.1 P4 灯光 / R4 门禁「无辨识暖色室内灯光源/投光关系」）：
 #   - 光源可辨识：吊灯灯罩受光体（LAMP_SHADE_LIT 暖橙金）在渲染帧中可见
@@ -32,8 +33,9 @@ const Palette := preload("res://src/palette.gd")
 const WorldLayout := preload("res://src/presentation/world_layout.gd")
 const OUT_PATH := "res://tests/evidence/v31-r4-lighting.png"
 const LIGHTMAP_PATH := "res://tests/evidence/v31-r4-lightmap.png"
+const PROJECTED_LIGHTMAP_PATH := "res://tests/evidence/v31-r4-projected-lightmap.png"
 const REDRAW_FRAME := 6      # 抓帧前强制世界画布重绘（SubViewport 纹理滞后 ≥1 帧）
-const CAPTURE_FRAME := 12
+const CAPTURE_FRAME := 120   # 给 FPS monitor 约 2 秒稳定窗口，避免启动期虚假 1-2fps
 
 ## 管线常量（来自 main.gd —— 证据复算与实现同源）。
 const SX := Main.SCREEN_PER_VIEWPORT_X
@@ -44,9 +46,6 @@ const WS := Main.WORLD_SCALE
 ## 世界采样锚点（世界像素空间）。
 ## 灯池中心（WorldLayout.LIGHT_POOLS[0] = (86,170)，力量区吊灯下方）。
 const LAMP_CENTER := Vector2(86, 170)
-## 吊灯灯罩位置（hanging_lamp_1 rect (76,12,20,20) 中心 = (86,22)；受光体
-## 中部 y≈24）。采样灯罩本体暖橙金（LAMP_SHADE_LIT #E8A33D）。
-const LAMP_FIXTURE := Vector2(86, 24)
 ## 同材质远离灯区域候选点（strength zone 内部，远离灯池与窗光锥；用作受光
 ## 对比，取亮度最小者 —— 会员/装饰只会变亮，min 对动态干扰稳健）。
 const FAR_SAME_ZONE_CANDIDATES := [
@@ -57,9 +56,8 @@ const FAR_SAME_ZONE_CANDIDATES := [
 ]
 ## 墙边暗角带内采样（左侧墙 x=10，strength zone 边缘 y=170）。
 const WALL_EDGE_SAMPLE := Vector2(10, 170)
-## 落地灯（瑜伽区 warm_lamp_f1）灯下暖池采样点：DECOR(296,200) + (16,28) =
-## (312,228)。
-const WARM_LAMP_CENTER := Vector2(312, 228)
+## 落地灯短斜投光落点（WorldLayout.FLOOR_LIGHT.landing）。
+const WARM_LAMP_CENTER := Vector2(330, 242)
 ## 窗光锥内采样点（window_1 下方，冷光渗透）：window_1 (96,4,56,18) 底部 y=22，
 ## 光锥向下展开 —— 取 (120, 60)。
 const WINDOW_SEEP_SAMPLE := Vector2(120, 60)
@@ -76,9 +74,27 @@ func world_to_screen(w: Vector2, z: float = 0.0) -> Vector2i:
 	return Vector2i(roundi(v.x), roundi(v.y))
 
 
+## 投影后 canvas 坐标 → 最终屏幕坐标（billboard 灯泡局部点不能用 world_to_screen）。
+func canvas_to_screen(p: Vector2) -> Vector2i:
+	var v := (p * WS + OFF) * Vector2(SX, SY)
+	return Vector2i(roundi(v.x), roundi(v.y))
+
+
+func hanging_light_canvas(index: int, local_key: String = "bulb_local") -> Vector2:
+	var light: Dictionary = WorldLayout.HANGING_LIGHTS[index]
+	var rect: Rect2i = light.get("rect", Rect2i())
+	var local: Vector2 = light.get(local_key, Vector2.ZERO)
+	return Proj2D.proj(rect.position.x, rect.position.y,
+		float(light.get("height", 0.0))) + local
+
+
 func _ready() -> void:
 	_main = MAIN_SCENE.instantiate()
 	add_child(_main)
+	# 冻结模拟 tick：截图/呼吸光相位与帧等待时长无关，同输入输出稳定。
+	var orch = _main.get("_orch")
+	if orch != null and orch.time_system != null:
+		orch.time_system.pause()
 
 
 func _process(_delta: float) -> void:
@@ -146,6 +162,28 @@ func _verify_light_map() -> void:
 	var lm_path := ProjectSettings.globalize_path(LIGHTMAP_PATH)
 	var lm_err := img.save_png(lm_path)
 	_ok(lm_err == OK, "LIGHTMAP exported %s" % LIGHTMAP_PATH)
+
+	# 投影空间光束单独导出：证明高处灯泡→中段→地面落点连续，而不是 light map
+	# 中有锥但最终帧与灯具断开。
+	var projected: Image = lighting.call("projected_light_map_image")
+	var projected_origin: Vector2 = lighting.call("projected_light_map_origin")
+	_ok(projected != null, "PROJECTED light map available")
+	if projected != null:
+		var projected_path := ProjectSettings.globalize_path(PROJECTED_LIGHTMAP_PATH)
+		_ok(projected.save_png(projected_path) == OK,
+			"PROJECTED exported %s" % PROJECTED_LIGHTMAP_PATH)
+		for i in WorldLayout.HANGING_LIGHTS.size():
+			var source := hanging_light_canvas(i)
+			var landing_world: Vector2 = WorldLayout.HANGING_LIGHTS[i].get("landing", Vector2.ZERO)
+			var landing := Proj2D.project_world(landing_world)
+			_ok(_count_warm_projected(projected, source - projected_origin, 5) > 0,
+				"PROJECTED lamp %d source core warm" % i)
+			_ok(_count_warm_projected(projected,
+				source.lerp(landing, 0.50) - projected_origin, 8) > 0,
+				"PROJECTED lamp %d shaft middle warm" % i)
+			_ok(_count_warm_projected(projected,
+				source.lerp(landing, 0.88) - projected_origin, 10) > 0,
+				"PROJECTED lamp %d shaft reaches landing" % i)
 
 	# 灯下暖亮像素存在（热核 + 光晕）：灯池中心 12×12 窗口
 	var lamp_warm := 0
@@ -255,13 +293,12 @@ func _verify_light_map() -> void:
 ##   - 灯池区域比同材质远离灯区域更暖亮（受光面变暖/变亮 —— 投光关系）
 ##   - 落地灯灯下暖色提亮（暖池经 floor transform 投影到屏幕）
 func _verify_world_frame(img: Image) -> void:
-	# 吊灯灯罩受光体：世界 (86,24)（rect (76,12,20,20) 中部，z=0 近似 ——
-	# 灯罩画在 FOREGROUND 层，经 STRUCT_LAMP_H=95 提升投影。采样窗口取
-	# 灯罩屏幕位置 ±14px，扫描 LAMP_SHADE_LIT (#E8A33D) 附近色。
+	# 吊灯完整 fixture：以真实 billboard 灯泡点为中心扫描暖橙灯罩/暖白核心。
 	var fixture_found := false
-	var fscreen := world_to_screen(LAMP_FIXTURE, 95.0)
-	for dy in range(-14, 15):
-		for dx in range(-14, 15):
+	var source_canvas := hanging_light_canvas(0)
+	var fscreen := canvas_to_screen(source_canvas)
+	for dy in range(-24, 25):
+		for dx in range(-24, 25):
 			var sx := fscreen.x + dx
 			var sy := fscreen.y + dy
 			if sx < 0 or sy < 0 or sx >= img.get_width() or sy >= img.get_height():
@@ -273,6 +310,14 @@ func _verify_world_frame(img: Image) -> void:
 		if fixture_found:
 			break
 	_ok(fixture_found, "WORLD hanging lamp shade lit body visible @screen(%d,%d) (光源物件可辨识)" % [fscreen.x, fscreen.y])
+
+	# 最终帧中的方向关系：从灯泡到地面落点沿线三段都有暖亮像素。
+	var landing_canvas := Proj2D.project_world(LAMP_CENTER)
+	for t in [0.28, 0.52, 0.78]:
+		var beam_screen := canvas_to_screen(source_canvas.lerp(landing_canvas, t))
+		_ok(_count_warm_frame(img, beam_screen, 12) > 0,
+			"WORLD source-to-landing shaft warm at t=%.2f @screen(%d,%d)" %
+			[t, beam_screen.x, beam_screen.y])
 
 	# 灯下 vs 同材质远离灯：亮度 + 暖度对比（strength zone 内部）。
 	var lamp_colors := _sample_window(img, LAMP_CENTER, 10, 3)
@@ -289,7 +334,17 @@ func _verify_world_frame(img: Image) -> void:
 	_ok(lamp_warmness > far_min_warmness + 0.002,
 		"WORLD lamp area warmer than far same-zone floor (warm %.3f > %.3f, V3 §7 受光变暖)" % [lamp_warmness, far_min_warmness])
 
-	# 落地灯灯下暖池：world (312,228) 投影后窗口内暖色（r>b）像素存在
+	# 落地灯灯体：竖直 billboard 的灯泡/暖橙灯罩在最终帧可辨识。
+	var floor_cfg: Dictionary = WorldLayout.FLOOR_LIGHT
+	var floor_base: Vector2 = floor_cfg.get("base", Vector2.ZERO)
+	var floor_source_canvas := Proj2D.proj(floor_base.x, floor_base.y,
+		float(floor_cfg.get("height", 0.0))) + (floor_cfg.get("bulb_local", Vector2.ZERO) as Vector2)
+	var floor_source_screen := canvas_to_screen(floor_source_canvas)
+	_ok(_count_warm_frame(img, floor_source_screen, 18) > 4,
+		"WORLD floor-lamp glowing shade/body visible @screen(%d,%d)" %
+		[floor_source_screen.x, floor_source_screen.y])
+
+	# 落地灯短斜投光落点窗口内暖色（r>b）像素存在。
 	var floor_lamp_found := false
 	var fp := world_to_screen(WARM_LAMP_CENTER)
 	for dy in range(-6, 7):
@@ -310,8 +365,9 @@ func _verify_world_frame(img: Image) -> void:
 func _verify_perf() -> void:
 	var draw_calls := Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)
 	var fps := Performance.get_monitor(Performance.TIME_FPS)
-	var perf_ok := draw_calls < 200
-	_ok(perf_ok, "PERF draw_calls=%d fps=%.1f budget_ok=%s" % [draw_calls, fps, str(perf_ok)])
+	var perf_ok := draw_calls < 200 and fps >= 55.0
+	_ok(perf_ok, "PERF draw_calls=%d (<200) fps=%.1f (60fps target, >=55 stable) budget_ok=%s" %
+		[draw_calls, fps, str(perf_ok)])
 
 
 # === helpers ===
@@ -352,6 +408,26 @@ func _avg_warmness(colors: Array[Color]) -> float:
 	for c in colors:
 		sum += c.r - c.b
 	return sum / float(colors.size())
+
+
+func _count_warm_projected(img: Image, p: Vector2, radius: int) -> int:
+	var found := 0
+	for y in range(maxi(int(p.y) - radius, 0), mini(int(p.y) + radius + 1, img.get_height())):
+		for x in range(maxi(int(p.x) - radius, 0), mini(int(p.x) + radius + 1, img.get_width())):
+			var c := img.get_pixel(x, y)
+			if c.a > 0.04 and c.r > c.b:
+				found += 1
+	return found
+
+
+func _count_warm_frame(img: Image, p: Vector2i, radius: int) -> int:
+	var found := 0
+	for y in range(maxi(p.y - radius, 0), mini(p.y + radius + 1, img.get_height())):
+		for x in range(maxi(p.x - radius, 0), mini(p.x + radius + 1, img.get_width())):
+			var c := img.get_pixel(x, y)
+			if c.r > c.b + 0.045 and _luminance(c) > 0.24:
+				found += 1
+	return found
 
 
 func _in_bounds(img: Image, p: Vector2i) -> bool:

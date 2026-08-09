@@ -10,10 +10,10 @@
 #   V3 §7 暖环境+冷阴影：受光面（灯下/窗光/屏幕）暖亮像素；背光面（墙边）
 #   冷暗像素 —— 光影响材质颜色，不是画透明白色圆。
 #
-# 实现：静态光照（墙边暗角/灯池/窗光/光锥/饮水机/招牌）烘焙成一张 416×320
-# RGBA light map（确定性 hash 散射，无 RNG 状态；同输入永远同输出），每帧
-# 1 次 draw_texture_rect（预算友好）；动态部分（已放置设备屏幕呼吸光）每帧
-# 少量 1-3px draw_rect —— 全层零 draw_circle。
+# 实现：贴地静态光（墙边暗角/分面灯池/窗光/小发光体）烘焙为 416×320 light
+# map；高处灯泡→落点的体积光束另烘焙为投影空间 light map。两张纹理每帧各
+# 1 次 draw_texture_rect（确定性 hash，无 RNG）；动态部分只有设备受光边与
+# 屏幕呼吸光的少量 1-5px draw_rect —— 全层零 draw_circle。
 #
 # 层级：本节点是 WorldRoot 的子节点（z_index=1，画在 WorldCanvas 之上，
 # 但仍在同一低分辨率 pixel space，经 WorldRoot scale 0.75 进 SubViewport）。
@@ -31,6 +31,7 @@ class_name LightingLayer extends Node2D
 const Palette := preload("res://src/palette.gd")
 const WorldLayout := preload("res://src/presentation/world_layout.gd")
 const Proj2D := preload("res://src/presentation/oblique_projection.gd")
+const EquipmentArt := preload("res://src/presentation/equipment_art.gd")
 
 ## 发光体类型（emissive 载体，V3 §6）：设备屏幕青蓝/绿 + 饮水机/招牌。
 const GLOW_CYAN := "cyan"
@@ -54,6 +55,9 @@ const EQUIPMENT_GLOWS := {
 var _initialized: bool = false
 var _light_map: ImageTexture = null
 var _light_map_image: Image = null
+var _projected_light_map: ImageTexture = null
+var _projected_light_map_image: Image = null
+var _projected_light_origin := Vector2.ZERO
 
 
 ## 两阶段 init（ADR-0001 形态）：注入 grid / resolver / tick_provider。
@@ -77,8 +81,14 @@ func _draw() -> void:
 	if _light_map == null:
 		_bake_light_map()
 	draw_texture_rect(_light_map, Rect2(Vector2.ZERO, Vector2(WorldLayout.WORLD_W, WorldLayout.WORLD_H)), false)
-	_draw_equipment_glows()
 	draw_set_transform_matrix(Transform2D.IDENTITY)
+	# 高处灯泡→地面落点必须在投影后空间连接，不能再随 floor transform 压平。
+	if _projected_light_map == null:
+		_bake_projected_light_map()
+	draw_texture_rect(_projected_light_map,
+		Rect2(_projected_light_origin, Vector2(_projected_light_map_image.get_size())), false)
+	_draw_equipment_light_hits()
+	_draw_equipment_glows()
 
 
 ## 取烘焙后的 light map Image（测试用像素断言；未烘焙时先烘焙）。
@@ -88,13 +98,26 @@ func light_map_image() -> Image:
 	return _light_map_image
 
 
+## 取投影空间静态光图（证据/测试）：包含吊灯长光束、落地灯短投光与灯泡核心。
+func projected_light_map_image() -> Image:
+	if _projected_light_map_image == null:
+		_bake_projected_light_map()
+	return _projected_light_map_image
+
+
+## 投影空间光图左上角（Proj2D canvas 坐标；证据把图像像素还原为画布点）。
+func projected_light_map_origin() -> Vector2:
+	if _projected_light_map_image == null:
+		_bake_projected_light_map()
+	return _projected_light_origin
+
+
 ## 烘焙静态 light map：RGBA8，全透明基底 + 逐像素光照散射。确定性（hash）。
 func _bake_light_map() -> void:
 	var img := Image.create(WorldLayout.WORLD_W, WorldLayout.WORLD_H, false, Image.FORMAT_RGBA8)
 	img.fill(Color(0, 0, 0, 0))
 	_paint_edge_shadow(img)
 	_paint_light_pools(img)
-	_paint_lamp_cones(img)
 	_paint_window_light(img)
 	_paint_static_glows(img)
 	_light_map_image = img
@@ -125,73 +148,158 @@ func _paint_edge_shadow(img: Image) -> void:
 			img.set_pixel(x, y, Color(c.r, c.g, c.b, minf(a, 0.22)))
 
 
-## 顶部暖白主光（V3.1 P4 灯下稍亮 / R4 光源落点 + 衰减）：每盏吊灯下方
-## warm-bright 像素 cluster —— 中心热核（落点，alpha 0.20-0.36）+ 软光晕
-## （衰减 0.13→0.06）。有方向（光锥）、有落点（热核）、有衰减（边缘稀疏）。
-## hash 散射保持不规则边界（无圆形 gradient）；衰减快 —— 邻近装饰（瑜伽区
-## 植物等）不会被暖池盖过（R3/P5 证据色保持）。中心点 = WorldLayout.LIGHT_POOLS
-## （与 LAMP_CONES 吊灯对齐，P0-4 归属来源）。
+## 顶部主光落点：不是径向圆，而是横宽纵窄的 faceted 像素材质区。
+## 中心热核、八边形分段衰减、hash 缺口共同表达「地板材质被暖光照亮」；
+## 高处灯泡到这里的方向关系由 projected light map 连续表达。
 func _paint_light_pools(img: Image) -> void:
-	var r := WorldLayout.LIGHT_POOL_RADIUS
-	for center in WorldLayout.LIGHT_POOLS:
-		var c: Vector2 = center
-		var x0 := int(c.x - r) - 2
-		var y0 := int(c.y - r) - 2
-		var x1 := int(c.x + r) + 3
-		var y1 := int(c.y + r) + 3
-		for y in range(maxi(y0, 0), mini(y1, img.get_height())):
-			for x in range(maxi(x0, 0), mini(x1, img.get_width())):
-				var d := Vector2(x + 0.5, y + 0.5).distance_to(c)
-				if d > r + 2.0:
-					continue
-				var density := clampf(1.0 - d / (r + 2.0), 0.0, 1.0)
-				# 概率散射：中心密、边缘疏 —— 边缘 jagged，无平滑径向 gradient。
-				# 分段覆盖：核心（r<9）高密度高亮；中距（9..20）恢复旧覆盖
-				# （P5 植物亮叶需足量暖叠压低饱和 —— 否则 FOCAL_GREEN_LIGHT
-				# 像素越过 sat 0.72 阈值拆出多余焦点簇）；远缘（>20）稀疏
-				# （设备 contact shadow 带不被提亮，R1 层级证据保持）。
-				var keep := 0.25 + 0.45 * density
-				if d < 9.0:
-					keep = 0.85
-				elif d < 20.0:
-					keep = 0.68
-				if float(_hash2(x, y) % 1000) / 1000.0 > keep:
-					continue
-				# 热核（落点）：r<9 中心高亮；中距 alpha ~0.10-0.15（植物暖叠）；
-				# 远缘 ~0.05-0.08（阴影带保持）。
-				var core_t := clampf(1.0 - d / 9.0, 0.0, 1.0)
-				var a := 0.04 + 0.05 * density
-				if d < 9.0:
-					a = 0.20 + 0.20 * core_t
-				elif d < 20.0:
-					a = 0.10 + 0.06 * (1.0 - (d - 9.0) / 11.0)
-				a *= (0.85 + 0.15 * float(_hash2(x + 7, y + 11) % 100) / 100.0)
-				var pool := Palette.LIGHT_TOP_WARM
-				img.set_pixel(x, y, Color(pool.r, pool.g, pool.b, minf(a, 0.42)))
+	var seed := 301
+	for light: Dictionary in WorldLayout.HANGING_LIGHTS:
+		_paint_faceted_pool(img,
+			light.get("landing", Vector2.ZERO),
+			light.get("pool_half", Vector2(44, 30)), seed, 1.0)
+		seed += 97
 
 
-## 吊灯光锥（P0-4 光池来源归属）：从灯罩到地面的四边形内散射暖白像素。
-## R4 强化「方向」：密度提高到 ~55%，alpha 提高（0.10-0.18，近灯处略亮）——
-## 从灯罩到地面的光锥可辨识（V3 §6 顶部暖白灯，灯下亮）。仍是 hash 散射，
-## 非实心半透明四边形。
-func _paint_lamp_cones(img: Image) -> void:
-	for cone in WorldLayout.LAMP_CONES:
-		var pts := PackedVector2Array()
-		for p: Vector2 in cone:
-			pts.append(p)
-		var b := _quad_bounds(pts)
-		for y in range(maxi(int(b.position.y), 0), mini(int(b.end.y), img.get_height())):
-			for x in range(maxi(int(b.position.x), 0), mini(int(b.end.x), img.get_width())):
-				if not Geometry2D.is_point_in_polygon(Vector2(x + 0.5, y + 0.5), pts):
-					continue
-				# 密度：55% 基底 + 近灯处略密（有方向感）
-				var t := clampf((float(y) - b.position.y) / maxf(b.end.y - b.position.y, 1.0), 0.0, 1.0)
-				var keep := 0.42 + 0.22 * (1.0 - t)
-				if _hash2(x, y) % 100 >= int(keep * 100.0):
-					continue
-				var c := Palette.LIGHT_TOP_WARM
-				var a := 0.14 + 0.10 * (1.0 - t) * (0.6 + 0.4 * float(_hash2(x + 3, y + 5) % 100) / 100.0)
-				img.set_pixel(x, y, Color(c.r, c.g, c.b, minf(a, 0.24)))
+## 分面暖光落点：metric 是八边形距离，不使用圆/径向 gradient。
+func _paint_faceted_pool(img: Image, center: Vector2, half_size: Vector2,
+		seed: int, strength: float) -> void:
+	var x0 := maxi(int(floor(center.x - half_size.x)) - 2, 0)
+	var y0 := maxi(int(floor(center.y - half_size.y)) - 2, 0)
+	var x1 := mini(int(ceil(center.x + half_size.x)) + 3, img.get_width())
+	var y1 := mini(int(ceil(center.y + half_size.y)) + 3, img.get_height())
+	for y in range(y0, y1):
+		for x in range(x0, x1):
+			var nx := absf((x + 0.5 - center.x) / maxf(half_size.x, 1.0))
+			var ny := absf((y + 0.5 - center.y) / maxf(half_size.y, 1.0))
+			# max + taxicab 混合得到八边形/阶梯边，不是同心圆。
+			var metric := maxf(nx, ny) * 0.62 + (nx + ny) * 0.22
+			var edge_jitter := (float(_hash2(x + seed, y - seed) % 100) / 100.0 - 0.5) * 0.10
+			if metric + edge_jitter > 1.0:
+				continue
+			var density := clampf(1.0 - metric, 0.0, 1.0)
+			var keep := 0.24 + 0.48 * density
+			if metric < 0.27:
+				keep = 0.88
+			elif metric < 0.55:
+				keep = 0.68
+			if float(_hash2(x + seed * 3, y + seed) % 1000) / 1000.0 > keep:
+				continue
+			# 分三档而非平滑透明渐变；每档再用少量 hash 做像素材质变化。
+			var a := 0.065
+			if metric < 0.27:
+				a = 0.30
+			elif metric < 0.55:
+				a = 0.15
+			else:
+				a = 0.085
+			a *= strength * (0.86 + 0.14 * float(_hash2(x + 7, y + 11) % 100) / 100.0)
+			var warm := Palette.LIGHT_TOP_WARM
+			img.set_pixel(x, y, Color(warm.r, warm.g, warm.b, minf(a, 0.38)))
+
+
+## 高处灯泡→地面落点的投影空间光图。与地板 light map 分离：这里不再套
+## floor_transform，因此灯罩、光束与落点在最终屏幕上连续。整层烘焙为 1 张
+## 纹理（1 draw call），用稀疏条带像素表达 volumetric atmosphere。
+func _bake_projected_light_map() -> void:
+	var bounds := Proj2D.bounds()
+	_projected_light_origin = Vector2(floor(bounds.position.x), floor(bounds.position.y))
+	var end := Vector2(ceil(bounds.end.x), ceil(bounds.end.y))
+	var size := Vector2i(int(end.x - _projected_light_origin.x),
+		int(end.y - _projected_light_origin.y))
+	var img := Image.create(size.x, size.y, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	var seed := 701
+	for light: Dictionary in WorldLayout.HANGING_LIGHTS:
+		var rect: Rect2i = light.get("rect", Rect2i())
+		var height := float(light.get("height", 78.0))
+		var bulb_local: Vector2 = light.get("bulb_local", Vector2.ZERO)
+		# 灯是 billboard：灯泡画布点 = rect 左上投影 + 纹理内局部点。
+		var source := Proj2D.proj(rect.position.x, rect.position.y, height) + bulb_local
+		var landing_world: Vector2 = light.get("landing", Vector2.ZERO)
+		var landing := Proj2D.project_world(landing_world)
+		_paint_projected_shaft(img, source, landing, 3.0, 18.0, seed)
+		_paint_projected_source(img, source, seed + 19)
+		seed += 113
+	# 落地灯短斜投光：同样从灯泡局部点连到东南地面落点。
+	var floor_cfg: Dictionary = WorldLayout.FLOOR_LIGHT
+	var base: Vector2 = floor_cfg.get("base", Vector2.ZERO)
+	var floor_height := float(floor_cfg.get("height", 48.0))
+	var floor_source := Proj2D.proj(base.x, base.y, floor_height) \
+		+ (floor_cfg.get("bulb_local", Vector2.ZERO) as Vector2)
+	var floor_landing_world: Vector2 = floor_cfg.get("landing", base)
+	var floor_landing := Proj2D.project_world(floor_landing_world)
+	_paint_projected_shaft(img, floor_source, floor_landing, 2.0, 10.0, 1181)
+	_paint_projected_source(img, floor_source, 1201)
+	_projected_light_map_image = img
+	_projected_light_map = ImageTexture.create_from_image(img)
+
+
+## 稀疏投影光束：沿 source→landing 方向扩张，横向分档 + 纵向断续条带。
+func _paint_projected_shaft(img: Image, source_canvas: Vector2,
+		landing_canvas: Vector2, top_half: float, bottom_half: float, seed: int) -> void:
+	var source := source_canvas - _projected_light_origin
+	var landing := landing_canvas - _projected_light_origin
+	var axis := landing - source
+	var length := axis.length()
+	if length < 1.0:
+		return
+	var direction := axis / length
+	var normal := Vector2(-direction.y, direction.x)
+	var pts := PackedVector2Array([
+		source - normal * top_half, source + normal * top_half,
+		landing + normal * bottom_half, landing - normal * bottom_half,
+	])
+	var b := _quad_bounds(pts)
+	for y in range(maxi(int(floor(b.position.y)) - 1, 0),
+			mini(int(ceil(b.end.y)) + 2, img.get_height())):
+		for x in range(maxi(int(floor(b.position.x)) - 1, 0),
+				mini(int(ceil(b.end.x)) + 2, img.get_width())):
+			var rel := Vector2(x + 0.5, y + 0.5) - source
+			var along := rel.dot(direction)
+			if along < 0.0 or along > length:
+				continue
+			var t := along / length
+			var width := lerpf(top_half, bottom_half, t)
+			var lateral := absf(rel.dot(normal))
+			if lateral > width:
+				continue
+			var center_t := 1.0 - lateral / maxf(width, 1.0)
+			# 中轴/两侧的断续光丝提高方向感；其余区域保持稀疏 dither。
+			# dash 只提升像素条带，不填满锥体，最终仍是 pixelated volume。
+			var streak := (_hash2(int(along / 3.0) + seed, int(lateral) + seed) % 9) < 2
+			var edge_ratio := lateral / maxf(width, 1.0)
+			var dash := (int(along) + seed) % 13 < 6 \
+				and (lateral < 1.6 or edge_ratio > 0.78)
+			var keep := 0.36 + 0.34 * center_t + (0.16 if streak else 0.0) \
+				+ (0.22 if dash else 0.0)
+			if float(_hash2(x + seed, y + seed * 2) % 1000) / 1000.0 > keep:
+				continue
+			var endpoint_gain := maxf(1.0 - t * 3.0, (t - 0.78) * 2.0)
+			var a := 0.14 + 0.10 * center_t + 0.055 * clampf(endpoint_gain, 0.0, 1.0) \
+				+ (0.05 if dash else 0.0)
+			# 金黄而非透明白：叠到墙/设备后直接改变材质色温，来源色与灯罩一致。
+			var warm := Palette.LAMP_SHADE_LIT
+			img.set_pixel(x, y, Color(warm.r, warm.g, warm.b, minf(a, 0.34)))
+
+
+## 灯泡发光核心：5×3 暖白像素 + 少量 1px 暖橙火花，无圆 halo。
+func _paint_projected_source(img: Image, source_canvas: Vector2, seed: int) -> void:
+	var p := Vector2i(roundi(source_canvas.x - _projected_light_origin.x),
+		roundi(source_canvas.y - _projected_light_origin.y))
+	for dy in range(-1, 2):
+		for dx in range(-2, 3):
+			_set_image_pixel(img, p + Vector2i(dx, dy),
+				Color(Palette.LAMP_BULB.r, Palette.LAMP_BULB.g, Palette.LAMP_BULB.b, 0.74))
+	for i in 7:
+		var off := Vector2i((_hash2(seed + i * 7, i * 3) % 9) - 4,
+			(_hash2(i * 5, seed + i * 11) % 7) - 3)
+		_set_image_pixel(img, p + off,
+			Color(Palette.LAMP_GLOW.r, Palette.LAMP_GLOW.g, Palette.LAMP_GLOW.b, 0.22))
+
+
+func _set_image_pixel(img: Image, p: Vector2i, color: Color) -> void:
+	if p.x >= 0 and p.y >= 0 and p.x < img.get_width() and p.y < img.get_height():
+		img.set_pixel(p.x, p.y, color)
 
 
 ## 窗口斜向自然光（V3.1 P4 像素化 + R4 冷光渗透）：窗下光锥内散射冷蓝灰像素
@@ -231,11 +339,12 @@ func _paint_static_glows(img: Image) -> void:
 	var ad_pos: Vector2i = WorldLayout.WALL_DECOR.get("ad_red", Vector2i(-100, -100))
 	if ad_pos.x >= 0:
 		_paint_glow_cluster(img, ad_pos + Vector2i(8, 16), Palette.FOCAL_RED, 127)
-	# V3.1 R4 暖色落地灯（瑜伽区，DECOR warm_lamp_f1）：灯下小暖池 + 灯罩暖亮点。
-	var warm_lamp_pos: Vector2i = WorldLayout.DECOR.get("warm_lamp_f1", Vector2i(-100, -100))
-	if warm_lamp_pos.x >= 0:
-		_paint_floor_lamp_pool(img, Vector2(warm_lamp_pos) + Vector2(16, 28))
-		_paint_glow_cluster(img, warm_lamp_pos + Vector2i(12, 12), Palette.ACCENT_ORANGE, 149)
+	# V3.1 R4 暖色落地灯：地面落点使用短斜投光的 landing；灯泡核心在
+	# projected map 中贴着竖直灯体画，不能作为地面色块重复绘制。
+	var floor_cfg: Dictionary = WorldLayout.FLOOR_LIGHT
+	_paint_floor_lamp_pool(img,
+		floor_cfg.get("landing", Vector2.ZERO),
+		floor_cfg.get("pool_half", Vector2(24, 17)))
 	# V3.1 R4 墙上计时器（自行车区，WALL_DECOR timer_bike）：青蓝小亮点。
 	var timer_pos: Vector2i = WorldLayout.WALL_DECOR.get("timer_bike", Vector2i(-100, -100))
 	if timer_pos.x >= 0:
@@ -260,28 +369,65 @@ func _paint_glow_cluster(img: Image, pos: Vector2i, color: Color, seed: int) -> 
 				0.08 + 0.06 * float(_hash2(px, py) % 100) / 100.0))
 
 
-## V3.1 R4 落地灯小暖池（瑜伽区 warm_lamp_f1）：灯下小范围暖色提亮 ——
-## 光源可辨识（灯罩暖亮点 + 灯下暖池，V3 §12「暖色灯」）。半径 16，alpha
-## 0.08-0.16（弱于主光池 —— 局部氛围，不抢主吊灯）；hash 散射无圆。
-## 色 = 暖白（LIGHT_TOP_WARM，与主池同族 —— 灯光而非高饱和焦点，避免
-## P5 焦点簇计数超限）。
-func _paint_floor_lamp_pool(img: Image, center: Vector2) -> void:
-	var r := 16.0
-	var x0 := int(center.x - r) - 1
-	var y0 := int(center.y - r) - 1
-	var x1 := int(center.x + r) + 2
-	var y1 := int(center.y + r) + 2
-	for y in range(maxi(y0, 0), mini(y1, img.get_height())):
-		for x in range(maxi(x0, 0), mini(x1, img.get_width())):
-			var d := Vector2(x + 0.5, y + 0.5).distance_to(center)
-			if d > r:
-				continue
-			if _hash2(x, y) % 100 >= 45:
-				continue
-			var t := clampf(1.0 - d / r, 0.0, 1.0)
-			var a := 0.06 + 0.10 * t * (0.7 + 0.3 * float(_hash2(x + 5, y + 9) % 100) / 100.0)
-			var c := Palette.LIGHT_TOP_WARM
-			img.set_pixel(x, y, Color(c.r, c.g, c.b, minf(a, 0.16)))
+## 落地灯弱暖落点：复用分面材质光，不画圆；强度低于主吊灯。
+func _paint_floor_lamp_pool(img: Image, center: Vector2, half_size: Vector2) -> void:
+	_paint_faceted_pool(img, center, half_size, 149, 0.68)
+
+
+## 设备受光面：每台已放置设备在最接近灯的那一侧获得 2-4px 暖色反射边。
+## hit_world = footprint 中心朝最近光落点偏移，所以设备移动或换灯后亮面位置
+## 会随源位置变化；这是材质 tint，不是设备周围的透明圆。
+func _draw_equipment_light_hits() -> void:
+	if _grid == null:
+		return
+	for inst in _grid.get_placed_instances():
+		var fp := _footprint_rect(inst.footprint_cells)
+		if fp.size.x <= 0 or fp.size.y <= 0:
+			continue
+		var eq_id := ""
+		if _resolver.is_valid():
+			eq_id = str(_resolver.call(inst.instance_id))
+		var hit := _equipment_light_hit_canvas(fp, eq_id)
+		if bool(hit.get("lit", false)) == false:
+			continue
+		var p: Vector2 = hit.get("point", Vector2.ZERO)
+		var strength := float(hit.get("strength", 0.0))
+		var warm := Palette.LAMP_SHADE_LIT
+		warm.a = 0.18 + 0.18 * strength
+		var snapped := Vector2(roundf(p.x), roundf(p.y))
+		draw_rect(Rect2(snapped - Vector2(2, 1), Vector2(5, 2)), warm, true)
+		var glint := Palette.LAMP_BULB
+		glint.a = 0.16 + 0.12 * strength
+		draw_rect(Rect2(snapped + Vector2(-1, -2), Vector2(2, 1)), glint, true)
+
+
+## 设备暖反射计算（测试可直接调用）：返回投影后点与距离衰减。
+func _equipment_light_hit_canvas(fp: Rect2i, eq_id: String) -> Dictionary:
+	var center := Vector2(fp.position) + Vector2(fp.size) * 0.5
+	var nearest := Vector2.ZERO
+	var nearest_d := INF
+	for light: Dictionary in WorldLayout.HANGING_LIGHTS:
+		var landing: Vector2 = light.get("landing", Vector2.ZERO)
+		var d := center.distance_to(landing)
+		if d < nearest_d:
+			nearest_d = d
+			nearest = landing
+	var floor_landing: Vector2 = WorldLayout.FLOOR_LIGHT.get("landing", Vector2.ZERO)
+	var floor_d := center.distance_to(floor_landing)
+	if floor_d < nearest_d:
+		nearest_d = floor_d
+		nearest = floor_landing
+	if nearest_d > 112.0:
+		return {"lit": false, "point": Vector2.ZERO, "strength": 0.0}
+	var toward := (nearest - center).normalized()
+	var offset := minf(fp.size.x, fp.size.y) * 0.24
+	var hit_world := center + toward * offset
+	var height := float(EquipmentArt.EQUIP_HEIGHTS.get(eq_id, EquipmentArt.DEFAULT_EQUIP_HEIGHT))
+	return {
+		"lit": true,
+		"point": Proj2D.proj(hit_world.x, hit_world.y, height + 1.0),
+		"strength": clampf(1.0 - nearest_d / 112.0, 0.0, 1.0),
+	}
 
 
 ## 已放置设备屏幕呼吸光（V3.1 P4 小范围亮色像素，无圆 halo）：
@@ -301,8 +447,13 @@ func _draw_equipment_glows() -> void:
 			continue
 		var cfg: Dictionary = EQUIPMENT_GLOWS[eq_id]
 		var fp := _footprint_rect(inst.footprint_cells)
-		var glow_pos: Vector2 = Vector2(fp.position) + (cfg["offset"] as Vector2)
-		_draw_screen_cluster(glow_pos, cfg["type"] as String, phase)
+		var glow_world: Vector2 = Vector2(fp.position) + (cfg["offset"] as Vector2)
+		var height := float(EquipmentArt.EQUIP_HEIGHTS.get(eq_id, EquipmentArt.DEFAULT_EQUIP_HEIGHT))
+		# 屏幕属于设备顶面：投影到 z=设备高度，避免旧版 floor_transform 把
+		# emissive 亮点落在机器下方地面。
+		var glow_pos := Proj2D.proj(glow_world.x, glow_world.y, height + 1.0)
+		_draw_screen_cluster(Vector2(roundf(glow_pos.x), roundf(glow_pos.y)),
+			cfg["type"] as String, phase)
 
 
 ## 单个屏幕小亮点 cluster：核心 2×2（呼吸 alpha）+ 3 个 1px 散落。

@@ -25,6 +25,7 @@ const RUNNER_META := "gym_manager_test_runner_active"
 const LightingLayerScript := preload("res://src/presentation/lighting_layer.gd")
 const WorldLayout := preload("res://src/presentation/world_layout.gd")
 const PaletteScript := preload("res://src/palette.gd")
+const Proj2D := preload("res://src/presentation/oblique_projection.gd")
 
 var _pass := 0
 var _fail := 0
@@ -50,6 +51,8 @@ func run_all() -> Dictionary:
 	_test_flicker_determinism()
 	_test_lighting_budget()
 	_test_pixel_light_map()
+	_test_projected_light_relationship()
+	_test_equipment_light_hit_direction()
 
 	_free_test_nodes()
 
@@ -123,6 +126,14 @@ func _test_layout_anchors() -> void:
 	# 窗口光锥：从窗底向下展开的多边形（顶点数 4）
 	var cone := WorldLayout.window_light_cone(WorldLayout.WINDOWS[0])
 	_check(cone.size() == 4, "window light cone is a quad (4 points)")
+	_check(WorldLayout.HANGING_LIGHTS.size() == WorldLayout.LIGHT_POOLS.size(),
+		"each warm pool has one identifiable hanging source")
+	for i in WorldLayout.HANGING_LIGHTS.size():
+		var light: Dictionary = WorldLayout.HANGING_LIGHTS[i]
+		_check((light.get("landing", Vector2.ZERO) as Vector2).is_equal_approx(WorldLayout.LIGHT_POOLS[i]),
+			"hanging source %d landing matches light pool" % i)
+	_check(str(WorldLayout.FLOOR_LIGHT.get("decor_id", "")) == "warm_lamp_f1",
+		"floor-light fixture is linked to placed warm_lamp_f1 decor")
 
 
 # === 5. 闪烁确定性（V3 §9 克制不闪烁 + 确定性） ===
@@ -259,6 +270,61 @@ func _test_pixel_light_map() -> void:
 			if red_found:
 				break
 		_check(red_found, "V3.1 P5 red ad board warm-red glow pixels present (红广告牌 glow)")
+
+
+# === 8. V3.1 R4：投影空间灯泡→光束→落点连续 ===
+
+func _test_projected_light_relationship() -> void:
+	var layer := _make_layer()
+	var img: Image = layer.projected_light_map_image()
+	var origin: Vector2 = layer.projected_light_map_origin()
+	_check(img != null, "projected light map baked (source-to-landing relationship)")
+	if img == null:
+		return
+	_check(img.get_width() > 400 and img.get_height() > 200,
+		"projected light map covers full diorama bounds")
+	for i in WorldLayout.HANGING_LIGHTS.size():
+		var light: Dictionary = WorldLayout.HANGING_LIGHTS[i]
+		var rect: Rect2i = light.get("rect", Rect2i())
+		var source := Proj2D.proj(rect.position.x, rect.position.y,
+			float(light.get("height", 0.0))) + (light.get("bulb_local", Vector2.ZERO) as Vector2)
+		var landing := Proj2D.project_world(light.get("landing", Vector2.ZERO))
+		var source_warm := _warm_near(img, source - origin, 5)
+		var middle_warm := _warm_near(img, source.lerp(landing, 0.5) - origin, 8)
+		var landing_warm := _warm_near(img, source.lerp(landing, 0.88) - origin, 10)
+		_check(source_warm > 0, "lamp %d warm bulb core exists" % i)
+		_check(middle_warm > 0, "lamp %d directional shaft reaches middle" % i)
+		_check(landing_warm > 0, "lamp %d directional shaft reaches landing" % i)
+	# 同一输入新实例重烘焙应逐像素一致（无 RNG 状态）。
+	var layer2 := _make_layer()
+	var img2: Image = layer2.projected_light_map_image()
+	var deterministic := img.get_data() == img2.get_data()
+	_check(deterministic, "projected source/shaft map deterministic")
+
+
+# === 9. 设备亮面随最近光源位置变化 ===
+
+func _test_equipment_light_hit_direction() -> void:
+	var layer := _make_layer()
+	var left_fp := Rect2i(32, 160, 32, 32)
+	var right_fp := Rect2i(352, 160, 32, 32)
+	var left_hit: Dictionary = layer._equipment_light_hit_canvas(left_fp, "bike")
+	var right_hit: Dictionary = layer._equipment_light_hit_canvas(right_fp, "bike")
+	_check(bool(left_hit.get("lit", false)) and bool(right_hit.get("lit", false)),
+		"equipment under warm sources receives local material highlights")
+	_check((left_hit.get("point", Vector2.ZERO) as Vector2).x
+		!= (right_hit.get("point", Vector2.ZERO) as Vector2).x,
+		"equipment highlight point changes with source/placement position")
+
+
+func _warm_near(img: Image, p: Vector2, radius: int) -> int:
+	var found := 0
+	for y in range(maxi(int(p.y) - radius, 0), mini(int(p.y) + radius + 1, img.get_height())):
+		for x in range(maxi(int(p.x) - radius, 0), mini(int(p.x) + radius + 1, img.get_width())):
+			var c := img.get_pixel(x, y)
+			if c.a > 0.04 and c.r > c.b:
+				found += 1
+	return found
 
 
 # === helpers ===
