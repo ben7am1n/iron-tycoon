@@ -37,6 +37,7 @@ const MemberSimScript := preload("res://src/systems/member_sim.gd")
 const CongestionScript := preload("res://src/systems/congestion.gd")
 const SatisfactionScript := preload("res://src/systems/satisfaction.gd")
 const EconomyScript := preload("res://src/systems/economy.gd")
+const EquipmentUpgradeSystemScript := preload("res://src/systems/equipment_upgrade_system.gd")
 const ZoneRulesScript := preload("res://src/systems/zone_rules.gd")
 const HudScript := preload("res://src/ui/hud.gd")
 const BuildShopPaletteScript := preload("res://src/ui/build_shop_palette.gd")
@@ -69,6 +70,7 @@ const ENTRANCE := Vector2i(0, 0)
 const EXIT := Vector2i(12, 9)
 const CELL_SIZE := 32          # SimulationOrchestrator.PLACEMENT_CELL_SIZE
 const CATALOG_PATH := "res://data/equipment_catalog.json"
+const UPGRADE_CONFIG_PATH := "res://data/equipment_upgrades.json"
 const MASTER_SEED := 20260807
 const SMOKE_FRAMES := 600      # --smoke 运行帧数（headless 帧率不定，600 帧 ≈ 数秒 sim）
 
@@ -129,6 +131,7 @@ var _member
 var _cong
 var _sat
 var _econ
+var _upgrades
 var _zone_rules
 
 # === UI / presentation 引用 ===
@@ -214,17 +217,23 @@ func _assemble_systems() -> void:
 	_orch.grid_system = _grid
 	_orch.navigation = _nav
 
+	# A2 upgrade service owns formulas/transactions; per-instance levels remain
+	# in GridSystem placement records and therefore use the existing save path.
+	_upgrades = EquipmentUpgradeSystemScript.new()
+	_upgrades.init(_grid, EquipmentUpgradeSystemScript.config_from_file(UPGRADE_CONFIG_PATH))
+	_orch.equipment_upgrade_system = _upgrades
+
 	# 4 个 tick 系统需要 orchestrator 引用，故在 add_child 前构造；
 	# Congestion 先 new 未 init 的 MemberSim 引用（core_loop 集成测试同序）。
 	_member = MemberSimScript.new()
 	_cong = CongestionScript.new()
 	_cong.init(_orch, _srg, _grid, _member, {}, _nav, ENTRANCE)
 	_member.init(_orch, _srg, _grid, _nav, _catalog, ENTRANCE, EXIT,
-		_member_config(), _cong, _resolver())
+		_member_config(), _cong, _resolver(), _upgrades)
 	_sat = SatisfactionScript.new()
 	_sat.init(_orch, _srg, _member, _cong, _zone_reader(), {})
 	_econ = EconomyScript.new()
-	_econ.init(_orch, _srg, {})
+	_econ.init(_orch, _srg, {}, _upgrades)
 
 	_orch.member_sim = _member
 	_orch.congestion = _cong
@@ -453,7 +462,7 @@ func _assemble_ui() -> void:
 	_toolbar = SelectionToolbarScript.new()
 	_toolbar.init(selection, sel_bridge, placement, _grid, GRID_SCREEN_CELL,
 		{}, GRID_SCREEN_ORIGIN, Vector2(UI_VIEWPORT_W, UI_VIEWPORT_H),
-		_world_to_screen)
+		_world_to_screen, _upgrades, _econ)
 	_ui_canvas.add_child(_toolbar)
 
 	_cue = SelectionCueScript.new()

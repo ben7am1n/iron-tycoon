@@ -77,6 +77,8 @@ var member_sim         # MemberSim — null until its story lands (tick Tier 2)
 var congestion         # Congestion — null until its story lands (tick Tier 4)
 var satisfaction       # Satisfaction — null until its story lands (tick Tier 5)
 var economy            # Economy — null until its story lands (tick Tier 6)
+var equipment_upgrade_system  # A2 formula/transaction service; persistent
+                              # levels live inside GridSystem records
 var placement_system   # PlacementSystem — constructed in init() Tier 1 once a
                        # grid exists (LevelLoader story pending; tests inject
                        # grid_system before init()). PL-007.

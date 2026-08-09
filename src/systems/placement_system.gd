@@ -229,6 +229,11 @@ var _relocate_anchor0: Vector2i = Vector2i.ZERO
 ## Original rotation of the relocated piece (degree-valued Rotation int).
 var _relocate_rotation0: int = GridSystem.Rotation.R0
 
+## A2: original persistent upgrade level. Relocate temporarily clears the
+## GridSystem record, so this value must be carried across both commit and
+## restore paths or moving an upgraded machine would reset it to level 1.
+var _relocate_level0: int = 1
+
 
 ## Two-phase init (ADR-0001). Stores the injected grid and catalog.
 ## Exactly once — a second call is a hard error (SimSystem._mark_initialized
@@ -394,6 +399,7 @@ func begin_relocate(instance_id: int) -> void:
 	_relocate_id = instance_id
 	_relocate_anchor0 = placed.anchor
 	_relocate_rotation0 = placed.rotation
+	_relocate_level0 = _grid.get_equipment_level(instance_id)
 	# Core Rule 1a: clear occupancy NOW — grid_changed fires once; in-use
 	# members repath (AC30). During the drag the piece is absent from the grid.
 	_grid.clear(instance_id)
@@ -572,6 +578,7 @@ func _resolve_relocate_drop() -> void:
 	)
 	var relocate_id := _relocate_id
 	_grid.commit(relocate_id, transformed.footprint_cells, transformed.access_cells, _rotation)
+	_grid.set_equipment_level(relocate_id, _relocate_level0)
 	# Counter NOT incremented — re-commit reuses N (AC25e). Map stays in sync.
 	_instance_equipment[relocate_id] = _drag_def.id
 	# Exactly 3 args (AC21 arity rule applies to relocate commits too). The
@@ -593,6 +600,7 @@ func _restore_relocate() -> void:
 		_drag_def.footprint_cells, _drag_def.access_cells, _relocate_anchor0, _relocate_rotation0
 	)
 	_grid.commit(_relocate_id, transformed.footprint_cells, transformed.access_cells, _relocate_rotation0)
+	_grid.set_equipment_level(_relocate_id, _relocate_level0)
 	_clear_drag()
 
 
@@ -648,6 +656,7 @@ func _clear_drag() -> void:
 	_relocate_id = -1
 	_relocate_anchor0 = Vector2i.ZERO
 	_relocate_rotation0 = GridSystem.Rotation.R0
+	_relocate_level0 = 1
 
 
 ## Finds the PlacedInstance DTO for [instance_id] via the granted read surface

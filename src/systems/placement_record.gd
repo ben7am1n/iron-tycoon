@@ -23,6 +23,11 @@
 ## decoupled from GridSystem, exactly like PlacementCheckResult.fail_code
 ## carries GridSystem.FailCode values as int.
 ##
+## A2 equipment upgrades add one non-geometric per-instance value: [level].
+## It lives here because this record is already the placement instance's
+## serialized source of truth. Level 1 is the base state; callers may omit the
+## constructor argument for backward compatibility.
+##
 ## Defensive duplication (strengthening deviation from the Story 005
 ## implementation sketch, which assigned caller arrays directly): _init()
 ## duplicates both cell arrays so the record OWNS its data. A caller that
@@ -44,7 +49,17 @@ var access_cells: Array[Vector2i]
 ## committed with. Stored as int — see doc comment for the convention note.
 var rotation: int
 
-func _init(p_footprint: Array[Vector2i], p_access: Array[Vector2i], p_rotation: int) -> void:
+## Persistent equipment upgrade level. Starts at 1 and is changed only through
+## GridSystem.set_equipment_level().
+var level: int
+
+func _init(
+	p_footprint: Array[Vector2i],
+	p_access: Array[Vector2i],
+	p_rotation: int,
+	p_level: int = 1
+) -> void:
 	footprint_cells = p_footprint.duplicate()
 	access_cells = p_access.duplicate()
 	rotation = p_rotation
+	level = p_level

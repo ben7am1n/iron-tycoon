@@ -1,0 +1,7 @@
+{
+  "max_level": 5,
+  "base_cost_ratio": 0.5,
+  "cost_growth": 2.0,
+  "attraction_per_level": 0.15,
+  "revenue_per_level": 0.10
+}

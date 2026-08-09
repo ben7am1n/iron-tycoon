@@ -294,6 +294,34 @@ func get_access_cells(instance_id: int) -> Array[Vector2i]:
 	return (_reverse_index[instance_id] as PlacementRecord).access_cells.duplicate()
 
 
+## Returns the persistent upgrade level for a placed equipment instance.
+## Unknown/cleared ids return 1, the neutral base level, so legacy consumers
+## and stale read paths never gain an accidental bonus.
+func get_equipment_level(instance_id: int) -> int:
+	if not _assert_initialized():
+		return 1
+	if not _reverse_index.has(instance_id):
+		return 1
+	return (_reverse_index[instance_id] as PlacementRecord).level
+
+
+## Sets one placed instance's persistent upgrade level. Rejects unknown ids
+## and values below 1 without mutation. This is deliberately separate from
+## grid_changed: upgrading changes gameplay modifiers, not occupancy or paths.
+## Returns true only when the record was updated (setting the same level is a
+## successful idempotent write).
+func set_equipment_level(instance_id: int, level: int) -> bool:
+	if not _assert_initialized():
+		return false
+	if level < 1:
+		push_error("GridSystem: set_equipment_level() rejected — level must be >= 1; got %d." % level)
+		return false
+	if not _reverse_index.has(instance_id):
+		return false
+	(_reverse_index[instance_id] as PlacementRecord).level = level
+	return true
+
+
 ## Returns all currently placed equipment instances as typed PlacedInstance
 ## DTOs (TR-GS-024, ADR-0003 §2), built fresh from the reverse index.
 ## Order is stable within a single grid state version but not guaranteed
@@ -675,7 +703,7 @@ func _deep_copy_for_snapshot() -> GridSystem:
 	for instance_id in _reverse_index:
 		var record: PlacementRecord = _reverse_index[instance_id]
 		copy._reverse_index[instance_id] = PlacementRecord.new(
-			record.footprint_cells, record.access_cells, record.rotation
+			record.footprint_cells, record.access_cells, record.rotation, record.level
 		)
 	return copy
 
@@ -728,12 +756,17 @@ func serialize() -> Dictionary:
 		var rec: PlacementRecord = _reverse_index[instance_id]
 		var fp := _serialize_cells(rec.footprint_cells)
 		var ac := _serialize_cells(rec.access_cells)
-		records.append({
+		var serialized_record := {
 			"instance_id": instance_id,
 			"footprint_cells": fp,
 			"access_cells": ac,
 			"rotation": rec.rotation,
-		})
+		}
+		# Level 1 is implicit so pre-A2 saves and byte-identical base-grid tests
+		# keep their established shape. Upgraded instances carry the field.
+		if rec.level > 1:
+			serialized_record["level"] = rec.level
+		records.append(serialized_record)
 
 	return {
 		"schema_version": 1,
@@ -873,6 +906,17 @@ func deserialize(data: Dictionary, buildable_snapshot: PackedByteArray, mode: St
 		if not _is_legal_rotation(rotation):
 			return DeserializeResult.fail(ERR_CORRUPTED_SAVE, "record %d has illegal rotation %d (must be 0/90/180/270)" % [i, rotation])
 
+		# A2 backward compatibility: legacy records omit level and load as L1.
+		# If present it must be a whole positive integer; fractional JSON values
+		# are rejected rather than silently truncated.
+		if record.has("level"):
+			var level_val: Variant = record["level"]
+			if typeof(level_val) != TYPE_INT and typeof(level_val) != TYPE_FLOAT:
+				return DeserializeResult.fail(ERR_CORRUPTED_SAVE, "record %d level is not numeric: %s" % [i, str(level_val)])
+			var level_float := float(level_val)
+			if not is_finite(level_float) or level_float != floor(level_float) or int(level_float) < 1:
+				return DeserializeResult.fail(ERR_CORRUPTED_SAVE, "record %d level must be a whole integer >= 1; got %s" % [i, str(level_val)])
+
 		# Cell arrays must exist and footprint must be non-empty (AC-D5.3).
 		var fp_raw: Variant = record["footprint_cells"]
 		var ac_raw: Variant = record["access_cells"]
@@ -936,7 +980,7 @@ func deserialize(data: Dictionary, buildable_snapshot: PackedByteArray, mode: St
 			var instance_id := int(record["instance_id"])
 			var fp := _cells_from_variant_array(record["footprint_cells"])
 			var ac := _cells_from_variant_array(record["access_cells"])
-			_write_record(instance_id, fp, ac, int(record["rotation"]))
+			_write_record(instance_id, fp, ac, int(record["rotation"]), int(record.get("level", 1)))
 			all_fp.append_array(fp)
 			all_ac.append_array(ac)
 
@@ -1002,7 +1046,13 @@ func _clear_all() -> void:
 ## legality; GDD §C.8 step 7: "直接写...不需要重新判定合法性"). Access ids are
 ## deduplicated per cell, matching commit()'s write semantics. Silent — the
 ## single grid_changed for the whole load is emitted by deserialize().
-func _write_record(instance_id: int, footprint_cells: Array[Vector2i], access_cells: Array[Vector2i], rotation: int) -> void:
+func _write_record(
+	instance_id: int,
+	footprint_cells: Array[Vector2i],
+	access_cells: Array[Vector2i],
+	rotation: int,
+	level: int = 1
+) -> void:
 	for fc in footprint_cells:
 		_occupant_id[flat_index(fc)] = instance_id
 	for ac in access_cells:
@@ -1012,7 +1062,7 @@ func _write_record(instance_id: int, footprint_cells: Array[Vector2i], access_ce
 				arr.append(instance_id)
 		else:
 			_access_ids[ac] = [instance_id]
-	_reverse_index[instance_id] = PlacementRecord.new(footprint_cells, access_cells, rotation)
+	_reverse_index[instance_id] = PlacementRecord.new(footprint_cells, access_cells, rotation, level)
 
 # === Geometry Helpers ===
 

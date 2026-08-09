@@ -242,6 +242,7 @@ const STATE_MEMBER_INT_KEYS: Array[String] = [
 	"exercises_done", "exercises_per_visit", "target_equipment_instance_id",
 	"cached_path_grid_version", "repath_failures", "patience_ticks_remaining",
 	"leaving_timeout_ticks", "use_ticks_remaining",
+	"last_completed_equipment_level",
 ]
 
 ## Why a member left the gym (drives S5 emission — quota-met departures only).
@@ -373,6 +374,11 @@ var _congestion_reader: Variant = null
 ## config defaults (the pre-wiring rigs' deterministic behavior).
 var _equipment_id_resolver: Callable = Callable()
 
+## A2 upgrade reader. Duck-typed EquipmentUpgradeSystem supplying get_level()
+## and attraction_multiplier_for_level(). Optional so pre-A2 rigs remain
+## neutral and consume the exact same RNG sequence.
+var _upgrade_reader: Variant = null
+
 # === Tuning values (GDD Tuning Knobs anchors; see class header) ===
 var _max_concurrent_members: int = 15
 var _base_arrival_rate_per_min: float = 4.0
@@ -443,7 +449,8 @@ func init(
 	exit_cell: Vector2i = Vector2i(-1, -1),
 	config: Dictionary = {},
 	congestion_reader: Variant = null,
-	equipment_id_resolver: Callable = Callable()
+	equipment_id_resolver: Callable = Callable(),
+	upgrade_reader: Variant = null
 ) -> void:
 	if not _mark_initialized():
 		return
@@ -456,6 +463,7 @@ func init(
 	_exit_cell = exit_cell
 	_congestion_reader = congestion_reader
 	_equipment_id_resolver = equipment_id_resolver
+	_upgrade_reader = upgrade_reader
 	_apply_config(config)
 	_seeded_rng.register_system(system_name())
 
@@ -784,13 +792,17 @@ func _build_weighted_candidates(member: Dictionary) -> Array:
 		var congestion := _congestion_value(instance_id)
 		var novelty := _novelty_factor(member, instance_id)
 		var preference_weight := _preference_weight(member, instance_id)
+		var attraction_multiplier := _upgrade_attraction_multiplier(instance_id)
 		out.append({
 			"instance_id": instance_id,
-			"weight": target_selection_weight(congestion, dist_cells, novelty, noise, preference_weight),
+			"weight": target_selection_weight(
+				congestion, dist_cells, novelty, noise,
+				preference_weight, attraction_multiplier),
 			"congestion": congestion,
 			"dist_cells": dist_cells,
 			"novelty": novelty,
 			"preference_weight": preference_weight,
+			"attraction_multiplier": attraction_multiplier,
 			"noise": noise,
 		})
 	return out
@@ -835,7 +847,8 @@ func target_selection_weight(
 	dist_cells: int,
 	novelty_factor: float,
 	pref_noise: float,
-	preference_weight: float = 1.0
+	preference_weight: float = 1.0,
+	attraction_multiplier: float = 1.0
 ) -> float:
 	var c := clampf(congestion, 0.0, 1.0)
 	var d := maxi(dist_cells, 0)
@@ -844,8 +857,28 @@ func target_selection_weight(
 		* exp(-_k_proximity * float(d) / float(maxi(_d_max, 1))) \
 		* clampf(novelty_factor, 0.0, 1.0) \
 		* clampf(preference_weight, 0.0, 2.0) \
+		* clampf(attraction_multiplier, 0.0, 2.0) \
 		* clampf(pref_noise, 0.0, 2.0)
 	return maxf(raw, WEIGHT_EPSILON)
+
+
+## A2 current-instance attraction multiplier. Missing upgrade wiring is
+## neutral for compatibility with tests, old saves, and stripped-down rigs.
+func _upgrade_attraction_multiplier(instance_id: int) -> float:
+	if _upgrade_reader == null or not _upgrade_reader.has_method("get_level") \
+		or not _upgrade_reader.has_method("attraction_multiplier_for_level"):
+		return 1.0
+	var level := int(_upgrade_reader.call("get_level", instance_id))
+	return float(_upgrade_reader.call("attraction_multiplier_for_level", level))
+
+
+## A2 current level for a completed equipment use. This value is snapshotted
+## onto the member before its target id is cleared, keeping later revenue
+## deterministic if the equipment changes while the member walks to the exit.
+func _upgrade_level(instance_id: int) -> int:
+	if _upgrade_reader == null or not _upgrade_reader.has_method("get_level"):
+		return 1
+	return maxi(1, int(_upgrade_reader.call("get_level", instance_id)))
 
 
 ## Reads Congestion(t-1) for [instance_id] through the injected reader (the
@@ -1201,7 +1234,9 @@ func _on_using(member: Dictionary) -> void:
 		return
 	_release_reservation(member)  # Story 003: occupant claim released same tick
 	if int(member["target_equipment_instance_id"]) >= 0:
-		_record_recently_used(member, int(member["target_equipment_instance_id"]))
+		var completed_instance_id := int(member["target_equipment_instance_id"])
+		_record_recently_used(member, completed_instance_id)
+		member["last_completed_equipment_level"] = _upgrade_level(completed_instance_id)
 	member["exercises_done"] = int(member["exercises_done"]) + 1
 	member["target_equipment_instance_id"] = -1
 	member["cached_path"] = []
@@ -1332,8 +1367,21 @@ func _spawn_member() -> void:
 		"leaving_timeout_ticks": 0,
 		"patience_ticks_remaining": 0,  # Story 003: rolled on entering QUEUEING
 		"recently_used_ids": [],
+		"last_completed_equipment_level": 1,
 	}
 	members.append(member)
+
+
+## Returns the equipment level snapshotted by a quota-met member's last
+## completed use. Economy calls this synchronously from member_completed_visit
+## while the member is still present in the roster. Unknown/legacy ids are L1.
+func get_completed_visit_equipment_level(member_id: int) -> int:
+	if not _assert_initialized():
+		return 1
+	for member in members:
+		if member is Dictionary and int(member.get("member_id", -1)) == member_id:
+			return maxi(1, int(member.get("last_completed_equipment_level", 1)))
+	return 1
 
 
 ## Number of active (non-removed) members. GONE members are removed at the

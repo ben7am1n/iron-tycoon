@@ -77,6 +77,11 @@ var _orchestrator: SimulationOrchestrator
 ## (ADR-0004 / save-load AC7 contract).
 var _seeded_rng: SeededRNG
 
+## Optional A2 formula reader. MemberSim snapshots the final completed
+## equipment level; this reader converts the base visit fee to upgraded integer
+## revenue. Null keeps the original flat-fee behavior exactly.
+var _upgrade_reader: Variant = null
+
 ## Per-tick progression counter — the stub-era observable, preserved as a
 ## RUNTIME-ONLY tick counter (the ECON-001 no-decay test reads it). NOT
 ## gameplay state and NOT serialized: the ledger's observable IS balance
@@ -98,11 +103,17 @@ var _r_visit: int = R_VISIT
 ## exactly once (assert on duplicate — SeededRNG.register_system is the hard
 ## gate). The stream is registered for the save-load AC7 contract but NEVER
 ## drawn from: revenue is fully deterministic (GDD Core Rule 1).
-func init(orchestrator: SimulationOrchestrator, seeded_rng: SeededRNG, config: Dictionary = {}) -> void:
+func init(
+	orchestrator: SimulationOrchestrator,
+	seeded_rng: SeededRNG,
+	config: Dictionary = {},
+	upgrade_reader: Variant = null
+) -> void:
 	if not _mark_initialized():
 		return
 	_orchestrator = orchestrator
 	_seeded_rng = seeded_rng
+	_upgrade_reader = upgrade_reader
 	_apply_config(config)
 	_seeded_rng.register_system(system_name())
 
@@ -152,8 +163,16 @@ func on_tick(tick_count: int) -> void:
 func on_member_completed_visit(member_id: int) -> void:
 	if not _assert_initialized():
 		return
-	balance += _r_visit
-	balance_changed.emit(balance, _r_visit)
+	var revenue := _r_visit
+	if _upgrade_reader != null \
+		and _upgrade_reader.has_method("revenue_for_visit") \
+		and _orchestrator != null \
+		and _orchestrator.member_sim != null \
+		and _orchestrator.member_sim.has_method("get_completed_visit_equipment_level"):
+		var level := int(_orchestrator.member_sim.call("get_completed_visit_equipment_level", member_id))
+		revenue = int(_upgrade_reader.call("revenue_for_visit", _r_visit, level))
+	balance += revenue
+	balance_changed.emit(balance, revenue)
 
 
 ## Affordability query (GDD Core Rule 5 / AC5) — the Shop pre-check gate in

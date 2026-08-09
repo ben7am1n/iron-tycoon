@@ -39,6 +39,7 @@ const GRID_SCRIPT := "res://src/systems/grid_system.gd"
 const CATALOG_SCRIPT := "res://src/systems/equipment_catalog.gd"
 const DEF_SCRIPT := "res://src/systems/equipment_def.gd"
 const ECON_SCRIPT := "res://src/systems/economy.gd"
+const UPGRADE_SCRIPT := "res://src/systems/equipment_upgrade_system.gd"
 const SRG_SCRIPT := "res://src/systems/seeded_rng.gd"
 
 const CELL_SIZE := 32
@@ -70,6 +71,7 @@ func run_all() -> Dictionary:
 
 	_test_hidden_with_no_selection()
 	_test_visible_when_selected()
+	_test_upgrade_button_cost_and_purchase()
 	_test_buttons_near_piece_anchor()
 	_test_ac4_move_clears_selection_and_hands_off()
 	_test_ac4_relocate_ghost_picks_up_piece()
@@ -219,12 +221,27 @@ func _make_bridge(sel: RefCounted, grid: RefCounted, placement: RefCounted):
 ## The SelectionToolbar Control, added to the tree (so tweens/visibility
 ## behave like runtime) and init'd with the full rig. Returned untyped so
 ## tests can call its query surface dynamically.
-func _make_toolbar(sel: RefCounted, bridge, placement: RefCounted, grid: RefCounted, config: Dictionary = {}):
+func _make_toolbar(
+	sel: RefCounted,
+	bridge,
+	placement: RefCounted,
+	grid: RefCounted,
+	economy: RefCounted,
+	upgrade: RefCounted,
+	config: Dictionary = {}
+):
 	var toolbar = (load(TOOLBAR_SCRIPT) as Script).new()
 	root.add_child(toolbar)
-	toolbar.call("init", sel, bridge, placement, grid, CELL_SIZE, config, Vector2.ZERO, VIEWPORT)
+	toolbar.call("init", sel, bridge, placement, grid, CELL_SIZE, config,
+		Vector2.ZERO, VIEWPORT, Callable(), upgrade, economy)
 	_nodes_to_free.append(toolbar)
 	return toolbar
+
+
+func _make_upgrade(grid: RefCounted) -> RefCounted:
+	var upgrade: RefCounted = (load(UPGRADE_SCRIPT) as Script).new()
+	upgrade.call("init", grid, {})
+	return upgrade
 
 
 ## Places a piece via the REAL PlacementSystem flow → its instance_id.
@@ -246,13 +263,14 @@ func _make_world(costs: Array, zone: String = "cardio", config: Dictionary = {})
 	var catalog := _make_catalog(defs)
 	var placement := _make_placement(grid, catalog)
 	var economy := _make_economy(0x7004B)
+	var upgrade := _make_upgrade(grid)
 	var selection := _make_selection(grid, placement, catalog, economy)
 	var bridge = _make_bridge(selection, grid, placement)
-	var toolbar = _make_toolbar(selection, bridge, placement, grid, config)
+	var toolbar = _make_toolbar(selection, bridge, placement, grid, economy, upgrade, config)
 	return {
 		"grid": grid, "catalog": catalog, "placement": placement,
 		"economy": economy, "selection": selection, "bridge": bridge,
-		"toolbar": toolbar,
+		"toolbar": toolbar, "upgrade": upgrade,
 	}
 
 
@@ -285,8 +303,22 @@ func _test_visible_when_selected() -> void:
 	_check(bool(toolbar.call("is_toolbar_active")), "visibility — toolbar active after selection")
 	_check(int(toolbar.call("get_selected_instance_id")) == id, "visibility — toolbar holds the selected id")
 	_check(toolbar.get_node("ToolbarRow/InspectButton") != null, "visibility — Inspect button built")
+	_check(toolbar.get_node("ToolbarRow/UpgradeButton") != null, "visibility — Upgrade button built")
 	_check(toolbar.get_node("ToolbarRow/MoveButton") != null, "visibility — Move button built")
 	_check(toolbar.get_node("ToolbarRow/SellButton") != null, "visibility — Sell button built")
+
+
+func _test_upgrade_button_cost_and_purchase() -> void:
+	print("\n[A2] Upgrade button shows next level/cost and performs purchase")
+	var w := _make_world([200])
+	var id := _place(w["placement"], "piece_200", Vector2i(3, 3))
+	w["selection"].call("on_cell_clicked", Vector2i(3, 3))
+	_check(str(w["toolbar"].call("get_upgrade_label")) == "Upgrade L2 $100", "A2 — label shows L2 and $100 cost")
+	_check(not bool(w["toolbar"].call("is_upgrade_disabled")), "A2 — affordable upgrade is enabled")
+	w["toolbar"].call("_on_upgrade_pressed")
+	_check(int(w["grid"].call("get_equipment_level", id)) == 2, "A2 — selected instance upgraded to L2")
+	_check(int(w["economy"].get("balance")) == 400, "A2 — upgrade deducted $100")
+	_check(str(w["toolbar"].call("get_upgrade_label")) == "Upgrade L3 $200", "A2 — label refreshes to next cost")
 
 
 func _test_buttons_near_piece_anchor() -> void:

@@ -1,8 +1,8 @@
-## SelectionToolbar — the contextual Inspect / Move / Sell toolbar
+## SelectionToolbar — the contextual Inspect / Upgrade / Move / Sell toolbar
 ## (selection-system epic, Story 004; TR-SEL-002; GDD Core Rule 3; UX spec
 ## design/ux/selection-ui.md — Zone B Contextual Toolbar).
 ##
-## Renders three actions near the selected piece — NOT a blocking modal:
+## Renders four actions near the selected piece — NOT a blocking modal:
 ##   - Inspect — always available; opens the Equipment Info Panel (#17 — the
 ##     panel itself is out of scope; this story ships the button + the open
 ##     hook, emitted as inspect_requested)
@@ -15,6 +15,8 @@
 ##     the button morphs to "Confirm sell +$X" (Butter) while pending, driven
 ##     by the bridge's sell_confirm_started/reverted signals (Story 003 state
 ##     machine rendered here); second click confirms (confirm_sell)
+##   - Upgrade — A2 immediate deterministic purchase. Label shows next level
+##     and cost; disabled when unaffordable or at max level.
 ##
 ## BRIDGE-DRIVEN (ADR-0005 decision summary): the SelectionInputBridge owns
 ## the sell-confirm window state and the Move-during-drag guard; this
@@ -71,6 +73,9 @@ const DURATION_MAX := 0.5
 const LABEL_INSPECT := "Inspect"
 const LABEL_MOVE := "Move"
 const LABEL_SELL := "Sell"
+const LABEL_UPGRADE := "Upgrade"
+const UPGRADE_PREFIX := "Upgrade L"
+const UPGRADE_MAX_PREFIX := "Max L"
 const SELL_CONFIRM_PREFIX := "Confirm sell +$"
 
 ## Art-bible palette (design/art/art-bible.md §4): Butter = money/highlight
@@ -110,6 +115,8 @@ var _viewport_size: Vector2 = Vector2(1280, 720)
 ## 后 footprint 矩形按投影后的 4 角 AABB 计算（与世界上屏位置精确对齐）；
 ## 未注入（旧调用/单测）回退 origin + cell*cell_size 均匀换算。
 var _world_to_screen: Callable = Callable()
+var _upgrade_system: Variant = null
+var _economy: Variant = null
 var _reduced_motion: bool = false
 var _enter_duration: float = DEFAULT_ENTER_DURATION
 var _exit_duration: float = DEFAULT_EXIT_DURATION
@@ -140,6 +147,7 @@ var _plate_texel_size: Vector2i = Vector2i.ZERO
 var _inspect_button: Button
 var _move_button: Button
 var _sell_button: Button
+var _upgrade_button: Button
 
 var _initialized: bool = false
 
@@ -160,7 +168,9 @@ func init(
 	config: Dictionary = {},
 	grid_origin: Vector2 = Vector2.ZERO,
 	viewport_size: Vector2 = Vector2(1280, 720),
-	world_to_screen: Callable = Callable()
+	world_to_screen: Callable = Callable(),
+	upgrade_system: Variant = null,
+	economy: Variant = null
 ) -> void:
 	if _initialized:
 		push_error("SelectionToolbar.init() called twice")
@@ -174,6 +184,8 @@ func init(
 	_grid_origin = grid_origin
 	_viewport_size = viewport_size
 	_world_to_screen = world_to_screen
+	_upgrade_system = upgrade_system
+	_economy = economy
 	_apply_config(config)
 	_build_buttons()
 	visible = false
@@ -185,6 +197,10 @@ func init(
 			bridge.sell_confirm_started.connect(_on_sell_confirm_started)
 		if not bridge.sell_confirm_reverted.is_connected(_on_sell_confirm_reverted):
 			bridge.sell_confirm_reverted.connect(_on_sell_confirm_reverted)
+	if _upgrade_system != null and not _upgrade_system.equipment_upgraded.is_connected(_on_equipment_upgraded):
+		_upgrade_system.equipment_upgraded.connect(_on_equipment_upgraded)
+	if _economy != null and not _economy.balance_changed.is_connected(_on_balance_changed):
+		_economy.balance_changed.connect(_on_balance_changed)
 	# Drag-state refresh is a lightweight per-frame poll (see _process),
 	# NOT a placement signal subscription: placement_committed fires BEFORE
 	# PlacementSystem's _clear_drag() returns, so a signal handler would
@@ -223,6 +239,15 @@ func _build_buttons() -> void:
 	_inspect_button.add_theme_color_override("font_color", COLOR_WARM_CREAM)
 	_inspect_button.pressed.connect(_on_inspect_pressed)
 	row.add_child(_inspect_button)
+
+	_upgrade_button = Button.new()
+	_upgrade_button.name = "UpgradeButton"
+	_upgrade_button.text = LABEL_UPGRADE
+	_upgrade_button.focus_mode = Control.FOCUS_ALL
+	UiTheme.style_button(_upgrade_button)
+	_upgrade_button.add_theme_color_override("font_color", COLOR_BUTTER)
+	_upgrade_button.pressed.connect(_on_upgrade_pressed)
+	row.add_child(_upgrade_button)
 
 	_move_button = Button.new()
 	_move_button.name = "MoveButton"
@@ -340,6 +365,16 @@ func _on_sell_confirm_reverted() -> void:
 	_sell_button.remove_theme_color_override("font_color")
 
 
+func _on_equipment_upgraded(instance_id: int, _old_level: int, _new_level: int, _cost: int) -> void:
+	if instance_id == _selected_instance_id:
+		_refresh_upgrade_button()
+
+
+func _on_balance_changed(_new_balance: int, _delta: int) -> void:
+	if _active:
+		_refresh_upgrade_button()
+
+
 ## Per-frame Move-disabled refresh (UX AC: Move disabled during an active
 ## placement drag). PlacementSystem has no drag-START/END signals that
 ## bracket a drag cleanly (placement_committed fires BEFORE _clear_drag
@@ -351,6 +386,7 @@ func _process(_delta: float) -> void:
 	if not _initialized or not _active:
 		return
 	_refresh_move_disabled()
+	_refresh_upgrade_button()
 
 
 ## Inspect pressed — always available; emits the open hook (Equipment Info
@@ -361,6 +397,18 @@ func _on_inspect_pressed() -> void:
 	if _selected_instance_id == -1:
 		return
 	inspect_requested.emit(_selected_instance_id, _selected_def, _selected_cell, _selected_rotation)
+
+
+## A2 upgrade pressed — a single click performs the deterministic paid
+## transaction. Affordability/max-level are reflected in disabled state and
+## rechecked by EquipmentUpgradeSystem for defense in depth.
+func _on_upgrade_pressed() -> void:
+	if not _initialized or _selected_instance_id == -1 or _selected_def == null:
+		return
+	if _upgrade_system == null or _economy == null:
+		return
+	_upgrade_system.try_upgrade(_selected_instance_id, _selected_def.cost, _economy)
+	_refresh_upgrade_button()
 
 
 ## Move pressed — the AC4 handoff. Sequence (GDD Core Rule 3):
@@ -426,6 +474,7 @@ func _show_toolbar(instance_id: int, equipment_def, cell: Vector2i, rotation: in
 	_sell_button.remove_theme_color_override("font_color")
 	# Move disabled during an active placement drag (UX AC).
 	_refresh_move_disabled()
+	_refresh_upgrade_button()
 	_anchor_to_footprint()
 	visible = true
 	queue_redraw()
@@ -524,6 +573,25 @@ func _refresh_move_disabled() -> void:
 	_move_button.disabled = _bridge.is_move_blocked()
 
 
+func _refresh_upgrade_button() -> void:
+	if _upgrade_button == null:
+		return
+	if _selected_instance_id == -1 or _selected_def == null \
+		or _upgrade_system == null or _economy == null:
+		_upgrade_button.text = LABEL_UPGRADE
+		_upgrade_button.disabled = true
+		return
+	var level := int(_upgrade_system.get_level(_selected_instance_id))
+	var max_level := int(_upgrade_system.get_max_level())
+	if level >= max_level:
+		_upgrade_button.text = UPGRADE_MAX_PREFIX + str(max_level)
+		_upgrade_button.disabled = true
+		return
+	var cost := int(_upgrade_system.get_upgrade_cost(_selected_instance_id, _selected_def.cost))
+	_upgrade_button.text = UPGRADE_PREFIX + str(level + 1) + " $" + str(cost)
+	_upgrade_button.disabled = cost <= 0 or not bool(_economy.can_afford(cost))
+
+
 ## Pixel rect of the transformed footprint cells (grid space) — mirrors the
 ## cue's computation; both are thin presentation reads of the SAME
 ## GridSystem transform (never a local re-implementation of rotation math).
@@ -606,6 +674,20 @@ func get_sell_label() -> String:
 	if not _initialized:
 		return ""
 	return _sell_button.text
+
+
+## Current A2 upgrade label, including next level and cost or max-level state.
+func get_upgrade_label() -> String:
+	if not _initialized or _upgrade_button == null:
+		return ""
+	return _upgrade_button.text
+
+
+## Whether the A2 upgrade action is unavailable (unwired, unaffordable, or max).
+func is_upgrade_disabled() -> bool:
+	if not _initialized or _upgrade_button == null:
+		return true
+	return _upgrade_button.disabled
 
 ## True while the sell soft-confirm window is open (button morphed).
 func is_sell_pending() -> bool:
