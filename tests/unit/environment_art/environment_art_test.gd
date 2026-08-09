@@ -39,6 +39,7 @@ func run_all() -> Dictionary:
 	_test_map_structure()
 	_test_texture_sizes()
 	_test_semantic_colors()
+	_test_focal_props()
 	_test_no_pure_black_white()
 	_test_decor_suffix_resolution()
 	_test_unknown_returns_null()
@@ -107,6 +108,44 @@ func _test_semantic_colors() -> void:
 		var img := tex.get_image()
 		_check(_image_contains(img, checks[prop_id], 0.05),
 			"%s contains %s" % [prop_id, (checks[prop_id] as Color).to_html(false)])
+
+
+# === 9. V3.1 P5 高饱和焦点装饰（10-15 个焦点中的装饰类） ===
+
+## V3.1 P5：新装饰 prop 存在且含高饱和焦点色（FOCAL_* 族 —— 单一色源
+## palette；红广告牌/黄水杯/彩色瑜伽用品/植物亮叶变体）。
+func _test_focal_props() -> void:
+	var art = EnvironmentArtScript.new()
+	var focal_checks := {
+		"ad_red": PaletteScript.FOCAL_RED,
+		"cup_yellow": PaletteScript.FOCAL_YELLOW,
+		"yoga_ball": PaletteScript.FOCAL_PURPLE,
+		"yoga_strap": PaletteScript.FOCAL_TEAL,
+		"plant_bright": PaletteScript.FOCAL_GREEN_LIGHT,
+	}
+	for prop_id in focal_checks:
+		var tex := art.texture_for(prop_id)
+		_check(tex != null, "V3.1 P5 prop '%s' texture builds" % prop_id)
+		if tex == null:
+			continue
+		var img := tex.get_image()
+		_check(_image_contains(img, focal_checks[prop_id], 0.05),
+			"V3.1 P5 prop '%s' contains focal %s" % [prop_id, (focal_checks[prop_id] as Color).to_html(false)])
+	# 焦点色饱和度分离：FOCAL_* 色饱和度 >= 0.72（环境 ACCENT 低于此值
+	# —— 焦点与环境分离，P5「70% 环境低饱和 + 精选高饱和焦点」）
+	var focal_sat_ok := true
+	for c in [PaletteScript.FOCAL_RED, PaletteScript.FOCAL_YELLOW,
+			PaletteScript.FOCAL_GREEN_LIGHT, PaletteScript.FOCAL_PINK,
+			PaletteScript.FOCAL_PURPLE, PaletteScript.FOCAL_TEAL]:
+		if _hsv_saturation(c) < 0.72:
+			focal_sat_ok = false
+	_check(focal_sat_ok, "V3.1 P5 all FOCAL_* colors HSV saturation >= 0.72 (高饱和焦点)")
+	var env_sat_ok := true
+	for c in [PaletteScript.ACCENT_YELLOW, PaletteScript.ACCENT_CYAN,
+			PaletteScript.EMISSIVE_CYAN, PaletteScript.EMISSIVE_GREEN]:
+		if _hsv_saturation(c) >= 0.72:
+			env_sat_ok = false
+	_check(env_sat_ok, "V3.1 P5 env ACCENT/EMISSIVE colors stay below 0.72 (环境低饱和)")
 
 
 # === 4. 无纯黑/纯白（25d §3） ===
@@ -195,3 +234,12 @@ func _color_distance(a: Color, b: Color) -> float:
 	var dg := a.g - b.g
 	var db := a.b - b.b
 	return sqrt(dr * dr + dg * dg + db * db)
+
+
+## HSV 饱和度（0..1）：(max-min)/max。用于 P5 焦点/环境分离断言。
+func _hsv_saturation(c: Color) -> float:
+	var mx := maxf(maxf(c.r, c.g), c.b)
+	var mn := minf(minf(c.r, c.g), c.b)
+	if mx <= 0.0:
+		return 0.0
+	return (mx - mn) / mx

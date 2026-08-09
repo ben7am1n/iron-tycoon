@@ -22,6 +22,8 @@ const ART_SCALE := 4
 ##   . 透明 | O 描边(CHARCOAL) | W 墙色 | G 窗玻璃 | M 金属暗面 | H 金属高光
 ##   B Butter | P 植物绿 | p 植物深绿 | L 植物亮绿 | T 陶盆 | Y ACCENT_YELLOW
 ##   C ACCENT_CYAN | R ACCENT_ORANGE | K 暖黑(深棕/炭灰)
+##   F FOCAL_RED（红色广告牌） | X FOCAL_PINK | V FOCAL_PURPLE | Q FOCAL_TEAL
+##   （V3.1 P5 高饱和焦点色：红广告牌/彩色瑜伽用品 —— 只用于小型装饰）
 const ART_MAPS := {
 	# 水瓶：小瓶身 + 瓶盖（accents 低饱和，不刺眼）
 	"water_bottle": [
@@ -95,6 +97,20 @@ const ART_MAPS := {
 		"..ppLp..",
 		".pPLLPp.",
 		".PLpLPP.",
+		"..PPpP..",
+		"..TTTT..",
+		".TTTTTT.",
+		"........",
+		"........",
+	],
+	# V3.1 P5 植物亮叶变体（绿色植物焦点）：同 plant 造型，但亮叶（L）
+	# 换用 FOCAL_GREEN_LIGHT 高饱和绿（N 字符）—— 只在精选 3 盆上使用
+	# （DECOR 表 plant_bright_*），让「绿色植物」成为少数跳出的焦点，
+	# 其余植物保持低饱和（V3.1 P5 精选 10-15 焦点，不整环境提饱和）。
+	"plant_bright": [
+		"..pNpN..",
+		".pPNNPp.",
+		".PNpNPP.",
 		"..PPpP..",
 		"..TTTT..",
 		".TTTTTT.",
@@ -220,6 +236,57 @@ const ART_MAPS := {
 		".OZZZZO.",
 		".OM..MO.",
 		".OM..MO.",
+		"........",
+	],
+	# V3.1 P5 红色广告牌（挂墙）：高饱和红底 + 暖白字条 + 深红下沿。
+	# 红广告牌是 P5 例子「红色广告牌」—— 小型高饱和焦点（V3 §7 高饱和
+	# 仅小型装饰）。无等宽边框（P3：左上/右下缺角）。
+	"ad_red": [
+		"FF.FFFF.",
+		"FFFFFFFF",
+		"FWWWFFWF",
+		"FFFFFFFF",
+		"FWFFFWWF",
+		"FFFFFFFF",
+		"FFFFFFF.",
+		".FFFFFF.",
+	],
+	# V3.1 P5 黄色水杯（地面，等待区/前台）：高饱和黄杯身 + 吸管。
+	# P5 例子「黄色水杯」—— 高饱和焦点。杯身用 FOCAL_YELLOW（D 字符，
+	# s≈0.76）而非 ACCENT_YELLOW（s≈0.69，环境装饰低饱和 —— 焦点与
+	# 环境分离：只杯身跳出来）。
+	"cup_yellow": [
+		"........",
+		"..QQ....",
+		".DDDD...",
+		".DDDD...",
+		".DDDD...",
+		".DD.D...",
+		"..DD....",
+		"........",
+	],
+	# V3.1 P5 彩色瑜伽球（瑜伽区）：粉/紫高饱和小球 + 高光。
+	# P5 例子「彩色瑜伽用品」—— 高饱和焦点。小面积（非整块填充，
+	# V3.1 P3 负面约束；P5 焦点是小装饰，不铺满 8×8）。
+	"yoga_ball": [
+		"........",
+		"...VV...",
+		"..VXVV..",
+		"..VVVV..",
+		"..VVVV..",
+		"...VV...",
+		"........",
+		"........",
+	],
+	# V3.1 P5 彩色瑜伽带（瑜伽区）：青/紫条纹卷带。小面积高饱和焦点。
+	"yoga_strap": [
+		"........",
+		"........",
+		".QQVVQQ.",
+		".QQVVQQ.",
+		".VVQQVV.",
+		"........",
+		"........",
 		"........",
 	],
 	# 壶铃：金属球 + 提把（力量区散落小配重，V3 §12）
@@ -396,5 +463,17 @@ func _color_for(ch: String) -> Color:
 			return Palette.FLOOR_WALK_GROUT
 		"Z":
 			return Palette.FLOOR_FLEX_BASE
+		"F":
+			return Palette.FOCAL_RED
+		"X":
+			return Palette.FOCAL_PINK
+		"V":
+			return Palette.FOCAL_PURPLE
+		"Q":
+			return Palette.FOCAL_TEAL
+		"N":
+			return Palette.FOCAL_GREEN_LIGHT
+		"D":
+			return Palette.FOCAL_YELLOW
 		_:
 			return Color(0, 0, 0, 0)

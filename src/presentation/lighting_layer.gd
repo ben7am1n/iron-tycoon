@@ -184,6 +184,7 @@ func _paint_window_light(img: Image) -> void:
 
 
 ## 静态发光体（饮水机/招牌，V3.1 P4 小范围亮色）：1-3px 亮像素 cluster。
+## V3.1 P5：新增红广告牌暖红 glow（高饱和焦点 + P4 亮色表达）。
 func _paint_static_glows(img: Image) -> void:
 	var fountain_pos: Vector2i = WorldLayout.DECOR.get("fountain", Vector2i(-100, -100))
 	if fountain_pos.x >= 0:
@@ -191,6 +192,10 @@ func _paint_static_glows(img: Image) -> void:
 	var sign_pos: Vector2i = WorldLayout.WALL_DECOR.get("sign_entrance", Vector2i(-100, -100))
 	if sign_pos.x >= 0:
 		_paint_glow_cluster(img, sign_pos + Vector2i(8, 8), Palette.ACCENT_YELLOW, 83)
+	# V3.1 P5 红广告牌：暖红 glow（墙下地面），与 P4 静态发光体同一机制。
+	var ad_pos: Vector2i = WorldLayout.WALL_DECOR.get("ad_red", Vector2i(-100, -100))
+	if ad_pos.x >= 0:
+		_paint_glow_cluster(img, ad_pos + Vector2i(8, 16), Palette.FOCAL_RED, 127)
 
 
 ## 单簇小亮点：2×2 核心 + 若干 1px 散落（hash 偏移），无圆。

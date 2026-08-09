@@ -239,6 +239,27 @@ func _test_pixel_light_map() -> void:
 			break
 	_check(same, "light map deterministic (re-bake identical)")
 
+	# V3.1 P5：红广告牌暖红 glow（静态发光体 —— 高饱和焦点 + P4 亮色表达）
+	var ad_pos: Vector2i = WorldLayout.WALL_DECOR.get("ad_red", Vector2i(-100, -100))
+	_check(ad_pos.x >= 0, "V3.1 P5 ad_red wall decor configured (红广告牌挂墙)")
+	if ad_pos.x >= 0:
+		# glow cluster 画在 ad_pos + (8,16)（墙下地面，同 sign 机制）
+		var glow_center := Vector2(ad_pos) + Vector2(8, 16)
+		var red_found := false
+		for dy in range(-6, 7):
+			for dx in range(-6, 7):
+				var gx := int(glow_center.x) + dx
+				var gy := int(glow_center.y) + dy
+				if gx < 0 or gy < 0 or gx >= img.get_width() or gy >= img.get_height():
+					continue
+				var col: Color = img.get_pixel(gx, gy)
+				if col.a > 0.02 and col.r > col.b and col.r > col.g:
+					red_found = true
+					break
+			if red_found:
+				break
+		_check(red_found, "V3.1 P5 red ad board warm-red glow pixels present (红广告牌 glow)")
+
 
 # === helpers ===
 

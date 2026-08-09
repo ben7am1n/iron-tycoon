@@ -68,11 +68,16 @@ const FACE_HAPPY := "happy"     # satisfied：笑眼 + 微笑 + 闪光
 
 # === 外观变体（member_id % 4 → 组合；0 = palette 默认色） ===
 # 每项：{hair, skin, pants, shoes, hair_style}。发型顶型 0=tuft / 1=fringe。
+# V3.1 P5（颜色加高饱和视觉焦点）：只变体 1 穿高饱和橙色运动短裤
+# （P5 例子「橙色健身服」—— 精选焦点，非全员高饱和；变体 2/3 保持
+# 低饱和裤，画面中橙色短裤会员是少数跳出的焦点）。变体 0 保留默认
+# 低饱和裤（既有测试 pin 变体 0 的裤像素；变体 1 无像素断言，安全）。
+# 短裤高饱和色来自 palette FOCAL_GYM_*（单一数据源）。
 const MEMBER_VARIANTS := [
 	{"hair": Palette.MEMBER_HAIR, "skin": Palette.MEMBER_SKIN,
 	 "pants": Palette.MEMBER_PANTS, "shoes": Palette.MEMBER_SHOE, "hair_style": 0},
 	{"hair": Palette.MEMBER_HAIR_ALT1, "skin": Palette.MEMBER_SKIN_ALT1,
-	 "pants": Palette.MEMBER_PANTS_ALT1, "shoes": Palette.MEMBER_SHOE_ALT1, "hair_style": 1},
+	 "pants": Palette.FOCAL_GYM_ORANGE, "shoes": Palette.MEMBER_SHOE_ALT1, "hair_style": 1},
 	{"hair": Palette.MEMBER_HAIR_ALT2, "skin": Palette.MEMBER_SKIN_ALT2,
 	 "pants": Palette.MEMBER_PANTS_ALT2, "shoes": Palette.MEMBER_SHOE_ALT2, "hair_style": 0},
 	{"hair": Palette.MEMBER_HAIR_ALT3, "skin": Palette.MEMBER_SKIN_ALT3,
