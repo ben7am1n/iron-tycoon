@@ -69,13 +69,18 @@ TARGET_MAX = 15
 # V3.1 R1（投影修正）：红广告牌 WALL_DECOR.ad_red=(192,1) 挂墙 —— 墙条 fy=1
 # → 墙面 z≈105。此前按 z=0 近似在 HEIGHT_SCALE 0.79 下窗口偏移出广告牌
 # （墙更高）—— 改为 z=105 采样（与 v31_p5_capture.gd AD_ANCHOR_Z 同源）。
+# V3.1 R5（焦点分布）：亮叶变体从 plant_f1 移到 plant_bright_b1 / 
+# plant_bright_fore_1（WorldLayout.DECOR 的亮叶 plant，绿色焦点之二/三）。
+# 与 v31_p5_capture.gd 口径一致 —— 扫描全部 plant 装饰锚点，任一命中即
+# 通过（R5 后 plant_f1 已是普通绿叶，不再携带 PLANT_GREEN_LIGHT）。
 ANCHORS = [
     ("red_ad_board", (192, 24), 105, 22, FOCAL_RED),
     ("yellow_cup", (88, 108), 0, 20, FOCAL_YELLOW),
     ("yoga_ball", (320, 136), 0, 22, FOCAL_PINK),
     ("yoga_ball_purple", (320, 136), 0, 22, FOCAL_PURPLE),
     ("treadmill_screen", (80, 92), 30, 14, EQUIP_ACCENT_CYAN),
-    ("plant_green", (352, 176), 0, 26, PLANT_GREEN_LIGHT),
+    ("plant_bright_b1", (243, 33), 0, 26, PLANT_GREEN_LIGHT),
+    ("plant_bright_fore_1", (0, 244), 0, 26, PLANT_GREEN_LIGHT),
 ]
 
 passed = 0

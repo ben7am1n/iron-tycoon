@@ -27,8 +27,9 @@ const Main := preload("res://src/main.gd")  # V3 §2 管线常量（单一来源
 const Palette := preload("res://src/palette.gd")
 const OUT_PATH := "res://tests/evidence/phase5-lighting.png"
 const CAPTURE_FRAME := 12
-const RESUME_FRAME := 13    # 第 1 帧采样后恢复模拟 —— 驱动 tick 让动态元素移动
+const RESUME_FRAME := 13    # 第 1 帧采样后确定性推进 tick（不依赖墙钟帧率）
 const SECOND_FRAME := 40    # 动态元素两帧差异采样（光尘/传送带已移动）
+const TARGET_TICK := 4      # 推进到固定 tick（< 首个会员 ~10 tick；光尘/跑带已动）
 
 ## 管线常量（来自 main.gd —— 证据复算与实现同源）。
 const Proj2D := preload("res://src/presentation/oblique_projection.gd")
@@ -114,12 +115,19 @@ func _process(_delta: float) -> void:
 		_verify_environment_storytelling(_img_first)
 		return
 	if _frame == RESUME_FRAME:
-		# 恢复模拟（非 --smoke 默认暂停）→ tick 开始推进 → 动态元素移动。
-		# 会员生成需要多 tick（到达率 60/min，首个 ~10 tick 后），第 2 帧
-		# 采样窗口避开入口走道，会员不影响动态区域断言。
+		# 确定性推进 tick —— 不 resume() 依赖墙钟（tick 数随帧率漂移，
+		# 复跑 PNG 逐字节不一致）。改为直接向 TimeSystem 注入固定时长：
+		# process(TARGET_TICK * TICK_DURATION_SECONDS) 恰好触发 TARGET_TICK
+		# 个 tick（accumulator 精确整除 0.1s，MAX_TICKS_PER_FRAME=8 未触顶），
+		# 随即 pause() 冻结 —— 同 tick 同输出，复跑 md5 一致。
+		# 会员生成需要多 tick（到达率 60/min，首个 ~10 tick 后），TARGET_TICK=4
+		# 无会员 → 动态区域断言不受会员干扰。
 		var orch = _main.get("_orch")
 		if orch != null and orch.time_system != null:
-			orch.time_system.resume()
+			var ts = orch.time_system
+			ts.resume()
+			ts.process(TARGET_TICK * ts.TICK_DURATION_SECONDS)
+			ts.pause()
 		return
 	if _frame == SECOND_FRAME:
 		_img_second = _grab()
