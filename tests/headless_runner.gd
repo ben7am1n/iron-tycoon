@@ -78,6 +78,7 @@ const TEST_FILES := [
 	"tests/unit/economy/serialization_determinism_test.gd",
 	"tests/unit/equipment_upgrade/equipment_upgrade_system_test.gd",
 	"tests/unit/expansion/expansion_system_test.gd",
+	"tests/unit/goals/goal_system_test.gd",
 	"tests/unit/hud/hud_state_binding_test.gd",
 	"tests/unit/hud/hud_layout_test.gd",
 	"tests/unit/hud/money_tween_test.gd",

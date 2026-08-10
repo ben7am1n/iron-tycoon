@@ -418,8 +418,8 @@ func _test_no_blob_contribution() -> void:
 
 	var blob: Dictionary = rig["save_load"].call("_perform_save")
 	_check(not blob.has("selection_system"), "TR-SEL-007 — no 'selection_system' key in blob")
-	# The blob key set is exactly the 8 CONTRIBUTING_KEYS (SaveLoad contract).
-	_check(blob.size() == 9, "TR-SEL-007 — blob has exactly 9 keys (8 contributing + A3 expansion optional, got %d)" % blob.size())
+	# The blob key set is exactly SaveLoad.CONTRIBUTING_KEYS.
+	_check(blob.size() == 10, "TR-SEL-007 — blob has exactly 10 keys (8 core + A3/A4 optional, got %d)" % blob.size())
 
 
 # === QA edge: zero placed pieces ===

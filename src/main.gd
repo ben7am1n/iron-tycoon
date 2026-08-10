@@ -39,8 +39,10 @@ const SatisfactionScript := preload("res://src/systems/satisfaction.gd")
 const EconomyScript := preload("res://src/systems/economy.gd")
 const EquipmentUpgradeSystemScript := preload("res://src/systems/equipment_upgrade_system.gd")
 const ExpansionSystemScript := preload("res://src/systems/expansion_system.gd")
+const GoalSystemScript := preload("res://src/systems/goal_system.gd")
 const ZoneRulesScript := preload("res://src/systems/zone_rules.gd")
 const HudScript := preload("res://src/ui/hud.gd")
+const GoalTrackerScript := preload("res://src/ui/goal_tracker.gd")
 const BuildShopPaletteScript := preload("res://src/ui/build_shop_palette.gd")
 const ShopScript := preload("res://src/ui/shop.gd")
 const ModeArbitrationScript := preload("res://src/ui/mode_arbitration.gd")
@@ -73,6 +75,7 @@ const CELL_SIZE := 32          # SimulationOrchestrator.PLACEMENT_CELL_SIZE
 const CATALOG_PATH := "res://data/equipment_catalog.json"
 const UPGRADE_CONFIG_PATH := "res://data/equipment_upgrades.json"
 const EXPANSION_CONFIG_PATH := "res://data/expansion.json"
+const GOALS_CONFIG_PATH := "res://data/goals.json"
 const MASTER_SEED := 20260807
 const SMOKE_FRAMES := 600      # --smoke 运行帧数（headless 帧率不定，600 帧 ≈ 数秒 sim）
 
@@ -131,10 +134,12 @@ var _sat
 var _econ
 var _upgrades
 var _expansion
+var _goals
 var _zone_rules
 
 # === UI / presentation 引用 ===
 var _hud
+var _goal_tracker
 var _palette
 var _shop
 var _arbitration
@@ -241,6 +246,13 @@ func _assemble_systems() -> void:
 	_expansion.init(_grid, ExpansionSystemScript.config_from_file(EXPANSION_CONFIG_PATH), _sat)
 	_orch.expansion_system = _expansion
 
+	# A4 goals poll deterministic system state and route claimed rewards back
+	# through Economy/ExpansionSystem. Definitions live in data/goals.json.
+	_goals = GoalSystemScript.new()
+	_goals.init(GoalSystemScript.config_from_file(GOALS_CONFIG_PATH), _grid, _sat,
+		_econ, _expansion, _resolver())
+	_orch.goal_system = _goals
+
 	_orch.member_sim = _member
 	_orch.congestion = _cong
 	_orch.satisfaction = _sat
@@ -254,9 +266,10 @@ func _assemble_systems() -> void:
 	# member_completed_visit（Economy）。
 	_cong._post_init()
 	_econ._post_init()
+	_goals._post_init()
 
 	# 固定 tick 顺序（TR-TS-003）——数组顺序即派发顺序。
-	_orch.set("_tick_systems", [_member, _cong, _sat, _econ])
+	_orch.set("_tick_systems", [_member, _cong, _sat, _econ, _goals])
 
 	# ZoneRules 纯函数对象（实例方法 evaluate，见类头）。
 	_zone_rules = ZoneRulesScript.new()
@@ -461,6 +474,15 @@ func _assemble_ui() -> void:
 	_hud.set_position(Vector2.ZERO)
 	_hud.set_size(Vector2(UI_VIEWPORT_W, UI_VIEWPORT_H))
 	_ui_canvas.add_child(_hud)
+
+	# A4 minimal HUD integration is an isolated component rather than a change
+	# to Hud's established money/satisfaction/transport hierarchy.
+	_goal_tracker = GoalTrackerScript.new()
+	_goal_tracker.init(_goals)
+	_goal_tracker.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	_goal_tracker.set_position(Vector2(UI_VIEWPORT_W - 360, 72))
+	_goal_tracker.set_size(Vector2(340, 92))
+	_ui_canvas.add_child(_goal_tracker)
 
 	# 世界锚定 UI 注入屏幕空间网格参数（V3 §2 世界→屏幕换算）：cell_size 改为
 	# 屏幕空间 float（≈72.11px），grid_origin 为世界 (0,0) 的屏幕坐标 ——

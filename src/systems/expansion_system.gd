@@ -363,6 +363,27 @@ func try_unlock(economy: Variant) -> bool:
 	return true
 
 
+## Reward-triggered unlock used by GoalSystem. Rewards may grant only the next
+## configured region, preserving the sequential-prefix geometry invariant.
+## Granting an already-unlocked id is idempotently successful so a completed
+## goal remains claimable if the player bought that region before claiming.
+func grant_unlock(region_id: String) -> bool:
+	if not _assert_initialized():
+		return false
+	if is_unlocked(region_id):
+		return true
+	var region := get_next_region()
+	if region.is_empty() or str(region[REGION_ID]) != region_id or _grid == null:
+		return false
+	var target := dimensions_for(_unlocked.size() + 1)
+	if not _grid.resize(target.x, target.y, true):
+		push_error("ExpansionSystem: reward unlock resize to %s failed for region '%s'." % [target, region_id])
+		return false
+	_unlocked.append(region_id)
+	region_unlocked.emit(region_id, 0, target)
+	return true
+
+
 # === Serialization (SaveLoad contract) ===
 
 ## Save payload. The unlocked ID LIST is stored rather than a count: ids

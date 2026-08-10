@@ -84,6 +84,9 @@ var expansion_system   # A3 region unlock/expansion. Owns which regions are
                        # ground truth for the grid's DIMENSIONS — SaveLoad
                        # restores it before GridSystem replays records.
                        # Optional: null leaves the world fixed at base size.
+var goal_system        # A4 deterministic task progression and reward state.
+                       # Optional for pre-A4 rigs; SaveLoad treats absence as
+                       # the unambiguous empty goal state.
 var placement_system   # PlacementSystem — constructed in init() Tier 1 once a
                        # grid exists (LevelLoader story pending; tests inject
                        # grid_system before init()). PL-007.

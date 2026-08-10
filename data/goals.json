@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "goals": [
+    {
+      "id": "place_first_strength",
+      "title": "放置第 1 台力量设备",
+      "type": "GUIDE",
+      "metric": "EQUIPMENT_COUNT",
+      "target": 1,
+      "equipment_ids": ["bench_press"],
+      "reward": {"money": 100}
+    },
+    {
+      "id": "satisfaction_70",
+      "title": "满意度达到 70%",
+      "type": "MILESTONE",
+      "metric": "SATISFACTION",
+      "target": 0.7,
+      "reward": {"money": 250, "unlock_region": "group_class_room"}
+    },
+    {
+      "id": "earn_500",
+      "title": "累计收入 $500",
+      "type": "BUSINESS",
+      "metric": "CUMULATIVE_INCOME",
+      "target": 500,
+      "reward": {"money": 200}
+    },
+    {
+      "id": "unlock_first_region",
+      "title": "解锁新区域",
+      "type": "EXPANSION",
+      "metric": "EXPANSION_COUNT",
+      "target": 1,
+      "reward": {"money": 300}
+    }
+  ]
+}

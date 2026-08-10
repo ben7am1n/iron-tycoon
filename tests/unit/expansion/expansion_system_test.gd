@@ -77,6 +77,7 @@ func run_all() -> Dictionary:
 	_test_all_regions_unlocked_status()
 	_test_grid_resize_preserves_data_and_opens_new_cells()
 	_test_grid_resized_signal()
+	_test_reward_grant_unlock()
 	_test_serialize_deserialize_round_trip()
 	_test_same_seed_same_input_is_deterministic()
 
@@ -266,6 +267,18 @@ func _test_grid_resized_signal() -> void:
 	_check(_last_old_dimensions == Vector2i(4, 3) and _last_new_dimensions == Vector2i(6, 3), "grid_resized payload is old=4x3, new=6x3")
 	_check(_unlock_count == 1, "region_unlocked emitted exactly once")
 	_check(_last_region_id == "group_class_room" and _last_unlock_cost == 600 and _last_unlock_dimensions == Vector2i(6, 3), "region_unlocked payload carries id, cost, and resized dimensions")
+
+
+func _test_reward_grant_unlock() -> void:
+	print("\n[reward] GoalSystem grant bypasses purchase gates but preserves prefix order")
+	var rig := _make_rig(0, 0.0)
+	_connect_expansion_signals(rig)
+	_check(not bool(rig["expansion"].call("grant_unlock", "protein_bar")), "out-of-order reward region is rejected")
+	_check(bool(rig["expansion"].call("grant_unlock", "group_class_room")), "next configured region can be reward-granted")
+	_check(rig["economy"].balance == 0 and rig["economy"].spend_calls == 0, "reward unlock neither requires nor spends money")
+	_check(_unlock_count == 1 and _last_unlock_cost == 0, "reward emits region_unlocked once with zero cost")
+	_check(bool(rig["expansion"].call("grant_unlock", "group_class_room")), "already granted region is idempotently successful")
+	_check(_unlock_count == 1, "idempotent reward grant emits no duplicate unlock signal")
 
 
 func _test_serialize_deserialize_round_trip() -> void:

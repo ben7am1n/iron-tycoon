@@ -73,7 +73,7 @@
 ## order is verified programmatically. The 6 coordinated systems are REQUIRED
 ## (load fails with a wiring error if any is null — never skip Phase A).
 ##
-## BLOB SHAPE (TR-SL-002): exactly 8 flat keys, no more, no less.
+## BLOB SHAPE (TR-SL-002 + A3/A4): fixed flat key envelope, no extras.
 ##   {version, master_seed, time_system, grid_system, member_sim, congestion,
 ##    satisfaction, economy}
 ## The top-level master_seed is a READ-ONLY redundancy for save-file
@@ -140,10 +140,10 @@ const CONTRIBUTING_KEYS := [
 	"version", "master_seed",
 	"time_system", "grid_system",
 	"member_sim", "congestion", "satisfaction", "economy",
-	"expansion",
+	"expansion", "goals",
 ]
 
-## Keys that a save file is allowed to OMIT (A3). Every blob this build writes
+## Keys that a save file is allowed to OMIT (A3/A4). Every blob this build writes
 ## contains them, but a save written before the key existed is still valid —
 ## the owning system loads its documented empty state instead (ExpansionSystem:
 ## "no regions unlocked", i.e. the base grid).
@@ -152,7 +152,7 @@ const CONTRIBUTING_KEYS := [
 ## load error" rule, and it is deliberately NOT a general migration mechanism
 ## (ADR-0002 keeps the exact-match version policy): it works only because the
 ## absent state is representable and unambiguous.
-const OPTIONAL_KEYS := ["expansion"]
+const OPTIONAL_KEYS := ["expansion", "goals"]
 
 ## Systems that deliberately contribute NOTHING (TR-SL-008): ZoneRules is a
 ## stateless pure function; Navigation/PlacementSystem/SelectionSystem are
@@ -186,6 +186,7 @@ var _navigation        # Navigation — null until its story lands
 # present it is the GEOMETRY GROUND TRUTH for a load — the grid must be at the
 # saved expansion tier before GridSystem replays its records.
 var _expansion         # ExpansionSystem — null in rigs that predate A3
+var _goals             # GoalSystem — null in rigs that predate A4
 
 var _save_pending: bool = false
 var _initialized: bool = false
@@ -219,6 +220,7 @@ func init(orchestrator: SimulationOrchestrator) -> void:
 	_selection_system = orchestrator.selection_system
 	_navigation = orchestrator.navigation
 	_expansion = orchestrator.expansion_system
+	_goals = orchestrator.goal_system
 	_initialized = true
 
 
@@ -259,7 +261,7 @@ func request_save() -> void:
 		_perform_save()
 
 
-## Composes the save blob: exactly the 8 CONTRIBUTING_KEYS, each coordinated
+## Composes the save blob with exactly CONTRIBUTING_KEYS, each coordinated
 ## system's serialize() output collected exactly once. A null system (story
 ## not yet landed / genuinely empty state) contributes {} — the key is ALWAYS
 ## present so the blob shape is stable (AC-BLOB-1).
@@ -283,6 +285,7 @@ func _perform_save() -> Dictionary:
 		"satisfaction": _serialize_or_empty(_satisfaction),
 		"economy": _serialize_or_empty(_economy),
 		"expansion": _serialize_or_empty(_expansion),
+		"goals": _serialize_or_empty(_goals),
 	}
 
 
@@ -450,6 +453,13 @@ func load(save_blob: Dictionary, buildable_snapshot: PackedByteArray) -> SaveLoa
 		result.errors.append("FATAL: Economy Phase B failed after Phase A passed")
 		return result
 
+	# 9. GoalSystem — mutable task status/progress. Optional for pre-A4 rigs.
+	if _goals != null:
+		var goal_result: Variant = _goals.deserialize(save_blob.get("goals", {}), false)
+		if not goal_result.ok:
+			result.errors.append("FATAL: GoalSystem Phase B failed after Phase A passed")
+			return result
+
 	result.ok = true
 	return result
 
@@ -588,10 +598,14 @@ func _validate_all(
 	var econ_result: Variant = _economy.deserialize(save_blob["economy"], true)
 	errors.append_array(econ_result.errors)
 
+	if _goals != null:
+		var goal_result: Variant = _goals.deserialize(save_blob.get("goals", {}), true)
+		errors.append_array(goal_result.errors)
+
 	return errors
 
 
-## Names of the 6 coordinated systems whose orchestrator field is null —
+## Names of the required coordinated systems whose orchestrator field is null —
 ## load cannot proceed without them (wiring gate, see _validate_all).
 func _missing_coordinated_systems() -> Array[String]:
 	var missing: Array[String] = []

@@ -9,9 +9,7 @@
 #                exactly once per save request; paused saves execute
 #                immediately at the frozen boundary; the 8-tick clamp frame
 #                saves once after all 8 ticks
-#   - AC-BLOB-1  blob has exactly 8 keys
-#                {version, master_seed, time_system, grid_system, member_sim,
-#                 congestion, satisfaction, economy} — no extra, none missing
+#   - AC-BLOB-1  blob has the exact core + optional expansion/goals keys
 #   - AC-BLOB-2  top-level master_seed == blob.time_system.master_seed
 #                (redundancy, not divergence)
 #   - AC-BLOB-3  no key for navigation / placement_system / selection_system /
@@ -31,14 +29,14 @@ extends SceneTree
 
 const RUNNER_META := "gym_manager_test_runner_active"
 
-# The fixed 8-key blob contract (TR-SL-002) — also mirrored in
+# The fixed blob contract (TR-SL-002 + A3/A4) — also mirrored in
 # SaveLoad.CONTRIBUTING_KEYS; asserting the exact ordered list pins both the
 # set AND the stable serialize order (for diff/migration tooling, GDD Core Rule 2).
 const EXPECTED_KEYS := [
 	"version", "master_seed",
 	"time_system", "grid_system",
 	"member_sim", "congestion", "satisfaction", "economy",
-	"expansion",
+	"expansion", "goals",
 ]
 
 const EXCLUDED_KEYS := [
@@ -311,7 +309,7 @@ func _test_ac1_mid_tick_request_defers_to_boundary() -> void:
 # === AC-BLOB-1/2/3: blob composition ===
 
 func _test_blob_exactly_eight_keys() -> void:
-	print("\n[AC-BLOB-1] composed blob has exactly the 8 required keys, no more no less")
+	print("\n[AC-BLOB-1] composed blob has exactly the required keys, no more no less")
 	var rig := _make_rig(31337)
 	rig["time_system"].call("resume")
 	rig["time_system"].call("process", 0.1)  # one real tick so TimeSystem has state
@@ -319,7 +317,7 @@ func _test_blob_exactly_eight_keys() -> void:
 	rig["time_system"].call("process", 0.1)  # boundary save
 	var blob: Dictionary = rig["save_load"].call("_perform_save")  # re-run: pure read
 
-	_check(blob.size() == 9, "AC-BLOB-1: blob has exactly 9 keys (8 contributing + A3 expansion optional, got %d)" % blob.size())
+	_check(blob.size() == 10, "AC-BLOB-1: blob has exactly 10 keys (8 core + A3/A4 optional, got %d)" % blob.size())
 	_check(blob.keys() == EXPECTED_KEYS, "AC-BLOB-1: blob keys match the fixed set in stable order (got %s)" % str(blob.keys()))
 	for key in EXPECTED_KEYS:
 		_check(blob.has(key), "AC-BLOB-1: key '%s' present" % key)
@@ -346,13 +344,13 @@ func _test_blob_excluded_systems_absent() -> void:
 
 
 func _test_blob_empty_state_save() -> void:
-	print("\n[edge] empty-state save (all systems empty) still produces all 8 keys")
+	print("\n[edge] empty-state save still produces the complete key envelope")
 	var rig := _make_rig(1)
 	for field in SPY_FIELDS:
 		rig["spies"][field].set("payload", {})
 	# Note: TimeSystem still serializes real state (it always has tick_count etc.).
 	var blob: Dictionary = rig["save_load"].call("_perform_save")
-	_check(blob.size() == 9, "empty-state save still has exactly 9 keys (got %d)" % blob.size())
+	_check(blob.size() == 10, "empty-state save still has exactly 10 keys (got %d)" % blob.size())
 	for field in SPY_FIELDS:
 		_check(blob[field] is Dictionary and (blob[field] as Dictionary).is_empty(), "empty-state: key '%s' present with {} payload" % field)
 
@@ -362,7 +360,7 @@ func _test_blob_partial_empty_system() -> void:
 	var rig := _make_rig(3)
 	rig["spies"]["economy"].set("payload", {})
 	var blob: Dictionary = rig["save_load"].call("_perform_save")
-	_check(blob.size() == 9, "partial-empty save still has exactly 9 keys (got %d)" % blob.size())
+	_check(blob.size() == 10, "partial-empty save still has exactly 10 keys (got %d)" % blob.size())
 	_check(blob.has("economy") and (blob["economy"] as Dictionary).is_empty(), "economy key present with {} payload")
 	_check(not (blob["congestion"] as Dictionary).is_empty(), "other systems' payloads untouched")
 
