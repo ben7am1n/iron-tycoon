@@ -126,6 +126,7 @@ const TEST_FILES := [
 	"tests/integration/member_sim/flow_hypothesis_test.gd",
 	"tests/integration/satisfaction/recovery_loop_test.gd",
 	"tests/integration/core_loop/core_loop_test.gd",
+	"tests/integration/economy/balance_pacing_probe.gd",
 ]
 
 # === 隔离的测试文件 ===
