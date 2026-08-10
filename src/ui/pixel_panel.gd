@@ -411,37 +411,43 @@ static func shelf_texture(
 ## 撕裂轮廓（挂牌/标签用）：比 _jagged_edges 更激进 —— 每边随机深缺口
 ## （1-3 texel）、角部大块咬口（2-3 texel 三角）、整段内缩。轮廓绝无规则
 ## 矩形感（V3.1 负面约束：无完美矩形 / 无规则直线）。
+## V3.1 返工4 P4（门禁 FAIL：挂牌外轮廓仍被读作完美矩形）：强度提升到
+## GPT 可辨 —— 上边缺口频率提高（~55% 列至少 1 texel 缺口，~28% 列 2-3
+## texel 深缺口），角部咬口加深到 3-4 texel（12-16px，四角不齐），边部
+## 大缺口频率加倍（每 3 texel 长度 1 个）。阴影行逻辑（e8c0b8d：先清空
+## 再写半透明投影）不受影响 —— 本函数只动主体轮廓。
 static func _torn_silhouette(img: Image, rng: RandomNumberGenerator, size: Vector2i) -> void:
-	# 上边：~50% 列 1 texel 缺口，~20% 列 2-3 texel 深缺口
+	# 上边：~55% 列 1 texel 缺口，~28% 列 2-3 texel 深缺口
 	for x in size.x:
 		var r := rng.randf()
-		if r < 0.20:
+		if r < 0.28:
 			img.set_pixel(x, 0, CLEAR)
-			if r < 0.12 and size.y > 1:
+			if r < 0.18 and size.y > 1:
 				img.set_pixel(x, 1, CLEAR)
-				if r < 0.05 and size.y > 2:
+				if r < 0.09 and size.y > 2:
 					img.set_pixel(x, 2, CLEAR)
-		elif r < 0.50:
+		elif r < 0.55:
 			img.set_pixel(x, 0, CLEAR)
 	# 下边：同样处理 + 大块咬口
 	for x in size.x:
 		var r := rng.randf()
-		if r < 0.20:
+		if r < 0.28:
 			img.set_pixel(x, size.y - 1, CLEAR)
-			if r < 0.12 and size.y > 1:
+			if r < 0.18 and size.y > 1:
 				img.set_pixel(x, size.y - 2, CLEAR)
-				if r < 0.05 and size.y > 2:
+				if r < 0.09 and size.y > 2:
 					img.set_pixel(x, size.y - 3, CLEAR)
-		elif r < 0.50:
+		elif r < 0.55:
 			img.set_pixel(x, size.y - 1, CLEAR)
-	# 角部大块咬口：四角随机 2-3 texel 三角切除
+	# 角部大块咬口：四角随机 3-4 texel 三角切除（比旧 2-3 texel 更狠 ——
+	# 四角不齐，绝不读作圆角/直角矩形）
 	var corners: Array[Vector2i] = [
 		Vector2i(0, 0), Vector2i(size.x - 1, 0),
 		Vector2i(0, size.y - 1), Vector2i(size.x - 1, size.y - 1),
 	]
 	for corner in corners:
-		if rng.randf() < 0.85:
-			var bite := rng.randi_range(2, 3)
+		if rng.randf() < 0.95:
+			var bite := rng.randi_range(3, 4)
 			for dy in bite:
 				for dx in bite:
 					var px := corner.x + (dx if corner.x == 0 else -dx)
@@ -449,30 +455,38 @@ static func _torn_silhouette(img: Image, rng: RandomNumberGenerator, size: Vecto
 					if px >= 0 and px < size.x and py >= 0 and py < size.y:
 						if dx + dy < bite + rng.randi_range(0, 1):
 							img.set_pixel(px, py, CLEAR)
-	# 边部随机大缺口：每 4 texel 长度约 1 个 1-2 texel 深缺口（任意边）
-	var bites := maxi(2, (size.x + size.y) / 4)
+	# 边部随机大缺口：每 3 texel 长度约 1 个 1-3 texel 深缺口（任意边）
+	var bites := maxi(3, (size.x + size.y) / 3)
 	for i in bites:
 		match rng.randi_range(0, 3):
 			0:
 				var tx := rng.randi_range(0, size.x - 1)
 				img.set_pixel(tx, 0, CLEAR)
-				if size.y > 1 and rng.randf() < 0.6:
+				if size.y > 1 and rng.randf() < 0.7:
 					img.set_pixel(tx, 1, CLEAR)
+					if rng.randf() < 0.4 and size.y > 2:
+						img.set_pixel(tx, 2, CLEAR)
 			1:
 				var bx := rng.randi_range(0, size.x - 1)
 				img.set_pixel(bx, size.y - 1, CLEAR)
-				if size.y > 1 and rng.randf() < 0.6:
+				if size.y > 1 and rng.randf() < 0.7:
 					img.set_pixel(bx, size.y - 2, CLEAR)
+					if rng.randf() < 0.4 and size.y > 2:
+						img.set_pixel(bx, size.y - 3, CLEAR)
 			2:
 				var ly := rng.randi_range(0, size.y - 1)
 				img.set_pixel(0, ly, CLEAR)
-				if size.x > 1 and rng.randf() < 0.5:
+				if size.x > 1 and rng.randf() < 0.6:
 					img.set_pixel(1, ly, CLEAR)
+					if rng.randf() < 0.35 and size.x > 2:
+						img.set_pixel(2, ly, CLEAR)
 			3:
 				var ry := rng.randi_range(0, size.y - 1)
 				img.set_pixel(size.x - 1, ry, CLEAR)
-				if size.x > 1 and rng.randf() < 0.5:
+				if size.x > 1 and rng.randf() < 0.6:
 					img.set_pixel(size.x - 2, ry, CLEAR)
+					if rng.randf() < 0.35 and size.x > 2:
+						img.set_pixel(size.x - 3, ry, CLEAR)
 
 
 ## 挂牌顶部挂绳：顶部中央 1 texel 宽、2-3 texel 高的小提绳（亮色，手绘）。

@@ -123,6 +123,7 @@ class_name Hud extends Control
 ## V3.1 负面约束：无完美矩形 / 无等宽边框）。
 const UiTheme := preload("res://src/ui/ui_theme.gd")
 const PixelPanel := preload("res://src/ui/pixel_panel.gd")
+const Palette := preload("res://src/palette.gd")
 
 ## Data-driven config seams (coding standard: gameplay values never hardcoded).
 const CONFIG_TICKS_PER_DAY := "ticks_per_day"
@@ -518,11 +519,65 @@ var _top_strip_key: String = ""
 ## 顶带一次绘制：复合纹理（wall_decor + 三块挂牌）→ 1 draw call。
 ## 绘制位置 = 复合纹理的 union rect（HUD root 局部坐标 —— HUD root 锚点
 ## 全屏位于 (0,0)，group get_global_rect() == 局部坐标，与旧分开绘制一致）。
+## V3.1 返工4 P4：交界破形带在复合纹理之前绘制（挂牌/墙饰之下、世界之上）
+## —— 挂牌间与挂牌下方的平齐墙色带被错落短段打散（FAIL #2）。
 func _draw_top_strip(alpha: float) -> void:
 	var tex := _top_strip_texture()
 	if tex == null:
 		return
+	_draw_top_junction_trim(alpha)
 	draw_texture_rect(tex, _top_strip_rect, false, Color(1.0, 1.0, 1.0, alpha))
+
+
+## 顶部交界破形带（V3.1 返工4 P4 FAIL #2）：世界层与 HUD 交界（挂牌下方
+## y≈44..78 的平齐墙色带 —— 旧帧 316px run）被确定性错落短段打散。
+## 逐 x 块（8-14px）撒段：~55% 块有段，段高 8-14px（覆盖带内多数行）、
+## 纵向错落 —— 任意扫描行同色 run < ~100px。色调 = 中性冷灰阴影
+## （r≈g≈b：不入墙带 r>g>b 判定 → run 在段处断裂；r≥0.29 不入 qa 深色
+## 面板判定）。读作 HUD 投在墙上的冷色阴影（P3 统一冷阴影），而非深色
+## UI 条带。全透明底。确定性 seed —— bit-identical。1 extra draw call。
+func _draw_top_junction_trim(alpha: float) -> void:
+	var tex := _top_junction_trim_texture()
+	if tex == null:
+		return
+	# 破形带覆盖挂牌下方墙带（y 44..78）
+	draw_texture_rect(tex, Rect2(0, 44, 1280, 34), false, Color(1.0, 1.0, 1.0, alpha))
+
+
+## 懒生成顶部交界破形带纹理：1280×34 screen px，2px texel → 640×17。
+## 逐行撒段（每行独立）—— 保证任意扫描行都被短段打断（run < ~60px）：
+## 每行 ~65% 的 x 块有 6-14px 短段，纵向逐行错落（段起始 x 每行不同，
+## 行间互不齐平 —— 读作墙皮剥落/材质过渡，绝无直线也绝无横带）。
+## 密度 65% + 块宽 3-6 texel → 任意行最大空段 ≤ ~3 块 ≈ 40px。
+const TOP_JUNCTION_TRIM_W := 640
+const TOP_JUNCTION_TRIM_H := 17
+const TOP_JUNCTION_TRIM_SEED := 0x50A7_C0DE
+var _top_junction_trim_tex: ImageTexture = null
+func _top_junction_trim_texture() -> ImageTexture:
+	if _top_junction_trim_tex != null:
+		return _top_junction_trim_tex
+	var img := Image.create(TOP_JUNCTION_TRIM_W, TOP_JUNCTION_TRIM_H, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0.0, 0.0, 0.0, 0.0))
+	var rng := RandomNumberGenerator.new()
+	rng.seed = TOP_JUNCTION_TRIM_SEED
+	for y in TOP_JUNCTION_TRIM_H:
+		var x := 0
+		while x < TOP_JUNCTION_TRIM_W:
+			var block := rng.randi_range(3, 6)  # 6-12px
+			if rng.randf() < 0.65:
+				var seg_w := rng.randi_range(2, mini(7, TOP_JUNCTION_TRIM_W - x))
+				var tone := Color(
+					0.29 + rng.randf() * 0.03,
+					0.30 + rng.randf() * 0.03,
+					0.31 + rng.randf() * 0.03,
+					0.85 + rng.randf() * 0.15)
+				for dx in seg_w:
+					var px := x + dx
+					if px >= 0 and px < TOP_JUNCTION_TRIM_W:
+						img.set_pixel(px, y, tone)
+			x += block
+	_top_junction_trim_tex = ImageTexture.create_from_image(img)
+	return _top_junction_trim_tex
 
 
 ## 懒生成顶带复合纹理（wall_decor + 3 挂牌烘焙进单张 ImageTexture）。key =
@@ -530,6 +585,11 @@ func _draw_top_strip(alpha: float) -> void:
 ## rect 变化 → item_rect_changed → queue_redraw → 此处 key 变化重建）。
 ## 各元素按各自 rect（HUD 局部坐标）逐像素 NEAREST 采样写入 —— 与分开
 ## draw_texture_rect 完全一致（同一纹理、同一 rect、同一 NEAREST 映射）。
+## V3.1 返工4 P4：复合后叠加两层像素级破形 ——
+##   1) _pixel_break_strip_edges：外轮廓锯齿/破损/四角不齐（FAIL #1：
+##      HUD 条带读作长条矩形 —— 外轮廓至少 2-3px 抖动）
+##   2) _draw_junction_trim：底部交界带错落短段（FAIL #2：世界层与 HUD
+##      交界笔直直线 —— 改为短线段错落/材质过渡）
 func _top_strip_texture() -> ImageTexture:
 	var key := _top_strip_cache_key()
 	if _top_strip_tex != null and key == _top_strip_key:
@@ -562,10 +622,70 @@ func _top_strip_texture() -> ImageTexture:
 		var er: Rect2 = e["rect"]
 		er.position -= union.position
 		_blit_nearest(img, e["tex"], er)
+	# 外轮廓像素级破形：锯齿/破损/四角不齐（确定性 seed —— bit-identical）
+	_pixel_break_strip_edges(img)
 	_top_strip_tex = ImageTexture.create_from_image(img)
 	_top_strip_rect = union
 	_top_strip_key = key
 	return _top_strip_tex
+
+
+## 外轮廓像素级破形（V3.1 返工4 P4 门禁 FAIL #1：HUD 条带读作完美矩形）：
+## 对复合纹理最外轮廓做锯齿/破损 —— 顶边/底边逐列 2-3px 抖动（~35% 列咬
+## 口），四角随机 3-5px 咬掉（四角不齐）。确定性 seed —— 同布局每次渲染
+## bit-identical。只动最外轮廓像素（透明区跳过 —— 不破坏挂牌撕裂轮廓）。
+func _pixel_break_strip_edges(img: Image) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 0x50A7_B1E5
+	var w := img.get_width()
+	var h := img.get_height()
+	if w <= 4 or h <= 4:
+		return
+	# 顶边：每列找最上不透明像素，~35% 列咬 1-3px
+	for x in w:
+		if rng.randf() >= 0.35:
+			continue
+		var top := -1
+		for y in mini(10, h):
+			if img.get_pixel(x, y).a > 0.0:
+				top = y
+				break
+		if top < 0:
+			continue
+		var bite := rng.randi_range(1, 3)
+		for b in bite:
+			if top + b < h:
+				img.set_pixel(x, top + b, Color(0.0, 0.0, 0.0, 0.0))
+	# 底边：每列找最下不透明像素，~35% 列咬 1-3px
+	for x in w:
+		if rng.randf() >= 0.35:
+			continue
+		var bot := -1
+		for y in range(h - 1, maxi(h - 11, -1), -1):
+			if img.get_pixel(x, y).a > 0.0:
+				bot = y
+				break
+		if bot < 0:
+			continue
+		var bite := rng.randi_range(1, 3)
+		for b in bite:
+			if bot - b >= 0:
+				img.set_pixel(x, bot - b, Color(0.0, 0.0, 0.0, 0.0))
+	# 四角：随机 3-5px 咬口（四角不齐 —— 绝无规则直角）
+	var corners: Array[Vector2] = [
+		Vector2(0, 0), Vector2(w - 1, 0),
+		Vector2(0, h - 1), Vector2(w - 1, h - 1),
+	]
+	for corner in corners:
+		if rng.randf() < 0.9:
+			var bite := rng.randi_range(3, 5)
+			for dy in bite:
+				for dx in bite:
+					var px := int(corner.x) + (dx if corner.x == 0 else -dx)
+					var py := int(corner.y) + (dy if corner.y == 0 else -dy)
+					if px >= 0 and px < w and py >= 0 and py < h:
+						if dx + dy < bite + rng.randi_range(0, 1):
+							img.set_pixel(px, py, Color(0.0, 0.0, 0.0, 0.0))
 
 
 ## 复合纹理 key：ui_scale + 3 个 group 的全局 rect（挂牌 rect 由此派生）。
@@ -668,6 +788,9 @@ func _wall_decor_texture() -> ImageTexture:
 
 ## 公告板：木框（DESK_WOOD 加深）+ 软木板（暖棕 + 噪点）+ 3 枚彩色图钉
 ## （Butter/Peach/Sage 点）。横跨 [x0..x1]×[y0..y1] texel。
+## V3.1 返工4 P4：木框不再是一条完整闭合矩形 —— 框边逐 texel 断裂缺口
+## （~25% 位置咬口），四角随机缺角 —— 公告板读作墙上撕贴的板子而非规则
+## 矩形（FAIL #1：顶带内物件读作完美矩形）。
 func _draw_cork_board(img: Image, x0: int, x1: int, y0: int, y1: int) -> void:
 	var wood := Color("A87E4F").darkened(0.25)
 	var cork := Color("C8A97C")
@@ -678,12 +801,24 @@ func _draw_cork_board(img: Image, x0: int, x1: int, y0: int, y1: int) -> void:
 		for x in range(x0 + 1, x1):
 			var c := cork.darkened(rng.randf() * 0.10) if rng.randf() < 0.5 else cork.lightened(rng.randf() * 0.08)
 			img.set_pixel(x, y, c)
-	# 木框（顶/底/左/右 1 texel）
+	# 木框（顶/底/左/右 1 texel）—— 断裂：每边 ~25% 位置留缺口
 	for x in range(x0, x1 + 1):
+		if rng.randf() < 0.25:
+			continue
 		img.set_pixel(x, y0, wood)
+		if rng.randf() < 0.10 and y0 - 1 >= 0:
+			img.set_pixel(x, y0 - 1, wood)  # 局部翘起（框厚不均）
+	for x in range(x0, x1 + 1):
+		if rng.randf() < 0.25:
+			continue
 		img.set_pixel(x, y1, wood.darkened(0.15))
 	for y in range(y0, y1 + 1):
+		if rng.randf() < 0.25:
+			continue
 		img.set_pixel(x0, y, wood)
+	for y in range(y0, y1 + 1):
+		if rng.randf() < 0.25:
+			continue
 		img.set_pixel(x1, y, wood.darkened(0.15))
 	# 3 枚彩色图钉（不对称位置）
 	var pins: Array[Color] = [Color("F5D97B"), Color("F2B486"), Color("8FBF9F")]
@@ -695,6 +830,7 @@ func _draw_cork_board(img: Image, x0: int, x1: int, y0: int, y1: int) -> void:
 
 ## 小黑板：深灰绿板面 + 粉笔字痕（cream/Butter 短划）+ 木框。
 ## 横跨 [x0..x1]×[y0..y1] texel。
+## V3.1 返工4 P4：木框断裂（同公告板）—— 黑板四边不再完整闭合矩形。
 func _draw_chalk_board(img: Image, x0: int, x1: int, y0: int, y1: int) -> void:
 	var wood := Color("A87E4F").darkened(0.25)
 	var slate := Color("4A5450")
@@ -705,12 +841,24 @@ func _draw_chalk_board(img: Image, x0: int, x1: int, y0: int, y1: int) -> void:
 		for x in range(x0 + 1, x1):
 			var c := slate.darkened(rng.randf() * 0.08) if rng.randf() < 0.5 else slate.lightened(rng.randf() * 0.06)
 			img.set_pixel(x, y, c)
-	# 木框
+	# 木框 —— 断裂：每边 ~25% 位置留缺口 + 局部框厚不均
 	for x in range(x0, x1 + 1):
+		if rng.randf() < 0.25:
+			continue
 		img.set_pixel(x, y0, wood)
+		if rng.randf() < 0.10 and y0 - 1 >= 0:
+			img.set_pixel(x, y0 - 1, wood)
+	for x in range(x0, x1 + 1):
+		if rng.randf() < 0.25:
+			continue
 		img.set_pixel(x, y1, wood.darkened(0.15))
 	for y in range(y0, y1 + 1):
+		if rng.randf() < 0.25:
+			continue
 		img.set_pixel(x0, y, wood)
+	for y in range(y0, y1 + 1):
+		if rng.randf() < 0.25:
+			continue
 		img.set_pixel(x1, y, wood.darkened(0.15))
 	# 粉笔字痕：3 组短划（cream/Butter）—— 短促 scribble（2-5 texel = 8-20px
 	# + 2-4 texel 间隔），绝不形成长于 ~24px 的连续 chalk 段（I 检查：任意行

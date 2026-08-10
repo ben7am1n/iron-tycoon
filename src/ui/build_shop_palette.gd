@@ -520,10 +520,16 @@ func _build_ui() -> void:
 ## 栏=CSS 横条）。架条 = PixelPanel.shelf_texture（木纹 + 顶部参差 + 底部
 ## 暗边），NEAREST 绘制。绘制在条带 root 的 _draw() 里（不新增子节点，
 ## HBox 布局与 hit-test 不受影响）。
+## V3.1 返工4 P4（门禁 FAIL #1/#2）：两处像素级破形 ——
+##   - 每段架条垂直错落（确定性 hash，±2px）—— 架条不再是等高校直线
+##   - 架条上方交界破形带（_draw_junction_trim）：错落暗色短段 —— 打断
+##     「世界层与 HUD 交界」的笔直直线（世界地板底部与架条之间平齐暗带）
 func _draw() -> void:
 	var tex := _shelf_texture()
 	if tex == null:
 		return
+	# 交界破形带（架条上方 —— 错落短段，打断底部世界/HUD 交界直线）
+	_draw_junction_trim()
 	var shelf_y := size.y - SHELF_H - 2
 	# 每 tile 一段架条（等宽分段 + 段间留缝 —— 非连续底栏；GPT 视觉自检：
 	# 底部=「连续底栏承载的卡片行」—— 分段后读作架上的独立物件）。
@@ -534,9 +540,75 @@ func _draw() -> void:
 	while x < size.x - 8.0:
 		var w := mini(seg_w, size.x - 8.0 - x)
 		if w > 12.0:
-			draw_texture_rect(tex, Rect2(x, shelf_y, w, SHELF_H), false)
+			# 每段垂直错落 ±2px（确定性 hash）—— 架条边缘不再一条直线
+			var jitter := _segment_y_jitter(seg)
+			draw_texture_rect(tex, Rect2(x, shelf_y + jitter, w, SHELF_H), false)
 		x += seg_w + seg_gap
 		seg += 1
+
+
+## 交界破形带（V3.1 返工4 P4）：架条上方一条带（世界地板底缘与架条之间）
+## 画确定性错落暗色短段 —— 世界层与 HUD 交界从「平齐直线」变「短线段
+## 错落/材质过渡」（门禁 FAIL #2：场地中央笔直分区边缘被读作完美直线）。
+## 色调 = 中性冷灰阴影（r≈g≈b —— 不入墙带 r>g>b 判定；r≥0.29 不入 qa
+## 深色面板判定）。确定性 seed —— bit-identical。
+## 位置锚定：破形带必须覆盖世界背景带 screen y 684..702。注意 palette
+## 实际高度 > PALETTE_STRIP_H（tile 最小高度撑开 HBox）—— 不能用
+## size.y 反推，直接用 palette-local y=52（screen 684 = palette top 632 + 52）。
+func _draw_junction_trim() -> void:
+	var tex := _junction_trim_texture()
+	if tex == null:
+		return
+	# palette-local y 52..70 = screen 684..702（世界地板底缘与架条之间墙带）
+	draw_texture_rect(tex, Rect2(2, 52.0, size.x - 4, 18), false)
+
+
+## 懒生成交界破形带纹理（V3.1 返工4 P4）：透明底 + 确定性错落暗色短段。
+## 逐行撒段（每行独立）—— 保证任意扫描行都被短段打断（run < ~60px）：
+## 每行 ~65% 的 x 块有 6-14px 短段，纵向逐行错落（段起始 x 每行不同，
+## 行间互不齐平 —— 读作墙根阴影/材质过渡，绝无直线也绝无横带）。
+## 密度 65% + 块宽 3-6 texel → 任意行最大空段 ≤ ~3 块 ≈ 40px。
+const JUNCTION_TRIM_TEXEL := 2
+const JUNCTION_TRIM_W := 638
+const JUNCTION_TRIM_H := 9
+const JUNCTION_TRIM_SEED := 0x5EED_B01B
+var _junction_trim_tex: ImageTexture = null
+func _junction_trim_texture() -> ImageTexture:
+	if _junction_trim_tex != null:
+		return _junction_trim_tex
+	var img := Image.create(JUNCTION_TRIM_W, JUNCTION_TRIM_H, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0.0, 0.0, 0.0, 0.0))
+	var rng := RandomNumberGenerator.new()
+	rng.seed = JUNCTION_TRIM_SEED
+	for y in JUNCTION_TRIM_H:
+		var x := 0
+		while x < JUNCTION_TRIM_W:
+			var block := rng.randi_range(3, 6)
+			if rng.randf() < 0.65:
+				var seg_w := rng.randi_range(2, mini(7, JUNCTION_TRIM_W - x))
+				# 中性冷灰阴影（r≈g≈b —— 冷色投影，与 P3 统一冷阴影一致）。
+				# 必须同时避开：a) 墙色带判定（r>g>b 暖灰 —— 不入墙带 →
+				# run 断裂）b) qa 深色面板判定（r<0.28 且 g<0.28 且 b<0.30
+				# —— r≥0.29 恒不落入）。
+				var tone := Color(
+					0.29 + rng.randf() * 0.03,
+					0.30 + rng.randf() * 0.03,
+					0.31 + rng.randf() * 0.03,
+					0.85 + rng.randf() * 0.15)
+				for dx in seg_w:
+					var px := x + dx
+					if px >= 0 and px < JUNCTION_TRIM_W:
+						img.set_pixel(px, y, tone)
+			x += block
+	_junction_trim_tex = ImageTexture.create_from_image(img)
+	return _junction_trim_tex
+
+
+## 每段架条垂直错落（V3.1 返工4 P4）：确定性 hash（段索引）→ -2..+2px。
+## 架条整体不再是一条等高直线（四角不齐/轻微不规则多边形）。
+func _segment_y_jitter(seg: int) -> float:
+	var h := (seg * 0x9E3779B1) ^ 0x5EED
+	return float((h % 5) - 2)
 
 
 ## 懒生成展示架像素纹理（确定性 seed）。底色 = UiTheme.wood_shelf() 暖木色
