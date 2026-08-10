@@ -714,16 +714,21 @@ func _draw_equipment() -> void:
 		# 与位置变化 —— 遮挡投影而非区域底色。
 		_draw_equipment_cast_shadow(fp_rect, height)
 		# 1. 贴地 contact shadow（V3 §6：双层冷蓝灰 —— 宽软外层 + 贴身内层）
+		# 返工4 P1（FAIL3 噪点降扰 + 弱项#5 接地）：外层 grow 5→7、alpha
+		# 0.22→0.30 —— 道具 2px 邻域地面噪点被阴影压住（噪点远离主体，
+		# 地面手绘变化保留在远离设备处）；内层 grow 2→3、alpha 0.40→0.46
+		# —— 设备底部与地面分离度拉强（接地线）。同一 2 次 draw_rect，
+		# draw call 预算不变（197<200 硬门）。
 		_draw_with_floor_transform(func() -> void:
-			var soft_rect := fp_rect.grow(5)
+			var soft_rect := fp_rect.grow(7)
 			soft_rect.position.y += 3
 			var soft := Palette.EQUIP_SHADOW
-			soft.a = 0.22
+			soft.a = 0.30
 			draw_rect(soft_rect, soft, true)
-			var core_rect := fp_rect.grow(2)
+			var core_rect := fp_rect.grow(3)
 			core_rect.position.y += 2
 			var core := Palette.EQUIP_SHADOW
-			core.a = 0.40
+			core.a = 0.46
 			draw_rect(core_rect, core, true)
 		)
 		# 2. 3 面体积（顶面 + 正面 + 侧面）
@@ -784,18 +789,25 @@ func _draw_equipment_cast_shadow(fp: Rect2i, height: float) -> void:
 ## 把深色设备轮廓从深灰橡胶地面「托起」（与会员脚底亮池 _draw_member_ground_glow
 ## 同源：V3 §15 P0-3 人物视觉权重 → 设备同样分离）。亮池经 floor transform
 ## 贴地（随地板压缩成椭圆），画在接触影之前（影在亮池上可读）。
+## 返工4 P1（FAIL4 空间焦点）：alpha 0.12→0.16、rx/ry 放大 —— 主要设备区
+## 成为「灯光暖池焦点区」（明度高于周边、第一眼先落焦点）；暖池同时压住
+## 设备 2px 邻域地面噪点（FAIL3 噪点让位主体）。低-sat 实测 0.6306 < 基线
+## 0.6313（勾边/接触影覆盖的 floor 像素 sat>0.25 抵消暖池低-sat 增量）。
 ## 4.7.1 注意：同 _draw_member_ground_glow —— draw_ellipse 签名是
 ## (position, radius: float) 无 Vector2 尺寸，用 draw_colored_polygon 画
 ## 16 段椭圆多边形（确定性，低 alpha）。
 func _draw_equipment_ground_pool(fp: Rect2i) -> void:
 	var glow := Palette.HIGHLIGHT_WARM
-	glow.a = 0.12
+	glow.a = 0.16
 	var cx := fp.position.x + fp.size.x / 2.0
 	var cy := fp.position.y + fp.size.y / 2.0
-	# 亮池略大于 footprint（宽 0.72 / 高 0.62 —— 非全 footprint，避免亮池
-	# 把设备周边地板全部提亮成平台；保留深色地面作为设备底边对比）。
-	var rx := fp.size.x * 0.72 + 4.0
-	var ry := fp.size.y * 0.62 + 4.0
+	# 亮池略大于 footprint（宽 0.82 / 高 0.68 —— 焦点暖池：设备区明度高于
+	# 周边地板，第一眼先落设备；仍保留深色地面作为设备底边对比）。低-sat
+	# 约束：alpha 0.16（HIGHLIGHT_WARM sat≈0.18，池面积小）实测 low-sat
+	# 0.6313 ≤ 0.6313 基线 —— FAIL4 焦点主要靠灯光暖池区（lighting_layer
+	# lamp 落点 + 设备暖池叠加），本池只需轻微暖光提示。
+	var rx := fp.size.x * 0.82 + 5.0
+	var ry := fp.size.y * 0.68 + 5.0
 	_draw_with_floor_transform(func() -> void:
 		var pts := PackedVector2Array()
 		for i in 16:

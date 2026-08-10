@@ -340,12 +340,16 @@ func extrusion_faces_for(equipment_id: String, zone: String, rotation: int,
 	var front := Image.create(w, face_h_use, false, Image.FORMAT_RGBA8)
 	front.blit_rect(img, Rect2i(0, h - face_h_use, w, face_h_use), Vector2i.ZERO)
 	_darken_image(front, Palette.EQUIP_BODY.darkened(0.2), 0.5)
+	_apply_silhouette_outline(front)
+	_apply_grounding_line(front)
 	# 侧面：右侧 face_h 列（东边条带）→ 旋转 90°（沿深度铺开）→ 暗调变暗
 	var side_cols := mini(face_h_use, w)
 	var side := Image.create(side_cols, h, false, Image.FORMAT_RGBA8)
 	side.blit_rect(img, Rect2i(w - side_cols, 0, side_cols, h), Vector2i.ZERO)
 	side.rotate_90(1)  # 逆时针 → (h × side_cols) = (深度 × 面高)
 	_darken_image(side, Palette.EQUIP_SHADOW_TONE, 0.6)
+	_apply_silhouette_outline(side)
+	_apply_grounding_line(side)
 	result["front"] = ImageTexture.create_from_image(front)
 	result["side"] = ImageTexture.create_from_image(side)
 	_face_cache[key] = result
@@ -356,6 +360,9 @@ func extrusion_faces_for(equipment_id: String, zone: String, rotation: int,
 ## front 宽 = footprint x（ART_MAPS 同宽），side 宽 = footprint y（ART_MAPS
 ## 行数）；高 = 面高 art px（face_h / ART_SCALE，至少 2 行）。应用与通用
 ## 推导一致的变暗（正面中调 / 侧面暗调），保证三面分层一致。
+## 返工4 P1（FAIL1/弱项#5）：变暗后追加手绘后处理 —— 外轮廓深一档勾边 +
+## 底部接地线（设备从背景中勾出 + 底部与地面分离；只作用于渲染路径，
+## raw_face_images 不受污染 —— 单元测试 5 色层断言保持）。
 func _authored_faces_for(equipment_id: String, zone: String, height: float,
 		face_h: int) -> Dictionary:
 	var result := {"front": null, "side": null}
@@ -369,11 +376,15 @@ func _authored_faces_for(equipment_id: String, zone: String, height: float,
 		var img := _build_face_image(front_rows, zone_color, shade_dark, shade_light)
 		if img != null:
 			_darken_image(img, Palette.EQUIP_BODY.darkened(0.2), 0.35)
+			_apply_silhouette_outline(img)
+			_apply_grounding_line(img)
 			result["front"] = ImageTexture.create_from_image(img)
 	if not side_rows.is_empty():
 		var img := _build_face_image(side_rows, zone_color, shade_dark, shade_light)
 		if img != null:
 			_darken_image(img, Palette.EQUIP_SHADOW_TONE, 0.5)
+			_apply_silhouette_outline(img)
+			_apply_grounding_line(img)
 			result["side"] = ImageTexture.create_from_image(img)
 	return result
 
@@ -451,8 +462,144 @@ func _rotate_to(base: Image, rotation: int) -> Image:
 	return img
 
 
+## 确定性 hash（同 floor_art._hash2 —— 无 RNG 状态，headless 可测、bit-identical）。
+func _hash2(x: int, y: int) -> int:
+	var h := x * 374761393 + y * 668265263
+	h = (h ^ (h >> 13)) * 1274126177
+	return h & 0x7fffffff
+
+
+## 颜色距离（RGB 欧氏，同 unit test helper —— 后处理判定用）。
+func _color_distance(a: Color, b: Color) -> float:
+	var dr := a.r - b.r
+	var dg := a.g - b.g
+	var db := a.b - b.b
+	return sqrt(dr * dr + dg * dg + db * db)
+
+
+## 像素是否属于「中性机身材质」色族（jitter 只在这些之间混合 ——
+## 不触碰 accent A/Z/D/L：区域语义色与屏幕青蓝保持清晰可辨，V3 §14）。
+func _is_neutral_tone(c: Color) -> bool:
+	for t in [
+		Palette.EQUIP_BODY_DARK, Palette.EQUIP_BODY, Palette.EQUIP_BODY_LIGHT,
+		Palette.METAL_DARK, Palette.METAL_HIGHLIGHT, Palette.EQUIP_HIGHLIGHT,
+		Palette.EQUIP_SHADOW_TONE, Palette.EQUIP_OUTLINE, Palette.EQUIP_EDGE_OUTLINE,
+	]:
+		if _color_distance(c, t) <= 0.10:
+			return true
+	return false
+
+
+## 像素是否高光色族（W/H —— 轮廓勾边跳过，高光侧开放，V3 §11）。
+func _is_highlight_tone(c: Color) -> bool:
+	return _color_distance(c, Palette.EQUIP_HIGHLIGHT) <= 0.12 \
+		or _color_distance(c, Palette.METAL_HIGHLIGHT) <= 0.12
+
+
+## 像素是否与透明相邻（精灵外轮廓边界）。
+func _is_silhouette_boundary(img: Image, x: int, y: int) -> bool:
+	if x <= 0 or y <= 0 or x >= img.get_width() - 1 or y >= img.get_height() - 1:
+		return true
+	for n in [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]]:
+		if img.get_pixel(n[0], n[1]).a <= 0.5:
+			return true
+	return false
+
+
+## 返工4 P1（FAIL2 色阶分层 · 手绘质感核心）：手绘式色阶抖动 —— 在相邻
+## 「中性机身材质」色阶边界（色距 > 0.10）撒 ~15% 像素向邻阶混合 30-50%，
+## 使亮/中/暗面过渡呈锯齿手绘感而非程序渐变/完美直线（V3.1 负面约束：
+## 无完美直线、无程序色块）。只混合中性材质（BODY/METAL/HIGHLIGHT/
+## SHADOW/OUTLINE 族），不触碰 accent（A/Z/D/L —— 区域语义色与屏幕青蓝
+## 保持清晰可辨）。确定性 hash 驱动（同输入同输出）。
+func _apply_hand_drawn_jitter(img: Image) -> void:
+	var w := img.get_width()
+	var h := img.get_height()
+	for y in h:
+		for x in w:
+			var c := img.get_pixel(x, y)
+			if c.a <= 0.5 or not _is_neutral_tone(c):
+				continue
+			# 找 4 邻域中色距最大的中性色（色阶边界）
+			var best: Color = c
+			var best_d := 0.0
+			for n in [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]]:
+				if n[0] < 0 or n[1] < 0 or n[0] >= w or n[1] >= h:
+					continue
+				var nc := img.get_pixel(n[0], n[1])
+				if nc.a <= 0.5 or not _is_neutral_tone(nc):
+					continue
+				var d := _color_distance(c, nc)
+				if d > best_d:
+					best_d = d
+					best = nc
+			if best_d < 0.10:
+				continue
+			var hsh := _hash2(x * 7 + 3, y * 13 + 1)
+			if hsh % 100 >= 15:
+				continue
+			var amt := 0.30 + float((hsh >> 8) % 20) / 100.0  # 30-50%
+			img.set_pixel(x, y, c.lerp(best, amt))
+
+
+## 返工4 P1（FAIL1 轮廓勾边）：外轮廓深一档勾边 —— 与透明相邻的「非
+## outline」边界像素向 EQUIP_EDGE_OUTLINE 混合（lum≈50，比 EQUIP_OUTLINE
+## 67.5 再暗一档；vs 深灰力量区地面 78.7 明度差 ~29，2x 可见）。已 outline
+## 像素（O，EQUIP_OUTLINE）保留 —— 单元测试断言 EQUIP_OUTLINE 存在；
+## 高光（W/H/METAL_HIGHLIGHT）与 accent 像素保留 —— 高光侧开放（V3 §11）、
+## 区域语义色可辨。hash 缺口 ~25% —— 手绘不齐，非等宽边框（V3.1 负面
+## 约束：无等宽边框）。
+func _apply_silhouette_outline(img: Image) -> void:
+	var w := img.get_width()
+	var h := img.get_height()
+	for y in h:
+		for x in w:
+			var c := img.get_pixel(x, y)
+			if c.a <= 0.5:
+				continue
+			if _color_distance(c, Palette.EQUIP_OUTLINE) <= 0.05 \
+					or _color_distance(c, Palette.EQUIP_EDGE_OUTLINE) <= 0.05:
+				continue  # 已 outline —— 保留（测试断言 EQUIP_OUTLINE 存在）
+			if _is_highlight_tone(c):
+				continue  # 高光侧开放，不全勾（V3 §11）
+			if not _is_silhouette_boundary(img, x, y):
+				continue
+			var hsh := _hash2(x * 3 + 7, y * 5 + 9)
+			if hsh % 4 == 0:
+				continue  # 手绘缺口 —— 非等宽边框
+			var amt := 0.55 + float((hsh >> 8) % 35) / 100.0  # 55-90%
+			img.set_pixel(x, y, c.lerp(Palette.EQUIP_EDGE_OUTLINE, amt))
+
+
+## 返工4 P1（弱项 #5 接地线）：面纹理底部（z=0 接地行）压深一档 ——
+## 设备底部与地面分离度拉强（任务 5：设备底部与地面加阴影/接地线；与
+## P3 阴影同源，本卡只做接地层）。只作用于面纹理渲染路径（_authored_
+## faces_for / 通用挤出 —— 不污染 raw_face_images，单元测试 5 色层断言
+## 不受影响）。已 outline 像素保留；hash 缺口 ~25% —— 手绘不齐非等宽。
+func _apply_grounding_line(img: Image) -> void:
+	var w := img.get_width()
+	var h := img.get_height()
+	for y in mini(2, h):
+		for x in w:
+			var c := img.get_pixel(x, y)
+			if c.a <= 0.5:
+				continue
+			if _color_distance(c, Palette.EQUIP_OUTLINE) <= 0.05:
+				continue
+			var hsh := _hash2(x * 11 + 5, y * 3 + 7)
+			if hsh % 4 == 0:
+				continue
+			img.set_pixel(x, y, c.lerp(Palette.EQUIP_EDGE_OUTLINE, 0.6))
+
+
 ## 建立 R0 图像：透明底 + 按 ART_SCALE 放大每个 art px。zone 名 → ZONE_COLORS
 ## 查色；未知 zone 用 FALLBACK_ZONE（兜底，不崩溃）。
+## 返工4 P1（FAIL1/FAIL2）：完成像素化后执行手绘后处理 ——
+##   1. _apply_hand_drawn_jitter：色阶过渡手绘式抖动（相邻色阶边界混合，
+##      打破「程序色块」平涂 —— FAIL2 色阶分层）
+##   2. _apply_silhouette_outline：外轮廓深一档勾边（EQUIP_EDGE_OUTLINE，
+##      主体从背景中「勾」出来 —— FAIL1 轮廓勾边；高光侧开放，不等宽）
+## 两步都确定性（hash 驱动，无 RNG），headless 可测、bit-identical。
 func _build_r0_image(equipment_id: String, zone: String) -> Image:
 	var rows: Array = ART_MAPS[equipment_id]
 	var w: int = String(rows[0]).length()
@@ -472,6 +619,8 @@ func _build_r0_image(equipment_id: String, zone: String) -> Image:
 			for py in ART_SCALE:
 				for px in ART_SCALE:
 					img.set_pixel(x * ART_SCALE + px, y * ART_SCALE + py, color)
+	_apply_hand_drawn_jitter(img)
+	_apply_silhouette_outline(img)
 	return img
 
 
