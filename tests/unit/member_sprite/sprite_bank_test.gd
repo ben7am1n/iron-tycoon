@@ -26,6 +26,7 @@ extends SceneTree
 const RUNNER_META := "gym_manager_test_runner_active"
 
 const MemberSpriteScript := preload("res://src/presentation/member_sprite.gd")
+const WorldCanvasScript := preload("res://src/presentation/world_canvas.gd")
 const Palette := preload("res://src/palette.gd")
 
 const SIZE := 48
@@ -56,6 +57,10 @@ func run_all() -> Dictionary:
 	_test_dark_outline()
 	_test_micro_elements()
 	_test_appearance_variants()
+	_test_preference_mapping()
+	_test_preference_world_ctx_flow()
+	_test_preference_visual_identity()
+	_test_preference_keeps_state_channel()
 	_test_bench_situp_window()
 	_test_satisfied_vs_walk()
 	_test_wait_vs_idle_and_using()
@@ -247,6 +252,102 @@ func _test_appearance_variants() -> void:
 		"V3.1 P5 变体2 短裤保持低饱和（焦点精选）")
 
 
+func _test_preference_mapping() -> void:
+	var s := MemberSpriteScript.new()
+	_check(s.preference_type_for({"preference_profile": {"type": "STRENGTH"}}) == "STRENGTH",
+		"A1 从 preference_profile.type 解析 STRENGTH")
+	_check(s.preference_type_for({"preference_type": "cardio"}) == "CARDIO",
+		"A1 便捷字段大小写归一")
+	_check(s.preference_type_for({"preference_profile": {"type": "UNKNOWN"}}) == "",
+		"未知偏好回退旧外观")
+	_check(s.preference_build_for(3, "STRENGTH") == 1,
+		"STRENGTH → 宽肩背心 build 1")
+	_check(s.preference_build_for(3, "CARDIO") == 2,
+		"CARDIO → 纤细 build 2")
+	_check(s.preference_build_for(3, "FLEX") == 0,
+		"FLEX → 标准放松 build 0")
+	_check(s.preference_build_for(3, "BALANCED") == 3,
+		"BALANCED → 保留 member_id 原体型")
+	_check(_near(s.preference_accent("STRENGTH"), Palette.CHARCOAL),
+		"STRENGTH 徽记为深炭色")
+	_check(_near(s.preference_accent("CARDIO"), Palette.FOCAL_GYM_BLUE),
+		"CARDIO 徽记为亮蓝色")
+	_check(_near(s.preference_accent("FLEX"), Palette.ROSE),
+		"FLEX 徽记为浅暖色")
+	_check(_near(s.preference_accent("BALANCED"), Palette.BUTTER),
+		"BALANCED 徽记为中性混合色入口")
+
+
+func _test_preference_world_ctx_flow() -> void:
+	var canvas := WorldCanvasScript.new()
+	var profile := {"type": "FLEX", "preference_noise": 1.0}
+	var ctx: Dictionary = canvas.call("_member_ctx", {
+		"member_id": 42,
+		"preference_profile": profile,
+	}, "ENTERING")
+	_check(int(ctx.get("member_id", -1)) == 42, "world_canvas 保留 member_id")
+	_check(ctx.get("preference_profile", {}) == profile,
+		"world_canvas 将 preference_profile 传入 sprite ctx")
+	profile["type"] = "CARDIO"
+	_check(str((ctx.get("preference_profile", {}) as Dictionary).get("type", "")) == "FLEX",
+		"world_canvas 深拷贝偏好，绘制 ctx 不被外部修改")
+	canvas.free()
+
+
+func _test_preference_visual_identity() -> void:
+	var s := MemberSpriteScript.new()
+	var types := ["STRENGTH", "CARDIO", "FLEX", "BALANCED"]
+	var images: Dictionary = {}
+	for preference_type in types:
+		var ctx := {
+			"member_id": 0,
+			"preference_profile": {"type": preference_type},
+		}
+		images[preference_type] = s.texture_for("WALKING_TO", 0, false, ctx).get_image()
+	# 同 member_id 下只改偏好，四类仍必须两两可分。
+	for i in types.size():
+		for j in range(i + 1, types.size()):
+			var diff := _pixel_diff(images[types[i]], images[types[j]])
+			_check(diff > 12, "%s / %s 外观可分（pixel diff=%d）" % [
+				types[i], types[j], diff])
+	# 同 member_id + 同 preference + 同渲染上下文严格确定。
+	var deterministic_ctx := {
+		"member_id": 27,
+		"preference_profile": {"type": "CARDIO"},
+	}
+	var a := s.texture_for("QUEUEING", 4, false, deterministic_ctx).get_image()
+	var b := s.texture_for("QUEUEING", 4, false, deterministic_ctx).get_image()
+	_check(_pixel_diff(a, b) == 0,
+		"同 member_id + 同 preference 外观逐像素确定")
+	# 偏好不吞掉旧 member_id 多样性：发型/肤色仍由 id 决定。
+	var id0 := s.texture_for("WALKING_TO", 0, false,
+		{"member_id": 0, "preference_profile": {"type": "CARDIO"}}).get_image()
+	var id1 := s.texture_for("WALKING_TO", 0, false,
+		{"member_id": 1, "preference_profile": {"type": "CARDIO"}}).get_image()
+	_check(not _near(id0.get_pixel(24, 4), id1.get_pixel(24, 4)),
+		"同 CARDIO 下 member_id 发色/发型多样性仍保留")
+	# legacy / 空 profile 与 A1 前输出一致。
+	var legacy := s.texture_for("WALKING_TO", 0, false, {"member_id": 2}).get_image()
+	var empty_profile := s.texture_for("WALKING_TO", 0, false,
+		{"member_id": 2, "preference_profile": {}}).get_image()
+	_check(_pixel_diff(legacy, empty_profile) == 0, "legacy 空偏好不改变旧外观")
+
+
+func _test_preference_keeps_state_channel() -> void:
+	var s := MemberSpriteScript.new()
+	var ctx := {"member_id": 0, "preference_profile": {"type": "STRENGTH"}}
+	var p := Vector2i(24, 19)  # 躯干中心，避开右胸偏好徽记
+	_check(_near(_tex_pixel(s, "WALKING_TO", 0, false, p, ctx), Palette.SKY),
+		"STRENGTH 外观下 WALKING 仍为 Sky 状态色")
+	_check(_near(_tex_pixel(s, "QUEUEING", 0, false, p, ctx), Palette.MEMBER_WAIT_DUSTY),
+		"STRENGTH 外观下 QUEUEING 仍为 Dusty 状态色")
+	_check(_near(_tex_pixel(s, "USING", 0, false, p,
+		{"member_id": 0, "equipment_id": "", "preference_profile": {"type": "STRENGTH"}}),
+		Palette.PEACH), "STRENGTH 外观下 USING 仍为 Peach 状态色")
+	_check(_near(_tex_pixel(s, "LEAVING", 0, false, p, ctx), Palette.MEMBER_LEAVE_GRAY),
+		"STRENGTH 外观下 LEAVING 仍为 Gray 状态色")
+
+
 func _test_bench_situp_window() -> void:
 	# V3 §8 卧推"结束时坐起"：use_ticks_remaining 进入窗口 → 坐起帧。
 	var s := MemberSpriteScript.new()
@@ -427,3 +528,12 @@ func _lum(c: Color) -> float:
 
 func _tex_pixel(s, state: String, tick: int, left: bool, p: Vector2i, ctx: Dictionary = {}) -> Color:
 	return s.texture_for(state, tick, left, ctx).get_image().get_pixel(p.x, p.y)
+
+
+func _pixel_diff(a: Image, b: Image) -> int:
+	var diff := 0
+	for y in SIZE:
+		for x in SIZE:
+			if not _near(a.get_pixel(x, y), b.get_pixel(x, y)):
+				diff += 1
+	return diff

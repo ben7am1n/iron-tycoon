@@ -67,6 +67,15 @@ const FACE_EFFORT := "effort"   # use：用力眉 + 2×2 眼 + 张嘴
 const FACE_PANT := "pant"       # tired：眯眼 + 喘气张嘴 + 汗滴
 const FACE_HAPPY := "happy"     # satisfied：笑眼 + 微笑 + 闪光
 
+# === A1 会员偏好（性格外观） ===
+# 状态色仍由 state_channel 独占衬衫主色；偏好只改变体型与胸前
+# 像素徽记，因此 USING/QUEUEING 等旧颜色语义不会被覆盖。
+const PREF_STRENGTH := "STRENGTH"
+const PREF_CARDIO := "CARDIO"
+const PREF_FLEX := "FLEX"
+const PREF_BALANCED := "BALANCED"
+const PREFERENCE_TYPES := [PREF_STRENGTH, PREF_CARDIO, PREF_FLEX, PREF_BALANCED]
+
 # === 外观变体（member_id % 4 → 组合；0 = palette 默认色） ===
 # 每项：{hair, skin, pants, shoes, hair_style}。发型顶型 0=tuft / 1=fringe。
 # V3.1 P5（颜色加高饱和视觉焦点）：只变体 1 穿高饱和橙色运动短裤
@@ -111,7 +120,8 @@ const BUILDS := {
 ## （V3 §8 "结束时坐起"）。8 ticks ≈ 0.8s @10Hz —— 收尾节奏可见。
 const BENCH_SITUP_WINDOW := 8
 
-## 纹理缓存：key = "channel|pose|frame|facing|variant" → ImageTexture。
+## 纹理缓存：key = "channel|pose|frame|facing|appearance|build|preference"
+## → ImageTexture。偏好纳入 key，避免同 member_id 的不同偏好误用缓存。
 ## 设备使用姿态/坐起帧已并入 pose（use_bench vs use_bench_situp），
 ## 无需额外 key 维度。
 var _cache: Dictionary = {}
@@ -184,23 +194,70 @@ func variant_for(member_id: int) -> int:
 	return member_id % VARIANT_COUNT
 
 
+## 从绘制 ctx 中解析 A1 偏好。正式数据使用 preference_profile.type；
+## preference_type 是证据/测试便捷入口。未知或旧存档缺省时返回空字符串，
+## 以保持 A1 前的 member_id-only 外观完全兼容。
+func preference_type_for(ctx: Dictionary) -> String:
+	var raw := str(ctx.get("preference_type", ""))
+	var profile: Variant = ctx.get("preference_profile", {})
+	if profile is Dictionary:
+		raw = str((profile as Dictionary).get("type", raw))
+	var normalized := raw.strip_edges().to_upper()
+	return normalized if normalized in PREFERENCE_TYPES else ""
+
+
+## 偏好 → 关键体型。发型/肤色/裤鞋仍由 member_id 的 appearance variant
+## 提供多样性；只覆盖 silhouette：力量型宽肩背心，有氧型纤细，
+## 瑜伽型采用标准放松体型，均衡型保留 member_id 原体型。
+func preference_build_for(member_id: int, preference_type: String) -> int:
+	match preference_type.strip_edges().to_upper():
+		PREF_STRENGTH:
+			return 1
+		PREF_CARDIO:
+			return 2
+		PREF_FLEX:
+			return 0
+		_:
+			return variant_for(member_id)
+
+
+## 偏好徽记主色（全部复用 palette.gd，无绘制层硬编码色值）。
+func preference_accent(preference_type: String) -> Color:
+	match preference_type.strip_edges().to_upper():
+		PREF_STRENGTH:
+			return Palette.CHARCOAL
+		PREF_CARDIO:
+			return Palette.FOCAL_GYM_BLUE
+		PREF_FLEX:
+			return Palette.ROSE
+		PREF_BALANCED:
+			return Palette.BUTTER
+		_:
+			return Color(0, 0, 0, 0)
+
+
 ## 取纹理（缓存命中或生成）。facing_left=true 时返回水平镜像。
 ## [ctx] 附加绘制上下文（V3 §8 设备互动 + §9 微型动态）：
 ##   equipment_id       USING 成员的目标设备（决定使用姿态）
 ##   leaving_reason     LEAVING 成员的离场原因（quota_met → satisfied）
 ##   use_ticks_remaining  USING 成员剩余使用 tick（bench 结束坐起窗口）
 ##   member_id          外观变体（每人清晰发型/皮肤色块）
+##   preference_profile A1 偏好（type 驱动体型 + 胸前徽记）
 ## 全部可缺省 —— 缺省时回到基础姿态 + 变体 0（Phase C 兼容）。
 func texture_for(state: String, tick: int, facing_left: bool,
 		ctx: Dictionary = {}) -> ImageTexture:
 	var channel := state_channel(state)
 	var pose := _resolve_pose(state, ctx)
-	var variant := variant_for(int(ctx.get("member_id", -1)))
-	var key := "%s|%s|%d|%s|%d" % [channel, pose, frame_bit(state, tick),
-		str(facing_left), variant]
+	var member_id := int(ctx.get("member_id", -1))
+	var variant := variant_for(member_id)
+	var preference_type := preference_type_for(ctx)
+	var build_variant := preference_build_for(member_id, preference_type)
+	var key := "%s|%s|%d|%s|%d|%d|%s" % [channel, pose, frame_bit(state, tick),
+		str(facing_left), variant, build_variant, preference_type]
 	if _cache.has(key):
 		return _cache[key]
-	var img := _build_frame(channel, pose, frame_bit(state, tick), variant)
+	var img := _build_frame(channel, pose, frame_bit(state, tick), variant,
+		build_variant, preference_type)
 	if facing_left:
 		img = _mirror(img)
 	var tex := ImageTexture.create_from_image(img)
@@ -225,8 +282,9 @@ func _resolve_pose(state: String, ctx: Dictionary) -> String:
 
 # === 帧构建 ===
 
-func _build_frame(channel: String, pose: String, frame: int, variant: int) -> Image:
-	var rows := _frame_rows(pose, frame, variant)
+func _build_frame(channel: String, pose: String, frame: int, variant: int,
+		build_variant: int, preference_type: String) -> Image:
+	var rows := _frame_rows(pose, frame, variant, build_variant)
 	var shirt := _shirt_color(channel)
 	var v: Dictionary = MEMBER_VARIANTS[variant % VARIANT_COUNT]
 	rows = _apply_directional_shade(rows)
@@ -239,7 +297,44 @@ func _build_frame(channel: String, pose: String, frame: int, variant: int) -> Im
 				continue
 			img.set_pixel(x, y, _char_color(ch, shirt, v))
 	_apply_outline(img)
+	_apply_preference_mark(img, preference_type)
 	return img
+
+
+## 5×5 胸前像素徽记：力量=哑铃，有氧=闪电，FLEX=菱形花瓣，
+## BALANCED=十字。只覆盖已有的不透明躯干像素，横躺/特殊姿势也不会
+## 产生悬空色点。徽记是偏好通道，衬衫其余大面积仍显示状态通道。
+func _apply_preference_mark(img: Image, preference_type: String) -> void:
+	var normalized := preference_type.strip_edges().to_upper()
+	if not normalized in PREFERENCE_TYPES:
+		return
+	var points: Array[Vector2i] = []
+	match normalized:
+		PREF_STRENGTH:
+			points = [Vector2i(0, 0), Vector2i(4, 0), Vector2i(0, 1),
+				Vector2i(1, 1), Vector2i(2, 1), Vector2i(3, 1), Vector2i(4, 1),
+				Vector2i(0, 2), Vector2i(4, 2)]
+		PREF_CARDIO:
+			points = [Vector2i(3, 0), Vector2i(2, 1), Vector2i(3, 1),
+				Vector2i(1, 2), Vector2i(2, 2), Vector2i(1, 3), Vector2i(0, 4)]
+		PREF_FLEX:
+			points = [Vector2i(2, 0), Vector2i(1, 1), Vector2i(3, 1),
+				Vector2i(0, 2), Vector2i(2, 2), Vector2i(4, 2),
+				Vector2i(1, 3), Vector2i(3, 3), Vector2i(2, 4)]
+		PREF_BALANCED:
+			points = [Vector2i(2, 0), Vector2i(2, 1), Vector2i(0, 2),
+				Vector2i(1, 2), Vector2i(2, 2), Vector2i(3, 2), Vector2i(4, 2),
+				Vector2i(2, 3), Vector2i(2, 4)]
+	var origin := Vector2i(29, 19)
+	for point in points:
+		var pixel := origin + point
+		if img.get_pixelv(pixel).a <= 0.5:
+			continue
+		var color := preference_accent(normalized)
+		if normalized == PREF_BALANCED:
+			var mixed := [Palette.SAGE, Palette.SKY, Palette.PEACH, Palette.BUTTER]
+			color = mixed[posmod(point.x + point.y, mixed.size())]
+		img.set_pixelv(pixel, color)
 
 
 ## V3 §8 阴影侧 / 高光侧（统一方向光 —— 顶部暖白光从左上照下）：
@@ -304,28 +399,29 @@ func _has_opaque_neighbor(img: Image, x: int, y: int) -> bool:
 
 
 ## 48 行 × 48 字符的帧数据（"手工归纳"像素图 —— 逐行定义，无抗锯齿）。
-func _frame_rows(pose: String, frame: int, variant: int) -> PackedStringArray:
+func _frame_rows(pose: String, frame: int, variant: int,
+		build_variant: int) -> PackedStringArray:
 	match pose:
 		POSE_WALK:
-			return _walk_rows(frame, variant)
+			return _walk_rows(frame, variant, build_variant)
 		POSE_WAIT:
-			return _wait_rows(frame, variant)
+			return _wait_rows(frame, variant, build_variant)
 		POSE_SATISFIED:
-			return _satisfied_rows(frame, variant)
+			return _satisfied_rows(frame, variant, build_variant)
 		USE_TREADMILL:
-			return _treadmill_rows(frame, variant)
+			return _treadmill_rows(frame, variant, build_variant)
 		USE_BIKE:
-			return _bike_rows(frame, variant)
+			return _bike_rows(frame, variant, build_variant)
 		USE_BENCH:
 			return _bench_rows(frame, variant)
 		USE_BENCH_SITUP:
-			return _bench_situp_rows(frame, variant)
+			return _bench_situp_rows(frame, variant, build_variant)
 		USE_YOGA:
-			return _yoga_rows(frame, variant)
+			return _yoga_rows(frame, variant, build_variant)
 		USE_GENERIC:
-			return _use_generic_rows(frame, variant)
+			return _use_generic_rows(frame, variant, build_variant)
 		_:
-			return _idle_rows(frame, variant)
+			return _idle_rows(frame, variant, build_variant)
 
 
 # === 基础部件（头 14 行 0..13 / 躯干 14 行 14..27 / 腿 13 行 28..40 /
@@ -1128,11 +1224,12 @@ func _shadow_rows() -> PackedStringArray:
 
 ## 组装基础帧：头 + 躯干 + 腿 + 鞋 + 影（48 行）。
 func _assemble(face: String, arms: String, legs: String, variant: int,
-		bob: int = 0) -> PackedStringArray:
+		bob: int = 0, build_variant: int = -1) -> PackedStringArray:
+	var body_variant := variant if build_variant < 0 else build_variant
 	var rows := PackedStringArray()
 	rows.append_array(_head_rows(face, variant))
-	rows.append_array(_torso_rows(arms, variant))
-	rows.append_array(_leg_rows(legs, variant))
+	rows.append_array(_torso_rows(arms, body_variant))
+	rows.append_array(_leg_rows(legs, body_variant))
 	rows.append_array(_shoe_rows())
 	rows.append_array(_shadow_rows())
 	if bob != 0:
@@ -1141,16 +1238,17 @@ func _assemble(face: String, arms: String, legs: String, variant: int,
 
 
 ## idle：无聊脸（半闭眼），站立微晃（B 帧 1px 上浮）。
-func _idle_rows(frame: int, variant: int) -> PackedStringArray:
-	return _assemble(FACE_BORED, "down", "stand", variant, 1 if frame == 1 else 0)
+func _idle_rows(frame: int, variant: int, build_variant: int = -1) -> PackedStringArray:
+	return _assemble(FACE_BORED, "down", "stand", variant,
+		1 if frame == 1 else 0, build_variant)
 
 
 ## walk：专注脸 + 前倾摆臂迈步（V3 §8 跑步：身体前倾、手臂摆动、腿部循环）。
 ## A=左臂前摆/左脚迈出；B=镜像（+1px 弹跳）。
-func _walk_rows(frame: int, variant: int) -> PackedStringArray:
+func _walk_rows(frame: int, variant: int, build_variant: int = -1) -> PackedStringArray:
 	if frame == 0:
-		return _assemble(FACE_FOCUS, "swing_f", "stride_f", variant)
-	var rows := _assemble(FACE_FOCUS, "swing_b", "stride_b", variant, 1)
+		return _assemble(FACE_FOCUS, "swing_f", "stride_f", variant, 0, build_variant)
+	var rows := _assemble(FACE_FOCUS, "swing_b", "stride_b", variant, 1, build_variant)
 	return rows
 
 
@@ -1158,14 +1256,15 @@ func _walk_rows(frame: int, variant: int) -> PackedStringArray:
 ## 暂停符号提供不依赖颜色的“等待”形状通道。没有擦汗、泵举、扶把或踏步，
 ## 因而不会在设备旁被误读为器械动作。A/B 只让暂停符号轻微横移。
 ## 布局：2 行暂停符号 + compact 头 12 + 躯干 14 + 腿 13 + 鞋 3 + 影 4 = 48。
-func _wait_rows(frame: int, variant: int) -> PackedStringArray:
+func _wait_rows(frame: int, variant: int, build_variant: int = -1) -> PackedStringArray:
+	var body_variant := variant if build_variant < 0 else build_variant
 	var rows := PackedStringArray()
 	var glyph_x := 37 if frame == 0 else 36
 	rows.append(_r(glyph_x, "ww.ww"))
 	rows.append(_r(glyph_x, "ww.ww"))
 	rows.append_array(_head_rows(FACE_BORED, variant, true))
-	rows.append_array(_torso_rows("down", variant))
-	rows.append_array(_leg_rows("stand", variant))
+	rows.append_array(_torso_rows("down", body_variant))
+	rows.append_array(_leg_rows("stand", body_variant))
 	rows.append_array(_shoe_rows())
 	rows.append_array(_shadow_rows())
 	return rows
@@ -1175,7 +1274,8 @@ func _wait_rows(frame: int, variant: int) -> PackedStringArray:
 ## A=闪光在举手上方左；B=闪光右移（闪烁感）。
 ## 布局同 wait：2 行闪光（0..1）+ compact 头 12（2..13）+ 躯干 14 + 腿 13
 ## + 鞋 3 + 影 4 = 48。
-func _satisfied_rows(frame: int, variant: int) -> PackedStringArray:
+func _satisfied_rows(frame: int, variant: int, build_variant: int = -1) -> PackedStringArray:
+	var body_variant := variant if build_variant < 0 else build_variant
 	var rows := PackedStringArray()
 	# V3 §15（P0-3）：小闪光 2px→3px 加宽，远景辨识度（unit 断言仍 pin (9,0)）。
 	if frame == 0:
@@ -1185,8 +1285,8 @@ func _satisfied_rows(frame: int, variant: int) -> PackedStringArray:
 		rows.append(_r(11, "ggg"))
 		rows.append(_r(10, "ggg"))
 	rows.append_array(_head_rows(FACE_HAPPY, variant, true))
-	rows.append_array(_torso_rows("raised", variant))
-	rows.append_array(_leg_rows("stand", variant))
+	rows.append_array(_torso_rows("raised", body_variant))
+	rows.append_array(_leg_rows("stand", body_variant))
 	rows.append_array(_shoe_rows())
 	rows.append_array(_shadow_rows())
 	if frame == 1:
@@ -1196,31 +1296,31 @@ func _satisfied_rows(frame: int, variant: int) -> PackedStringArray:
 
 ## treadmill：跑带奔跑 —— 高抬腿跑姿（前腿膝抬到腰 + 后腿后伸，区别于
 ## walk 的前迈步）+ 双手扶把 + 专注脸。A=左膝高抬；B=右膝高抬（+1px 弹跳）。
-func _treadmill_rows(frame: int, variant: int) -> PackedStringArray:
+func _treadmill_rows(frame: int, variant: int, build_variant: int = -1) -> PackedStringArray:
 	if frame == 0:
-		return _assemble(FACE_FOCUS, "rails", "run_f", variant)
-	return _assemble(FACE_FOCUS, "rails", "run_b", variant, 1)
+		return _assemble(FACE_FOCUS, "rails", "run_f", variant, 0, build_variant)
+	return _assemble(FACE_FOCUS, "rails", "run_b", variant, 1, build_variant)
 
 
 ## bike：骑行 —— 身体前倾 + 双手握把 + 双脚交替踏（V3 §8 自行车使用姿势）。
-func _bike_rows(frame: int, variant: int) -> PackedStringArray:
+func _bike_rows(frame: int, variant: int, build_variant: int = -1) -> PackedStringArray:
 	if frame == 0:
-		return _assemble(FACE_FOCUS, "handlebar", "pedal_f", variant)
-	return _assemble(FACE_FOCUS, "handlebar", "pedal_b", variant, 1)
+		return _assemble(FACE_FOCUS, "handlebar", "pedal_f", variant, 0, build_variant)
+	return _assemble(FACE_FOCUS, "handlebar", "pedal_b", variant, 1, build_variant)
 
 
 ## yoga：瑜伽 —— 盘坐 + 双臂上举/平伸（V3 §8 瑜伽垫上的使用姿势）。
-func _yoga_rows(frame: int, variant: int) -> PackedStringArray:
+func _yoga_rows(frame: int, variant: int, build_variant: int = -1) -> PackedStringArray:
 	if frame == 0:
-		return _assemble(FACE_BORED, "stretch_up", "cross", variant)
-	return _assemble(FACE_BORED, "stretch_out", "cross", variant)
+		return _assemble(FACE_BORED, "stretch_up", "cross", variant, 0, build_variant)
+	return _assemble(FACE_BORED, "stretch_out", "cross", variant, 0, build_variant)
 
 
 ## use generic（未知设备兜底）：用力脸 + 双手泵举。A=举到肩高；B=臂下垂 + 下蹲。
-func _use_generic_rows(frame: int, variant: int) -> PackedStringArray:
+func _use_generic_rows(frame: int, variant: int, build_variant: int = -1) -> PackedStringArray:
 	if frame == 0:
-		return _assemble(FACE_EFFORT, "pump_up", "plant", variant)
-	return _assemble(FACE_EFFORT, "pump_down", "plant", variant, 1)
+		return _assemble(FACE_EFFORT, "pump_up", "plant", variant, 0, build_variant)
+	return _assemble(FACE_EFFORT, "pump_down", "plant", variant, 1, build_variant)
 
 
 ## 卧推（躺姿，横向构图，V3 §8 "杠铃上下运动、身体轻微形变"）：
@@ -1280,11 +1380,12 @@ func _bench_rows(frame: int, variant: int) -> PackedStringArray:
 
 
 ## 卧推结束坐起（V3 §8 "结束时坐起"）：身体坐直，双臂放下，杠铃已归架。
-func _bench_situp_rows(frame: int, variant: int) -> PackedStringArray:
+func _bench_situp_rows(frame: int, variant: int, build_variant: int = -1) -> PackedStringArray:
+	var body_variant := variant if build_variant < 0 else build_variant
 	var rows := PackedStringArray()
 	rows.append_array(_head_rows(FACE_EFFORT, variant))
-	rows.append_array(_torso_rows("down", variant))
-	rows.append_array(_leg_rows("stand", variant))
+	rows.append_array(_torso_rows("down", body_variant))
+	rows.append_array(_leg_rows("stand", body_variant))
 	rows.append_array(_shoe_rows())
 	rows.append_array(_shadow_rows())
 	if frame == 1:

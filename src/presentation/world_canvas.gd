@@ -963,8 +963,9 @@ func _draw_placement_ghost() -> void:
 ##           （sprite 头部向上越出 cell —— 2.5D 人物高于占用格）。
 ##   true  = 前景：USING 会员叠加在目标设备 footprint 上（跑带/卧推凳/车座/
 ##           垫面 —— V3 §8 与设备互动姿态），由 _equipment_anchor 计算锚点。
-## 设备上下文（equipment_id / leaving_reason / use_ticks_remaining / member_id）
-## 经 ctx 传入 texture_for —— 使用姿态与外观变体据此解析。
+## 设备上下文（equipment_id / leaving_reason / use_ticks_remaining / member_id /
+## preference_profile）经 ctx 传入 texture_for —— 使用姿态、外观变体与
+## A1 性格外观据此解析。
 func _draw_members(foreground: bool) -> void:
 	if _member == null or _member_sprites == null:
 		return
@@ -1308,15 +1309,19 @@ func _footprint_of_using(m: Dictionary) -> Rect2i:
 	return Rect2i()
 
 
-## 会员绘制上下文（V3 §8 设备互动 + §9 微型动态 + 每人外观）：
+## 会员绘制上下文（V3 §8 设备互动 + §9 微型动态 + A1 性格外观）：
 ##   equipment_id       USING 成员的目标设备（经 resolver）
 ##   leaving_reason     LEAVING 成员的离场原因（quota_met → satisfied 满意）
 ##   use_ticks_remaining  USING 剩余 tick（bench 结束坐起窗口）
 ##   member_id          外观变体（每人清晰发型/皮肤色块）
+##   preference_profile A1 偏好类型（体型 + 胸前徽记，不改状态衬衫色）
 func _member_ctx(m: Dictionary, state: String) -> Dictionary:
 	var ctx := {
 		"member_id": int(m.get("member_id", -1)),
 	}
+	var profile: Variant = m.get("preference_profile", {})
+	if profile is Dictionary and not (profile as Dictionary).is_empty():
+		ctx["preference_profile"] = (profile as Dictionary).duplicate(true)
 	if state == "USING":
 		var target := int(m.get("target_equipment_instance_id", -1))
 		if target >= 0 and _resolver.is_valid():
