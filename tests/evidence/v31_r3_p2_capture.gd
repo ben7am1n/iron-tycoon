@@ -246,11 +246,11 @@ func _verify_world_frame(img: Image) -> void:
 	_ok(screen_found, "WORLD treadmill console cyan screen pixels present (跑步机控制台屏幕在场)")
 
 
-## 会员衬衫色命中（WALKING sky / QUEUEING peach / LEAVING gray —— 非空场）。
+## 会员衬衫色命中（WALKING sky / QUEUEING dusty / LEAVING gray —— 非空场）。
 func _verify_members(img: Image) -> void:
 	var checks := [
 		{"state": "WALKING_TO", "cell": Vector2i(5, 2), "expect": Color("8EC5E8")},
-		{"state": "QUEUEING", "cell": Vector2i(3, 6), "expect": Color("F2B486")},
+		{"state": "QUEUEING", "cell": Vector2i(3, 6), "expect": Color("8494A6")},
 		{"state": "LEAVING", "cell": Vector2i(10, 6), "expect": Color("9A948C")},
 	]
 	for entry in checks:

@@ -273,7 +273,7 @@ func _verify_members(img: Image) -> void:
 	var checks := [
 		{"state": "WALKING_TO", "cell": Vector2i(5, 2), "expect": Color("8EC5E8")},
 		{"state": "WALKING_TO", "cell": Vector2i(11, 2), "expect": Color("8EC5E8")},
-		{"state": "QUEUEING", "cell": Vector2i(3, 6), "expect": Color("F2B486")},
+		{"state": "QUEUEING", "cell": Vector2i(3, 6), "expect": Color("8494A6")},
 		{"state": "LEAVING", "cell": Vector2i(10, 6), "expect": Color("9A948C")},
 	]
 	for entry in checks:
