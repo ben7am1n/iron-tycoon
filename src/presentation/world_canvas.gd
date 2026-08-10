@@ -713,6 +713,12 @@ func _draw_equipment() -> void:
 		# 从深色地面「托起」，silhouette 分离）。亮池先画（低 alpha 暖白，
 		# V3 §6 顶部暖白光），接触影随后压在其上。
 		_draw_equipment_ground_pool(fp_rect)
+		# 1b. V3.1 返工2 R3（FAIL2 方向一致冷投影）：设备在光源另一侧投出
+		# 有方向的冷色遮挡投影 —— footprint 沿 cast_shadow_offset（背向最近
+		# 吊灯灯泡）平移，低 alpha 冷蓝灰平行四边形（floor transform 贴地）。
+		# 方向全场一致（三盏吊灯都在北墙 → 投影统一向南），长度随设备高度
+		# 与位置变化 —— 遮挡投影而非区域底色。
+		_draw_equipment_cast_shadow(fp_rect, height)
 		# 1. 贴地 contact shadow（V3 §6：双层冷蓝灰 —— 宽软外层 + 贴身内层）
 		_draw_with_floor_transform(func() -> void:
 			var soft_rect := fp_rect.grow(5)
@@ -756,6 +762,26 @@ func _draw_equipment() -> void:
 				for c in inst.access_cells:
 					_draw_access_cell(c)
 			)
+
+
+## V3.1 返工2 R3（FAIL2 方向一致冷投影）：设备在光源另一侧投出有方向的
+## 冷色遮挡投影 —— footprint 沿 cast_shadow_offset（背向最近吊灯灯泡）平移，
+## 画成贴地平行四边形（floor transform 内）。方向全场一致（三盏吊灯都在
+## 北墙 → 投影统一向南），长度随设备高度与位置变化 —— 不是区域底色：
+## 有形状来源（footprint）、随物体/光源位置变化（WorldLayout 纯函数）。
+func _draw_equipment_cast_shadow(fp: Rect2i, height: float) -> void:
+	var center := Vector2(fp.position) + Vector2(fp.size) * 0.5
+	var offset := WorldLayout.cast_shadow_offset(center, height)
+	if offset.length() < 2.0:
+		return
+	var shadow := Palette.EQUIP_SHADOW
+	shadow.a = 0.20
+	var shadow_rect := Rect2(Vector2(fp.position) + offset, Vector2(fp.size))
+	_draw_with_floor_transform(func() -> void:
+		# 投影比 footprint 略收（投影不是原尺寸副本 —— 透视收窄）：
+		# 主体用 footprint，南侧再压一条贴身暗线，形成「被遮挡」的投影
+		draw_rect(shadow_rect, shadow, true)
+	)
 
 
 ## V3.1 R1：设备脚下暖色亮池 —— 半透明暖白椭圆垫在设备 footprint 下方，
@@ -990,6 +1016,7 @@ func _draw_members(foreground: bool) -> void:
 		# 脚踩处地面压暗，人物「落在地面」而非贴图。
 		if not is_using:
 			_draw_member_ground_glow(_flat_feet(cell))
+			_draw_member_cast_shadow(_flat_feet(cell))
 			_draw_member_contact_shadow(_flat_feet(cell))
 		else:
 			# USING 成员：设备接触点明暗衔接（脚踩踏板压暗 + 手扶处设备微反光）
@@ -1109,6 +1136,29 @@ func _draw_member_contact_shadow(flat_feet: Vector2) -> void:
 		for i in 16:
 			var a := TAU * float(i) / 16.0
 			pts.append(flat_feet + Vector2(cos(a) * rx, sin(a) * ry))
+		draw_colored_polygon(pts, shadow)
+	)
+
+
+## 返工2 R3（FAIL2 方向一致冷投影）：会员脚底方向投影 —— 人物在光源另一侧
+## 投出有方向的冷色遮挡投影（小椭圆，沿 cast_shadow_offset 背向最近吊灯
+## 灯泡平移）。与设备方向投影同一规则（WorldLayout 纯函数）—— 方向全场
+## 一致、随物体位置/光源位置变化；是「遮挡投影」而非区域底色。画在亮池
+## 之后、接触影之前（亮池托起人物，方向投影把人物「锚」在地面）。
+func _draw_member_cast_shadow(flat_feet: Vector2) -> void:
+	var offset := WorldLayout.cast_shadow_offset(flat_feet, 20.0)
+	if offset.length() < 2.0:
+		return
+	var shadow := Palette.EQUIP_SHADOW
+	shadow.a = 0.18
+	var size := float(_member_sprites.SIZE) if _member_sprites != null else 48.0
+	var rx := size * 0.30
+	var ry := size * 0.09
+	_draw_with_floor_transform(func() -> void:
+		var pts := PackedVector2Array()
+		for i in 16:
+			var a := TAU * float(i) / 16.0
+			pts.append(flat_feet + offset + Vector2(cos(a) * rx, sin(a) * ry))
 		draw_colored_polygon(pts, shadow)
 	)
 
