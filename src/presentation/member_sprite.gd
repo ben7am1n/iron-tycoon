@@ -604,6 +604,8 @@ func _torso_rows(arms: String, variant: int) -> PackedStringArray:
 			r.append(_r(13, "dddddddddddddddddddd"))
 			r.append(_r(13, "dddddddddddddddddddd"))
 
+		_:           # down（wait/idle 默认：双臂下垂）→ 放样模板路径
+			return _torso_build_rows(arms, variant)
 	return r
 
 
