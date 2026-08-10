@@ -119,6 +119,7 @@ const TEST_FILES := [
 	"tests/integration/save_load/load_orchestration_test.gd",
 	"tests/integration/save_load/roundtrip_determinism_test.gd",
 	"tests/integration/save_load/file_io_version_test.gd",
+	"tests/integration/save_load/a1_a2_state_roundtrip_test.gd",
 	"tests/integration/member_sim/flow_hypothesis_test.gd",
 	"tests/integration/satisfaction/recovery_loop_test.gd",
 	"tests/integration/core_loop/core_loop_test.gd",

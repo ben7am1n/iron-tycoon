@@ -620,6 +620,13 @@ func load_from_file(save_name: String) -> Array:  # [Dictionary, String]
 	if not blob is Dictionary:
 		return [{}, "Save file '%s' has unexpected structure (not a JSON object)" % file_path]
 
+	# JSON has a single numeric representation, and Godot parses every JSON
+	# number as float. Restore integer-valued numbers recursively before the
+	# blob reaches the strict per-system deserialize validators. This belongs
+	# only to the disk boundary: callers of load() with an in-memory blob keep
+	# their original Variant types.
+	blob = _normalize_types(blob)
+
 	# Version check — BEFORE any system is touched (AC6)
 	if not blob.has("version"):
 		return [{}, "Save file '%s' is missing version field — possibly from an older format" % file_path]
@@ -638,6 +645,28 @@ func load_from_file(save_name: String) -> Array:  # [Dictionary, String]
 			[file_path, _version_label(file_version), SAVE_FORMAT_VERSION]]
 
 	return [blob, ""]
+
+
+## Recursively restore integer-valued JSON numbers to TYPE_INT while
+## preserving Dictionary/Array structure (including Vector2i's [x, y] form).
+static func _normalize_types(data: Variant) -> Variant:
+	match typeof(data):
+		TYPE_DICTIONARY:
+			var normalized: Dictionary = {}
+			for key: Variant in (data as Dictionary).keys():
+				normalized[key] = _normalize_types((data as Dictionary)[key])
+			return normalized
+		TYPE_ARRAY:
+			var normalized: Array = []
+			for value: Variant in (data as Array):
+				normalized.append(_normalize_types(value))
+			return normalized
+		TYPE_FLOAT:
+			var value: float = data
+			var rounded: int = roundi(value)
+			if is_equal_approx(value, float(rounded)):
+				return rounded
+	return data
 
 
 ## Public: load from disk. The caller must provide buildable_snapshot (level

@@ -522,5 +522,8 @@ func _test_valid_roundtrip_version_match() -> void:
 	_check(arr[1] == "", "round-trip load has NO error (got: '%s')" % arr[1])
 	var blob: Dictionary = arr[0]
 	_check(not blob.is_empty(), "round-trip returns a blob")
-	_check(float(blob["version"]) == 1.0, "round-trip blob version == 1 (float 1.0 from JSON == int 1 numerically)")
+	_check(blob["version"] == 1, "round-trip blob version == 1")
+	_check(typeof(blob["version"]) == TYPE_INT, "load_from_file normalizes top-level integer-valued JSON numbers to TYPE_INT")
+	_check(typeof(blob["time_system"]["tick_count"]) == TYPE_INT,
+		"load_from_file recursively normalizes nested tick_count to TYPE_INT")
 	_check(blob.has("master_seed") and blob.has("time_system") and blob.has("grid_system"), "round-trip blob has the key structure")
