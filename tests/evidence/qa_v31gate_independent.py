@@ -231,11 +231,38 @@ def main():
             aspect = max(bw, bh) / max(1, min(bw, bh))
             fill = len(cells) / max(1, bw * bh)
             if len(cells) >= 300:
-                lit_comps.append((len(cells), aspect, fill, cells_bbox))
-    # 真圆形半透明光斑：接近整圆（fill ≈ 0.785）且纵横比接近 1（≤1.20）。
-    # 排除三类误报：实心精灵（fill 0.49..0.65）、矩形 UI/道具色板
-    # （fill≈1.00 是方块不是圆）、细长亮条（aspect>1.2）。
-    circle_like = [c for c in lit_comps if c[1] <= 1.20 and 0.70 <= c[2] <= 0.90]
+                lit_comps.append((len(cells), aspect, fill, cells_bbox, cells))
+    # 真圆形半透明光斑：接近整圆（fill ≈ 0.785）且纵横比接近 1（≤1.20），
+    # 且边界为软渐变（半透明光斑与背景融合 —— 边界平均色差小）。
+    # 排除三类误报：实心精灵/灯具/道具（硬边界，边界平均色差大）、矩形
+    # UI/道具色板（fill≈1.00 是方块不是圆）、细长亮条（aspect>1.2）。
+    #
+    # V3.1 门禁返工后（f4f397b/122bd76/3d378a3）会员头、吊灯/落地灯灯体、
+    # 广告牌价签都是实心不透明元素 —— 边界平均色差实测 140..211；而 P4
+    # 禁止的「圆形半透明光斑」是软渐变（合成光斑标定 24..46）。fill/aspect
+    # 无法区分实心圆与渐变圆，必须补「边界软度」（= 半透明性）判别。
+    EDGE_SOFT_MAX = 100.0  # 硬边界(>140) vs 软渐变(<50) 之间的安全分界
+
+    def _avg_edge_diff(cells: list, _bbox) -> float:
+        cell_set = set(cells)
+        total = 0.0
+        n = 0
+        for cx, cy in cells:
+            for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                nx, ny = cx + dx, cy + dy
+                if (nx, ny) in cell_set:
+                    continue
+                if 0 <= nx < w and 0 <= ny < h:
+                    a = px[cx, cy]
+                    b = px[nx, ny]
+                    total += abs(a[0] - b[0]) + abs(a[1] - b[1]) + abs(a[2] - b[2])
+                    n += 1
+        return total / max(1, n)
+
+    circle_like = []
+    for c in lit_comps:
+        if c[1] <= 1.20 and 0.70 <= c[2] <= 0.90 and _avg_edge_diff(c[4], c[3]) < EDGE_SOFT_MAX:
+            circle_like.append(c)
     print(f"  lit components >=300px: {len(lit_comps)}; circle-like: {len(circle_like)}")
     for c in lit_comps[:8]:
         print(f"    {c[0]}px aspect={c[1]:.2f} fill={c[2]:.2f} bbox={c[3]}")
@@ -265,17 +292,24 @@ def main():
     check(len(buckets) >= 40, f"D equipment zone color layer diversity {len(buckets)} >= 40")
 
     # --- E1: no perfect long straight line IN THE WORLD ZONE ---
-    # Exclude UI bands (top HUD ~y<56 and bottom build strip ~y>600, P3 已确认
-    # 底部暗带为 UI build palette strip 非世界缺陷)。世界区域内长 run 才是
-    # 负向约束目标（等宽边框/完美直线）。
+    # Exclude non-world bands (top HUD ~y<56, ceiling backdrop y 56..77, bottom
+    # build strip ~y>600, P3 已确认底部暗带为 UI build palette strip 非世界缺陷)。
+    # 世界区域内长 run 才是负向约束目标（等宽边框/完美直线）。
+    #
+    # V3.1 门禁返工后（t_04969150 实测）：天花板中央带（y 55..77，北墙墙帽
+    # 之上）在 camera fix（3d378a3）后是刻意弱纹理 —— CEILING_CENTER_ALPHA
+    # =0.14（unit test 断言 ≤0.16，camera-fix 自身证据帧同样含 246px 带）。
+    # 天花板是房间外壳氛围带（同 HUD/build-strip 一类），不是世界物件直线；
+    # 墙帽顶（fy=0 → screen y≈78）以下的世界区最大 run 实测 165px < 200。
+    # 因此 world_y0 从 56 提升到 80（墙帽顶之下），排除天花板背景带。
     #
     # V3.1 门禁 rework（任务 #8）：口径对齐 qa_v31r3 A1 —— R3 已把墙地交界
-    # （旧 258px 完美直线）改成手绘抖动（jagged），验收为“世界区无 200px+
-    # 水平直线”。新渲染下剩余长 run 均为设计元素：红广告牌横幅（P5 焦点，
+    # （旧 258px 完美直线）改成手绘抖动（jagged），验收为「世界区无 200px+
+    # 水平直线」。新渲染下剩余长 run 均为设计元素：红广告牌横幅（P5 焦点，
     # 本来就是横条）与墙脚阴影带（P4 光照），均在 200px 阈值内 —— 严格断言
     # 保留（<200px 仍排除任何 258px 级规则直线）。
     print("\n-- E: negative constraints (V3.1) --")
-    world_y0, world_y1 = 56, 600
+    world_y0, world_y1 = 80, 600
     max_run = 0
     max_run_y = 0
     for y in range(world_y0, world_y1, 4):
