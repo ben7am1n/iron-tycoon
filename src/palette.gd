@@ -324,7 +324,7 @@ const LAMP_SHADE_LIT := Color("E8A84D")
 ## 吊灯灯泡核心（V3.1 R4）：近白暖亮点 —— 灯罩底部小范围亮色（1-2px 核心）。
 const LAMP_BULB := Color("FFF3C4")
 ## 吊灯暖光晕：半透明暖黄（V3 §6 顶部暖白灯）。
-const LAMP_GLOW := Color(1.0, 0.92, 0.68, 0.30)
+const LAMP_GLOW := Color(1.0, 0.92, 0.68, 0.40)
 ## 冷光渗透（V3.1 R4 窗边/门口冷光）：窗光冷蓝灰 —— 与室内暖光形成冷暖对比
 ## （V3 §15 warm indoor lighting / cool colored shadows）。
 const LIGHT_WINDOW_COOL := Color(0.72, 0.82, 0.98, 0.12)

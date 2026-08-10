@@ -224,17 +224,17 @@ const WALL_DECOR := {
 ## 屏幕空间断裂。rect 与 StructureArt.STRUCTURES 中对应条目由测试交叉验证。
 const HANGING_LIGHTS := [
 	{
-		"id": "hanging_lamp_1", "rect": Rect2i(72, 0, 28, 36),
+		"id": "hanging_lamp_1", "rect": Rect2i(72, 18, 28, 36),
 		"height": 78.0, "bulb_local": Vector2(14, 29),
 		"landing": Vector2(86, 170), "pool_half": Vector2(52, 36),
 	},
 	{
-		"id": "hanging_lamp_2", "rect": Rect2i(188, 0, 28, 36),
+		"id": "hanging_lamp_2", "rect": Rect2i(210, 18, 28, 36),
 		"height": 78.0, "bulb_local": Vector2(14, 29),
-		"landing": Vector2(202, 170), "pool_half": Vector2(52, 36),
+		"landing": Vector2(224, 170), "pool_half": Vector2(52, 36),
 	},
 	{
-		"id": "hanging_lamp_3", "rect": Rect2i(348, 0, 28, 36),
+		"id": "hanging_lamp_3", "rect": Rect2i(348, 18, 28, 36),
 		"height": 78.0, "bulb_local": Vector2(14, 29),
 		"landing": Vector2(362, 170), "pool_half": Vector2(52, 36),
 	},
@@ -256,7 +256,7 @@ const FLOOR_LIGHT := {
 ## 保持一致，兼容既有测试/证据读取。
 const LIGHT_POOLS := [
 	Vector2(86, 170),
-	Vector2(202, 170),
+	Vector2(224, 170),
 	Vector2(362, 170),
 ]
 ## 灯光池半径。

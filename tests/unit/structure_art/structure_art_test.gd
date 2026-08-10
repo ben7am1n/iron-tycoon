@@ -42,6 +42,7 @@ func run_all() -> Dictionary:
 	_test_three_layers_present()
 	_test_required_structures()
 	_test_light_fixture_layout_contract()
+	_test_lamp_suspension_and_glow()
 	_test_rects_in_bounds()
 	_test_painted_by_split()
 	_test_textures_bake()
@@ -140,6 +141,37 @@ func _test_light_fixture_layout_contract() -> void:
 			"%s structure rect matches lighting source anchor" % id)
 		_check(float(light.get("height", 0.0)) > 0.0,
 			"%s has explicit hanging height" % id)
+	var centers: Array[float] = []
+	for light: Dictionary in WorldLayout.HANGING_LIGHTS:
+		var rect: Rect2i = light.get("rect", Rect2i())
+		centers.append(float(rect.position.x) + float(rect.size.x) * 0.5)
+		_check(rect.position.y > 0,
+			"%s hangs forward of the north-wall plane" % str(light.get("id", "")))
+	_check(is_equal_approx(centers[1] - centers[0], centers[2] - centers[1]),
+		"three hanging lamps are evenly spaced")
+
+
+## 吊灯纹理必须在低分辨率下保留连续 3px 吊线与半透明暖色边缘光。
+func _test_lamp_suspension_and_glow() -> void:
+	var art = StructureArtScript.new()
+	var img: Image = art.structure_texture("hanging_lamp_1").get_image()
+	var cable_continuous := true
+	for y in range(2, 10):
+		var opaque := 0
+		for x in range(12, 17):
+			if img.get_pixel(x, y).a > 0.95:
+				opaque += 1
+		if opaque < 3:
+			cable_continuous = false
+	_check(cable_continuous, "lamp suspension cable stays >=3px wide and continuous")
+	var glow_pixels := 0
+	for y in img.get_height():
+		for x in img.get_width():
+			var c := img.get_pixel(x, y)
+			if c.a >= 0.35 and c.a < 0.75 and c.r > c.b:
+				glow_pixels += 1
+	_check(glow_pixels >= 12,
+		"lamp shade has readable warm edge glow (%d translucent pixels)" % glow_pixels)
 
 
 # === 结构矩形边界 ===

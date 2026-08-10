@@ -89,9 +89,9 @@ const STRUCTURES := [
 	{"id": "baseboard_east", "kind": "baseboard", "layer": LAYER_BACKGROUND, "size": "small", "rect": Rect2i(402, 24, 2, 264), "painted_by": "self"},
 	{"id": "pipe_vertical", "kind": "pipe", "layer": LAYER_BACKGROUND, "size": "small", "rect": Rect2i(410, 64, 4, 224), "painted_by": "self"},
 	{"id": "pipe_horizontal", "kind": "pipe", "layer": LAYER_BACKGROUND, "size": "small", "rect": Rect2i(0, 296, 400, 2), "painted_by": "self"},
-	{"id": "hanging_lamp_1", "kind": "lamp", "layer": LAYER_FOREGROUND, "size": "small", "rect": Rect2i(72, 0, 28, 36), "painted_by": "self"},
-	{"id": "hanging_lamp_2", "kind": "lamp", "layer": LAYER_FOREGROUND, "size": "small", "rect": Rect2i(188, 0, 28, 36), "painted_by": "self"},
-	{"id": "hanging_lamp_3", "kind": "lamp", "layer": LAYER_FOREGROUND, "size": "small", "rect": Rect2i(348, 0, 28, 36), "painted_by": "self"},
+	{"id": "hanging_lamp_1", "kind": "lamp", "layer": LAYER_FOREGROUND, "size": "small", "rect": Rect2i(72, 18, 28, 36), "painted_by": "self"},
+	{"id": "hanging_lamp_2", "kind": "lamp", "layer": LAYER_FOREGROUND, "size": "small", "rect": Rect2i(210, 18, 28, 36), "painted_by": "self"},
+	{"id": "hanging_lamp_3", "kind": "lamp", "layer": LAYER_FOREGROUND, "size": "small", "rect": Rect2i(348, 18, 28, 36), "painted_by": "self"},
 	{"id": "door_mat_entrance", "kind": "door_mat", "layer": LAYER_BACKGROUND, "size": "small", "rect": Rect2i(10, 16, 24, 8), "painted_by": "self"},
 	{"id": "door_mat_exit", "kind": "door_mat", "layer": LAYER_BACKGROUND, "size": "small", "rect": Rect2i(360, 300, 28, 8), "painted_by": "self"},
 	{"id": "wall_hooks_1", "kind": "hooks", "layer": LAYER_BACKGROUND, "size": "small", "rect": Rect2i(2, 140, 8, 2), "painted_by": "self"},
@@ -984,21 +984,37 @@ func _paint_plant(img: Image, r: Rect2i) -> void:
 	_fill_irregular(img, Rect2i(r.position.x + r.size.x / 2 - 2, leaf_top - 2, 4, 2), _col(Palette.PLANT_GREEN_LIGHT), 205)
 
 
-## 吊灯（V3.1 R4 光源可辨识）：吊线 + 顶盖 + 发光灯罩 + 灯泡核心。
+## 吊灯（V3.1 R4 光源可辨识）：固定座 + 有体积的吊线 + 顶盖 + 发光灯罩 + 灯泡核心。
 ## 整个轮廓都画在结构 rect 内，避免旧实现把 rect 上方吊线裁掉后只剩「黄块」。
 ## 28×36 世界像素经低分辨率 nearest 管线仍保留明确的悬吊/罩体/开口语义。
 func _paint_lamp(img: Image, r: Rect2i) -> void:
 	var cx := r.position.x + r.size.x / 2
-	# 吊线与顶盖：2px 线 + 7px 顶盖，完整包含在裁剪纹理内。
-	_jagged_vline(img, cx, r.position.y + 1, r.position.y + 9,
-		_col(Palette.CHARCOAL), 211)
-	_fill_irregular(img, Rect2i(cx - 3, r.position.y + 9, 7, 3),
+	# 天花固定座 + 3px 吊线。深色双边保证线在暖灰墙/光束上都有对比，左侧
+	# 1px 暖灰高光让它读作细金属杆，而不是贴墙的单像素划痕。
+	_fill_irregular(img, Rect2i(cx - 4, r.position.y, 9, 2),
+		_col(Palette.CHARCOAL.darkened(0.22)), 210)
+	for y in range(r.position.y + 2, r.position.y + 10):
+		img.set_pixel(cx - 1, y, _col(Palette.CHARCOAL.lightened(0.18)))
+		img.set_pixel(cx, y, _col(Palette.CHARCOAL.darkened(0.08)))
+		img.set_pixel(cx + 1, y, _col(Palette.CHARCOAL.darkened(0.28)))
+	_fill_irregular(img, Rect2i(cx - 4, r.position.y + 10, 9, 3),
 		_col(Palette.LAMP_SHADE), 212)
 	# 灯罩受光体：顶窄底宽的手绘梯形，暗边包住暖橙金内胆。
-	var top_y := r.position.y + 12
+	var top_y := r.position.y + 13
 	var bottom_y := r.position.y + 27
 	var half_top := 4
 	var half_bottom := 11
+	# 灯罩边缘先铺一圈稀疏暖光，随后由不透明罩体覆盖内侧。40% alpha 在
+	# nearest 放大后仍能看见，但不形成圆形 Photoshop halo。
+	var edge_glow := Palette.LAMP_GLOW
+	edge_glow.a = 0.40
+	for y in range(top_y - 1, bottom_y + 2):
+		var t := clampf(float(y - top_y) / float(maxi(1, bottom_y - top_y)), 0.0, 1.0)
+		var half_w := int(lerpf(float(half_top), float(half_bottom), t)) + 2
+		if (y - top_y) % 2 == 0:
+			for x in [cx - half_w, cx + half_w]:
+				if x >= 0 and y >= 0 and x < img.get_width() and y < img.get_height():
+					img.set_pixel(x, y, edge_glow)
 	for y in range(top_y, bottom_y):
 		var t := float(y - top_y) / float(maxi(1, bottom_y - top_y))
 		var half_w := int(lerpf(float(half_top), float(half_bottom), t))
@@ -1026,7 +1042,7 @@ func _paint_lamp(img: Image, r: Rect2i) -> void:
 	# 向下出光的断续像素行；真正的方向光束由 LightingLayer 投影图连接落点。
 	var glow := Palette.LAMP_GLOW
 	for i in 2:
-		glow.a = 0.30 - i * 0.10
+		glow.a = 0.40 - i * 0.16
 		_fill_irregular(img, Rect2i(cx - 3 + i, bottom_y + 5 + i * 2,
 			6 - i * 2, 1), glow, 216 + i)
 

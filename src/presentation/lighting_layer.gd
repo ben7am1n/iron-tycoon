@@ -321,19 +321,19 @@ func _paint_projected_shaft(img: Image, source_canvas: Vector2,
 			img.set_pixel(x, y, Color(warm.r, warm.g, warm.b, minf(a, 0.34)))
 
 
-## 灯泡发光核心：5×3 暖白像素 + 少量 1px 暖橙火花，无圆 halo。
+## 灯泡发光核心：5×3 暖白像素 + 稀疏 1px 暖橙外缘，无圆 halo。
 func _paint_projected_source(img: Image, source_canvas: Vector2, seed: int) -> void:
 	var p := Vector2i(roundi(source_canvas.x - _projected_light_origin.x),
 		roundi(source_canvas.y - _projected_light_origin.y))
 	for dy in range(-1, 2):
 		for dx in range(-2, 3):
 			_set_image_pixel(img, p + Vector2i(dx, dy),
-				Color(Palette.LAMP_BULB.r, Palette.LAMP_BULB.g, Palette.LAMP_BULB.b, 0.74))
-	for i in 7:
-		var off := Vector2i((_hash2(seed + i * 7, i * 3) % 9) - 4,
-			(_hash2(i * 5, seed + i * 11) % 7) - 3)
+				Color(Palette.LAMP_BULB.r, Palette.LAMP_BULB.g, Palette.LAMP_BULB.b, 0.82))
+	for i in 12:
+		var off := Vector2i((_hash2(seed + i * 7, i * 3) % 13) - 6,
+			(_hash2(i * 5, seed + i * 11) % 9) - 4)
 		_set_image_pixel(img, p + off,
-			Color(Palette.LAMP_GLOW.r, Palette.LAMP_GLOW.g, Palette.LAMP_GLOW.b, 0.22))
+			Color(Palette.LAMP_GLOW.r, Palette.LAMP_GLOW.g, Palette.LAMP_GLOW.b, 0.32))
 
 
 func _set_image_pixel(img: Image, p: Vector2i, color: Color) -> void:
