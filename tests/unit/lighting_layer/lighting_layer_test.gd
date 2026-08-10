@@ -53,6 +53,8 @@ func run_all() -> Dictionary:
 	_test_pixel_light_map()
 	_test_projected_light_relationship()
 	_test_equipment_light_hit_direction()
+	_test_cast_shadow_direction()
+	_test_foreground_warm_band()
 
 	_free_test_nodes()
 
@@ -325,6 +327,68 @@ func _warm_near(img: Image, p: Vector2, radius: int) -> int:
 			if c.a > 0.04 and c.r > c.b:
 				found += 1
 	return found
+
+
+# === 10. V3.1 返工2 R3：方向一致冷投影（FAIL2） ===
+
+## 方向投影偏移（WorldLayout.cast_shadow_offset）：
+##   - 纯函数确定性（同输入同输出）
+##   - 方向：背向最近吊灯灯泡（物体在光源另一侧）
+##   - 全场一致：力量区/有氧区/瑜伽区三处设备偏移 y 均为正（远离北墙吊灯）
+##   - 长度随物体高度变化（越高投影越长）
+##   - 不引入圆形光斑（方向投影 = 平移偏移，非同心圆）
+func _test_cast_shadow_direction() -> void:
+	# 确定性
+	var a := WorldLayout.cast_shadow_offset(Vector2(96, 80), 30.0)
+	var b := WorldLayout.cast_shadow_offset(Vector2(96, 80), 30.0)
+	_check(a.is_equal_approx(b), "cast shadow offset deterministic")
+	# 方向一致：三处设备（力量/有氧/瑜伽）投影都向南（远离北墙吊灯）
+	var treadmill_off := WorldLayout.cast_shadow_offset(Vector2(96, 80), 30.0)
+	var bike_off := WorldLayout.cast_shadow_offset(Vector2(80, 176), 36.0)
+	var yoga_off := WorldLayout.cast_shadow_offset(Vector2(304, 80), 6.0)
+	_check(treadmill_off.y > 4.0 and bike_off.y > 4.0 and yoga_off.y > 4.0,
+		"shadow direction consistent across zones (all cast south, away from north lamps)")
+	# 长度随高度：bike(36) 比 treadmill(30) 长，瑜伽垫(6) 最短
+	_check(bike_off.length() > treadmill_off.length(),
+		"taller equipment casts longer shadow (bike %.1f > treadmill %.1f)" % [bike_off.length(), treadmill_off.length()])
+	_check(yoga_off.length() < treadmill_off.length(),
+		"low equipment casts shorter shadow (yoga %.1f < treadmill %.1f)" % [yoga_off.length(), treadmill_off.length()])
+	# 不引入圆：方向投影是平移偏移，不是同心环 —— 偏移长度有限且方向明确
+	_check(bike_off.length() < 60.0, "cast shadow offset bounded (no full-radius blob)")
+
+
+# === 11. V3.1 返工2 R3：前景暖光带（FAIL3 三层景深） ===
+
+## 前景暖光带（_paint_foreground_warm）：light map 底部 y 240..294 区域
+## 存在暖色散射像素（前景物体明度高/对比强 —— 与背景墙面偏冷形成梯度）；
+## 顶部（背景）没有该暖带（不破坏墙边冷暗带）。
+func _test_foreground_warm_band() -> void:
+	var layer := _make_layer()
+	var img: Image = layer.light_map_image()
+	# 前景带内：世界 (200, 265) 附近存在暖亮像素（r > b，alpha > 0.02）
+	var fore_warm := 0
+	for dy in range(-12, 13):
+		for dx in range(-12, 13):
+			var px := 200 + dx
+			var py := 265 + dy
+			if px < 0 or py < 0 or px >= img.get_width() or py >= img.get_height():
+				continue
+			var c: Color = img.get_pixel(px, py)
+			if c.a > 0.02 and c.r > c.b:
+				fore_warm += 1
+	_check(fore_warm > 0, "foreground warm band pixels present (前景受光, %d px)" % fore_warm)
+	# 顶部背景不带暖带：世界 (200, 60)（中景上方）暖像素极少（前景带只在下缘）
+	var top_warm := 0
+	for dy in range(-12, 13):
+		for dx in range(-12, 13):
+			var px := 200 + dx
+			var py := 60 + dy
+			if px < 0 or py < 0 or px >= img.get_width() or py >= img.get_height():
+				continue
+			var c: Color = img.get_pixel(px, py)
+			if c.a > 0.02 and c.r > c.b:
+				top_warm += 1
+	_check(top_warm < fore_warm, "foreground band localized to bottom (not full-frame wash)")
 
 
 # === helpers ===

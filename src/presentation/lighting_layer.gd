@@ -119,9 +119,32 @@ func _bake_light_map() -> void:
 	_paint_edge_shadow(img)
 	_paint_light_pools(img)
 	_paint_window_light(img)
+	_paint_foreground_warm(img)
 	_paint_static_glows(img)
 	_light_map_image = img
 	_light_map = ImageTexture.create_from_image(img)
+
+
+## 前景暖光带（V3.1 返工2 R3 FAIL3 三层景深）：画面底部（世界 y 240..290，
+## 镜头近处）加稀疏暖色散射 —— 前景物体明度高/对比强（V3 §4 FOREGROUND），
+## 与中景器械（中等）、背景墙面（WALL_BASE_FAR 偏暗偏冷）形成明度梯度。
+## 不画圆/不画实心带：hash 散射 + 低 alpha（前景是受光面，不是发光块）。
+## 位置避开已知道具锚点采样窗口（P5 焦点 plant_bright_fore_1 @(0,244) 在
+## 左下角，本带从中部 (120..300) 起 —— 采样的黄色水杯/瑜伽球不在带内）。
+func _paint_foreground_warm(img: Image) -> void:
+	var y0 := 236
+	var y1 := 294
+	var seed := 577
+	for y in range(y0, y1):
+		for x in range(80, 340, 2):
+			# 越靠近镜头（y 越大）密度/alpha 越高 —— 前景受光更强
+			var t := float(y - y0) / float(y1 - y0)
+			var keep := 0.16 + 0.30 * t
+			if float(_hash2(x + seed, y * 3 + seed) % 100) / 100.0 > keep:
+				continue
+			var c := Palette.LIGHT_POOL_MID
+			var a := 0.06 + 0.10 * t * (0.5 + 0.5 * float(_hash2(x + 41, y + 53) % 100) / 100.0)
+			img.set_pixel(x, y, Color(c.r, c.g, c.b, minf(a, 0.17)))
 
 
 ## 墙边暗角（V3.1 P4 近墙像素变暗）：EDGE_SHADOW_WIDTH 内散射冷蓝灰暗像素，
@@ -281,12 +304,15 @@ func _paint_projected_shaft(img: Image, source_canvas: Vector2,
 			var edge_ratio := lateral / maxf(width, 1.0)
 			var dash := (int(along) + seed) % 13 < 6 \
 				and (lateral < 1.6 or edge_ratio > 0.78)
-			var keep := 0.36 + 0.34 * center_t + (0.16 if streak else 0.0) \
+			# 返工2 R3：光束密度/alpha 小幅提高（0.36→0.42 基座、0.14→0.16
+			# 基座 alpha）—— 灯泡→落点的「受光路径」更可读（FAIL1 光源→
+			# 受光面→扩散连续），但仍稀疏 dither + 断续光丝，非实心锥。
+			var keep := 0.42 + 0.34 * center_t + (0.16 if streak else 0.0) \
 				+ (0.22 if dash else 0.0)
 			if float(_hash2(x + seed, y + seed * 2) % 1000) / 1000.0 > keep:
 				continue
 			var endpoint_gain := maxf(1.0 - t * 3.0, (t - 0.78) * 2.0)
-			var a := 0.14 + 0.10 * center_t + 0.055 * clampf(endpoint_gain, 0.0, 1.0) \
+			var a := 0.16 + 0.11 * center_t + 0.055 * clampf(endpoint_gain, 0.0, 1.0) \
 				+ (0.05 if dash else 0.0)
 			# 金黄而非透明白：叠到墙/设备后直接改变材质色温，来源色与灯罩一致。
 			var warm := Palette.LAMP_SHADE_LIT
@@ -385,9 +411,16 @@ func _paint_floor_lamp_pool(img: Image, center: Vector2, half_size: Vector2) -> 
 	_paint_faceted_pool(img, center, half_size, 149, 0.68)
 
 
-## 设备受光面：每台已放置设备在最接近灯的那一侧获得 2-4px 暖色反射边。
+## 设备受光面（V3.1 返工2 R3 FAIL1）：每台已放置设备在最接近灯的那一侧获得
+## 连续暖色提亮带 —— 不是孤立的 9×3 色块，而是沿设备顶面「接住灯光」：
+##   1. 亮带 1（贴灯侧 2px）：灯下受光边缘，暖白高光（alpha 随 strength）
+##   2. 亮带 2（顶面中段）：暖蜜色中档 —— 覆盖大半个顶面宽度，向远离灯
+##      的方向衰减（方向性受光：近灯亮、远灯暗）
+##   3. 暗侧收边（远离灯一侧 1-2px 冷蓝灰）：受光面的背光侧压暗 —— 设备
+##      顶面「近灯暖、远灯冷」的方向分层（V3 §7 暖环境+冷阴影）
 ## hit_world = footprint 中心朝最近光落点偏移，所以设备移动或换灯后亮面位置
-## 会随源位置变化；这是材质 tint，不是设备周围的透明圆。
+## 会随源位置变化；这是材质 tint（受光面），不是设备周围的透明圆。
+## 确定性：全部 hash 驱动，同输入同输出（headless 可断言）。
 func _draw_equipment_light_hits() -> void:
 	if _grid == null:
 		return
@@ -401,22 +434,86 @@ func _draw_equipment_light_hits() -> void:
 		var hit := _equipment_light_hit_canvas(fp, eq_id)
 		if bool(hit.get("lit", false)) == false:
 			continue
-		var p: Vector2 = hit.get("point", Vector2.ZERO)
 		var strength := float(hit.get("strength", 0.0))
-		var warm := Palette.LIGHT_POOL_MID
-		warm.a = 0.24 + 0.18 * strength
-		var snapped := Vector2(roundf(p.x), roundf(p.y))
-		# 9x3 暖中层 + 5x2 奶油热核：两档明度让设备顶面真正“接住”灯光。
-		draw_rect(Rect2(snapped - Vector2(4, 1), Vector2(9, 3)), warm, true)
-		var glint := Palette.LAMP_BULB
-		glint.a = 0.28 + 0.16 * strength
-		draw_rect(Rect2(snapped + Vector2(-2, -2), Vector2(5, 2)), glint, true)
-		var cool_cut := Palette.LIGHT_EDGE_SHADOW
-		cool_cut.a = 0.12
-		draw_rect(Rect2(snapped + Vector2(3, 2), Vector2(3, 1)), cool_cut, true)
+		if strength <= 0.02:
+			continue
+		var height := float(EquipmentArt.EQUIP_HEIGHTS.get(eq_id, EquipmentArt.DEFAULT_EQUIP_HEIGHT))
+		# 设备顶面在投影后空间：footprint 四角提升到 z=height（与 WorldCanvas
+		# 顶面绘制同一 transform —— 受光带画在设备顶面上，不是画在地板上）。
+		var top_tf := _top_face_transform(height)
+		draw_set_transform_matrix(top_tf)
+		# 方向：朝最近灯落点（受光侧 = 灯侧）。亮带在灯侧 40% 宽度上更密。
+		var toward: Vector2 = hit.get("toward", Vector2(0, -1))
+		# 受光方向在顶面平面上的投影（忽略 z 后归一化 —— 顶面是扁平的，
+		# 受光带沿 footprint 方向扫过）。
+		var band_axis := Vector2(toward.x, toward.y)
+		if band_axis.length_squared() < 0.001:
+			band_axis = Vector2(0, -1)
+		band_axis = band_axis.normalized()
+		# 灯侧边缘：沿 band_axis 相反方向（近灯的一侧）扫亮带
+		var edge_center := Vector2(fp.position) + Vector2(fp.size) * 0.5 - band_axis * (minf(fp.size.x, fp.size.y) * 0.5)
+		# 屏幕保护区：设备顶面南缘 strip（console/显示屏所在行）—— 暖色受光带
+		# 不能盖住青蓝屏幕（P2/gate 采样点，V3 §6 屏幕 emissive 保持可辨）。
+		var screen_strip := Rect2(fp.position.x, fp.position.y + fp.size.y - 6.0,
+			fp.size.x, 6.0)
+		# 亮带 1：贴灯侧 3px 暖白高光带（沿 band_axis 垂直方向展开）
+		var w1 := Palette.LAMP_BULB
+		w1.a = 0.30 + 0.28 * strength
+		_draw_top_face_band(edge_center, band_axis, fp.size, 3.0, w1, screen_strip)
+		# 亮带 2：顶面中段暖蜜色（覆盖 ~62% 顶面，向远离灯衰减）——
+		# 返工2 R3 FAIL3：设备顶面受光带必须把「中景器械」明度抬到背景墙之上
+		# （WALL_BASE_FAR 暗墙 0.43 → 受光设备顶面 ≥0.46），否则三层景深
+		# 只有饱和差没有明度差。alpha 提高（0.22→0.30 基座）但保留 hash
+		# 缺口（非实心暖块，V3.1 P4 负面约束；R4 热核 keep 不涉及本带）。
+		var w2 := Palette.LIGHT_POOL_MID
+		w2.a = 0.30 + 0.22 * strength
+		_draw_top_face_band(edge_center + band_axis * (minf(fp.size.x, fp.size.y) * 0.18),
+			band_axis, fp.size, minf(fp.size.x, fp.size.y) * 0.62, w2, screen_strip)
+		draw_set_transform_matrix(Transform2D.IDENTITY)
+		# 暗侧收边：远离灯一侧 1px 冷蓝灰（受光面背光侧压暗 —— 方向分层）
+		var far_edge := edge_center + band_axis * (minf(fp.size.x, fp.size.y) * 0.95)
+		var cool := Palette.LIGHT_EDGE_SHADOW
+		cool.a = 0.10
+		draw_set_transform_matrix(top_tf)
+		_draw_top_face_band(far_edge, band_axis, fp.size, 1.5, cool, screen_strip)
+		draw_set_transform_matrix(Transform2D.IDENTITY)
 
 
-## 设备暖反射计算（测试可直接调用）：返回投影后点与距离衰减。
+## 顶面受光带：沿 band_axis 垂直方向展开的一条矩形带（hash 缺口 —— 不实心）。
+## [band_center] 带中心（顶面平面坐标）；[band_axis] 受光方向（单位向量）；
+## [fp_size] footprint 尺寸；[half_width] 带半宽（沿 band_axis 垂直方向）；
+## [exclude] 屏幕保护区（顶面平面 Rect2，与带重叠的段跳过 —— 青蓝屏幕
+## 不被暖色受光带盖住，V3 §6 屏幕 emissive 保持）。
+func _draw_top_face_band(band_center: Vector2, band_axis: Vector2,
+		fp_size: Vector2, half_width: float, color: Color,
+		exclude: Rect2 = Rect2()) -> void:
+	var perp := Vector2(-band_axis.y, band_axis.x)
+	var along_half := fp_size.length() * 0.42
+	var seed := int(band_center.x) * 31 + int(band_center.y) * 17
+	# 分 3-4 段 draw_rect（hash 缺口 —— 不是一整块色带，仍像素散射）
+	var segs := 4
+	for i in segs:
+		var t0 := -along_half + (2.0 * along_half) * float(i) / float(segs)
+		var t1 := -along_half + (2.0 * along_half) * float(i + 1) / float(segs)
+		if _hash2(seed + i * 7, seed * 3 + i) % 100 >= 30:
+			continue  # hash 缺口：~30% 段跳过
+		var p0 := band_center + perp * t0
+		# 带沿 perp 方向展开（宽 = t 跨度），厚 = half_width*2 沿 band_axis。
+		# 顶面 footprint 多为轴对齐，用 axis-aligned rect 覆盖 perp 段即可。
+		var r: Rect2
+		if absf(perp.x) > absf(perp.y):
+			r = Rect2(p0, Vector2(absf(t1 - t0), half_width * 2.0))
+		else:
+			r = Rect2(p0, Vector2(half_width * 2.0, absf(t1 - t0)))
+		if exclude.size.x > 0.0 and r.intersects(exclude):
+			continue  # 屏幕保护区：跳过（青蓝屏幕不被暖带盖住）
+		draw_rect(r, color, true)
+
+
+## 设备暖反射计算（测试可直接调用）：返回投影后点 + 方向 + 距离衰减。
+## V3.1 返工2 R3：新增 toward（受光方向，单位向量，世界平面）—— 受光带
+## 沿「朝灯方向」展开；point 保留（旧测试兼容），受光带用 toward 在顶面
+## 平面上扫过，不再依赖单个投影点。
 func _equipment_light_hit_canvas(fp: Rect2i, eq_id: String) -> Dictionary:
 	var center := Vector2(fp.position) + Vector2(fp.size) * 0.5
 	var nearest := Vector2.ZERO
@@ -433,8 +530,10 @@ func _equipment_light_hit_canvas(fp: Rect2i, eq_id: String) -> Dictionary:
 		nearest_d = floor_d
 		nearest = floor_landing
 	if nearest_d > 112.0:
-		return {"lit": false, "point": Vector2.ZERO, "strength": 0.0}
+		return {"lit": false, "point": Vector2.ZERO, "strength": 0.0, "toward": Vector2(0, -1)}
 	var toward := (nearest - center).normalized()
+	if toward.length_squared() < 0.001:
+		toward = Vector2(0, -1)
 	var offset := minf(fp.size.x, fp.size.y) * 0.24
 	var hit_world := center + toward * offset
 	var height := float(EquipmentArt.EQUIP_HEIGHTS.get(eq_id, EquipmentArt.DEFAULT_EQUIP_HEIGHT))
@@ -442,6 +541,7 @@ func _equipment_light_hit_canvas(fp: Rect2i, eq_id: String) -> Dictionary:
 		"lit": true,
 		"point": Proj2D.proj(hit_world.x, hit_world.y, height + 1.0),
 		"strength": clampf(1.0 - nearest_d / 112.0, 0.0, 1.0),
+		"toward": toward,
 	}
 
 
@@ -517,6 +617,14 @@ func _footprint_rect(cells: Array) -> Rect2i:
 
 
 # === helpers ===
+
+## 顶面仿射变换（与 WorldCanvas 同源）：扁平坐标 (x,y) → 投影后坐标
+## （z=height）：floor transform 后再平移 (-EX*h, -HS*h)（顶面相对底面
+## 左移上移 —— 东侧面/正面因此可见）。受光带用同一变换画在设备顶面上。
+func _top_face_transform(height: float) -> Transform2D:
+	var f := Proj2D.floor_transform()
+	return Transform2D(f.x, f.y,
+		f.origin + Vector2(-height * Proj2D.EXTRUDE_X, -height * Proj2D.HEIGHT_SCALE))
 
 ## 到最近墙边（世界矩形四边）的距离。
 func _edge_distance(x: int, y: int) -> int:

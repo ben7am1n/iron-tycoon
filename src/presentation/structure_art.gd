@@ -268,14 +268,17 @@ func wall_face_texture(kind: String) -> ImageTexture:
 ## 而非规则噪点圆点。
 func _bake_north_wall() -> Image:
 	var img := Image.create(WALL_NORTH_TEX.x, WALL_NORTH_TEX.y, false, Image.FORMAT_RGBA8)
-	img.fill(Palette.WALL_BASE)
-	# 墙面 cluster：深/浅色块（±0.10 内，保持 WALL_BASE 可读 —— P1 证据
+	# V3.1 返工2 R3（三层景深）：墙面基底用 WALL_BASE_FAR（暗一档、偏冷）——
+	# 背景墙面明度低/偏冷（FAIL3 前中后景分离；P1/P3 采样容差内仍属 WALL 族）。
+	img.fill(Palette.WALL_BASE_FAR)
+	# 墙面 cluster：深/浅色块（±0.10 内，保持 WALL_BASE_FAR 可读 —— P1 证据
 	# 采样容差 0.25 兼容）。密度：~8px 间距 —— 任何 80×10 窗口都有 ≥3 色，
-	# 无长纯色段（V3.1「纯色大面积填充」约束）。
+	# 无长纯色段（V3.1「纯色大面积填充」约束）。全部派生自 WALL_BASE_FAR
+	# （返工2 R3：不用亮 WALL_TRIM 打碎远景暗墙 —— 背景保持低明度）。
 	var colors := [
-		Palette.WALL_BASE.darkened(0.08),
-		Palette.WALL_BASE.lightened(0.06),
-		Palette.WALL_TRIM,
+		Palette.WALL_BASE_FAR.darkened(0.08),
+		Palette.WALL_BASE_FAR.lightened(0.06),
+		Palette.WALL_BASE_FAR.lightened(0.12),
 	]
 	for gy in range(3, 22, 8):
 		for gx in range(0, WALL_NORTH_TEX.x, 8):
@@ -293,12 +296,14 @@ func _bake_north_wall() -> Image:
 	# 墙帽（fy 0..2）—— R3 手绘抖动：顶缘起伏 + 多色 cluster（无 200px+ 直线）。
 	#   顶缘：cap 顶行逐列在 fy=0..2 间变化（hash 驱动，~1/3 列从 fy=1/2 起
 	#   —— 顶缘非完美直线）
-	#   颜色：WALL_TRIM 与亮/暗变体混合（P3 多色 cluster，保持 WALL 族身份）
-	#   底缘：fy=3 处 ~1/3 列延伸 WALL_TRIM（保留既有 jagged，颜色跟随 cap 色）
+	#   颜色：WALL_BASE_FAR 亮变体混合（返工2 R3：墙帽与墙面同一暗色族 ——
+	#   P1「wall face z=55 ≈ z=100 连续墙面」约束：z=100 采到墙帽，若墙帽仍
+	#   用亮 WALL_TRIM 会与暗墙面拉开 >30 色差，破坏墙面连续断言）
+	#   底缘：fy=3 处 ~1/3 列延伸 cap 色（保留既有 jagged，颜色跟随 cap 色）
 	var cap_colors := [
-		Palette.WALL_TRIM,
-		Palette.WALL_TRIM.lightened(0.04),
-		Palette.WALL_TRIM.darkened(0.07),
+		Palette.WALL_BASE_FAR.lightened(0.10),
+		Palette.WALL_BASE_FAR.lightened(0.14),
+		Palette.WALL_BASE_FAR.lightened(0.04),
 	]
 	for x in WALL_NORTH_TEX.x:
 		var h := _hash2(x, 4021)
@@ -338,11 +343,12 @@ func _bake_north_wall() -> Image:
 ## 返工2 R1：墙面手绘短笔触（同北墙）。
 func _bake_side_wall() -> Image:
 	var img := Image.create(WALL_SIDE_TEX.x, WALL_SIDE_TEX.y, false, Image.FORMAT_RGBA8)
-	img.fill(Palette.WALL_BASE)
+	# V3.1 返工2 R3（三层景深）：侧墙同北墙 —— 背景墙面明度低/偏冷。
+	img.fill(Palette.WALL_BASE_FAR)
 	var colors := [
-		Palette.WALL_BASE.darkened(0.08),
-		Palette.WALL_BASE.lightened(0.06),
-		Palette.WALL_TRIM,
+		Palette.WALL_BASE_FAR.darkened(0.08),
+		Palette.WALL_BASE_FAR.lightened(0.06),
+		Palette.WALL_BASE_FAR.lightened(0.12),
 	]
 	for gy in range(6, 104, 8):
 		for gx in range(0, WALL_SIDE_TEX.x, 8):
@@ -358,11 +364,12 @@ func _bake_side_wall() -> Image:
 		img.set_pixel(px, py, Palette.WALL_BASE.darkened(0.12))
 	# 墙帽（v 104..109）—— R3 手绘抖动：顶缘起伏 + 多色 cluster。
 	#   顶缘：cap 顶行逐列在 v=104..106 间变化（非完美直线）
-	#   底缘：v=103 处 ~1/3 列延伸 WALL_TRIM（jagged）
+	#   底缘：v=103 处 ~1/3 列延伸 cap 色（jagged）
+	#   颜色：WALL_BASE_FAR 亮变体（返工2 R3：墙帽与墙面同族，P1 连续墙面）
 	var cap_colors := [
-		Palette.WALL_TRIM,
-		Palette.WALL_TRIM.lightened(0.04),
-		Palette.WALL_TRIM.darkened(0.07),
+		Palette.WALL_BASE_FAR.lightened(0.10),
+		Palette.WALL_BASE_FAR.lightened(0.14),
+		Palette.WALL_BASE_FAR.lightened(0.04),
 	]
 	for u in WALL_SIDE_TEX.x:
 		var h := _hash2(u, 4051)

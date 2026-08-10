@@ -249,6 +249,46 @@ static func in_edge_shadow(pos: Vector2) -> bool:
 		or pos.x >= WORLD_W - EDGE_SHADOW_WIDTH or pos.y >= WORLD_H - EDGE_SHADOW_WIDTH
 
 
+## 吊灯灯泡世界坐标（光源位置，用于方向投影）。灯泡 = 灯具 rect 左上角 +
+## 纹理内 bulb_local —— 与 LightingLayer 的灯泡→落点投光、WorldCanvas 的
+## 灯具绘制共用同一锚点，保证阴影方向/长度与投光方向自洽。
+## V3.1 返工2 R3（方向一致冷投影）：方向投影的「光源」统一取吊灯灯泡，
+## 不是落点 —— 落点只是主光锥中心，灯泡才是物体受光的来源方向。
+static func lamp_bulb_world(light: Dictionary) -> Vector2:
+	var rect: Rect2i = light.get("rect", Rect2i())
+	var bulb: Vector2 = light.get("bulb_local", Vector2.ZERO)
+	return Vector2(rect.position) + bulb
+
+
+## 距离物体最近吊灯的灯泡世界坐标（遍历 HANGING_LIGHTS，平方距离最小）。
+static func nearest_lamp_bulb_world(pos: Vector2) -> Vector2:
+	var best := Vector2.ZERO
+	var best_d := INF
+	for light: Dictionary in HANGING_LIGHTS:
+		var b := lamp_bulb_world(light)
+		var d := pos.distance_squared_to(b)
+		if d < best_d:
+			best_d = d
+			best = b
+	return best
+
+
+## 方向投影偏移（世界 px）：物体在光源另一侧投出有方向的投影。
+##   dir = normalize(物体 - 灯泡) —— 背向光源；
+##   length = 高度 × 0.72 + 5 —— 物体越高投影越长（形状来源 = 物体高度）。
+## 全场方向一致：三盏吊灯都在北墙，物体基本都在其南侧 → 投影统一向南；
+## x 分量随物体相对最近灯泡的左右偏移 —— 「随物体/光源位置变化」。
+## V3.1 返工2 R3：遮挡投影（occlusion）而非区域底色 —— 偏移量由物体位置
+## 与光源位置共同决定，纯函数（headless 可断言确定性）。
+static func cast_shadow_offset(pos: Vector2, height: float) -> Vector2:
+	var bulb := nearest_lamp_bulb_world(pos)
+	var dir := pos - bulb
+	if dir.length_squared() < 1.0:
+		dir = Vector2(0.0, 1.0)
+	dir = dir.normalized()
+	return dir * (height * 0.72 + 5.0)
+
+
 ## 窗口斜向自然光：从窗口底部射向地板的光锥多边形。
 ## 返回 PackedVector2Array（世界像素空间）；窗口矩形来自 WINDOWS。
 static func window_light_cone(window_rect: Rect2i) -> PackedVector2Array:
