@@ -310,6 +310,11 @@ static func plaque_texture(
 	for y in body_h:
 		for x in size.x:
 			img.set_pixel(x, y, body.get_pixel(x, y))
+	# 先清空阴影行（初始 fill 会把 base 铺满整图 —— 不清空则撕裂洞处露出
+	# 纯色 base，阴影读作「实心木带」而非半透明投影，N 检查长木色 run）。
+	for y in range(body_h, size.y):
+		for x in size.x:
+			img.set_pixel(x, y, Color(0.0, 0.0, 0.0, 0.0))
 	# 挂绳（烘焙在纹理内 —— 0 extra draw call）：顶部中央短绳 + 钉头。
 	# 挂牌读作「挂在墙上的物件」（GPT 视觉：等高校验带 → 分别挂着的物件）。
 	var rope_x := size.x / 2
