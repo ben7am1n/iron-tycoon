@@ -174,11 +174,16 @@ const FLOOR_FLEX_GRAIN := Color("A6714A")       # 像素化木纹
 const FLOOR_FLEX_CL_LIGHT := Color("AD7850")
 const FLOOR_FLEX_CL_DARK := Color("A57049")
 ## 地板材质 —— 公共通道浅灰/暖灰瓷砖（比训练区亮，有砖缝）。
-const FLOOR_WALK_BASE := Color("DFCFB6")
-const FLOOR_WALK_GROUT := Color("DAC9B0")
+## 返工4 P1（FAIL4 空间焦点 · 周边适度留白）：通道整体暗化一档（0.82→0.73
+## lum，×0.90）—— 通道不再是最亮表面（原 209 > 设备暖池/灯光池），
+## 焦点区（主要道具区 + 灯光暖池区）明度高于周边，第一眼先落设备。
+## 仍满足 V3 §1「通道比训练区亮」：0.73 > strength 0.31 + 0.2（floor_art
+## 测试断言 lum>0.6 且亮于 strength+0.2）。
+const FLOOR_WALK_BASE := Color("C8BAA3")
+const FLOOR_WALK_GROUT := Color("C4B49E")
 ## V3.1 P3：通道手绘 cluster 色（亮/暗瓷砖 —— 砖缝不规则）。
-const FLOOR_WALK_CL_LIGHT := Color("E1D0B7")
-const FLOOR_WALK_CL_DARK := Color("DDCDB4")
+const FLOOR_WALK_CL_LIGHT := Color("CABBA4")
+const FLOOR_WALK_CL_DARK := Color("C6B8A2")
 
 ## 返工3 P1（收敛灰霾空地 + 生活痕迹）：地垫/地胶拼块与磨损用色。
 ## 全部低-中饱和（V3 §7 环境色域；不新增高饱和大块）—— 用于打破
@@ -357,6 +362,14 @@ const TOWEL := Color("C98E6E")
 
 ## 机器轮廓：深蓝灰（§11 机器部分深蓝灰轮廓；非纯黑，§3 禁纯黑粗边）。
 const EQUIP_OUTLINE := Color("3B4552")
+## 返工4 P1（FAIL1 道具轮廓勾边）：主设备外轮廓深一档色阶 —— 比
+## EQUIP_OUTLINE 再暗一档的深蓝灰（暗化 0.25），把跑步机/单车/卧推等
+## 主体剪影从深灰力量区橡胶地面（#4B4F57 lum≈78.7）与背景噪点中「勾」
+## 出来（轮廓 lum≈50 vs 地面 78.7，明度差 ~29 —— 2x 缩放下可辨）。
+## 非纯黑（V3 §3 禁纯黑粗边）；饱和度 0.28（低-sat 阈值 0.25 之上 ——
+## 不推高 low-sat 基线 0.631）。V3 §11 轮廓按材质：只用于设备主体轮廓，
+## 高光侧（W/H）开放不全勾 —— 不等宽边框（V3.1 负面约束）。
+const EQUIP_EDGE_OUTLINE := Color("2C333D")
 ## 机身材质暗面：炭灰（机器主体/背面/受光少的区域）。
 const EQUIP_BODY_DARK := Color("49525F")
 ## 机身材质中调：深蓝灰（机器主体正面，方向光主受光面）。
