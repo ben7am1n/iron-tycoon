@@ -148,6 +148,22 @@ const DECOR := {
 	"fountain": Vector2i(20, 40),
 	"trash": Vector2i(385, 32),
 	"hydrant": Vector2i(13, 121),
+	# 返工3 P1（任务 2 每区完整叙事道具组 —— 不只散点，成组 + 提密度）：
+	# 跑步机区「计时器+水瓶+毛巾+清洁桶」—— clean_bucket_t1 落在
+	# timer 东侧、treadmill(6,3) 西侧（力量/有氧交界空闲格），成组不散。
+	# 中央通道「水瓶架+垃圾桶」—— 北墙墙面对世界 y<24 覆盖、左走道列
+	# x<32 被前景植物占据，故水瓶架/垃圾桶放右走道列可见区（x 384..416，
+	# 与右侧地垫同列成组）；顶部可见条带的地垫由 FloorArt 烘焙
+	# （_draw_floor_mats，世界 y 24..32）。
+	# 力量区「储物架」—— 与 kettlebell 同区成组。
+	# 单车区「单车水壶在位」—— 车架北侧（读作车前水壶架）。
+	# 瑜伽区「瑜伽巾」—— 卷垫旁成组（towel 叠在 mat_rolled 上，遮挡）。
+	"clean_bucket_t1": Vector2i(170, 62),
+	"bottle_rack_c1": Vector2i(390, 205),
+	"trash_c1": Vector2i(388, 150),
+	"storage_shelf_s1": Vector2i(52, 188),
+	"bike_bottle_b1": Vector2i(70, 128),
+	"yoga_towel_f1": Vector2i(334, 244),
 	# V3.1 P5 高饱和焦点（附录 V3.1 P5：10-15 个高饱和视觉焦点）——
 	# 新增地面焦点：黄色水杯（前台南侧 walkway）+ 彩色瑜伽用品（瑜伽区）。
 	# 位置避让既有设备/装饰/access 格（水杯 (88,108) 在前台 (56..160,
@@ -194,6 +210,11 @@ const WALL_DECOR := {
 	"tv": Vector2i(320, 1),
 	# V3.1 R4/R5 精修：红色促销横幅占据顶墙中部，成为墙面主焦点。
 	"ad_red": Vector2i(164, 1),
+	# 返工3 P1（中央通道「海报墙」）：海报墙贴在北墙空闲带 ——
+	# poster_wall_1 在 ad_red 东侧（244..260，贴 ad_red 右缘 2px 拼贴）、
+	# poster_wall_2 在 timer_bike 东侧（68..84）。等待区上方墙面叙事密集。
+	"poster_wall_1": Vector2i(244, 1),
+	"poster_wall_2": Vector2i(68, 1),
 }
 
 # === V3 §6 / V3.1 R4 灯光锚点 ===

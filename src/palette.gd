@@ -168,6 +168,49 @@ const FLOOR_WALK_GROUT := Color("C9B18F")
 const FLOOR_WALK_CL_LIGHT := Color("E6D9C1")
 const FLOOR_WALK_CL_DARK := Color("CCB99B")
 
+## 返工3 P1（收敛灰霾空地 + 生活痕迹）：地垫/地胶拼块与磨损用色。
+## 全部低-中饱和（V3 §7 环境色域；不新增高饱和大块）—— 用于打破
+## 右侧灰霾空地 / 中央通道的近纯色平涂（V3.1 负面约束「大块纯色/近纯色
+## 平涂」）。色相：暖木/地胶棕（r>b），与墙面/器械的明度差拉开
+## （任务 1a 地面基色向暖木色/地胶色过渡）。
+## 地垫暖木棕（走廊地垫/橡胶拼块基色）：比 FLOOR_WALK_BASE 暗、偏暖。
+const FLOOR_MAT_WOOD := Color("B89A72")
+## 地垫暗部（磨损/压痕）：同族更暗一档。
+const FLOOR_MAT_DARK := Color("9C7F5C")
+## 地垫亮部（受光/新拼块）：同族更亮一档。
+const FLOOR_MAT_LIGHT := Color("CDB48E")
+## 橡胶地垫拼缝（深一档，断裂 jagged —— 无等宽边框）。
+const FLOOR_MAT_SEAM := Color("8A6F50")
+## 使用频繁区磨损（地垫磨亮）：暖亮色差 cluster —— 脚踩处比周边亮。
+const FLOOR_WEAR_LIGHT := Color("E0C9A4")
+## 使用频繁区磨损（磨暗）：暖暗色差 cluster —— 阴影/压痕。
+const FLOOR_WEAR_DARK := Color("8E7355")
+
+## 清洁桶（小储物/清洁道具组，返工3 P1）：低饱和蓝灰桶身 + 暖灰把手。
+## 用于跑步机区/力量区「小储物/清洁桶」叙事道具（任务 2），低对比不抢
+## 设备主体（V3 §14）。非高饱和 —— 不新增 P5 焦点簇。
+const CLEAN_BUCKET := Color("7C8794")
+const CLEAN_BUCKET_DARK := Color("5F6975")
+const CLEAN_BUCKET_LIGHT := Color("9AA5B2")
+
+## 储物架（走廊/力量区储物，返工3 P1）：暖木层板 + 深色框架 ——
+## 与前台 DESK_WOOD 同族（暖木色能跳出来，任务 6 暖木焦点色）。
+const SHELF_WOOD := Color("B0804F")
+const SHELF_FRAME := Color("6E5B45")
+
+## 清洁抹布/毛巾架（生活痕迹，返工3 P1）：暖橙毛巾（复用 TOWEL 族）。
+## 与既有 TOWEL 相同色源（不新增色值 —— 绘制处直接引用 Palette.TOWEL）。
+
+## 拖把/扫帚（清洁工具，返工3 P1）：暖木柄 + 灰头。低饱和。
+const MOP_HANDLE := Color("C89B62")
+const MOP_HEAD := Color("A8A49A")
+
+## 器械使用中状态（任务 3/4，环境侧）：跑带踏痕 —— 深一档的跑带灰。
+## 画在 treadmill 跑带上（EquipmentArt 踏痕），深蓝灰（EQUIP 族），
+## 与跑带 M2M 履带纹同色系（视觉上是使用过的跑带）。
+const BELT_SCUFF := Color("3A4049")
+
+
 ## 植物叶色：中等饱和绿（V3 §7；比旧 Sage 更深更实，脱离 pastel）。
 const PLANT_GREEN := Color("4E8A5A")
 const PLANT_GREEN_DARK := Color("3E7048")

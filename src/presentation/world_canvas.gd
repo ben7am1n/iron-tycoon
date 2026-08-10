@@ -516,38 +516,23 @@ func _draw_north_wall_decor() -> void:
 			draw_texture_rect(tex, Rect2(pos, Vector2(size) * 0.5), false)
 			if prop_id == "tv":
 				_draw_tv_screen(pos, tick)
-	# 结构元素（挂钟/空调/通风口/喷淋 —— V3 §3/§4 墙面结构，简单像素块）
-	_draw_north_wall_structure_decor()
+	# 结构元素（挂钟/空调/通风口/喷淋）—— 返工3 P1 起烘焙进北墙纹理
+	# （structure_art._bake_north_wall_structure_decor），不再逐帧 draw_rect
+	# （draw call 预算让给新增叙事道具）。
 	draw_set_transform_matrix(Transform2D.IDENTITY)
 
 
-## 北墙结构装饰（简单像素块，替代旧 _draw_side_wall_decor 的延展墙面元素）：
-## 挂钟/空调/通风口/喷淋头。位置（扁平墙条坐标）固定，低对比 BACKGROUND
-## 语汇 —— 不抢设备主体（V3 §14）。
-func _draw_north_wall_structure_decor() -> void:
-	# 挂钟（x 200..212，高挂 fy≈3）
-	draw_rect(Rect2i(200, 3, 12, 10), Palette.CLOCK_FACE, true)
-	draw_rect(Rect2i(205, 5, 1, 5), Palette.CLOCK_HAND, true)
-	draw_rect(Rect2i(205, 8, 4, 1), Palette.CLOCK_HAND, true)
-	# 空调（x 244..272）
-	draw_rect(Rect2i(244, 2, 28, 12), Palette.AC_BODY, true)
-	for i in 3:
-		draw_rect(Rect2i(246, 4 + i * 3, 24, 1), Palette.AC_VENT, true)
-	draw_rect(Rect2i(266, 3, 2, 2), Palette.ACCENT_YELLOW, true)
-	# 通风口（x 156..168 / 248..260）
-	for vx in [156, 248]:
-		draw_rect(Rect2i(vx, 4, 12, 8), Palette.AC_VENT.darkened(0.2), true)
-		for i in 5:
-			draw_rect(Rect2i(vx + 2 + i * 2, 6, 1, 4), Palette.AC_BODY, true)
-	# 喷淋头（3 个）
-	for sx in [80, 194, 348]:
-		draw_rect(Rect2i(sx, 2, 4, 4), Palette.AC_VENT.darkened(0.3), true)
+## 北墙结构装饰：挂钟/空调/通风口/喷淋头 —— 返工3 P1 起烘焙进北墙
+## 墙面纹理（structure_art._bake_north_wall_structure_decor，坐标同源），
+## 不再逐帧 draw_rect（draw call 预算让给新增叙事道具）。
 
 
-## 侧墙（西/东）：墙面 = 手绘粉刷纹理（cluster + jagged 墙帽/踢脚线）经
-## _side_wall_transform 一次贴图 —— 替代旧的 3 个纯色多边形（面 + 墙帽 +
-## 踢脚线），draw call 3→1。西墙 y∈[32..320]（入口门洞 y<32）；东墙
-## y∈[0..288]（出口门洞 y 288..320）。
+## 侧墙（西/东）：墙面 = 手绘粉刷纹理（cluster + jagged 墙帽/踢脚线 +
+## 装饰：镜/毛巾架/管道/海报/置物架/挂钟 —— 返工3 P1 起全部烘焙进侧墙
+## 纹理，见 structure_art._bake_side_wall）经 _side_wall_transform 一次
+## 贴图 —— 替代旧的 3 个纯色多边形 + 每帧 ~13 个装饰 draw_rect
+## （draw call 预算让给叙事道具）。西墙 y∈[32..320]（入口门洞 y<32）；
+## 东墙 y∈[0..288]（出口门洞 y 288..320）。
 func _draw_side_wall(is_west: bool) -> void:
 	if _structure_art == null:
 		return
@@ -563,28 +548,6 @@ func _draw_side_wall(is_west: bool) -> void:
 	draw_set_transform_matrix(_side_wall_transform(x_in))
 	draw_texture_rect(tex, Rect2(y0, 0, StructureArt.WALL_SIDE_TEX.x,
 		StructureArt.WALL_SIDE_TEX.y), false)
-	draw_set_transform_matrix(Transform2D.IDENTITY)
-	# 侧墙装饰（管道/镜子/海报 —— 墙本地空间 u=沿墙扁平 y，v=墙高 z）
-	draw_set_transform_matrix(_side_wall_transform(x_in))
-	if is_west:
-		# 长镜（冷蓝灰，V3 §6 冷调）：沿墙 u 40..160，墙高 v 18..92
-		draw_rect(Rect2(40, 18, 120, 74), Palette.MIRROR_COLOR, true)
-		draw_rect(Rect2(40, 18, 120, 74), Palette.WALL_DARK, false, 1.0 * WorldScale.STROKE_COMPENSATION)
-		for i in 8:
-			draw_rect(Rect2(42 + i * 2, 20 + i * 2, 1, 1), Palette.MIRROR_HI, true)
-		# 毛巾架 + 暖橙毛巾
-		draw_rect(Rect2(180, 40, 30, 2), Palette.METAL_HIGHLIGHT, true)
-		draw_rect(Rect2(184, 42, 6, 12), Palette.TOWEL, true)
-		draw_rect(Rect2(196, 42, 6, 12), Palette.TOWEL.darkened(0.15), true)
-	else:
-		# 竖向管道（中暖灰 + 法兰）：沿墙 u 40..320
-		draw_rect(Rect2(60, 20, 3, 300), Palette.PIPE_COLOR, true)
-		draw_rect(Rect2(60, 90, 4, 3), Palette.PIPE_DARK, true)
-		draw_rect(Rect2(60, 200, 4, 3), Palette.PIPE_DARK, true)
-		# 海报（暖色 accent 小面积）
-		draw_rect(Rect2(180, 30, 14, 18), Palette.WALL_DARK, true)
-		draw_rect(Rect2(182, 32, 10, 14), Palette.ACCENT_ORANGE, true)
-		draw_rect(Rect2(182, 41, 10, 5), Palette.ACCENT_ORANGE.darkened(0.35), true)
 	draw_set_transform_matrix(Transform2D.IDENTITY)
 
 

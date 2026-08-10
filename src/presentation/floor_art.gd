@@ -61,7 +61,8 @@ func image() -> Image:
 	return _image
 
 
-## 烘焙整张地板：瓷砖底 → 区域材质覆盖。全部确定性（hash 驱动）。
+## 烘焙整张地板：瓷砖底 → 区域材质覆盖 → 分区边界过渡带 → 地垫/磨损
+## （生活痕迹）。全部确定性（hash 驱动）。
 func build_image() -> Image:
 	var w := _grid_w * _cell
 	var h := _grid_h * _cell
@@ -69,6 +70,13 @@ func build_image() -> Image:
 	img.fill(Palette.FLOOR_WALK_BASE)
 	_draw_walkway(img)
 	_draw_zones(img)
+	# 返工3 P1（任务 1c）：分区边界从「硬分界线」变「材质过渡」—— 沿
+	# zone 边缘画 dithered 混合带（相邻材质/通道色交错），消除布局图感。
+	_draw_transition_bands(img)
+	# 返工3 P1（任务 1b/3）：地垫/地胶拼块 + 磨损 —— 打破右侧灰霾空地/
+	# 中央通道的近纯色平涂，空间读作「正在使用的健身房」。
+	_draw_floor_mats(img)
+	_draw_wear(img)
 	return img
 
 
@@ -104,6 +112,148 @@ func _draw_walkway(img: Image) -> void:
 		var py := int((seed >> 6) % h)
 		_paint_stroke(img, px, py, 2 + (seed >> 12) % 3,
 			Palette.FLOOR_WALK_CL_DARK, seed * 7)
+
+
+# === 返工3 P1：分区边界过渡 + 地垫/磨损（打破灰霾空地平涂） ===
+#
+# 任务 1c（分区边界自然过渡）：zone 边缘的「硬切分线」→ dithered 材质
+# 混合带 —— zone 色族向 walkway 色族断裂羽化（非等宽边框、非完美直线）。
+# 任务 1b（空地明暗变化）：右侧走道列 / 顶部通道 / 底部通道铺暖木橡胶
+# 地垫（拼缝 + 磨损），打破近纯色平涂。
+# 任务 3（生活痕迹）：使用频繁路径（入口→器械、跑步机前）撒亮/暗磨损
+# 笔触 —— 空间读作「正在使用的健身房」。
+# 任务 4（人物-环境互动）：QUEUEING 会员所在 cell 铺排队区地垫。
+# 全部确定性（hash 驱动，无 RNG 状态）。
+
+## 分区边界过渡带（任务 1c）：沿 zone 四条边在 walkway 侧画 dithered
+## 混合带。zone 主色族 + walkway 亮/暗色以 ~30% 密度交错 —— 边界从
+## 「硬切分线」变「材质磨损羽化」（V3.1 负面约束：无等宽边框/无完美
+## 直线 —— 过渡带本身断裂）。只画在 zone 外侧 6px 带（不侵入 zone
+## 内部 —— 分区材质纯度断言不受影响）。
+func _draw_transition_bands(img: Image) -> void:
+	var zones := [["strength", 711], ["cardio", 719], ["flex", 727]]
+	for entry in zones:
+		var rect := _zone_px(entry[0])
+		_blend_zone_edge(img, rect, _zone_blend_colors(entry[0]), int(entry[1]))
+
+
+## zone 边界过渡色（任务 1c）：zone 主色 2 + walkway 亮/暗 2 —— 混合带
+## 里两种材质都有，羽化而非生硬替换。
+func _zone_blend_colors(zone: String) -> Array:
+	match zone:
+		"strength":
+			return [Palette.FLOOR_STRENGTH_BASE, Palette.FLOOR_STRENGTH_BLOCK,
+				Palette.FLOOR_WALK_CL_LIGHT, Palette.FLOOR_WALK_CL_DARK]
+		"cardio":
+			return [Palette.FLOOR_CARDIO_BASE, Palette.FLOOR_CARDIO_CL_WARMGRAY,
+				Palette.FLOOR_WALK_CL_LIGHT, Palette.FLOOR_WALK_CL_DARK]
+		_:
+			return [Palette.FLOOR_FLEX_BASE, Palette.FLOOR_FLEX_CL_LIGHT,
+				Palette.FLOOR_WALK_CL_LIGHT, Palette.FLOOR_WALK_CL_DARK]
+
+
+## 沿 rect 四条边（外侧 6px 带）画 dithered 混合 —— 断裂、非等宽。
+func _blend_zone_edge(img: Image, rect: Rect2i, colors: Array, seed: int) -> void:
+	var bw := 6
+	for y in range(rect.position.y - bw, rect.position.y + 1):
+		_blend_row(img, rect.position.x - bw, rect.position.x + rect.size.x + bw,
+			y, colors, seed + y * 3)
+	for y in range(rect.position.y + rect.size.y - 1, rect.position.y + rect.size.y + bw):
+		_blend_row(img, rect.position.x - bw, rect.position.x + rect.size.x + bw,
+			y, colors, seed + y * 5)
+	for x in range(rect.position.x - bw, rect.position.x + 1):
+		_blend_col(img, x, rect.position.y - bw, rect.position.y + rect.size.y + bw,
+			colors, seed + x * 7)
+	for x in range(rect.position.x + rect.size.x - 1, rect.position.x + rect.size.x + bw):
+		_blend_col(img, x, rect.position.y - bw, rect.position.y + rect.size.y + bw,
+			colors, seed + x * 11)
+
+
+## 单行混合带：沿行撒 ~30% 混合色（hash 驱动 —— 断裂不连续）。
+func _blend_row(img: Image, x0: int, x1: int, y: int, colors: Array, seed: int) -> void:
+	if y < 0 or y >= img.get_height():
+		return
+	for x in range(maxi(0, x0), mini(x1, img.get_width())):
+		var h := _hash2(x * 3 + seed, y * 7 + seed)
+		if h % 100 < 30:
+			img.set_pixel(x, y, colors[(h >> 6) % colors.size()])
+
+
+## 单列混合带。
+func _blend_col(img: Image, x: int, y0: int, y1: int, colors: Array, seed: int) -> void:
+	if x < 0 or x >= img.get_width():
+		return
+	for y in range(maxi(0, y0), mini(y1, img.get_height())):
+		var h := _hash2(x * 5 + seed, y * 3 + seed)
+		if h % 100 < 30:
+			img.set_pixel(x, y, colors[(h >> 6) % colors.size()])
+
+
+## 地垫/地胶拼块（任务 1b/3）：在灰霾空地（右侧走道列、顶部通道中段、
+## 底部走道、排队区）铺暖木橡胶地垫 —— 打破近纯色平涂，垫上有拼缝 +
+## 磨损（生活痕迹）。位置避让 walkway 采样点 (110,12) 与 zone 内部窗口
+## （zone 材质纯度断言不受影响）。
+func _draw_floor_mats(img: Image) -> void:
+	# 顶部通道可见条带地垫（世界 y 24..32 —— 北墙墙面对 y<24 覆盖，
+	# 仅 y≥24 的 walkway 条带在画面上可见；垫子落在墙基可见带上）
+	_paint_floor_mat(img, Rect2i(160, 24, 200, 8), 811)
+	# 右侧走道列地垫（世界 x 386..414 —— 右侧灰霾空地）
+	_paint_floor_mat(img, Rect2i(386, 40, 28, 150), 823)
+	# 底部走道地垫（出口侧）
+	_paint_floor_mat(img, Rect2i(300, 292, 84, 20), 829)
+	# 排队区地垫（QUEUEING 会员所在 cell (3,6) 覆盖 —— 任务 4 排队区
+	# 地面垫；垫在会员 sprite 之下由 floor 纹理烘焙，会员站垫上）
+	_paint_floor_mat(img, Rect2i(96, 192, 32, 28), 837)
+
+
+## 单块地垫：暖木橡胶底（jagged 边缘，P3 无完美矩形）+ 断裂拼缝 +
+## 磨损亮/暗 cluster（手绘短笔触）。
+func _paint_floor_mat(img: Image, rect: Rect2i, seed: int) -> void:
+	_fill_jagged(img, rect, Palette.FLOOR_MAT_WOOD, seed)
+	# 拼缝：垫内 1-2 条断裂 jagged 缝（分隔为拼块，非等宽边框）
+	var seam_y := rect.position.y + rect.size.y / 2 + (_hash2(seed, 3) % 5) - 2
+	_paint_jagged_seam_h(img, rect.position.x, rect.position.x + rect.size.x,
+		seam_y, Palette.FLOOR_MAT_SEAM, seed + 11)
+	if rect.size.x > 60:
+		var seam_x := rect.position.x + rect.size.x / 3 + (_hash2(seed, 7) % 5) - 2
+		_paint_jagged_seam_v(img, seam_x, rect.position.y, rect.position.y + rect.size.y,
+			Palette.FLOOR_MAT_SEAM, seed + 13)
+	if rect.size.y > 60:
+		var seam_x2 := rect.position.x + rect.size.x / 2 + (_hash2(seed, 17) % 5) - 2
+		_paint_jagged_seam_v(img, seam_x2, rect.position.y, rect.position.y + rect.size.y,
+			Palette.FLOOR_MAT_SEAM, seed + 19)
+	# 磨损：亮/暗 cluster（脚踩处磨亮、压痕磨暗）—— 手绘短笔触
+	for i in 14:
+		var h := _hash2(seed + i * 3, i * 5 + 1)
+		var px := rect.position.x + int(h % maxi(rect.size.x, 1))
+		var py := rect.position.y + int((h >> 5) % maxi(rect.size.y, 1))
+		var c: Color = Palette.FLOOR_WEAR_LIGHT if h % 2 == 0 else Palette.FLOOR_WEAR_DARK
+		_paint_stroke(img, px, py, 3 + (h >> 9) % 3, c, h ^ seed)
+
+
+## 使用频繁区磨损（任务 3 生活痕迹）：入口→器械的走道路径 + 设备前
+## 落地区 —— 亮/暗色差 cluster（脚踩处磨亮、边缘压暗）。手绘笔触。
+## 全部在 walkway 上（不侵入 zone 内部窗口 —— 分区材质纯度不受影响）。
+func _draw_wear(img: Image) -> void:
+	# 入口路径（左上角 → 前台）：横向磨损（x 24..104 —— 避开 (110,12)）
+	_wear_path(img, Rect2i(24, 8, 80, 14), 911)
+	# 入口纵向路径（左墙 → 有氧区）：沿 x 24..38 的竖向磨损（左走道列）
+	_wear_path(img, Rect2i(24, 24, 14, 80), 919)
+	# 底部走道横向路径（左→右，通往出口）
+	_wear_path(img, Rect2i(60, 292, 280, 16), 923)
+	# 跑步机区前（treadmill(2,2) 北侧落地区：设备前使用频繁区）
+	_wear_path(img, Rect2i(64, 40, 60, 12), 929)
+
+
+## 在矩形内撒磨损笔触（亮/暗交替 —— 使用频繁区亮度/色差变化）。
+func _wear_path(img: Image, rect: Rect2i, seed: int) -> void:
+	var count := maxi(4, rect.size.x * rect.size.y / 90)
+	for i in count:
+		var h := _hash2(seed + i * 7, i * 11 + 3)
+		var px := rect.position.x + int(h % maxi(rect.size.x, 1))
+		var py := rect.position.y + int((h >> 5) % maxi(rect.size.y, 1))
+		var c: Color = Palette.FLOOR_WEAR_LIGHT if (h >> 9) % 2 == 0 else Palette.FLOOR_WEAR_DARK
+		_paint_stroke(img, px, py, 3 + (h >> 12) % 3, c, h ^ seed)
 
 
 # === 区域材质（V3.1 P3：全部多色 cluster + jagged 边缘） ===
