@@ -38,6 +38,7 @@ const CongestionScript := preload("res://src/systems/congestion.gd")
 const SatisfactionScript := preload("res://src/systems/satisfaction.gd")
 const EconomyScript := preload("res://src/systems/economy.gd")
 const EquipmentUpgradeSystemScript := preload("res://src/systems/equipment_upgrade_system.gd")
+const ExpansionSystemScript := preload("res://src/systems/expansion_system.gd")
 const ZoneRulesScript := preload("res://src/systems/zone_rules.gd")
 const HudScript := preload("res://src/ui/hud.gd")
 const BuildShopPaletteScript := preload("res://src/ui/build_shop_palette.gd")
@@ -71,6 +72,7 @@ const EXIT := Vector2i(12, 9)
 const CELL_SIZE := 32          # SimulationOrchestrator.PLACEMENT_CELL_SIZE
 const CATALOG_PATH := "res://data/equipment_catalog.json"
 const UPGRADE_CONFIG_PATH := "res://data/equipment_upgrades.json"
+const EXPANSION_CONFIG_PATH := "res://data/expansion.json"
 const MASTER_SEED := 20260807
 const SMOKE_FRAMES := 600      # --smoke 运行帧数（headless 帧率不定，600 帧 ≈ 数秒 sim）
 
@@ -132,6 +134,7 @@ var _cong
 var _sat
 var _econ
 var _upgrades
+var _expansion
 var _zone_rules
 
 # === UI / presentation 引用 ===
@@ -234,6 +237,13 @@ func _assemble_systems() -> void:
 	_sat.init(_orch, _srg, _member, _cong, _zone_reader(), {})
 	_econ = EconomyScript.new()
 	_econ.init(_orch, _srg, {}, _upgrades)
+
+	# A3 扩建服务：满意度里程碑 + 资金门槛 → GridSystem.resize。
+	# 本次只接逻辑核心 —— 没有 UI 触发点，所以可玩构建里网格尺寸不会变化；
+	# 扩建的视觉表现（新房间地板/墙体/摄像机范围）是后续独立任务。
+	_expansion = ExpansionSystemScript.new()
+	_expansion.init(_grid, ExpansionSystemScript.config_from_file(EXPANSION_CONFIG_PATH), _sat)
+	_orch.expansion_system = _expansion
 
 	_orch.member_sim = _member
 	_orch.congestion = _cong

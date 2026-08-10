@@ -151,6 +151,19 @@ func _post_init() -> void:
 	assert(_initialized, "Navigation._post_init() called before init()")
 	if not _grid_system.grid_changed.is_connected(_on_grid_changed):
 		_grid_system.grid_changed.connect(_on_grid_changed)
+	# A3: the grid can now grow (region expansion). GridStateReader is a duck
+	# type — a snapshot/reader without the signal is legal, so guard on
+	# has_signal rather than assuming it exists.
+	if _grid_system.has_signal("grid_resized") and not _grid_system.grid_resized.is_connected(_on_grid_resized):
+		_grid_system.grid_resized.connect(_on_grid_resized)
+
+
+## A3 region-expansion handler. A dimension change invalidates AStarGrid2D's
+## region, and setting region clears every solid flag (4.7.1, see class ENGINE
+## NOTES), so the only correct response is the same full rebuild the load path
+## performs — never an incremental push.
+func _on_grid_resized(_new_dimensions: Vector2i, _old_dimensions: Vector2i) -> void:
+	rebuild(_grid_system)
 
 
 ## Solidify sync handler (story-004, TR-NAV-003). Fires once per grid_changed

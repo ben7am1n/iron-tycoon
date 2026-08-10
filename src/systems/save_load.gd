@@ -140,7 +140,19 @@ const CONTRIBUTING_KEYS := [
 	"version", "master_seed",
 	"time_system", "grid_system",
 	"member_sim", "congestion", "satisfaction", "economy",
+	"expansion",
 ]
+
+## Keys that a save file is allowed to OMIT (A3). Every blob this build writes
+## contains them, but a save written before the key existed is still valid —
+## the owning system loads its documented empty state instead (ExpansionSystem:
+## "no regions unlocked", i.e. the base grid).
+##
+## This is the one sanctioned exception to CONTRIBUTING_KEYS' "missing key =
+## load error" rule, and it is deliberately NOT a general migration mechanism
+## (ADR-0002 keeps the exact-match version policy): it works only because the
+## absent state is representable and unambiguous.
+const OPTIONAL_KEYS := ["expansion"]
 
 ## Systems that deliberately contribute NOTHING (TR-SL-008): ZoneRules is a
 ## stateless pure function; Navigation/PlacementSystem/SelectionSystem are
@@ -167,7 +179,13 @@ var _economy           # Economy — null until its story lands
 # Navigation.rebuild(occupancy).
 var _placement_system  # PlacementSystem — null until its story lands
 var _selection_system  # SelectionSystem — null until its story lands
+var _expansion_system_script = preload("res://src/systems/expansion_system.gd")
 var _navigation        # Navigation — null until its story lands
+# A3 region expansion. OPTIONAL, like the three above: a rig without it saves
+# an empty expansion payload and can never change the grid's geometry. When
+# present it is the GEOMETRY GROUND TRUTH for a load — the grid must be at the
+# saved expansion tier before GridSystem replays its records.
+var _expansion         # ExpansionSystem — null in rigs that predate A3
 
 var _save_pending: bool = false
 var _initialized: bool = false
@@ -200,6 +218,7 @@ func init(orchestrator: SimulationOrchestrator) -> void:
 	_placement_system = orchestrator.placement_system
 	_selection_system = orchestrator.selection_system
 	_navigation = orchestrator.navigation
+	_expansion = orchestrator.expansion_system
 	_initialized = true
 
 
@@ -263,6 +282,7 @@ func _perform_save() -> Dictionary:
 		"congestion": _serialize_or_empty(_congestion),
 		"satisfaction": _serialize_or_empty(_satisfaction),
 		"economy": _serialize_or_empty(_economy),
+		"expansion": _serialize_or_empty(_expansion),
 	}
 
 
@@ -286,8 +306,10 @@ func _serialize_or_empty(system) -> Dictionary:
 func _validate_blob_keys(blob: Dictionary) -> Array[String]:
 	var errors: Array[String] = []
 
-	# Required keys present
+	# Required keys present (OPTIONAL_KEYS may be absent — see its doc)
 	for key in CONTRIBUTING_KEYS:
+		if key in OPTIONAL_KEYS:
+			continue
 		if not blob.has(key):
 			errors.append("SaveLoad: missing required key '%s' in save blob" % key)
 
@@ -330,14 +352,47 @@ func load(save_blob: Dictionary, buildable_snapshot: PackedByteArray) -> SaveLoa
 		result.errors.append("SaveLoad.load(): called before init()")
 		return result
 
+	# --- Geometry pre-phase (A3): resolve the save's expansion tier ---
+	# The grid's dimensions are DERIVED from ExpansionSystem, so they must be
+	# known before anything can be validated against them. This step reads and
+	# validates the expansion payload but mutates NOTHING — see
+	# _resolve_geometry() for why the resize itself is deferred to Phase B.
+	var geometry := _resolve_geometry(save_blob, buildable_snapshot)
+	var geometry_errors: Array = geometry["errors"]
+	if not geometry_errors.is_empty():
+		for err: String in geometry_errors:
+			result.errors.append(err)
+		return result  # all-or-nothing: NOTHING was mutated
+	var effective_snapshot: PackedByteArray = geometry["buildable_snapshot"]
+	var target_dimensions: Vector2i = geometry["dimensions"]
+
 	# --- Phase A: validate (zero mutation) ---
-	var phase_a_errors := _validate_all(save_blob, buildable_snapshot)
+	var phase_a_errors := _validate_all(save_blob, effective_snapshot, target_dimensions)
 	if not phase_a_errors.is_empty():
 		result.errors.append_array(phase_a_errors)
 		return result  # all-or-nothing: NOTHING was mutated
 
 	# --- Phase B: commit (all validations passed) ---
 	# Order is load-bearing — see class header / TR-SL-003.
+
+	# 0. ExpansionSystem + grid geometry — BEFORE TimeSystem/GridSystem: the
+	#    world must be the right SIZE before any record is replayed into it.
+	#    Splitting it out as step 0 rather than folding it into step 2 keeps
+	#    GridSystem's deserialize contract ("dimensions must already match")
+	#    intact — expansion changes the geometry, the grid never does.
+	if _expansion != null:
+		var exp_result: Variant = _expansion.deserialize(save_blob.get("expansion", {}), false)
+		if not exp_result.ok:
+			result.errors.append("FATAL: ExpansionSystem Phase B failed after Phase A passed")
+			return result
+	if _grid_system != null and _grid_system.get_dimensions() != target_dimensions:
+		# reset_dimensions(), not resize(): restoring an EARLIER save may shrink
+		# the world past equipment the live session had placed in a region that
+		# save never unlocked. Those placements are about to be replaced
+		# wholesale by step 2 anyway.
+		if not _grid_system.reset_dimensions(target_dimensions.x, target_dimensions.y, true):
+			result.errors.append("FATAL: grid geometry reset to %s failed after Phase A passed" % target_dimensions)
+			return result
 
 	# 1. TimeSystem — restores RNG streams + tick_count; forces paused=true
 	var ts_result: Variant = _time_system.deserialize(save_blob["time_system"])
@@ -346,7 +401,8 @@ func load(save_blob: Dictionary, buildable_snapshot: PackedByteArray) -> SaveLoa
 		return result
 
 	# 2. GridSystem — geometric ground truth; buildable from level loader
-	var gs_result: Variant = _grid_system.deserialize(save_blob["grid_system"], buildable_snapshot, "commit")
+	#    (remapped to the expansion tier resolved in the pre-phase)
+	var gs_result: Variant = _grid_system.deserialize(save_blob["grid_system"], effective_snapshot, "commit")
 	if not gs_result.success:
 		result.errors.append("FATAL: GridSystem Phase B failed after Phase A passed")
 		return result
@@ -417,7 +473,65 @@ func load(save_blob: Dictionary, buildable_snapshot: PackedByteArray) -> SaveLoa
 ## derived context (AC9): a member referencing an equipment_instance_id absent
 ## from the save's grid records fails the WHOLE load — the grid is the source
 ## of truth, and there are no innocent-orphan members.
-func _validate_all(save_blob: Dictionary, buildable_snapshot: PackedByteArray) -> Array[String]:
+## A3 geometry pre-phase — resolves what SIZE of world this save describes,
+## with ZERO mutation of any system.
+##
+## Why this cannot live inside Phase A's normal ordering: GridSystem validates
+## a save's records against its OWN current dimensions, but with expansion the
+## correct dimensions are a function of the save's expansion payload — which
+## Phase A would only reach later. So the expansion payload is validated first
+## (validate-only), the target geometry is computed from it, and the level's
+## buildable mask is remapped to match. The real grid is left alone; when the
+## target differs from the live grid, _validate_all() validates the records
+## against a THROWAWAY grid built at the target size instead. The live grid
+## only changes in Phase B, after every check has passed.
+##
+## Returns {errors: Array[String], dimensions: Vector2i, buildable_snapshot:
+## PackedByteArray}. With no ExpansionSystem wired (pre-A3 rigs) this is a
+## pass-through: current dimensions, untouched snapshot, no errors.
+func _resolve_geometry(save_blob: Dictionary, buildable_snapshot: PackedByteArray) -> Dictionary:
+	var errors: Array[String] = []
+	var geometry := {
+		"errors": errors,
+		"dimensions": Vector2i.ZERO,
+		"buildable_snapshot": buildable_snapshot,
+	}
+	if _grid_system == null:
+		return geometry  # _validate_all's wiring gate owns this error
+	var current: Vector2i = _grid_system.get_dimensions()
+	geometry["dimensions"] = current
+	if _expansion == null:
+		return geometry
+
+	var payload: Variant = save_blob.get("expansion", {})
+	if not (payload is Dictionary):
+		errors.append("SaveLoad: 'expansion' payload must be a Dictionary, got %s" % type_string(typeof(payload)))
+		return geometry
+
+	var validation: Variant = _expansion.deserialize(payload, true)
+	if not validation.ok:
+		for err: String in validation.errors:
+			errors.append(err)
+		return geometry
+
+	var target: Vector2i = _expansion.dimensions_for_data(payload)
+	if target.x <= 0 or target.y <= 0:
+		errors.append("SaveLoad: expansion payload resolves to non-positive grid dimensions %s" % target)
+		return geometry
+
+	geometry["dimensions"] = target
+	if target != current:
+		geometry["buildable_snapshot"] = _expansion_system_script.remap_buildable_snapshot(
+			buildable_snapshot, current, target
+		)
+	return geometry
+
+
+func _validate_all(
+	save_blob: Dictionary,
+	buildable_snapshot: PackedByteArray,
+	target_dimensions: Vector2i = Vector2i.ZERO
+) -> Array[String]:
 	var errors: Array[String] = []
 
 	# Blob structure validation (from Story 001) — the first gate.
@@ -441,7 +555,16 @@ func _validate_all(save_blob: Dictionary, buildable_snapshot: PackedByteArray) -
 		return errors  # TimeSystem must pass — nothing else can be validated without it
 
 	# 2. GridSystem — validate with buildable (mode "validate", zero mutation)
-	var gs_result: Variant = _grid_system.deserialize(save_blob["grid_system"], buildable_snapshot, "validate")
+	#    A3: when the save was taken at a different expansion tier, the records
+	#    are validated against a scratch grid at the TARGET size. Validating
+	#    against the live grid would report LEVEL_GEOMETRY_MISMATCH for a save
+	#    that is perfectly loadable; resizing the live grid first would break
+	#    Phase A's zero-mutation contract. A throwaway grid is neither.
+	var grid_validator: Variant = _grid_system
+	if target_dimensions.x > 0 and target_dimensions.y > 0 and _grid_system.get_dimensions() != target_dimensions:
+		grid_validator = GridSystem.new()
+		grid_validator.init(target_dimensions.x, target_dimensions.y)
+	var gs_result: Variant = grid_validator.deserialize(save_blob["grid_system"], buildable_snapshot, "validate")
 	if not gs_result.success:
 		for err in gs_result.errors:
 			errors.append(_format_grid_error(err))

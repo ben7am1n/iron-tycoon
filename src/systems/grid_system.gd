@@ -113,6 +113,21 @@ const ERR_INTERNAL_ERROR := "INTERNAL_ERROR"
 signal grid_changed(footprint_cells_changed: Array[Vector2i], access_cells_changed: Array[Vector2i])
 
 
+## Emitted exactly once per successful resize()/reset_dimensions() — the A3
+## region-expansion write paths (see "=== Geometry Mutation ===" below).
+##
+## Payload semantics: "the grid's dimensions changed, re-derive anything keyed
+## off them". Consumers must NOT assume growth — [old_dimensions] may be larger
+## than [new_dimensions] (a load restoring a pre-expansion save). Navigation
+## reacts with a full rebuild() because AStarGrid2D.region cannot be resized
+## incrementally without dropping every solid flag.
+##
+## Separate from grid_changed on purpose: grid_changed carries CELL LISTS and
+## means "re-query these cells"; a resize invalidates the whole coordinate
+## space, which no cell list can express.
+signal grid_resized(new_dimensions: Vector2i, old_dimensions: Vector2i)
+
+
 ## Marks the system as initialized. Must be called exactly once.
 ## Parameterized by width and height so that callers get a compile
 ## error if they forget to initialize the grid. Rejects non-positive
@@ -405,6 +420,132 @@ func freeze_buildable() -> void:
 	if not _assert_initialized():
 		return
 	_buildable_frozen = true
+
+
+# === Geometry Mutation (A3 — region expansion) ===
+#
+# Until A3 the grid's dimensions were fixed at init(): the gym floor was the
+# whole world. A3 makes the world grow ("攒够钱做一次大升级 → 扩建一间房"),
+# so the flat row-major storage must be re-laid-out — flat_index is
+# y*width+x, so EVERY existing cell moves when width changes. Both methods
+# below rebuild the packed arrays cell-by-cell in (x, y) space rather than
+# resizing them in place; _access_ids and _reverse_index are keyed by
+# Vector2i / instance_id and therefore need no remapping at all.
+#
+# Ownership: ExpansionSystem drives resize() (paid unlock); SaveLoad drives
+# reset_dimensions() (restoring a save taken at a different geometry).
+# Nothing else may change the grid's dimensions.
+
+## Grows or shrinks the grid to [new_width] × [new_height], PRESERVING every
+## existing cell's occupancy and buildable flag at its (x, y) coordinate.
+## Cells that did not exist before are created empty (occupant -1) with
+## buildable = [new_cell_buildable] — an unlocked expansion region is
+## buildable ground, so the default is true.
+##
+## Returns false (and changes nothing) when:
+##   - called before init(), or either dimension is non-positive
+##   - shrinking would drop a cell owned by a placed instance (footprint OR
+##     access). Refusing is deliberate: silently deleting equipment because
+##     the world got smaller is exactly the "impossible state" class the
+##     commit()/deserialize() guards exist to prevent. Callers that need an
+##     unconditional geometry change use reset_dimensions().
+## Returns true with no signal when the dimensions already match (no-op).
+##
+## The buildable freeze is NOT violated: frozen only ever meant "the level's
+## existing cells are final". New cells are new level geometry, so they are
+## written directly into the rebuilt array rather than through set_buildable().
+func resize(new_width: int, new_height: int, new_cell_buildable: bool = true) -> bool:
+	if not _assert_initialized():
+		return false
+	if new_width <= 0 or new_height <= 0:
+		push_error("GridSystem: resize() requires positive dimensions, got (%d, %d)." % [new_width, new_height])
+		return false
+	if new_width == _width and new_height == _height:
+		return true
+
+	for instance_id: int in _reverse_index:
+		var record: PlacementRecord = _reverse_index[instance_id]
+		for cell: Vector2i in record.footprint_cells:
+			if cell.x >= new_width or cell.y >= new_height:
+				push_error("GridSystem: resize() to %dx%d rejected — instance %d occupies %s." % [new_width, new_height, instance_id, cell])
+				return false
+		for cell: Vector2i in record.access_cells:
+			if cell.x >= new_width or cell.y >= new_height:
+				push_error("GridSystem: resize() to %dx%d rejected — instance %d has access cell %s." % [new_width, new_height, instance_id, cell])
+				return false
+
+	var old_dimensions := Vector2i(_width, _height)
+	_relayout_storage(new_width, new_height, new_cell_buildable)
+	# Same stamp contract as commit()/clear(): one bump per successful write.
+	# MemberSim's cached paths must be invalidated — every path was computed
+	# against the old coordinate space.
+	_grid_version += 1
+	grid_resized.emit(Vector2i(new_width, new_height), old_dimensions)
+	return true
+
+
+## Unconditional geometry reset: clears ALL placements (occupancy, access ids,
+## reverse index) and then re-lays out the storage at [new_width] × [new_height].
+##
+## This is the LOAD path's entry point (SaveLoad Phase B) and nothing else:
+## restoring a save taken at a different expansion tier may require shrinking
+## past live equipment, which resize() correctly refuses. It is safe here only
+## because GridSystem.deserialize(mode="commit") replays every saved record
+## immediately afterwards — the grid is empty for the duration of one call.
+##
+## Emits grid_resized (never grid_changed — the cleared cells are re-committed
+## by the deserialize that follows, which emits its own single signal).
+func reset_dimensions(new_width: int, new_height: int, new_cell_buildable: bool = true) -> bool:
+	if not _assert_initialized():
+		return false
+	if new_width <= 0 or new_height <= 0:
+		push_error("GridSystem: reset_dimensions() requires positive dimensions, got (%d, %d)." % [new_width, new_height])
+		return false
+
+	var old_dimensions := Vector2i(_width, _height)
+	_clear_all()
+	_relayout_storage(new_width, new_height, new_cell_buildable)
+	_grid_version += 1
+	grid_resized.emit(Vector2i(new_width, new_height), old_dimensions)
+	return true
+
+
+## Rebuilds _occupant_id/_buildable for the new dimensions, copying the
+## overlapping (x, y) rectangle across the row-stride change. Private: the
+## two public entry points above own the validation and the signal.
+func _relayout_storage(new_width: int, new_height: int, new_cell_buildable: bool) -> void:
+	var size := new_width * new_height
+	var occupants := PackedInt32Array()
+	var buildable := PackedByteArray()
+	occupants.resize(size)
+	buildable.resize(size)
+	var fill_byte := 1 if new_cell_buildable else 0
+	for i in size:
+		occupants[i] = -1
+		buildable[i] = fill_byte
+
+	var copy_width := mini(_width, new_width)
+	var copy_height := mini(_height, new_height)
+	for y in copy_height:
+		for x in copy_width:
+			var old_index := y * _width + x
+			var new_index := y * new_width + x
+			occupants[new_index] = _occupant_id[old_index]
+			buildable[new_index] = _buildable[old_index]
+
+	# Defensive: _access_ids is coordinate-keyed so it survives the stride
+	# change untouched, but a shrink must not leave keys outside the world.
+	# (resize() refuses such shrinks and reset_dimensions() clears first, so
+	# this loop normally finds nothing — it exists so a future caller cannot
+	# introduce a silent out-of-bounds key.)
+	for cell: Vector2i in _access_ids.keys():
+		if cell.x >= new_width or cell.y >= new_height:
+			_access_ids.erase(cell)
+
+	_occupant_id = occupants
+	_buildable = buildable
+	_width = new_width
+	_height = new_height
 
 
 # === Occupant ID Operations ===

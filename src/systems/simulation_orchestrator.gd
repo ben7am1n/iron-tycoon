@@ -79,6 +79,11 @@ var satisfaction       # Satisfaction — null until its story lands (tick Tier 
 var economy            # Economy — null until its story lands (tick Tier 6)
 var equipment_upgrade_system  # A2 formula/transaction service; persistent
                               # levels live inside GridSystem records
+var expansion_system   # A3 region unlock/expansion. Owns which regions are
+                       # unlocked (its only save state) and is therefore the
+                       # ground truth for the grid's DIMENSIONS — SaveLoad
+                       # restores it before GridSystem replays records.
+                       # Optional: null leaves the world fixed at base size.
 var placement_system   # PlacementSystem — constructed in init() Tier 1 once a
                        # grid exists (LevelLoader story pending; tests inject
                        # grid_system before init()). PL-007.

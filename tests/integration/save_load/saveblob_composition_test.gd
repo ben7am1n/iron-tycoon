@@ -38,6 +38,7 @@ const EXPECTED_KEYS := [
 	"version", "master_seed",
 	"time_system", "grid_system",
 	"member_sim", "congestion", "satisfaction", "economy",
+	"expansion",
 ]
 
 const EXCLUDED_KEYS := [
@@ -318,7 +319,7 @@ func _test_blob_exactly_eight_keys() -> void:
 	rig["time_system"].call("process", 0.1)  # boundary save
 	var blob: Dictionary = rig["save_load"].call("_perform_save")  # re-run: pure read
 
-	_check(blob.size() == 8, "AC-BLOB-1: blob has exactly 8 keys (got %d)" % blob.size())
+	_check(blob.size() == 9, "AC-BLOB-1: blob has exactly 9 keys (8 contributing + A3 expansion optional, got %d)" % blob.size())
 	_check(blob.keys() == EXPECTED_KEYS, "AC-BLOB-1: blob keys match the fixed set in stable order (got %s)" % str(blob.keys()))
 	for key in EXPECTED_KEYS:
 		_check(blob.has(key), "AC-BLOB-1: key '%s' present" % key)
@@ -351,7 +352,7 @@ func _test_blob_empty_state_save() -> void:
 		rig["spies"][field].set("payload", {})
 	# Note: TimeSystem still serializes real state (it always has tick_count etc.).
 	var blob: Dictionary = rig["save_load"].call("_perform_save")
-	_check(blob.size() == 8, "empty-state save still has exactly 8 keys (got %d)" % blob.size())
+	_check(blob.size() == 9, "empty-state save still has exactly 9 keys (got %d)" % blob.size())
 	for field in SPY_FIELDS:
 		_check(blob[field] is Dictionary and (blob[field] as Dictionary).is_empty(), "empty-state: key '%s' present with {} payload" % field)
 
@@ -361,7 +362,7 @@ func _test_blob_partial_empty_system() -> void:
 	var rig := _make_rig(3)
 	rig["spies"]["economy"].set("payload", {})
 	var blob: Dictionary = rig["save_load"].call("_perform_save")
-	_check(blob.size() == 8, "partial-empty save still has exactly 8 keys (got %d)" % blob.size())
+	_check(blob.size() == 9, "partial-empty save still has exactly 9 keys (got %d)" % blob.size())
 	_check(blob.has("economy") and (blob["economy"] as Dictionary).is_empty(), "economy key present with {} payload")
 	_check(not (blob["congestion"] as Dictionary).is_empty(), "other systems' payloads untouched")
 
