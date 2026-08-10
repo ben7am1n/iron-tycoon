@@ -66,75 +66,73 @@ const ART_SCALE := 2
 ## 每面至少 5 色层：base(1/2/3/M)、shadow(S)、outline(O)、highlight(W/H)、
 ## accent(A/Z/D/L)。无等宽边框（V3.1 负面约束）—— 顶面高光侧（南/东）开放。
 const ART_MAPS := {
+	"bike": [
+		"..OOSSSSSSSSOO..",
+		"..O2222222222O..",
+		"..O22L1ZZ1L22O..",
+		"..O22L1ZZ1L22O..",
+		"..O2222MM2222O..",
+		"..O211HHHH112O..",
+		"..O211HZZH112O..",
+		"..O211HZZH112O..",
+		"..O211HZZH112O..",
+		"..O211HHHH112O..",
+		"..O2222222222O..",
+		"..O2M1111M222O..",
+		"..O2WWDDDDWW2O..",
+		"..O2WAAAAAWW2O..",
+		"..O1111111111O..",
+		"..O1111111111O..",
+	],
 	"treadmill": [
-		"..OSSSSSSSSSSSSSSSSSSSSSSSSSSO..",
-		"..O11111111111111111111111111O..",
-		"..3O111111111111111111111111O3..",
-		"..3O133333333333333333333331O3..",
-		"..3H133333333333333333333331H3..",
-		"..3M133333333333333333333331M3..",
-		"..3O133333333333333333333331O3..",
-		"..3O133333333333333333333331O3..",
-		"..3O1M2M2M2M2M2M2M2M2M2M2M21O3..",
-		"..3O12M2M2M2M2M2M2M2M2M2M2M1O3..",
-		# 返工3 P1（任务 3/4 跑带踏痕）：跑带中段保留 S 踏痕 —— 使用频繁区
-		# 磨暗（BELT_SCUFF 同族 EQUIP_SHADOW_TONE），跑带读作「使用中」。
-		"..3O1M2S2M2S2M2S2M2S2M2S2M21O3..",
-		"..3O133333333333333333333331O3..",
-		"..3W1HWWAAA1ZZZ1ZZZAAAWW1H1WW3..",
+		"..OOSSSSSSSSSSSSSSSSSSSSSSSSOO..",
+		"..OOSSSSSSSSSSSSSSSSSSSSSSSSOO..",
+		"..OO111111111111111111111111OO..",
+		"..3O222222222222222222222222O3..",
+		"..3HH2222222222222222222222HH3..",
+		"..3HH2M2M2M2M2M2M2M2M2M2M2MHH3..",
+		"..3HH12M2M2M2M2M2M2M2M2M2M2HH3..",
+		"..3HH2M2S2M2S2M2S2M2S2M2S2MHH3..",
+		"..3HH2M2M2M2M2M2M2M2M2M2M2MHH3..",
+		"..3HH12M2S2M2S2M2S2M2S2M2S2HH3..",
+		"..3O222222222222222222222222O3..",
+		"..3O222222222222222222222222O3..",
+		"..3O1HWWAAA1ZZZ1ZZZAAAWW1H1WW3..",
 		"..3W1HDDAAA1ZZZ111ZZZAAAD1H1W3..",
 		"..3O1H11111111111111111111H1O3..",
 		"..O11111111111111111111111111O..",
 	],
-	"bike": [
-		"..OSSSSSSSSSSO..",
-		"..O1LLLZZDDD1O..",
-		"..O1LLLZZDDD1O..",
-		"..3O1M1111M1O3..",
-		"..3W1HHHHHH1O3..",
-		"..3W1HZZZZM1O3..",
-		"..3W1HZZZZM1O3..",
-		"..3W1HMMMMM1O3..",
-		"..3O1MMSSSS1O3..",
-		"..3O1HMSSS11O3..",
-		"..3O11M111M1O3..",
-		"..3O1H111111O3..",
-		"..3O1HH33333O3..",
-		"..3O1HAAAWW1O3..",
-		"..O1111111111O..",
-		"..O1111111111O..",
-	],
 	"bench_press": [
 		"..OSSSSSSSSSSSSSSSSSSSSSSSSSSO..",
-		"..OMHHHHMMMMMMMMMMMMMMMMHHHHMO..",
-		"..OMHHHHMMMMMMMMMMMMMMMMHHHHMO..",
-		"..OMSSSSMMMMMMMMMMMMMMMMSSSSMO..",
+		"..OMHHHHHHMMMMMMMMMMMMHHHHHHMO..",
+		"..OMHHHHHHMMMMMMMMMMMMHHHHHHMO..",
+		"..OMSSSSSMMMMMMMMMMMMMMSSSSSMO..",
 		"..OSMMMMMMMMMMMMMMMMMMMMMMMMSO..",
 		"..OSMMMMMMMMMMMMMMMMMMMMMMMMSO..",
-		"..OMSSSSMMMMMMMMMMMMMMMMSSSSMO..",
-		"..OMHHHHMMMMMMMMMMMMMMMMHHHHMO..",
+		"..OMSSSSSMMMMMMMMMMMMMMSSSSSMO..",
+		"..OMHHHHHMMMMMMMMMMMMMMHHHHHMO..",
 		"..OSMMMMMMMMMMMMMMMMMMMMMMMMSO..",
 		"..O3333O1111111111111111O3333O..",
 		"..O3333O1111111111111111O3333O..",
 		"..O11111111111111111111111111O..",
-		"..O11CWLLLLLLLLLLLLLLLLLLLL11O..",
-		"..O11CZZZZZZZZZZZZZZZZZZZZZ11O..",
-		"..O11CZZZZZZZZZZZZZZZZZZZZZ11O..",
-		"..O11CZZZZZZZZZZZZZZZZZZZZZ11O..",
-		"..O11CZZZZDZZZZZZZZZZZZZZZZ11O..",
-		"..O11CZZZZZZZZZZZZZZZZZZZZZ11O..",
-		"..O11CZZZZZZZZZZZZZZZZZZZZZ11O..",
-		"..O11CZZZZZZZZZZZZZZZZZZZZZ11O..",
-		"..O11CZZZZDZZZZZZZZZZZZZZZZ11O..",
-		"..O11CZZZZZZZZZZZZZZZZZZZZZ11O..",
-		"..O11CZZZZZZZZZZZZZZZZZZZZZ11O..",
-		"..O11CZZZZDZZZZZZZZZZZZZZZZ11O..",
-		"..O11CZZZZZZZZZZZZZZZZZZZZZ11O..",
-		"..O11CZZZZZZZZZZZZZZZZZZZZZ11O..",
-		"..O11CZZZZZZZZZZZZZZZZZZZZZ11O..",
-		"..O11CZZZZZZZZZZZZZZZZZZZZZ11O..",
-		"..O11CZZZZZZZZZZZZZZZZZZZZZ11O..",
-		"..O11CDDDDDDDDDDDDDDDDDDDDD11O..",
+		"..O11CLLLLLLLLLLLLLLLLLLLL11O...",
+		"..O11CLZZZZZZZZZZZZZZZZZZL11O...",
+		"..O11CLZZZZZZZZZZZZZZZZZZL11O...",
+		"..O11CLZZZZDZZZZZZZZDZZZZL11O...",
+		"..O11CLZZZZZZZZZZZZZZZZZZL11O...",
+		"..O11CLZZZZDZZZZZZZZDZZZZL11O...",
+		"..O11CLZZZZZZZZZZZZZZZZZZL11O...",
+		"..O11CLZZZZDZZZZZZZZDZZZZL11O...",
+		"..O11CLZZZZZZZZZZZZZZZZZZL11O...",
+		"..O11CLZZZZDZZZZZZZZDZZZZL11O...",
+		"..O11CLZZZZZZZZZZZZZZZZZZL11O...",
+		"..O11CLZZZZDZZZZZZZZDZZZZL11O...",
+		"..O11CLZZZZZZZZZZZZZZZZZZL11O...",
+		"..O11CLZZZZDZZZZZZZZDZZZZL11O...",
+		"..O11CLZZZZZZZZZZZZZZZZZZL11O...",
+		"..O11CDDDDDDDDDDDDDDDDDDDD11O...",
+		"..O11111111111111111111111111O..",
+		"..O11111111111111111111111111O..",
 		"..O11111111111111111111111111O..",
 		"..O11111111111111111111111111O..",
 	],
@@ -158,82 +156,80 @@ const ART_MAPS := {
 	],
 }
 
-## V3.1 P2：手绘 front/side 面 map（art px）。front 宽 = footprint x 尺寸，
-## side 宽 = footprint y 尺寸；行序 = 地面（row 0）→ 机器顶部（最后一行）。
-## 与顶面（ART_MAPS）一起构成 3 方向面（top/front/side）+ 5 色层。
-## 只有 R0 使用手绘面；非 R0 旋转走通用条带推导（见 extrusion_faces_for）。
 const FACE_MAPS := {
+	"bike": {
+		"front": [
+			"..O1111111111O..",
+			"..3O11111111O3..",
+			"..3O1M1111M1O3..",
+			"..3O11HHHH11O3..",
+			"..3O11HZZH11O3..",
+			"..3O11HZZH11O3..",
+			"..3O11HZZH11O3..",
+			"..3O11HHHH11O3..",
+			"..3O11H1111HO3..",
+			"..3O1HAAWW1HO3..",
+			"..3OWWDDDDWWO3..",
+			"..3OWDD11DDWO3..",
+		],
+		"side": [
+			"..O1111111111O..",
+			"..O11L1ZZ1L11O..",
+			"..O1111111111O..",
+			"..O111HHHH111O..",
+			"..O11HZZZZH11O..",
+			"..O11HZZZZH11O..",
+			"..O11HZZZZH11O..",
+			"..O111HHHH111O..",
+			"..O1MM1111MM1O..",
+			"..O1111111111O..",
+		],
+	},
 	"treadmill": {
 		"front": [
-			"..33O1111111111111111111111O33..",
-			"..33O1111111111111111111111O33..",
-			"..33O1M111111111111111111M1O33..",
-			"..33O1M2M1M2M1M2M1M2M1M2M11O33..",
-			"..33O12M1M2M1M2M1M2M1M2M1M1O33..",
-			"..33O1M2S1M2S1M2S1M2S1M2S11O33..",
-			"..33O1111111111111111111111O33..",
-			"..33O1HWWAAA1ZZZ1ZZZAAAWW1HO33..",
-			"..33O1HDDAAA111ZZZ111AAAD1HO33..",
+			"..O11111111111111111111111111O..",
+			"...33O12222222222222222221O33...",
+			"....33O1M2M2M2M2M2M2M2M21O33....",
+			"...33O1M2SM2SM2SM2SM2SM21O33....",
+			"...33O12M2M2M2M2M2M2M2M2M1O33...",
+			"...33O12222222222222222221O33...",
+			"..33O1H111111111111111111H1O33..",
+			"..3W1HDDAAA1ZZZ111ZZZAAAD1H1W3..",
+			"..3O1HWWAAA1ZZZ1ZZZAAAWW1H1O3...",
 		],
 		"side": [
 			"..OSSSSSSSSSSO..",
-			"..O1111111111O..",
-			"..3O11111111O3..",
+			"..O2222222222O..",
+			"..3O22222222O3..",
 			"..3O1M2M2M21O3..",
 			"..3O12M2M2M1O3..",
 			"..3O1M2S2M21O3..",
-			"..3O11111111O3..",
+			"..3O12222222O3..",
 			"..3O11H11H11O3..",
 			"..3O1HAAWW11O3..",
 			"..3O1HDD1111O3..",
 		],
 	},
-	"bike": {
-		"front": [
-			"..3O11111111O3..",
-			"..3O11M11M11O3..",
-			"..3O1MSSSS11O3..",
-			"..3O1MHSSSS1O3..",
-			"..3O1MHZZZZ1O3..",
-			"..3O1MHHHHH1O3..",
-			"..3O1H111111O3..",
-			"..3O1H111111O3..",
-			"..3O1HAAAWW1O3..",
-			"..3O1HAAAWW1O3..",
-		],
-		"side": [
-			"..3O11111111O3..",
-			"..3O1M11SSS1O3..",
-			"..3O1M1MSSS1O3..",
-			"..3O1M1MHSS1O3..",
-			"..3O1M1MHHH1O3..",
-			"..3O1M1MHHH1O3..",
-			"..3O1M1MHHH1O3..",
-			"..O1LLLZZDDD1O..",
-			"..O1111111111O..",
-			"..O1111111111O..",
-		],
-	},
 	"bench_press": {
 		"front": [
-			"..3O11W111111111111111111111O3..",
-			"..3O11CDDDDDDDDDDDDDDDDDDD11O3..",
-			"..33O11CZZZZZZZZZZZZZZZZZ11O33..",
-			"..33O11CZZZZZZZZZZZZZZZZZ11O33..",
+			"..3O111111111111111111111111O3..",
 			"..33O1111111111111111111111O33..",
-			"..33O1SSSSSSSSSSSSSSSSSSSSSO33..",
-			"..3O1SSSSSSSSSSSSSSSSSSSSSS1O3..",
-			"..3O1SSSSSSSSSSSSSSSSSSSSSS1O3..",
+			"..33O11CDDDDDDDDDDDDDDDD11O33...",
+			"..33O11CZZZZZZZZZZZZZZZZ11O33...",
+			"..33O11CZZZZZZZZZZZZZZZZ11O33...",
+			"..33O11CZZZZZZZZZZZZZZZZ11O33...",
+			"..3O11CLLLLLLLLLLLLLLLLLL11O3...",
+			"..3O11W11111111111111111111O3...",
 		],
 		"side": [
-			"..OMHHHHMMMMMMMMMMMMMMMMMMMMMO..",
-			"..OMSSSSMMMMMMMMMMMMMMMMMMMMMO..",
-			"..OSMMMMMMMMMMMMMMMMMMMMMMMMMO..",
-			"..O3333O111111111111111111111O..",
-			"..O1111O11CZZZZZZZZZZZZZZZZZ1O..",
-			"..O1111O11CZZZZZZZZZZZZZZZZZ1O..",
-			"..O1111O11CDDDDDDDDDDDDDDDDD1O..",
 			"..O11111111111111111111111111O..",
+			"....O1111O11CDDDDDDDDDDDD1O.....",
+			"....O1111O11CZZZZZZZZZZZZ1O.....",
+			"....O1111O11CZZZZZZZZZZZZ1O.....",
+			"....O3333O1111111111111111O.....",
+			"..OSMMMMMMMMMMMMMMMMMMMMMMMMSO..",
+			"....OMSSSSSSMMMMMMMMMMMMMMMO....",
+			"....OMHHHHHHMMMMMMMMMMMMMMMO....",
 		],
 	},
 }
@@ -336,19 +332,21 @@ func extrusion_faces_for(equipment_id: String, zone: String, rotation: int,
 	if w <= 0 or h <= 0:
 		return result
 	var face_h_use := mini(face_h, h)
-	# 正面：底部 face_h 行（南边条带）→ 中调变暗
+	# 正面：底部 face_h 行（南边条带）→ 中调变暗（返工4 P2：中性-only）
 	var front := Image.create(w, face_h_use, false, Image.FORMAT_RGBA8)
 	front.blit_rect(img, Rect2i(0, h - face_h_use, w, face_h_use), Vector2i.ZERO)
-	_darken_image(front, Palette.EQUIP_BODY.darkened(0.2), 0.5)
+	_darken_neutral(front, Palette.EQUIP_SHADOW_TONE, 0.35)
 	_apply_silhouette_outline(front)
+	_apply_top_edge_band(front, 1)
 	_apply_grounding_line(front)
 	# 侧面：右侧 face_h 列（东边条带）→ 旋转 90°（沿深度铺开）→ 暗调变暗
 	var side_cols := mini(face_h_use, w)
 	var side := Image.create(side_cols, h, false, Image.FORMAT_RGBA8)
 	side.blit_rect(img, Rect2i(w - side_cols, 0, side_cols, h), Vector2i.ZERO)
 	side.rotate_90(1)  # 逆时针 → (h × side_cols) = (深度 × 面高)
-	_darken_image(side, Palette.EQUIP_SHADOW_TONE, 0.6)
+	_darken_neutral(side, Palette.EQUIP_SHADOW_TONE, 0.65)
 	_apply_silhouette_outline(side)
+	_apply_top_edge_band(side, 1)
 	_apply_grounding_line(side)
 	result["front"] = ImageTexture.create_from_image(front)
 	result["side"] = ImageTexture.create_from_image(side)
@@ -375,15 +373,26 @@ func _authored_faces_for(equipment_id: String, zone: String, height: float,
 	if not front_rows.is_empty():
 		var img := _build_face_image(front_rows, zone_color, shade_dark, shade_light)
 		if img != null:
-			_darken_image(img, Palette.EQUIP_BODY.darkened(0.2), 0.35)
+			# 返工4 P2：中性-only 压暗（正面中调：亮顶面 vs 正面 vs 暗侧面三层
+			# 分离，方向与 P3 灯光同侧 —— 顶面受光最亮，正面中，侧面最暗）
+			_darken_neutral(img, Palette.EQUIP_SHADOW_TONE, 0.60)
+			# 返工4 P2：zone 色 accent（Z/L/D）在正面压一档 —— 顶面受光最亮 /
+			# 正面中调（凳面、飞轮毂、控制台底座在 2x 下与顶面有明度台阶，不再
+			# 扁平同色）。A 屏幕与 W/H 高光保持全亮（屏幕是全场景高饱和焦点）。
+			_darken_zone_accents(img, zone_color, 0.22)
 			_apply_silhouette_outline(img)
+			_apply_top_edge_band(img, 1)
 			_apply_grounding_line(img)
 			result["front"] = ImageTexture.create_from_image(img)
 	if not side_rows.is_empty():
 		var img := _build_face_image(side_rows, zone_color, shade_dark, shade_light)
 		if img != null:
-			_darken_image(img, Palette.EQUIP_SHADOW_TONE, 0.5)
+			# 返工4 P2：中性-only 压暗（侧面暗调，比正面再暗一档）+ 受光边
+			_darken_neutral(img, Palette.EQUIP_SHADOW_TONE, 0.65)
+			# 侧面 zone 色 accent（Z/L/D）压一档 —— 三层分离中侧面最暗
+			_darken_zone_accents(img, zone_color, 0.25)
 			_apply_silhouette_outline(img)
+			_apply_top_edge_band(img, 1)
 			_apply_grounding_line(img)
 			result["side"] = ImageTexture.create_from_image(img)
 	return result
@@ -441,6 +450,43 @@ func _darken_image(img: Image, target: Color, amount: float) -> void:
 			img.set_pixel(x, y, c.lerp(target, amount))
 
 
+## 返工4 P2（FAIL2 三面色阶）：只压暗「中性机身材质」，保留 accent
+## （A/Z/D/L —— 控制台屏幕青蓝、区域语义色座椅/凳面）在暗面依旧鲜亮。
+## 正面/侧面整面压暗会同时压暗屏幕与座椅，2x 下关键零部件读不出来；
+## 中性-only 压暗让「顶面亮 / 正面中 / 侧面暗」的三层分离由材质承载，
+## 而屏幕/座椅/飞轮毂的高饱和 accent 在暗面上依旧可辨（FAIL3 零部件）。
+func _darken_neutral(img: Image, target: Color, amount: float) -> void:
+	for y in img.get_height():
+		for x in img.get_width():
+			var c := img.get_pixel(x, y)
+			# 高光（W/H）与 accent（A/Z/D/L）都不压暗：高光侧开放（V3 §11），
+			# 关键零部件在 2x 保持鲜亮（返工4 P2 FAIL3）。
+			if c.a <= 0.0 or not _is_neutral_tone(c) or _is_highlight_tone(c):
+				continue
+			img.set_pixel(x, y, c.lerp(target, amount))
+
+
+## 正面 zone 色 accent 压暗（Z/D/L —— 区域语义色及其明暗面）：朝向相机的
+## 大块 zone 色在正面压一档（顶面亮 / 正面中调分离）。A 屏幕、W/H 高光不
+## 属于 zone 色族（距 zone 色 > 0.10），保持全亮。
+func _darken_zone_accents(img: Image, zone_color: Color, amount: float) -> void:
+	var variants: Array[Color] = [zone_color, zone_color.lightened(0.15), zone_color.darkened(0.25)]
+	for y in img.get_height():
+		for x in img.get_width():
+			var c := img.get_pixel(x, y)
+			# W/H 高光与 zone 色族在明度上接近（METAL_HIGHLIGHT B7D4EC 距
+			# zone.lightened 0.10 内）—— 必须先排除高光，只压 zone 色（Z/D/L）。
+			if c.a <= 0.0 or _is_highlight_tone(c):
+				continue
+			var is_zone := false
+			for v in variants:
+				if _color_distance(c, v) <= 0.10:
+					is_zone = true
+					break
+			if is_zone:
+				img.set_pixel(x, y, c.lerp(Palette.EQUIP_SHADOW_TONE, amount))
+
+
 ## 把 [base]（R0 图像）旋转到 [rotation] 度。rotate_90 会原地修改并交换宽高，
 ## 所以每次从 base 的 duplicate() 出发。非法 rotation push_error 后原样返回。
 func _rotate_to(base: Image, rotation: int) -> Image:
@@ -496,6 +542,15 @@ func _is_highlight_tone(c: Color) -> bool:
 		or _color_distance(c, Palette.METAL_HIGHLIGHT) <= 0.12
 
 
+## 像素是否 accent 色族（A/Z/D/L —— 屏幕青蓝 / 区域语义色 / 语义色明暗面）。
+## 返工4 P2：轮廓勾边与面压暗都跳过 accent —— 控制台屏幕、座椅、飞轮毂、
+## 凳面在 2x 下保持鲜亮可辨（FAIL3 零部件；V3 §14 可购买设备饱和度高的
+## 可读性要求）。判定 = 青蓝显示灯 或 高饱和（zone 色系 Sky/Peach 等
+## sat>0.30；中性机身材质全系 sat≤0.22，不会误判）。
+func _is_accent_tone(c: Color) -> bool:
+	return _color_distance(c, Palette.EQUIP_ACCENT_CYAN) <= 0.12 or c.s > 0.30
+
+
 ## 像素是否与透明相邻（精灵外轮廓边界）。
 func _is_silhouette_boundary(img: Image, x: int, y: int) -> bool:
 	if x <= 0 or y <= 0 or x >= img.get_width() - 1 or y >= img.get_height() - 1:
@@ -542,13 +597,15 @@ func _apply_hand_drawn_jitter(img: Image) -> void:
 			img.set_pixel(x, y, c.lerp(best, amt))
 
 
-## 返工4 P1（FAIL1 轮廓勾边）：外轮廓深一档勾边 —— 与透明相邻的「非
-## outline」边界像素向 EQUIP_EDGE_OUTLINE 混合（lum≈50，比 EQUIP_OUTLINE
-## 67.5 再暗一档；vs 深灰力量区地面 78.7 明度差 ~29，2x 可见）。已 outline
-## 像素（O，EQUIP_OUTLINE）保留 —— 单元测试断言 EQUIP_OUTLINE 存在；
-## 高光（W/H/METAL_HIGHLIGHT）与 accent 像素保留 —— 高光侧开放（V3 §11）、
-## 区域语义色可辨。hash 缺口 ~25% —— 手绘不齐，非等宽边框（V3.1 负面
-## 约束：无等宽边框）。
+## 返工4 P1（FAIL1 轮廓勾边）+ 返工4 P2（FAIL1 轮廓连续性）：外轮廓深一档
+## 勾边 —— 与透明相邻的「非 outline」边界像素向 EQUIP_EDGE_OUTLINE 混合
+## （lum≈50，比 EQUIP_OUTLINE 67.5 再暗一档；vs 深灰力量区地面 78.7 明度差
+## ~29，2x 可见）。已 outline 像素（O，EQUIP_OUTLINE）保留 —— 单元测试断言
+## EQUIP_OUTLINE 存在；高光（W/H）与 accent（A/Z/D/L）像素保留 —— 高光侧
+## 开放（V3 §11）、区域语义色可辨。
+## 返工4 P2：hash 缺口 25%→12%、混合 55-90%→65-95% —— 2x 特写下外轮廓
+## 连续不糊（FAIL1「轮廓缺失/不连续」），仍保留手绘缺口（非等宽边框，
+## V3.1 负面约束）。
 func _apply_silhouette_outline(img: Image) -> void:
 	var w := img.get_width()
 	var h := img.get_height()
@@ -562,23 +619,28 @@ func _apply_silhouette_outline(img: Image) -> void:
 				continue  # 已 outline —— 保留（测试断言 EQUIP_OUTLINE 存在）
 			if _is_highlight_tone(c):
 				continue  # 高光侧开放，不全勾（V3 §11）
+			if _is_accent_tone(c):
+				continue  # 屏幕青蓝 / 区域语义色保持鲜亮（FAIL3 零部件可辨）
 			if not _is_silhouette_boundary(img, x, y):
 				continue
 			var hsh := _hash2(x * 3 + 7, y * 5 + 9)
-			if hsh % 4 == 0:
-				continue  # 手绘缺口 —— 非等宽边框
-			var amt := 0.55 + float((hsh >> 8) % 35) / 100.0  # 55-90%
+			if hsh % 100 < 12:
+				continue  # 手绘缺口 ~12% —— 非等宽边框
+			var amt := 0.65 + float((hsh >> 8) % 35) / 100.0  # 65-95%
 			img.set_pixel(x, y, c.lerp(Palette.EQUIP_EDGE_OUTLINE, amt))
 
 
-## 返工4 P1（弱项 #5 接地线）：面纹理底部（z=0 接地行）压深一档 ——
-## 设备底部与地面分离度拉强（任务 5：设备底部与地面加阴影/接地线；与
-## P3 阴影同源，本卡只做接地层）。只作用于面纹理渲染路径（_authored_
-## faces_for / 通用挤出 —— 不污染 raw_face_images，单元测试 5 色层断言
-## 不受影响）。已 outline 像素保留；hash 缺口 ~25% —— 手绘不齐非等宽。
+## 返工4 P1（弱项 #5 接地线）+ 返工4 P2（FAIL4 接地）：面纹理底部（z=0 接地
+## 行）压深一档 —— 设备底部与地面分离度拉强（任务 4：设备底部深色接地线/
+## 接触阴影）。只作用于面纹理渲染路径（_authored_faces_for / 通用挤出 ——
+## 不污染 raw_face_images，单元测试 5 色层断言不受影响）。
+## 返工4 P2：底行 0 压 85%（近全暗）、行 1 压 50%，缺口 ~10% —— 接地线
+## 连续可见但非等宽（V3.1 负面约束）。
 func _apply_grounding_line(img: Image) -> void:
 	var w := img.get_width()
 	var h := img.get_height()
+	# 面纹理 v=0 → z=0（接地行，probe 验证：front 变换 v=z*HEIGHT_SCALE，
+	# 纹理行 0 渲染在面底部）—— 接地线画在纹理首 2 行。
 	for y in mini(2, h):
 		for x in w:
 			var c := img.get_pixel(x, y)
@@ -587,9 +649,33 @@ func _apply_grounding_line(img: Image) -> void:
 			if _color_distance(c, Palette.EQUIP_OUTLINE) <= 0.05:
 				continue
 			var hsh := _hash2(x * 11 + 5, y * 3 + 7)
-			if hsh % 4 == 0:
+			if hsh % 10 == 0:
 				continue
-			img.set_pixel(x, y, c.lerp(Palette.EQUIP_EDGE_OUTLINE, 0.6))
+			var amt := 1.0 if y == 0 else 0.9
+			img.set_pixel(x, y, c.lerp(Palette.EQUIP_EDGE_OUTLINE, amt))
+
+
+## 返工4 P2（FAIL2 顶面/侧面色阶分离 · 受光边）：面纹理顶缘（顶面与正面/
+## 侧面的交界 = 顶面受光边的投影）撒暖白/冷钢高光带 —— 顶面「亮一档」的
+## 视觉从顶面延伸到面上缘，正面中调 / 侧面暗部与顶面亮缘形成明确三层分离。
+## 只作用于渲染路径面纹理（不污染 raw_face_images）；hash 缺口 ~15% ——
+## 手绘断续，非程序渐变（V3.1 负面约束：无圆形光斑/无程序色块）。
+func _apply_top_edge_band(img: Image, rows: int) -> void:
+	var w := img.get_width()
+	var h := img.get_height()
+	# 面纹理 v=0 → z=0（接地）；面顶部（z=height，紧贴受光顶面）= 末行。
+	# 受光边高光带画在纹理末行 —— 顶面「亮一档」从顶面延伸到面上缘。
+	for y in range(maxi(0, h - rows), h):
+		for x in w:
+			var c := img.get_pixel(x, y)
+			if c.a <= 0.5:
+				continue
+			var hsh := _hash2(x * 7 + 1, y * 11 + 3)
+			if hsh % 100 < 15:
+				continue
+			var target := Palette.EQUIP_HIGHLIGHT if hsh % 2 == 0 else Palette.METAL_HIGHLIGHT
+			var amt := 0.45 + float((hsh >> 8) % 25) / 100.0  # 45-70%
+			img.set_pixel(x, y, c.lerp(target, amt))
 
 
 ## 建立 R0 图像：透明底 + 按 ART_SCALE 放大每个 art px。zone 名 → ZONE_COLORS

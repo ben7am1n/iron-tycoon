@@ -1068,15 +1068,19 @@ func _equipment_anchor(eq_id: String, rect: Rect2i) -> Vector2:
 	var flat_anchor: Vector2
 	match eq_id:
 		"treadmill":
-			# 跑带居中：脚在 footprint 底边（跑带下沿），身体微前倾已由姿态表达
-			flat_anchor = Vector2(center_x - sprite_w / 2.0, feet_y - sprite_w)
+			# 返工4 P2（贴合微调）：跑带在顶面中段（map 行 5-9 ≈ rect.y+10..18）
+			# —— 脚落在跑带中央，身体不再压住前端控制台（旧锚点在 footprint
+			# 底边，会员躯干遮挡控制屏 —— 门禁第二眼读不出控制台）。
+			flat_anchor = Vector2(center_x - sprite_w / 2.0, rect.position.y + 16.0 - sprite_w)
 		"bench_press":
 			# 卧推凳：身体横躺 —— 头在左、躯干向右，锚在 footprint 左上角 +
 			# 下移 26px 让横躺身体（纹理 18..33 行）落在凳面（pad 中段）
 			flat_anchor = Vector2(rect.position.x + 2, rect.position.y + 26)
 		"bike":
-			# 车座居中：脚在车架中部（略高于底边），身体坐姿
-			flat_anchor = Vector2(center_x - sprite_w / 2.0, rect.position.y + rect.size.y - 16 - sprite_w * 0.5)
+			# 返工4 P2（贴合微调）：座椅在顶面北侧（map 行 2-3）、踏板在中段
+			# （行 10-11 ≈ rect.y+20..24）—— 髋部落座、脚落踏板，与车架贴合；
+			# 旧锚点把会员放在 footprint 底边（控制台/车把处），躯干遮挡飞轮。
+			flat_anchor = Vector2(center_x - sprite_w / 2.0, rect.position.y - sprite_w + 26.0)
 		"yoga_mat":
 			# 垫面居中：脚在垫面底边（盘坐）
 			flat_anchor = Vector2(center_x - sprite_w / 2.0, feet_y - sprite_w * 0.62)
