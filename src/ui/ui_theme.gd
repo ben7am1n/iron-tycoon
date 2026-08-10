@@ -113,6 +113,38 @@ static func style_label(label: Label, font_size: int = FONT_BODY) -> void:
 	label.add_theme_font_override("font", bold_font())
 	label.add_theme_font_size_override("font_size", font_size)
 
+static var _cjk_bold_font: SystemFont = null
+
+## 共享粗体 CJK SystemFont（weight 700 + font_names 钉死中文字族）。
+## 性能修复（A4 GoalTracker，draw_calls 201→<200，probe 实测 4.7.1）：
+## 默认主题字体 / 无 font_names 的 SystemFont 渲染 CJK 时逐字形走系统
+## fallback 链 —— 每个 fallback 字体一个 atlas = 单个 Label 5-6 次
+## draw call（probe："目标 · 放置第 1 台力量设备" 默认字体 = 5 calls）。
+## font_names 钉死 PingFang SC（macOS 内置，覆盖 CJK + Latin + 常用符号）
+## 后整串落入同一 atlas = 1 call（probe 实测 = 1）。其余设置与 bold_font()
+## 一致（像素化硬边字形）。PingFang TC/Heiti/Hiragino 为 fallback（非
+## macOS 环境或字体缺失时仍可回退，最坏回到系统默认 —— 仅回退场景
+## 性能劣化，主流 macOS 不触发）。
+static func cjk_bold_font() -> SystemFont:
+	if _cjk_bold_font == null:
+		_cjk_bold_font = SystemFont.new()
+		_cjk_bold_font.font_names = PackedStringArray([
+			"PingFang SC", "PingFang TC", "Heiti SC", "Hiragino Sans GB",
+		])
+		_cjk_bold_font.font_weight = 700
+		_cjk_bold_font.antialiasing = TextServer.FONT_ANTIALIASING_NONE
+		_cjk_bold_font.hinting = 0
+		_cjk_bold_font.subpixel_positioning = 0
+	return _cjk_bold_font
+
+## 给 Control（Label/Button —— 二者主题项均为 font/font_size）应用粗体
+## CJK 字体 + 字号（CJK 文本专用 —— 单个 atlas 单次 draw call，避免逐字形
+## fallback 多 atlas 爆炸）。参数类型 Control：Button 不是 Label 子类，
+## 钉 Label 会在解析期拒绝 Button（4.7.1 静态类型 Parse Error）。
+static func style_cjk_label(label: Control, font_size: int = FONT_BODY) -> void:
+	label.add_theme_font_override("font", cjk_bold_font())
+	label.add_theme_font_size_override("font_size", font_size)
+
 # === 图标（带描边填充式：语义色填充 + 亮色描边） ===
 
 ## 图标语义色（art-bible-25d 任务映射）：金钱→Butter / 满意度→Sage /
