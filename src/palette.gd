@@ -108,9 +108,18 @@ const METAL_DARK := Color("5B6470")
 ## 金属冷色高光（25d §2 材质概括：金属 = 少量冷色高光）：Sky 系提亮，非纯白大面积。
 const METAL_HIGHLIGHT := Color("B7D4EC")
 ## 设备脚下 contact shadow（V3 §6 设备下方明显但柔和的 contact shadow）：
-## 冷蓝灰半透明（V3 §7 阴影：深蓝灰、青灰；Phase 5 定值 0.05,0.09,0.14）。
-## WorldCanvas 绘制为双层（宽软外层 + 贴身内层），alpha 在绘制处细分。
-const EQUIP_SHADOW := Color(0.05, 0.09, 0.14, 0.38)
+## 冷蓝灰半透明（V3 §7 阴影：深蓝灰、青灰）。WorldCanvas 绘制为双层
+## （宽软外层 + 贴身内层），alpha 在绘制处细分。
+## 返工3 P3（FAIL2 阴影色温统一）：从近黑 (0.05,0.09,0.14) 提亮为干净
+## 冷蓝灰 (0.13,0.21,0.34)，蓝调明确（b-r=0.21）—— 阴影读作「冷色投影」
+## 而非「深灰噪点/纯黑压块」，与 SHADOW_COOL 方向投影同色温（V3 §7 冷暖
+## 对比）。GPT 自检反馈「阴影偏深灰/煤灰」→ 提高蓝色分量使冷调可读。
+const EQUIP_SHADOW := Color(0.13, 0.21, 0.34, 0.38)
+## 方向投影冷色（V3.1 返工3 P3 FAIL2 阴影色温统一）：设备/会员背光侧投影
+## 使用干净的冷蓝灰（b>r，低饱和）—— 不是深灰噪点/贴图式暗块，与暖光
+## 环境形成 V3 §7 冷暖对比（cool colored shadows）。比 EQUIP_SHADOW 稍亮、
+## 蓝调更明确（投影在浅色地板上仍可读为冷色，而非纯黑压块）。
+const SHADOW_COOL := Color(0.15, 0.24, 0.38, 0.34)
 ## 放置预览合法：柔和高亮（art-bible §7）—— 半透明白/Sage tint，绝不刺眼。
 const PLACEMENT_OK_TINT := Color(0.96, 0.98, 0.94, 0.30)
 ## 放置预览非法：Dusty Rose #E0A0A0 柔和警示（art-bible §7，绝不刺眼红）——复用 ROSE 但显式声明 alpha。
@@ -268,7 +277,10 @@ const LIGHT_POOL_EDGE := Color("B97A4C")
 ## 窗口斜向自然光（V3 §6）：暖白偏暖，比顶部主光略强。
 const LIGHT_WINDOW := Color(1.0, 0.92, 0.75, 0.10)
 ## 墙边暗角（V3 §6 墙边比中心区域稍暗）：冷蓝灰，低 alpha。
-const LIGHT_EDGE_SHADOW := Color("121B32")
+## 返工3 P3（FAIL2 阴影色温统一）：从近黑 #121B32 提亮为可读冷蓝灰
+## #23314F（b-r≈0.17）—— 墙边暗角读作「冷色环境阴影」而非煤黑噪点，
+## 与 SHADOW_COOL/EQUIP_SHADOW 同色温（V3 §7 冷暖对比）。
+const LIGHT_EDGE_SHADOW := Color("23314F")
 ## 中心暗角加强（空间纵深：中心比墙边略亮 → 墙边深、中心亮）。
 const LIGHT_CORNER_SHADOW := Color(0.10, 0.14, 0.22, 0.10)
 

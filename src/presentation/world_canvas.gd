@@ -763,17 +763,19 @@ func _draw_equipment() -> void:
 ## 画成贴地平行四边形（floor transform 内）。方向全场一致（三盏吊灯都在
 ## 北墙 → 投影统一向南），长度随设备高度与位置变化 —— 不是区域底色：
 ## 有形状来源（footprint）、随物体/光源位置变化（WorldLayout 纯函数）。
+## 返工3 P3（FAIL2 色温统一 + 非贴图暗块）：颜色用 SHADOW_COOL（干净冷蓝灰，
+## b>r —— 与暖光环境冷暖对比，非深灰噪点）。保持 draw_rect（同一颜色下
+## 引擎自动批量 —— draw call 预算 <200 硬门；draw_colored_polygon 逐个
+## 不批量，5 台设备 +5 calls 直接超预算）。
 func _draw_equipment_cast_shadow(fp: Rect2i, height: float) -> void:
 	var center := Vector2(fp.position) + Vector2(fp.size) * 0.5
 	var offset := WorldLayout.cast_shadow_offset(center, height)
 	if offset.length() < 2.0:
 		return
-	var shadow := Palette.EQUIP_SHADOW
+	var shadow := Palette.SHADOW_COOL
 	shadow.a = 0.20
 	var shadow_rect := Rect2(Vector2(fp.position) + offset, Vector2(fp.size))
 	_draw_with_floor_transform(func() -> void:
-		# 投影比 footprint 略收（投影不是原尺寸副本 —— 透视收窄）：
-		# 主体用 footprint，南侧再压一条贴身暗线，形成「被遮挡」的投影
 		draw_rect(shadow_rect, shadow, true)
 	)
 
@@ -1142,8 +1144,10 @@ func _draw_member_cast_shadow(flat_feet: Vector2) -> void:
 	var offset := WorldLayout.cast_shadow_offset(flat_feet, 20.0)
 	if offset.length() < 2.0:
 		return
-	var shadow := Palette.EQUIP_SHADOW
-	shadow.a = 0.18
+	# 返工3 P3（FAIL2 阴影色温统一）：会员投影同样用干净冷蓝灰 SHADOW_COOL
+	# （b>r）—— 与设备投影同色温，全场景冷色阴影统一（非深灰噪点）。
+	var shadow := Palette.SHADOW_COOL
+	shadow.a = 0.16
 	var size := float(_member_sprites.SIZE) if _member_sprites != null else 48.0
 	var rx := size * 0.30
 	var ry := size * 0.09
