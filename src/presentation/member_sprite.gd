@@ -426,6 +426,9 @@ func _right_extend(row: String, x: int, content: String) -> String:
 ## V3.1 返工2 R2：行 5（abs 19）为 PINNED 宽臂行（x7..38 全 c —— 方向光/
 ## 轮廓测试断言），行 13（abs 27）为 'd' 下摆（shirt.darkened 0.18，测试断言）。
 ## 躯干中段收窄成 V 字（肩 32 → 腰 24），不再等宽矩形。
+## 返工3 P2（本卡）：手臂表达升级 —— 手部（s 肤色块）2px 宽、位置随姿态
+## 明确错开（摆臂/扶把/擦汗/上举），袖行在肩部外侧可见，不再与躯干糊成一
+## 整块；腰收得更明显（肩 32 → 腰 22），V 字 silhouette 一眼可读。
 ## [arms] 决定手臂姿态（摆臂/上举/前伸/擦汗/举手等）。
 ## V3.1 R2：变体 0 走既有手写行（测试像素断言 pin）；变体 1-3 由
 ## _torso_build_rows 按 BUILDS 放样（差异化体型 silhouette）。
@@ -433,175 +436,174 @@ func _torso_rows(arms: String, variant: int) -> PackedStringArray:
 	if variant % VARIANT_COUNT != 0:
 		return _torso_build_rows(arms, variant)
 	var r := PackedStringArray()
-	var hem := _r(10, "dddddddddddddddddddddddd")
-	var waist := _r(10, "cccccccccccccccccccccccc")
-	var chest := _r(9, "cccccccccccccccccccccccccccc")
+	var hem := _r(11, "dddddddddddddddddddddddd")
+	# 返工3 P2（第二眼）：躯干主体用暗化衬衫色 'd'（shirt.darkened）——
+	# 衬衫读作「衣服」而非肤色（PEACH 衬衫 ≈ MEMBER_SKIN 肤色，旧版整块
+	# 读成肤色横条）。肩/袖仍用 'c'（衬衫主色 + 方向光 l/q），躯干中段
+	# 与下摆用 'd' —— 与肤色/手臂形成明度差，人物有「穿衣」层次。
+	var waist := _r(11, "dddddddddddddddddddddddd")
+	var chest := _r(10, "dddddddddddddddddddddddd")
 	match arms:
-		"swing_f":   # walk A：左臂前摆 + 右臂后摆
-			r.append(_r(9, "cccccccccccccccccccccccccccccc"))
-			r.append(_r(7, "cc" + "cccccccccccccccccccccccccccc" + "cc"))
-			r.append(_r(7, "cc" + "cccccccccccccccccccccccccccc" + "cc"))
-			r.append(_r(7, "cc" + "cccccccccccccccccccccccccccc" + "cc"))
-			r.append(_r(7, "cc" + "cccccccccccccccccccccccccccc" + "cc"))
-			r.append(_r(7, "cc" + "cccccccccccccccccccccccccccc" + "cc"))          # PINNED 行5
-			r.append(_r(8, "ss" + "cccccccccccccccccccccccccccc" + "cc"))          # 左手前摆 + 右袖
-			r.append(_r(8, "ss" + "cccccccccccccccccccccccccccc" + "ss"))          # 双手
-			r.append(_r(9, "cccccccccccccccccccccccccccc" + "ss"))                 # 躯干 + 右手后摆
-			r.append(chest)
-			r.append(waist)
-			r.append(waist)
-			r.append(hem)
-			r.append(hem)
+		"swing_f":   # walk A：左臂前摆（手高）+ 右臂后摆（手低）—— 摆臂幅度明显
+			r.append(_r(14, "cccccccccccccccccccc"))
+			r.append(_r(10, "cccccccccccccccccccccccccccc"))
+			r.append(_r(7, "ss.dddddddddddddddddddddddd.cc"))
+			r.append(_r(7, "ss.dddddddddddddddddddddddd.cc"))
+			r.append(_r(7, "cc.dddddddddddddddddddddddd.cc"))
+			r.append(_r(7, "cc.cccccccccccccccccccccccccc.cc"))
+			r.append(_r(7, "cc.dddddddddddddddddddd.cc"))
+			r.append(_r(7, "cc.dddddddddddddddddddd.ss"))
+			r.append(_r(7, "cc.dddddddddddddddddddd.ss"))
+			r.append(_r(11, "dddddddddddddddddddddddd"))
+			r.append(_r(11, "dddddddddddddddddddddddd"))
+			r.append(_r(13, "dddddddddddddddddddd"))
+			r.append(_r(13, "dddddddddddddddddddd"))
+			r.append(_r(13, "dddddddddddddddddddd"))
+
 		"swing_b":   # walk B：镜像（右臂前摆 + 左臂后摆）
-			r.append(_r(9, "cccccccccccccccccccccccccccccc"))
-			r.append(_r(7, "cc" + "cccccccccccccccccccccccccccc" + "cc"))
-			r.append(_r(7, "cc" + "cccccccccccccccccccccccccccc" + "cc"))
-			r.append(_r(7, "cc" + "cccccccccccccccccccccccccccc" + "cc"))
-			r.append(_r(7, "cc" + "cccccccccccccccccccccccccccc" + "cc"))
-			r.append(_r(7, "cc" + "cccccccccccccccccccccccccccc" + "cc"))          # PINNED 行5
-			r.append(_r(8, "cc" + "cccccccccccccccccccccccccccc" + "ss"))          # 左袖 + 右手前摆
-			r.append(_r(8, "ss" + "cccccccccccccccccccccccccccc" + "ss"))          # 双手
-			r.append(_r(9, "ss" + "cccccccccccccccccccccccccccc"))                 # 左手后摆 + 躯干
-			r.append(chest)
-			r.append(waist)
-			r.append(waist)
-			r.append(hem)
-			r.append(hem)
-		"pump_up":   # use generic A：双手举到肩高（泵）
-			r.append(_r(9, "cccccccccccccccccccccccccccccc"))
-			r.append(_r(8, "ss" + "cccccccccccccccccccccccccccc" + "ss"))          # 双手举到肩高
-			r.append(_r(8, "ss" + "cccccccccccccccccccccccccccc" + "ss"))
-			r.append(_r(8, "cc" + "cccccccccccccccccccccccccccc" + "cc"))          # 袖
-			r.append(_r(8, "cc" + "cccccccccccccccccccccccccccc" + "cc"))
-			r.append(_r(7, "cc" + "cccccccccccccccccccccccccccc" + "cc"))          # PINNED 行5
-			r.append(_r(8, "cc" + "cccccccccccccccccccccccccccc" + "cc"))
-			r.append(_r(8, "cc" + "cccccccccccccccccccccccccccc" + "cc"))
-			r.append(chest)
-			r.append(chest)
-			r.append(waist)
-			r.append(waist)
-			r.append(hem)
-			r.append(hem)
-		"pump_down": # use generic B：臂下垂 + 下蹲
-			r.append(_r(9, "cccccccccccccccccccccccccccccc"))
-			r.append(_r(8, "cc" + "cccccccccccccccccccccccccccc" + "cc"))
-			r.append(_r(8, "cc" + "cccccccccccccccccccccccccccc" + "cc"))
-			r.append(_r(8, "cc" + "cccccccccccccccccccccccccccc" + "cc"))
-			r.append(_r(8, "cc" + "cccccccccccccccccccccccccccc" + "cc"))
-			r.append(_r(7, "cc" + "cccccccccccccccccccccccccccc" + "cc"))          # PINNED 行5
-			r.append(_r(8, "ss" + "cccccccccccccccccccccccccccc" + "ss"))          # 双手下垂
-			r.append(_r(8, "ss" + "cccccccccccccccccccccccccccc" + "ss"))
-			r.append(chest)
-			r.append(chest)
-			r.append(waist)
-			r.append(waist)
-			r.append(hem)
-			r.append(hem)
-		"rails":     # treadmill：双手前伸扶把（举高）
-			r.append(_r(9, "cccccccccccccccccccccccccccccc"))
-			r.append(_r(8, "cc" + "cccccccccccccccccccccccccccc" + "cc"))
-			r.append(_r(7, "cc" + "cccccccccccccccccccccccccccc" + "cc"))
-			r.append(_r(6, "ss" + "cccccccccccccccccccccccccccc" + "ss"))          # 双手前伸扶把
-			r.append(_r(7, "cc" + "cccccccccccccccccccccccccccc" + "cc"))
-			r.append(_r(7, "cc" + "cccccccccccccccccccccccccccc" + "cc"))          # PINNED 行5
-			r.append(_r(8, "cc" + "cccccccccccccccccccccccccccc" + "cc"))
-			r.append(_r(8, "cc" + "cccccccccccccccccccccccccccc" + "cc"))
-			r.append(chest)
-			r.append(chest)
-			r.append(waist)
-			r.append(waist)
-			r.append(hem)
-			r.append(hem)
-		"handlebar": # bike：双手前伸握把（低于 rails，贴近腰线）
-			r.append(_r(9, "cccccccccccccccccccccccccccccc"))
-			r.append(_r(8, "cc" + "cccccccccccccccccccccccccccc" + "cc"))
-			r.append(_r(8, "cc" + "cccccccccccccccccccccccccccc" + "cc"))
-			r.append(_r(7, "cc" + "cccccccccccccccccccccccccccc" + "cc"))
-			r.append(_r(6, "ss" + "cccccccccccccccccccccccccccc" + "ss"))          # 双手前伸握把
-			r.append(_r(7, "cc" + "cccccccccccccccccccccccccccc" + "cc"))          # PINNED 行5
-			r.append(_r(8, "cc" + "cccccccccccccccccccccccccccc" + "cc"))
-			r.append(_r(8, "cc" + "cccccccccccccccccccccccccccc" + "cc"))
-			r.append(chest)
-			r.append(chest)
-			r.append(waist)
-			r.append(waist)
-			r.append(hem)
-			r.append(hem)
-		"wipe":      # tired：一手擦汗（举到额侧）+ 一手叉腰
-			r.append(_r(9, "cccccccccccccccccccccccccccccc"))
-			r.append(_r(8, "cc" + "cccccccccccccccccccccccccccc" + "cc"))
-			r.append(_r(8, "cc" + "cccccccccccccccccccccccccccc" + "cc"))
-			r.append(_r(7, "ss" + "cccccccccccccccccccccccccccc" + "cc"))          # 左手擦汗（上举）
-			r.append(_r(8, "cc" + "cccccccccccccccccccccccccccc" + "cc"))
-			r.append(_r(7, "cc" + "cccccccccccccccccccccccccccc" + "cc"))          # PINNED 行5
-			r.append(_r(8, "cc" + "cccccccccccccccccccccccccccc" + "ss"))          # 右手叉腰
-			r.append(chest)
-			r.append(chest)
-			r.append(waist)
-			r.append(waist)
-			r.append(waist)
-			r.append(hem)
-			r.append(hem)
-		"raised":    # satisfied：挺胸 + 单手高举
-			r.append(_r(9, "cccccccccccccccccccccccccccccc"))
-			r.append(_r(7, "ss" + "cccccccccccccccccccccccccccc" + "cc"))          # 右手高举
-			r.append(_r(8, "ss" + "cccccccccccccccccccccccccccc" + "cc"))
-			r.append(_r(8, "cc" + "cccccccccccccccccccccccccccc" + "cc"))
-			r.append(_r(8, "cc" + "cccccccccccccccccccccccccccc" + "cc"))
-			r.append(_r(7, "cc" + "cccccccccccccccccccccccccccc" + "cc"))          # PINNED 行5
-			r.append(_r(8, "cc" + "cccccccccccccccccccccccccccc" + "ss"))          # 左手叉腰/垂
-			r.append(chest)
-			r.append(chest)
-			r.append(waist)
-			r.append(waist)
-			r.append(waist)
-			r.append(hem)
-			r.append(hem)
-		"stretch_up": # yoga A：双手上举
-			r.append(_r(9, "cccccccccccccccccccccccccccccc"))
-			r.append(_r(8, "ss" + "cccccccccccccccccccccccccccc" + "ss"))
-			r.append(_r(8, "ss" + "cccccccccccccccccccccccccccc" + "ss"))
-			r.append(_r(8, "cc" + "cccccccccccccccccccccccccccc" + "cc"))
-			r.append(_r(8, "cc" + "cccccccccccccccccccccccccccc" + "cc"))
-			r.append(_r(7, "cc" + "cccccccccccccccccccccccccccc" + "cc"))          # PINNED 行5
-			r.append(_r(8, "cc" + "cccccccccccccccccccccccccccc" + "cc"))
-			r.append(_r(8, "cc" + "cccccccccccccccccccccccccccc" + "cc"))
-			r.append(chest)
-			r.append(chest)
-			r.append(waist)
-			r.append(waist)
-			r.append(hem)
-			r.append(hem)
-		"stretch_out": # yoga B：双臂平伸
-			r.append(_r(9, "cccccccccccccccccccccccccccccc"))
-			r.append(_r(6, "ss" + "cccccccccccccccccccccccccccc" + "ss"))
-			r.append(_r(6, "ss" + "cccccccccccccccccccccccccccc" + "ss"))
-			r.append(_r(7, "cc" + "cccccccccccccccccccccccccccc" + "cc"))
-			r.append(_r(8, "cc" + "cccccccccccccccccccccccccccc" + "cc"))
-			r.append(_r(7, "cc" + "cccccccccccccccccccccccccccc" + "cc"))          # PINNED 行5
-			r.append(_r(8, "cc" + "cccccccccccccccccccccccccccc" + "cc"))
-			r.append(_r(8, "cc" + "cccccccccccccccccccccccccccc" + "cc"))
-			r.append(chest)
-			r.append(chest)
-			r.append(waist)
-			r.append(waist)
-			r.append(hem)
-			r.append(hem)
-		_:           # down（idle 等默认：双臂下垂）
-			r.append(_r(9, "cccccccccccccccccccccccccccccc"))
-			r.append(_r(8, "cc" + "cccccccccccccccccccccccccccc" + "cc"))
-			r.append(_r(8, "cc" + "cccccccccccccccccccccccccccc" + "cc"))
-			r.append(_r(8, "cc" + "cccccccccccccccccccccccccccc" + "cc"))
-			r.append(_r(8, "cc" + "cccccccccccccccccccccccccccc" + "cc"))
-			r.append(_r(7, "cc" + "cccccccccccccccccccccccccccc" + "cc"))          # PINNED 行5
-			r.append(_r(8, "ss" + "cccccccccccccccccccccccccccc" + "ss"))          # 双手
-			r.append(_r(8, "ss" + "cccccccccccccccccccccccccccc" + "ss"))
-			r.append(chest)
-			r.append(chest)
-			r.append(waist)
-			r.append(waist)
-			r.append(hem)
-			r.append(hem)
+			r.append(_r(14, "cccccccccccccccccccc"))
+			r.append(_r(10, "cccccccccccccccccccccccccccc"))
+			r.append(_r(7, "cc.dddddddddddddddddddddddd.ss"))
+			r.append(_r(7, "cc.dddddddddddddddddddddddd.ss"))
+			r.append(_r(7, "cc.dddddddddddddddddddddddd.cc"))
+			r.append(_r(7, "cc.cccccccccccccccccccccccccc.cc"))
+			r.append(_r(7, "cc.dddddddddddddddddddd.cc"))
+			r.append(_r(7, "ss.dddddddddddddddddddd.cc"))
+			r.append(_r(7, "ss.dddddddddddddddddddd.cc"))
+			r.append(_r(11, "dddddddddddddddddddddddd"))
+			r.append(_r(11, "dddddddddddddddddddddddd"))
+			r.append(_r(13, "dddddddddddddddddddd"))
+			r.append(_r(13, "dddddddddddddddddddd"))
+			r.append(_r(13, "dddddddddddddddddddd"))
+
+		"pump_up":   # use generic A：双手举到肩高（泵）—— 手在肩部两侧清晰
+			r.append(_r(14, "cccccccccccccccccccc"))
+			r.append(_r(10, "cccccccccccccccccccccccccccc"))
+			r.append(_r(7, "ss.dddddddddddddddddddddddd.cc"))
+			r.append(_r(7, "cc.dddddddddddddddddddddddd.ss"))
+			r.append(_r(7, "cc.dddddddddddddddddddddddd.cc"))
+			r.append(_r(7, "cc.cccccccccccccccccccccccccc.cc"))
+			r.append(_r(7, "cc.dddddddddddddddddddd.cc"))
+			r.append(_r(7, "cc.dddddddddddddddddddd.cc"))
+			r.append(_r(7, "cc.dddddddddddddddddddd.cc"))
+			r.append(_r(11, "dddddddddddddddddddddddd"))
+			r.append(_r(11, "dddddddddddddddddddddddd"))
+			r.append(_r(13, "dddddddddddddddddddd"))
+			r.append(_r(13, "dddddddddddddddddddd"))
+			r.append(_r(13, "dddddddddddddddddddd"))
+
+		"pump_down":   # use generic B：臂下垂 + 下蹲（手在胯侧）
+			r.append(_r(14, "cccccccccccccccccccc"))
+			r.append(_r(10, "cccccccccccccccccccccccccccc"))
+			r.append(_r(7, "cc.dddddddddddddddddddddddd.cc"))
+			r.append(_r(7, "cc.dddddddddddddddddddddddd.cc"))
+			r.append(_r(7, "cc.dddddddddddddddddddddddd.cc"))
+			r.append(_r(7, "cc.cccccccccccccccccccccccccc.cc"))
+			r.append(_r(7, "ss.dddddddddddddddddddd.cc"))
+			r.append(_r(7, "cc.dddddddddddddddddddd.ss"))
+			r.append(_r(7, "cc.dddddddddddddddddddd.cc"))
+			r.append(_r(11, "dddddddddddddddddddddddd"))
+			r.append(_r(11, "dddddddddddddddddddddddd"))
+			r.append(_r(13, "dddddddddddddddddddd"))
+			r.append(_r(13, "dddddddddddddddddddd"))
+			r.append(_r(13, "dddddddddddddddddddd"))
+
+		"rails":   # treadmill：跑姿摆臂（一臂前摆高一臂后摆低，模拟奔跑摆臂）
+			r.append(_r(14, "cccccccccccccccccccc"))
+			r.append(_r(10, "cccccccccccccccccccccccccccc"))
+			r.append(_r(7, "ss.dddddddddddddddddddddddd.cc"))
+			r.append(_r(7, "ss.dddddddddddddddddddddddd.cc"))
+			r.append(_r(7, "cc.dddddddddddddddddddddddd.cc"))
+			r.append(_r(7, "cc.cccccccccccccccccccccccccc.cc"))
+			r.append(_r(7, "cc.dddddddddddddddddddd.cc"))
+			r.append(_r(7, "cc.dddddddddddddddddddd.ss"))
+			r.append(_r(7, "cc.dddddddddddddddddddd.ss"))
+			r.append(_r(11, "dddddddddddddddddddddddd"))
+			r.append(_r(11, "dddddddddddddddddddddddd"))
+			r.append(_r(13, "dddddddddddddddddddd"))
+			r.append(_r(13, "dddddddddddddddddddd"))
+			r.append(_r(13, "dddddddddddddddddddd"))
+
+		"handlebar":   # bike：坐姿前倾握把（双手低握，贴近腰线 —— 骑姿下探）
+			r.append(_r(14, "cccccccccccccccccccc"))
+			r.append(_r(10, "cccccccccccccccccccccccccccc"))
+			r.append(_r(7, "cc.dddddddddddddddddddddddd.cc"))
+			r.append(_r(7, "cc.dddddddddddddddddddddddd.cc"))
+			r.append(_r(7, "cc.dddddddddddddddddddddddd.cc"))
+			r.append(_r(7, "cc.cccccccccccccccccccccccccc.cc"))
+			r.append(_r(7, "ss.dddddddddddddddddddd.cc"))
+			r.append(_r(7, "cc.dddddddddddddddddddd.ss"))
+			r.append(_r(7, "cc.dddddddddddddddddddd.cc"))
+			r.append(_r(11, "dddddddddddddddddddddddd"))
+			r.append(_r(11, "dddddddddddddddddddddddd"))
+			r.append(_r(13, "dddddddddddddddddddd"))
+			r.append(_r(13, "dddddddddddddddddddd"))
+			r.append(_r(13, "dddddddddddddddddddd"))
+
+		"wipe":   # tired：一手擦汗（举到额侧）+ 一手叉腰 —— 擦汗手在脸侧
+			r.append(_r(14, "cccccccccccccccccccc"))
+			r.append(_r(10, "cccccccccccccccccccccccccccc"))
+			r.append(_r(7, "ss.dddddddddddddddddddddddd.cc"))
+			r.append(_r(7, "ss.dddddddddddddddddddddddd.cc"))
+			r.append(_r(7, "cc.dddddddddddddddddddddddd.cc"))
+			r.append(_r(7, "cc.cccccccccccccccccccccccccc.cc"))
+			r.append(_r(7, "cc.cccccccccccccccccccccccccc.cc"))
+			r.append(_r(7, "cc.dddddddddddddddddddd.ss"))
+			r.append(_r(7, "cc.dddddddddddddddddddd.ss"))
+			r.append(_r(11, "dddddddddddddddddddddddd"))
+			r.append(_r(11, "dddddddddddddddddddddddd"))
+			r.append(_r(13, "dddddddddddddddddddd"))
+			r.append(_r(13, "dddddddddddddddddddd"))
+			r.append(_r(13, "dddddddddddddddddddd"))
+
+		"raised":   # satisfied：挺胸 + 单手高举（手举过头侧）
+			r.append(_r(14, "cccccccccccccccccccc"))
+			r.append(_r(10, "cccccccccccccccccccccccccccc"))
+			r.append(_r(7, "cc.dddddddddddddddddddddddd.ss"))
+			r.append(_r(7, "cc.dddddddddddddddddddddddd.ss"))
+			r.append(_r(7, "cc.dddddddddddddddddddddddd.cc"))
+			r.append(_r(7, "cc.cccccccccccccccccccccccccc.cc"))
+			r.append(_r(7, "cc.dddddddddddddddddddd.cc"))
+			r.append(_r(7, "ss.dddddddddddddddddddd.cc"))
+			r.append(_r(7, "ss.dddddddddddddddddddd.cc"))
+			r.append(_r(11, "dddddddddddddddddddddddd"))
+			r.append(_r(11, "dddddddddddddddddddddddd"))
+			r.append(_r(13, "dddddddddddddddddddd"))
+			r.append(_r(13, "dddddddddddddddddddd"))
+			r.append(_r(13, "dddddddddddddddddddd"))
+
+		"stretch_up":   # yoga A：双手上举
+			r.append(_r(14, "cccccccccccccccccccc"))
+			r.append(_r(10, "cccccccccccccccccccccccccccc"))
+			r.append(_r(7, "ss.dddddddddddddddddddddddd.cc"))
+			r.append(_r(7, "cc.dddddddddddddddddddddddd.ss"))
+			r.append(_r(7, "cc.dddddddddddddddddddddddd.cc"))
+			r.append(_r(7, "cc.cccccccccccccccccccccccccc.cc"))
+			r.append(_r(7, "cc.dddddddddddddddddddd.cc"))
+			r.append(_r(7, "cc.dddddddddddddddddddd.cc"))
+			r.append(_r(7, "cc.dddddddddddddddddddd.cc"))
+			r.append(_r(11, "dddddddddddddddddddddddd"))
+			r.append(_r(11, "dddddddddddddddddddddddd"))
+			r.append(_r(13, "dddddddddddddddddddd"))
+			r.append(_r(13, "dddddddddddddddddddd"))
+			r.append(_r(13, "dddddddddddddddddddd"))
+
+		"stretch_out":   # yoga B：双臂平伸
+			r.append(_r(14, "cccccccccccccccccccc"))
+			r.append(_r(10, "cccccccccccccccccccccccccccc"))
+			r.append(_r(7, "ss.dddddddddddddddddddddddd.cc"))
+			r.append(_r(7, "cc.dddddddddddddddddddddddd.ss"))
+			r.append(_r(7, "cc.dddddddddddddddddddddddd.cc"))
+			r.append(_r(7, "cc.cccccccccccccccccccccccccc.cc"))
+			r.append(_r(7, "cc.dddddddddddddddddddd.cc"))
+			r.append(_r(7, "cc.dddddddddddddddddddd.cc"))
+			r.append(_r(7, "cc.dddddddddddddddddddd.cc"))
+			r.append(_r(11, "dddddddddddddddddddddddd"))
+			r.append(_r(11, "dddddddddddddddddddddddd"))
+			r.append(_r(13, "dddddddddddddddddddd"))
+			r.append(_r(13, "dddddddddddddddddddd"))
+			r.append(_r(13, "dddddddddddddddddddd"))
+
 	return r
 
 
@@ -613,70 +615,180 @@ func _torso_rows(arms: String, variant: int) -> PackedStringArray:
 ##   中段 waist 收窄（V 字，非矩形）。
 const TORSO_TPL := {
 	"swing_f": [
-		["", "", "sh"], ["cc", "cc", "sh"], ["cc", "cc", "sh"], ["cc", "cc", "sh"],
-		["cc", "cc", "sh"], ["cc", "cc", "sh"], ["ss", "cc", "chest"], ["ss", "ss", "chest"],
-		["", "ss", "chest"], ["", "", "waist"], ["", "", "waist"], ["", "", "waist"],
-		["", "", "waist", "d"], ["", "", "waist", "d"],
+		["", "", "sh"],
+		["cc.", ".cc", "sh"],
+		["ss.", ".cc", "sh"],
+		["ss.", ".cc", "sh"],
+		["cc.", ".cc", "sh"],
+		["cc", "cc", "sh"],
+		["cc.", ".cc", "chest", "d"],
+		["cc.", ".ss", "chest", "d"],
+		["cc.", ".ss", "chest", "d"],
+		["", "", "chest", "d"],
+		["", "", "waist", "d"],
+		["", "", "waist", "d"],
+		["", "", "waist", "d"],
+		["", "", "waist", "d"],
 	],
 	"swing_b": [
-		["", "", "sh"], ["cc", "cc", "sh"], ["cc", "cc", "sh"], ["cc", "cc", "sh"],
-		["cc", "cc", "sh"], ["cc", "cc", "sh"], ["cc", "ss", "chest"], ["ss", "ss", "chest"],
-		["ss", "", "chest"], ["", "", "waist"], ["", "", "waist"], ["", "", "waist"],
-		["", "", "waist", "d"], ["", "", "waist", "d"],
+		["", "", "sh"],
+		["cc.", ".cc", "sh"],
+		["cc.", ".ss", "sh"],
+		["cc.", ".ss", "sh"],
+		["cc.", ".cc", "sh"],
+		["cc", "cc", "sh"],
+		["cc.", ".cc", "chest", "d"],
+		["ss.", ".cc", "chest", "d"],
+		["ss.", ".cc", "chest", "d"],
+		["", "", "chest", "d"],
+		["", "", "waist", "d"],
+		["", "", "waist", "d"],
+		["", "", "waist", "d"],
+		["", "", "waist", "d"],
 	],
 	"pump_up": [
-		["", "", "sh"], ["ss", "ss", "sh"], ["ss", "ss", "sh"], ["cc", "cc", "sh"],
-		["cc", "cc", "sh"], ["cc", "cc", "sh"], ["cc", "cc", "chest"], ["cc", "cc", "chest"],
-		["", "", "chest"], ["", "", "waist"], ["", "", "waist"], ["", "", "waist"],
-		["", "", "waist", "d"], ["", "", "waist", "d"],
+		["", "", "sh"],
+		["cc.", ".cc", "sh"],
+		["ss.", ".cc", "sh"],
+		["cc.", ".ss", "sh"],
+		["cc.", ".cc", "sh"],
+		["cc", "cc", "sh"],
+		["cc.", ".cc", "chest", "d"],
+		["cc.", ".cc", "chest", "d"],
+		["cc.", ".cc", "chest", "d"],
+		["", "", "chest", "d"],
+		["", "", "waist", "d"],
+		["", "", "waist", "d"],
+		["", "", "waist", "d"],
+		["", "", "waist", "d"],
 	],
 	"pump_down": [
-		["", "", "sh"], ["cc", "cc", "sh"], ["cc", "cc", "sh"], ["cc", "cc", "sh"],
-		["cc", "cc", "sh"], ["cc", "cc", "sh"], ["ss", "ss", "chest"], ["ss", "ss", "chest"],
-		["", "", "chest"], ["", "", "waist"], ["", "", "waist"], ["", "", "waist"],
-		["", "", "waist", "d"], ["", "", "waist", "d"],
+		["", "", "sh"],
+		["cc.", ".cc", "sh"],
+		["cc.", ".cc", "sh"],
+		["cc.", ".cc", "sh"],
+		["cc.", ".cc", "sh"],
+		["cc", "cc", "sh"],
+		["ss.", ".cc", "chest", "d"],
+		["cc.", ".ss", "chest", "d"],
+		["cc.", ".cc", "chest", "d"],
+		["", "", "chest", "d"],
+		["", "", "waist", "d"],
+		["", "", "waist", "d"],
+		["", "", "waist", "d"],
+		["", "", "waist", "d"],
 	],
 	"rails": [
-		["", "", "sh"], ["cc", "cc", "sh"], ["cc", "cc", "sh"],
-		["ss", "ss", "sh"], ["cc", "cc", "sh"], ["cc", "cc", "sh"], ["cc", "cc", "chest"],
-		["", "", "chest"], ["", "", "waist"], ["", "", "waist"], ["", "", "waist"],
-		["", "", "waist"], ["", "", "waist", "d"], ["", "", "waist", "d"],
+		["", "", "sh"],
+		["cc.", ".cc", "sh"],
+		["ss.", ".cc", "sh"],
+		["ss.", ".cc", "sh"],
+		["cc.", ".cc", "sh"],
+		["cc", "cc", "sh"],
+		["cc.", ".cc", "chest", "d"],
+		["cc.", ".ss", "chest", "d"],
+		["cc.", ".ss", "chest", "d"],
+		["", "", "chest", "d"],
+		["", "", "waist", "d"],
+		["", "", "waist", "d"],
+		["", "", "waist", "d"],
+		["", "", "waist", "d"],
 	],
 	"handlebar": [
-		["", "", "sh"], ["cc", "cc", "sh"], ["cc", "cc", "sh"],
-		["cc", "cc", "sh"], ["ss", "ss", "sh"], ["cc", "cc", "sh"], ["cc", "cc", "chest"],
-		["", "", "chest"], ["", "", "waist"], ["", "", "waist"], ["", "", "waist"],
-		["", "", "waist"], ["", "", "waist", "d"], ["", "", "waist", "d"],
+		["", "", "sh"],
+		["cc.", ".cc", "sh"],
+		["cc.", ".cc", "sh"],
+		["cc.", ".cc", "sh"],
+		["cc.", ".cc", "sh"],
+		["cc", "cc", "sh"],
+		["ss.", ".cc", "chest", "d"],
+		["cc.", ".ss", "chest", "d"],
+		["cc.", ".cc", "chest", "d"],
+		["", "", "chest", "d"],
+		["", "", "waist", "d"],
+		["", "", "waist", "d"],
+		["", "", "waist", "d"],
+		["", "", "waist", "d"],
 	],
 	"wipe": [
-		["", "", "sh"], ["cc", "cc", "sh"], ["cc", "cc", "sh"],
-		["ss", "cc", "sh"], ["cc", "cc", "sh"], ["cc", "cc", "sh"], ["cc", "ss", "chest"],
-		["", "", "chest"], ["", "", "waist"], ["", "", "waist"], ["", "", "waist"],
-		["", "", "waist"], ["", "", "waist", "d"], ["", "", "waist", "d"],
+		["", "", "sh"],
+		["cc.", ".cc", "sh"],
+		["ss.", ".cc", "sh"],
+		["ss.", ".cc", "sh"],
+		["cc.", ".cc", "sh"],
+		["cc", "cc", "sh"],
+		["cc.", ".cc", "chest", "d"],
+		["cc.", ".ss", "chest", "d"],
+		["cc.", ".ss", "chest", "d"],
+		["", "", "chest", "d"],
+		["", "", "waist", "d"],
+		["", "", "waist", "d"],
+		["", "", "waist", "d"],
+		["", "", "waist", "d"],
 	],
 	"raised": [
-		["", "", "sh"], ["ss", "cc", "sh"], ["ss", "cc", "sh"], ["cc", "cc", "sh"],
-		["cc", "cc", "sh"], ["cc", "cc", "sh"], ["cc", "ss", "chest"],
-		["", "", "chest"], ["", "", "waist"], ["", "", "waist"], ["", "", "waist"],
-		["", "", "waist"], ["", "", "waist", "d"], ["", "", "waist", "d"],
+		["", "", "sh"],
+		["cc.", ".cc", "sh"],
+		["cc.", ".ss", "sh"],
+		["cc.", ".ss", "sh"],
+		["cc.", ".cc", "sh"],
+		["cc", "cc", "sh"],
+		["cc.", ".cc", "chest", "d"],
+		["ss.", ".cc", "chest", "d"],
+		["ss.", ".cc", "chest", "d"],
+		["", "", "chest", "d"],
+		["", "", "waist", "d"],
+		["", "", "waist", "d"],
+		["", "", "waist", "d"],
+		["", "", "waist", "d"],
 	],
 	"stretch_up": [
-		["", "", "sh"], ["ss", "ss", "sh"], ["ss", "ss", "sh"], ["cc", "cc", "sh"],
-		["cc", "cc", "sh"], ["cc", "cc", "sh"], ["cc", "cc", "chest"],
-		["", "", "chest"], ["", "", "waist"], ["", "", "waist"], ["", "", "waist"],
-		["", "", "waist"], ["", "", "waist", "d"], ["", "", "waist", "d"],
+		["", "", "sh"],
+		["cc.", ".cc", "sh"],
+		["ss.", ".cc", "sh"],
+		["cc.", ".ss", "sh"],
+		["cc.", ".cc", "sh"],
+		["cc", "cc", "sh"],
+		["cc.", ".cc", "chest", "d"],
+		["cc.", ".cc", "chest", "d"],
+		["cc.", ".cc", "chest", "d"],
+		["", "", "chest", "d"],
+		["", "", "waist", "d"],
+		["", "", "waist", "d"],
+		["", "", "waist", "d"],
+		["", "", "waist", "d"],
 	],
 	"stretch_out": [
-		["", "", "sh"], ["ss", "ss", "sh"], ["ss", "ss", "sh"], ["cc", "cc", "sh"],
-		["cc", "cc", "sh"], ["cc", "cc", "sh"], ["cc", "cc", "chest"],
-		["", "", "chest"], ["", "", "waist"], ["", "", "waist"], ["", "", "waist"],
-		["", "", "waist"], ["", "", "waist", "d"], ["", "", "waist", "d"],
+		["", "", "sh"],
+		["cc.", ".cc", "sh"],
+		["ss.", ".cc", "sh"],
+		["cc.", ".ss", "sh"],
+		["cc.", ".cc", "sh"],
+		["cc", "cc", "sh"],
+		["cc.", ".cc", "chest", "d"],
+		["cc.", ".cc", "chest", "d"],
+		["cc.", ".cc", "chest", "d"],
+		["", "", "chest", "d"],
+		["", "", "waist", "d"],
+		["", "", "waist", "d"],
+		["", "", "waist", "d"],
+		["", "", "waist", "d"],
 	],
 	"down": [
-		["", "", "sh"], ["cc", "cc", "sh"], ["cc", "cc", "sh"], ["cc", "cc", "sh"],
-		["cc", "cc", "sh"], ["cc", "cc", "sh"], ["ss", "ss", "chest"], ["ss", "ss", "chest"],
-		["", "", "chest"], ["", "", "waist"], ["", "", "waist"], ["", "", "waist"],
-		["", "", "waist", "d"], ["", "", "waist", "d"],
+		["", "", "sh"],
+		["cc.", ".cc", "sh"],
+		["cc.", ".cc", "sh"],
+		["cc.", ".cc", "sh"],
+		["cc.", ".cc", "sh"],
+		["cc", "cc", "sh"],
+		["ss.", ".cc", "chest", "d"],
+		["cc.", ".ss", "chest", "d"],
+		["cc.", ".cc", "chest", "d"],
+		["", "", "chest", "d"],
+		["", "", "waist", "d"],
+		["", "", "waist", "d"],
+		["", "", "waist", "d"],
+		["", "", "waist", "d"],
 	],
 }
 
@@ -722,6 +834,10 @@ func _build_width(key: String, b: Dictionary) -> int:
 ## 腿（13 行 28..40）：裤 + 长腿（V3.1 返工2 R2：腿从 9 行加长到 13 行，
 ## 头身比改善 —— 短腿棋子感消失）。行 5（abs 33）为 PINNED 裤色（测试断言），
 ## 行 9..12 渐宽收拢成脚；鞋仍由 _shoe_rows 独立提供（41..43）。
+## 返工3 P2（本卡）：腿型按姿态分化 —— walk 用 stride（前迈步）、treadmill
+## 用 run（高抬腿）、bike 用 pedal（骑姿蹬踏）、train 用 plant（宽站）、
+## tired 用 bent（微弯）。各姿态腿部 silhouette 差异明显，不再共用同一
+## 步态模板（上轮 FAIL：跑/骑/走分不清）。
 ## [legs] 决定步态（迈步/骑踏/盘坐/站立）。
 ## V3.1 R2：变体 0 走既有手写行（测试像素断言 pin）；变体 1-3 由
 ## _leg_build_rows 按 build 放样（腿粗 + build 1 运动短裤露出小腿皮肤）。
@@ -730,34 +846,62 @@ func _leg_rows(legs: String, variant: int) -> PackedStringArray:
 		return _leg_build_rows(legs, variant)
 	var r := PackedStringArray()
 	match legs:
-		"stride_f":  # walk A：左腿前迈 + 右腿后蹬（13 行：裤 9 + 脚 4）
-			r.append(_r(8, "ppp" + "........" + "ppp"))
-			r.append(_r(8, "ppp" + "........" + "ppp"))
-			r.append(_r(8, "ppp" + "........" + "ppp"))
-			r.append(_r(6, "pppppp" + "...." + "ppp"))
-			r.append(_r(6, "pppppp" + "...." + "ppp"))
-			r.append(_r(6, "pppppp" + "...." + "ppp"))      # 行5（abs 33）PINNED 裤
-			r.append(_r(6, "pppppp" + "...." + "ppp"))
-			r.append(_r(4, "pppppppp" + ".." + "ppp"))
-			r.append(_r(4, "pppppppp" + ".." + "ppp"))
-			r.append(_r(2, "kkkkkkkkkk" + "kk"))            # 前脚着地 + 后脚
-			r.append(_r(2, "kkkkkkkkkk" + "kk"))
-			r.append(_r(4, "kkkkkkkkkkkk"))
-			r.append(_r(6, "kkkkkkkkkkkk"))
+		"stride_f":  # walk A：左腿前迈（屈膝）+ 右腿后蹬（伸直）
+			r.append(_r(8, "pppp" + "........" + "pppp"))
+			r.append(_r(8, "pppp" + "........" + "pppp"))
+			r.append(_r(8, "pppp" + "........" + "pppp"))
+			r.append(_r(6, "pppppp" + "...." + "pppp"))
+			r.append(_r(6, "pppppp" + "...." + "pppp"))
+			r.append(_r(5, "ppppppp" + ".." + "pppp"))      # 行5（abs 33）PINNED 裤
+			r.append(_r(5, "ppppppp" + ".." + "pppp"))
+			r.append(_r(3, "ppppppppp" + "ppp"))
+			r.append(_r(3, "kkkkkkkkkk" + "kk"))
+			r.append(_r(2, "kkkkkkkkkkk" + "kk"))           # 前脚着地 + 后脚
+			r.append(_r(2, "kkkkkkkkkkk" + "kk"))
+			r.append(_r(4, "kkkkkkkkkkkkk"))
+			r.append(_r(6, "kkkkkkkkkkkkk"))
 		"stride_b":  # walk B：右腿前迈 + 左腿后蹬（镜像）
-			r.append(_r(8, "ppp" + "........" + "ppp"))
-			r.append(_r(8, "ppp" + "........" + "ppp"))
-			r.append(_r(8, "ppp" + "........" + "ppp"))
-			r.append(_r(8, "ppp" + "...." + "pppppp"))
-			r.append(_r(8, "ppp" + "...." + "pppppp"))
-			r.append(_r(8, "ppp" + "...." + "pppppp"))      # 行5（abs 33）PINNED 裤
-			r.append(_r(8, "ppp" + "...." + "pppppp"))
-			r.append(_r(8, "ppp" + ".." + "pppppppp"))
-			r.append(_r(8, "ppp" + ".." + "pppppppp"))
-			r.append(_r(8, "kkk" + ".." + "kkkkkkkk"))      # 右脚着地 + 左脚
-			r.append(_r(8, "kkk" + ".." + "kkkkkkkk"))
-			r.append(_r(6, "kkkkkkkkkkkk"))
-			r.append(_r(6, "kkkkkkkkkkkk"))
+			r.append(_r(8, "pppp" + "........" + "pppp"))
+			r.append(_r(8, "pppp" + "........" + "pppp"))
+			r.append(_r(8, "pppp" + "........" + "pppp"))
+			r.append(_r(6, "pppp" + "...." + "pppppp"))
+			r.append(_r(6, "pppp" + "...." + "pppppp"))
+			r.append(_r(5, "pppp" + ".." + "ppppppp"))      # 行5（abs 33）PINNED 裤
+			r.append(_r(5, "pppp" + ".." + "ppppppp"))
+			r.append(_r(3, "ppp" + "ppppppppp"))
+			r.append(_r(3, "kk" + "kkkkkkkkkk"))
+			r.append(_r(2, "kk" + "kkkkkkkkkkk"))           # 右脚着地 + 左脚
+			r.append(_r(2, "kk" + "kkkkkkkkkkk"))
+			r.append(_r(4, "kkkkkkkkkkkkk"))
+			r.append(_r(6, "kkkkkkkkkkkkk"))
+		"run_f":     # treadmill A：高抬腿 —— 左膝抬到腰（裤块宽）+ 右腿后伸
+			r.append(_r(6, "pppppppppp" + "......"))        # 左大腿高抬（宽）
+			r.append(_r(6, "pppppppppp" + "......"))
+			r.append(_r(6, "pppppppppp" + "......"))
+			r.append(_r(6, "kkkkkkkkkk" + "......"))        # 左脚内收（近臀）
+			r.append(_r(6, "kkkkkkkkkk" + "......"))
+			r.append(_r(8, "pppp" + "........"))            # 行5（abs 33）右大腿后伸
+			r.append(_r(8, "pppp" + "........"))
+			r.append(_r(10, "ppp" + ".........."))
+			r.append(_r(11, "kkkk" + "..........."))
+			r.append(_r(13, "kkkk"))                        # 右脚后蹬
+			r.append(_r(13, "kkkk"))
+			r.append(_r(15, "kk"))
+			r.append(_r(17, "kk"))
+		"run_b":     # treadmill B：右膝高抬 + 左腿后伸（镜像）
+			r.append(_r(6, "......" + "pppppppppp"))
+			r.append(_r(6, "......" + "pppppppppp"))
+			r.append(_r(6, "......" + "pppppppppp"))
+			r.append(_r(6, "......" + "kkkkkkkkkk"))
+			r.append(_r(6, "......" + "kkkkkkkkkk"))
+			r.append(_r(8, "........" + "pppp"))            # 行5（abs 33）
+			r.append(_r(8, "........" + "pppp"))
+			r.append(_r(10, ".........." + "ppp"))
+			r.append(_r(11, "..........." + "kkkk"))
+			r.append(_r(13, "kkkk"))
+			r.append(_r(13, "kkkk"))
+			r.append(_r(15, "kk"))
+			r.append(_r(17, "kk"))
 		"plant":     # use：双脚站稳（宽距）
 			r.append(_r(6, "pppppppppppp"))
 			r.append(_r(6, "pppppppppppp"))
@@ -772,34 +916,34 @@ func _leg_rows(legs: String, variant: int) -> PackedStringArray:
 			r.append(_r(2, "kkkkkkkkkkkkkkkkkk"))
 			r.append(_r(4, "kkkkkkkkkkkkkkkk"))
 			r.append(_r(6, "kkkkkkkkkkkk"))
-		"pedal_f":   # bike A：左脚下踏 + 右脚上抬
-			r.append(_r(8, "ppp" + "........" + "ppp"))
-			r.append(_r(8, "ppp" + "........" + "ppp"))
-			r.append(_r(8, "ppp" + "........" + "ppp"))
-			r.append(_r(6, "pppppp" + "...." + "ppp"))
-			r.append(_r(6, "pppppp" + "...." + "ppp"))
-			r.append(_r(6, "pppppp" + "...." + "ppp"))      # 行5（abs 33）
-			r.append(_r(4, "pppppppp" + ".." + "ppp"))
-			r.append(_r(4, "pppppppp" + ".." + "ppp"))
-			r.append(_r(2, "kkkkkkkkkk" + "kk"))
-			r.append(_r(2, "kkkkkkkkkk" + "kk"))            # 左脚下踏（宽）+ 右脚踏高
-			r.append(_r(4, "kkkkkkkkkkkk"))
-			r.append(_r(4, "kkkkkkkkkkkk"))
-			r.append(_r(6, "kkkkkkkkkkkk"))
-		"pedal_b":   # bike B：右脚下踏 + 左脚上抬
-			r.append(_r(8, "ppp" + "........" + "ppp"))
-			r.append(_r(8, "ppp" + "........" + "ppp"))
-			r.append(_r(8, "ppp" + "........" + "ppp"))
-			r.append(_r(8, "ppp" + "...." + "pppppp"))
-			r.append(_r(8, "ppp" + "...." + "pppppp"))
-			r.append(_r(8, "ppp" + "...." + "pppppp"))      # 行5（abs 33）
-			r.append(_r(8, "ppp" + "...." + "pppppp"))
-			r.append(_r(8, "ppp" + ".." + "pppppppp"))
-			r.append(_r(8, "kkk" + ".." + "kkkkkkkk"))
-			r.append(_r(8, "kkk" + ".." + "kkkkkkkk"))      # 左脚上抬 + 右脚下踏
-			r.append(_r(6, "kkkkkkkkkkkk"))
-			r.append(_r(6, "kkkkkkkkkkkk"))
-			r.append(_r(6, "kkkkkkkkkkkk"))
+		"pedal_f":   # bike A：骑姿 —— 左脚下踏（伸）+ 右脚上抬（收膝）
+			r.append(_r(8, "pppp" + "........" + "pppp"))   # 大腿在座垫高度
+			r.append(_r(7, "ppppp" + "......" + "ppppp"))   # 膝外展
+			r.append(_r(6, "pppppp" + "...." + "pppppp"))
+			r.append(_r(6, "pppppp" + "...." + "pppppp"))
+			r.append(_r(5, "kkkkkkk" + ".." + "kkkkkkk"))   # 双脚在踏板上（非地面）
+			r.append(_r(5, "kkkkkkk" + ".." + "kkkkkkk"))   # 行5（abs 33）
+			r.append(_r(6, "kkkkkkk" + ".." + "kkkkkkk"))
+			r.append(_r(7, "kkkkkk" + "...." + "kkkkkk"))
+			r.append(_r(8, "kkkkk" + "......" + "kkkkk"))
+			r.append(_r(10, "kkkk" + "........" + "kkkk"))  # 右脚下踏（伸）
+			r.append(_r(11, "kkkk" + "........."))          # 左脚上抬（收膝）
+			r.append(_r(12, "kkk" + ".........."))
+			r.append(_r(14, "kk"))
+		"pedal_b":   # bike B：右脚下踏 + 左脚上抬（镜像）
+			r.append(_r(8, "pppp" + "........" + "pppp"))
+			r.append(_r(7, "ppppp" + "......" + "ppppp"))
+			r.append(_r(6, "pppppp" + "...." + "pppppp"))
+			r.append(_r(6, "pppppp" + "...." + "pppppp"))
+			r.append(_r(5, "kkkkkkk" + ".." + "kkkkkkk"))
+			r.append(_r(5, "kkkkkkk" + ".." + "kkkkkkk"))   # 行5（abs 33）
+			r.append(_r(6, "kkkkkkk" + ".." + "kkkkkkk"))
+			r.append(_r(7, "kkkkkk" + "...." + "kkkkkk"))
+			r.append(_r(8, "kkkkk" + "......" + "kkkkk"))
+			r.append(_r(10, "kkkk" + "........" + "kkkk"))
+			r.append(_r(11, ".........." + "kkkk"))         # 右脚下踏（伸）
+			r.append(_r(12, "..........." + "kkk"))
+			r.append(_r(14, "............" + "kk"))
 		"cross":     # yoga：盘坐（宽、短）
 			r.append(_r(6, "pppppppppppp"))
 			r.append(_r(6, "pppppppppppp"))
@@ -877,6 +1021,30 @@ func _leg_build_rows(legs: String, variant: int) -> PackedStringArray:
 				r.append(_r(8, "k".repeat(lw) + ".." + "k".repeat(lw * 2)))
 			for _i in 2:
 				r.append(_r(6, "k".repeat(lw * 3)))
+		"run_f":  # treadmill A：高抬腿 —— 左大腿高抬 + 右腿后伸
+			for _i in 3:
+				r.append(_r(6, up.repeat(lw * 2 + 2) + ".".repeat(6)))
+			for _i in 2:
+				r.append(_r(6, "k".repeat(lw * 2 + 2) + ".".repeat(6)))
+			for _i in 3:
+				r.append(_r(8, up.repeat(lw) + ".".repeat(8)))
+			for _i in 2:
+				r.append(_r(11, "k".repeat(lw)))
+			for _i in 2:
+				r.append(_r(13, "k".repeat(lw - 1)))
+			r.append(_r(17, "k"))
+		"run_b":  # treadmill B：右膝高抬 + 左腿后伸（镜像）
+			for _i in 3:
+				r.append(_r(6, ".".repeat(6) + up.repeat(lw * 2 + 2)))
+			for _i in 2:
+				r.append(_r(6, ".".repeat(6) + "k".repeat(lw * 2 + 2)))
+			for _i in 3:
+				r.append(_r(8, ".".repeat(8) + up.repeat(lw)))
+			for _i in 2:
+				r.append(_r(11, "k".repeat(lw)))
+			for _i in 2:
+				r.append(_r(13, "k".repeat(lw - 1)))
+			r.append(_r(17, "k"))
 		"plant":  # use：双脚站稳（宽距）
 			for _i in 6:
 				r.append(_r(6, up.repeat(lw * 2)))
@@ -1024,11 +1192,12 @@ func _satisfied_rows(frame: int, variant: int) -> PackedStringArray:
 	return rows
 
 
-## treadmill：跑带奔跑 —— 前倾 + 摆臂 + 迈步循环（与 walk 同节奏，专注脸）。
+## treadmill：跑带奔跑 —— 高抬腿跑姿（前腿膝抬到腰 + 后腿后伸，区别于
+## walk 的前迈步）+ 双手扶把 + 专注脸。A=左膝高抬；B=右膝高抬（+1px 弹跳）。
 func _treadmill_rows(frame: int, variant: int) -> PackedStringArray:
 	if frame == 0:
-		return _assemble(FACE_FOCUS, "rails", "stride_f", variant)
-	return _assemble(FACE_FOCUS, "rails", "stride_b", variant, 1)
+		return _assemble(FACE_FOCUS, "rails", "run_f", variant)
+	return _assemble(FACE_FOCUS, "rails", "run_b", variant, 1)
 
 
 ## bike：骑行 —— 身体前倾 + 双手握把 + 双脚交替踏（V3 §8 自行车使用姿势）。
