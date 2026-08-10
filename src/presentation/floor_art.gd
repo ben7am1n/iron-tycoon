@@ -85,18 +85,18 @@ func build_image() -> Image:
 func _draw_walkway(img: Image) -> void:
 	var w := img.get_width()
 	var h := img.get_height()
-	# 瓷砖色差 cluster：约半数 cell 一个低对比不规则笔触簇。保留手绘变化，
-	# 但让纹理退到设备之后，不再每格都有显眼笔触。
+	# 瓷砖色差 cluster：约三分之一 cell 一个短而低对比的不规则笔触簇。
+	# 仍可读出手绘变化，但大面积观看时不再形成抢眼的散点噪声。
 	for cy in _grid_h:
 		for cx in _grid_w:
 			var seed := _hash2(cx * 5 + 1, cy * 7 + 3)
-			if seed % 2 != 0:
+			if seed % 3 != 0:
 				continue
 			var cx_px := cx * _cell + _cell / 2 + (seed % 5) - 2
 			var cy_px := cy * _cell + _cell / 2 + ((seed >> 4) % 5) - 2
 			var c: Color = Palette.FLOOR_WALK_CL_LIGHT if (seed + cy) % 3 != 0 \
 				else Palette.FLOOR_WALK_CL_DARK
-			_paint_stroke(img, cx_px, cy_px, 4 + (seed >> 8) % 3, c, seed)
+			_paint_stroke(img, cx_px, cy_px, 3 + (seed >> 8) % 2, c, seed)
 	# 断裂 jagged 砖缝：只在部分 cell 边界画（非每 cell 全直线），每段偏移。
 	for gx in range(1, _grid_w):
 		if _hash2(gx * 11, 7) % 3 == 0:
@@ -106,12 +106,13 @@ func _draw_walkway(img: Image) -> void:
 		if _hash2(gy * 13, 5) % 3 == 0:
 			continue
 		_paint_jagged_seam_h(img, 0, w, gy * _cell, Palette.FLOOR_WALK_GROUT, gy * 17)
-	# 污渍 cluster 密度减半（24 → 12），且颜色已向底色收敛。
-	for i in 12:
+	# 污渍 cluster 再收尾一档（12 → 7，约 -42%），笔触缩短且颜色继续
+	# 向通道底色收敛；只留下近看可见的生活痕迹。
+	for i in 7:
 		var seed := _hash2(i * 3, i * 5 + 11)
 		var px := int(seed % w)
 		var py := int((seed >> 6) % h)
-		_paint_stroke(img, px, py, 2 + (seed >> 12) % 3,
+		_paint_stroke(img, px, py, 2 + (seed >> 12) % 2,
 			Palette.FLOOR_WALK_CL_DARK, seed * 7)
 
 
@@ -236,23 +237,23 @@ func _paint_floor_mat(img: Image, rect: Rect2i, seed: int) -> void:
 ## 落地区 —— 亮/暗色差 cluster（脚踩处磨亮、边缘压暗）。手绘笔触。
 ## 全部在 walkway 上（不侵入 zone 内部窗口 —— 分区材质纯度不受影响）。
 func _draw_wear(img: Image) -> void:
-	# 只保留三条短而窄的使用痕迹；移除贯穿左侧的纵向脏路径，底部路径
-	# 面积缩小约 70%，让设备轮廓成为前景。
-	_wear_path(img, Rect2i(28, 10, 60, 8), 911)
-	_wear_path(img, Rect2i(100, 296, 160, 8), 923)
+	# 三条使用痕迹总面积 2096px² → 1140px²（约 -45.6%）：保留动线暗示，
+	# 但让磨损变成需要近看才发现的背景细节。
+	_wear_path(img, Rect2i(34, 11, 48, 6), 911)
+	_wear_path(img, Rect2i(124, 297, 110, 6), 923)
 	# 跑步机区前（treadmill(2,2) 北侧落地区：设备前使用频繁区）
-	_wear_path(img, Rect2i(68, 42, 42, 8), 929)
+	_wear_path(img, Rect2i(73, 43, 32, 6), 929)
 
 
 ## 在矩形内撒磨损笔触（亮/暗交替 —— 使用频繁区亮度/色差变化）。
 func _wear_path(img: Image, rect: Rect2i, seed: int) -> void:
-	var count := maxi(3, rect.size.x * rect.size.y / 180)
+	var count := maxi(2, rect.size.x * rect.size.y / 220)
 	for i in count:
 		var h := _hash2(seed + i * 7, i * 11 + 3)
 		var px := rect.position.x + int(h % maxi(rect.size.x, 1))
 		var py := rect.position.y + int((h >> 5) % maxi(rect.size.y, 1))
 		var c: Color = Palette.FLOOR_WEAR_LIGHT if (h >> 9) % 2 == 0 else Palette.FLOOR_WEAR_DARK
-		_paint_stroke(img, px, py, 2 + (h >> 12) % 2, c, h ^ seed)
+		_paint_stroke(img, px, py, 2, c, h ^ seed)
 
 
 # === 区域材质（V3.1 P3：全部多色 cluster + jagged 边缘） ===
@@ -275,19 +276,19 @@ func _draw_strength(img: Image) -> void:
 		Palette.FLOOR_STRENGTH_CL_WARMGRAY,
 	]
 	_paint_cluster_zone(img, rect, palette, Palette.FLOOR_STRENGTH_SEAM, 9, 101)
-	# 汗渍/磨损各 12/18 个局部短笔触；STAIN 不再混入每一轮主 cluster，
-	# 密度约为旧实现的一半且与底色低对比。
-	for i in 12:
+	# 汗渍/磨损再降到 7/10 个局部短笔触（约 -42%/-44%）；两者色值也
+	# 继续贴近底色，留下材质感而不形成可扫读的脏点。
+	for i in 7:
 		var stain_seed := _hash2(i * 13 + 5, i * 17 + 9)
 		var sx := rect.position.x + int(stain_seed % rect.size.x)
 		var sy := rect.position.y + int((stain_seed >> 5) % rect.size.y)
-		_paint_stroke(img, sx, sy, 2 + (stain_seed >> 9) % 2,
+		_paint_stroke(img, sx, sy, 2,
 			Palette.FLOOR_STRENGTH_STAIN, stain_seed * 5, rect)
-	for i in 18:
+	for i in 10:
 		var seed := _hash2(i * 7 + 3, i * 11 + 5)
 		var wx := rect.position.x + int(seed % rect.size.x)
 		var wy := rect.position.y + int((seed >> 5) % rect.size.y)
-		_paint_stroke(img, wx, wy, 2 + (seed >> 9) % 2,
+		_paint_stroke(img, wx, wy, 2,
 			Palette.FLOOR_STRENGTH_WEAR, seed * 3, rect)
 
 

@@ -145,8 +145,8 @@ const WINDOW_FRAME := Color("57534A")
 const FLOOR_STRENGTH_BASE := Color("4B4F57")
 const FLOOR_STRENGTH_BLOCK := Color("494D55")   # 略有色差的橡胶块
 const FLOOR_STRENGTH_SEAM := Color("474B53")    # 接缝（低对比，退到背景）
-const FLOOR_STRENGTH_WEAR := Color("4F535B")    # 磨损/高光（靠近底色）
-const FLOOR_STRENGTH_STAIN := Color("474B53")   # 汗渍（靠近底色）
+const FLOOR_STRENGTH_WEAR := Color("4D5159")    # 磨损/高光（更贴近底色）
+const FLOOR_STRENGTH_STAIN := Color("4A4E56")   # 汗渍（更贴近底色）
 ## V3.1 P3：力量区手绘 cluster 色（深灰/灰蓝/暖灰 —— 非纯色大块填充）。
 const FLOOR_STRENGTH_CL_GRAYBLUE := Color("4C5058")   # 灰蓝 cluster
 const FLOOR_STRENGTH_CL_WARMGRAY := Color("4F4E53")   # 暖灰 cluster
@@ -168,8 +168,8 @@ const FLOOR_FLEX_CL_DARK := Color("A57049")
 const FLOOR_WALK_BASE := Color("DFCFB6")
 const FLOOR_WALK_GROUT := Color("DAC9B0")
 ## V3.1 P3：通道手绘 cluster 色（亮/暗瓷砖 —— 砖缝不规则）。
-const FLOOR_WALK_CL_LIGHT := Color("E2D2B9")
-const FLOOR_WALK_CL_DARK := Color("DCCBB2")
+const FLOOR_WALK_CL_LIGHT := Color("E1D0B7")
+const FLOOR_WALK_CL_DARK := Color("DDCDB4")
 
 ## 返工3 P1（收敛灰霾空地 + 生活痕迹）：地垫/地胶拼块与磨损用色。
 ## 全部低-中饱和（V3 §7 环境色域；不新增高饱和大块）—— 用于打破
