@@ -396,6 +396,77 @@ const ART_MAPS := {
 		"..HH....",
 		"........",
 	],
+	# 清洁桶（返工3 P1 跑步机区/力量区「小储物/清洁桶」叙事道具）：
+	# 低饱和蓝灰桶身 + 暖木提手 + 桶沿高光。非高饱和 —— 不新增 P5 焦点簇。
+	"clean_bucket": [
+		"..HH....",
+		"..HH....",
+		"..KK....",
+		".KEEEEK.",
+		".KeeeeK.",
+		".KeeeeK.",
+		".KeeeeK.",
+		"..KKKK..",
+	],
+	# 储物架（返工3 P1 走廊/力量区储物）：暖木层板 + 深色框架 + 小件。
+	# 与前台 DESK_WOOD 同族暖木 —— 任务 6 暖木焦点色。
+	"storage_shelf": [
+		"..KKKK..",
+		".KUUUUK.",
+		".KYYCYK.",
+		".KUUUUK.",
+		"..KKKK..",
+		"...K....",
+		"...K....",
+		"...K....",
+	],
+	# 走廊地垫（返工3 P1 中央通道「地垫」）：暖木橡胶地垫 + 磨损。
+	# 地垫是地面物件 —— 低对比、不抢设备主体。
+	"corridor_mat": [
+		"KWWWWWWK",
+		"WMMMMMMW",
+		"WMMMMMMW",
+		"WMMMMMMW",
+		"WMMMMMMW",
+		"WMMMMMMW",
+		"WMMMMMMW",
+		"KWWWWWWK",
+	],
+	# 单车水壶（返工3 P1 单车区「单车水壶在位」）：小水壶在车架位。
+	"bike_bottle": [
+		"..KK....",
+		".KYYK...",
+		".KYYK...",
+		".KYYK...",
+		".KKKK...",
+		"........",
+		"........",
+		"........",
+	],
+	# 海报墙（返工3 P1 中央通道「海报墙」）：多张小海报拼贴 ——
+	# 暖色 accent 小面积（任务 6 焦点色分布），贴墙挂饰。
+	"poster_wall": [
+		"OOWWWWWW",
+		"OWWYYWWW",
+		"OWWYYWWW",
+		"OWWWWWWO",
+		"OWWRRWWW",
+		"OWWRRWWW",
+		"OWWWWWW.",
+		"WWWWWW..",
+	],
+	# 瑜伽巾（返工3 P1 瑜伽区「卷垫旁成组」）：叠放的暖橙毛巾 ——
+	# 与 TOWEL 同族色，卷垫旁生活痕迹。
+	"yoga_towel": [
+		"........",
+		"..TTTT..",
+		".TTTTTT.",
+		".TSSSST.",
+		".TSSTST.",
+		"..TTTT..",
+		"........",
+		"........",
+	],
 }
 
 ## 兜底色（未知 prop_id / 区域）：暖中性（不与其他语义色撞）。
@@ -526,6 +597,14 @@ func _color_for(ch: String) -> Color:
 			return Palette.FLOOR_WALK_GROUT
 		"Z":
 			return Palette.FLOOR_FLEX_BASE
+		"E":
+			return Palette.CLEAN_BUCKET
+		"e":
+			return Palette.CLEAN_BUCKET_DARK
+		"U":
+			return Palette.SHELF_WOOD
+		"u":
+			return Palette.SHELF_FRAME
 		"F":
 			return Palette.FOCAL_RED
 		"X":
