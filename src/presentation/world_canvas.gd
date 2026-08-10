@@ -48,6 +48,12 @@ const DEFAULT_GRID_VISIBLE := false
 ## contact shadow 留在原地 —— 视觉上设备「轻轻抬起」。
 const HOVER_LIFT_PX := 2.0
 
+## camera fix：天花板只保留为投影画布边缘氛围。中央弱纹理避免抢过地板，
+## 两级像素带形成暗角式渐变（不引入 shader，保持低分辨率世界管线）。
+const CEILING_CENTER_ALPHA := 0.14
+const CEILING_EDGE_BAND := 28.0
+const CEILING_OUTER_BAND := 10.0
+
 # === 注入依赖（ADR-0001 两阶段 init 形态） ===
 var _grid = null              # GridStateReader：placed instances / conversions
 var _catalog = null           # EquipmentCatalog：equipment_id → def（zone/语义色）
@@ -235,19 +241,41 @@ func _draw() -> void:
 	_draw_placement_ghost()
 
 
-## 画布背景（V3.1 P1）：投影后画布边界外的天花板/背景色 —— 填满 SubViewport，
-## 墙顶/角落不留空洞。V3.1 P3：天花板也是大面积区域 —— 用手绘 cluster 纹理
-## （非纯色填充；V3.1 负面约束「纯色大面积填充」）。structure_art 未注入时
-## 回退旧纯色填充（保持测试构造兼容）。
+## 画布背景（camera fix）：中央只留弱天花板底纹，手绘天花板纹理集中在两级
+## 边缘带；随后地板覆盖操作区。避免旧实现把整张高对比纹理铺满 bounds，仍在
+## 四周保留 V3.1 P1 的 room-box 氛围。structure_art 未注入时回退暗底色。
 func _draw_canvas_background() -> void:
 	var b := Proj2D.bounds()
 	var rect := Rect2(b.position - Vector2(8, 8), b.size + Vector2(16, 16))
+	draw_rect(rect, Palette.WALL_BASE.darkened(0.38), true)
 	if _structure_art != null:
 		var tex: ImageTexture = _structure_art.ceiling_texture()
 		if tex != null:
-			draw_texture_rect(tex, rect, false)
+			# 中央弱化；地板外的角落不会变成纯色空洞。
+			draw_texture_rect(tex, rect, false,
+				Color(1.0, 1.0, 1.0, CEILING_CENTER_ALPHA))
+			_draw_ceiling_edge_ring(tex, rect, CEILING_EDGE_BAND,
+				Color(1.0, 1.0, 1.0, 0.42))
+			_draw_ceiling_edge_ring(tex, rect, CEILING_OUTER_BAND,
+				Color(1.0, 1.0, 1.0, 0.34))
 			return
-	draw_rect(rect, Palette.WALL_BASE.darkened(0.28), true)
+
+
+## 以四个纹理条绘制一圈边缘。角落自然叠加，形成更暗的像素暗角；中央不画。
+func _draw_ceiling_edge_ring(
+	tex: Texture2D,
+	rect: Rect2,
+	band: float,
+	modulate: Color
+) -> void:
+	var w := minf(band, rect.size.x * 0.5)
+	var h := minf(band, rect.size.y * 0.5)
+	draw_texture_rect(tex, Rect2(rect.position, Vector2(rect.size.x, h)), false, modulate)
+	draw_texture_rect(tex, Rect2(
+		Vector2(rect.position.x, rect.end.y - h), Vector2(rect.size.x, h)), false, modulate)
+	draw_texture_rect(tex, Rect2(rect.position, Vector2(w, rect.size.y)), false, modulate)
+	draw_texture_rect(tex, Rect2(
+		Vector2(rect.end.x - w, rect.position.y), Vector2(w, rect.size.y)), false, modulate)
 
 
 ## 地板 pass：全部贴地内容经 floor_transform 一次性投影（V3.1 P1 ——
@@ -553,9 +581,12 @@ func _draw_side_wall(is_west: bool) -> void:
 
 ## 侧墙本地变换：墙本地坐标 (u=沿墙扁平 y，v=墙高 z) → 屏幕。
 func _side_wall_transform(x_in: float) -> Transform2D:
+	# 侧墙纹理保留 110px 原始细节，但 v 轴压缩到当前 WALL_HEIGHT；这样相机
+	# 调墙高不需要破坏 structure_art 中已烘焙的镜子/管道/海报像素。
+	var height_ratio := Proj2D.WALL_HEIGHT / float(StructureArt.WALL_SIDE_TEX.y)
 	return Transform2D(
 		Vector2(Proj2D.SHEAR, Proj2D.FLOOR_SCALE),
-		Vector2(-Proj2D.EXTRUDE_X, -Proj2D.HEIGHT_SCALE),
+		Vector2(-Proj2D.EXTRUDE_X, -Proj2D.HEIGHT_SCALE) * height_ratio,
 		Vector2(x_in, 0.0))
 
 

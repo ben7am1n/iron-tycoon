@@ -5,13 +5,15 @@
 # 结构层）、屏幕↔世界映射（main.gd 输入桥接 + 世界锚定 UI）、证据脚本采样
 # 一律引用这里，禁止各文件各写各的换算。
 #
-# 模型：正交斜投影（oblique orthographic），相机在房间南侧、俯角 ~38°
-# （30-45° 区间内），观察方向略偏东南 → 地板 y 轴（向南）在屏幕上向右
+# 模型：正交斜投影（oblique orthographic），相机在房间南侧、俯角 50°。
+# V3.1 camera fix：操作区以俯视可读性为主，观察方向仍略偏东南 → 地板 y 轴
+# （向南）在屏幕上向右
 # 倾斜（SHEAR），地板垂直方向压缩（FLOOR_SCALE = 视线俯角的正弦效果：
-# 俯角 θ 越大越接近纯俯视，地板 y 轴被压缩得越少；38° 时 sin≈0.62），
+# 俯角 θ 越大越接近纯俯视，地板 y 轴被压缩得越少；50° 时 sin≈0.77），
 # 物体高度在屏幕上向上挤出（HEIGHT_SCALE = 俯角的余弦效果：θ 越大高度
-# 越不可见；38° 时 cos≈0.79）且顶面略微左移（EXTRUDE_X —— 使物体东侧面
-# 可见，V3.1 P1「顶面+正面+侧面同时可见」）。
+# 越不可见；50° 时 cos≈0.64）且顶面略微左移（EXTRUDE_X —— 使物体东侧面
+# 可见，V3.1 P1「顶面+正面+侧面同时可见」）。较弱剪切/挤出把空间感留在
+# 墙体和物体边缘，不再让整个中央地板读作强烈斜视房间盒。
 #
 # V3.1 R1（俯视布局图修复）：此前 FLOOR_SCALE/HEIGHT_SCALE 取反（0.78/0.62
 # 相当于俯角 52° —— 超出 30-45° 区间，读作近俯视布局图）。修正为
@@ -33,32 +35,41 @@
 # 边界（bounds()）：投影后画布 = 地板平行四边形 + 墙面向上的挤出。计算
 # 确定性，main.gd 的 SubViewport 尺寸/偏移与 evidence 采样都从它来。
 #
-# 数值选择：TILT 38°（sin≈0.62 / cos≈0.79，30-45° 要求区间内）；SHEAR=0.35
-# （y 轴在屏幕上向右倾 ~19°，东墙/设备东侧面可观）；EXTRUDE_X=0.20（物体
-# 顶面相对底面左移 0.2*z px —— 东侧面可见宽度）；WALL_HEIGHT=110（墙高 ~3.4
-# cell，diorama 房间感，bounds 恰好适配 426×240@0.75）。
+# 数值选择（camera fix）：TILT 50°（sin≈0.77 / cos≈0.64）；SHEAR=0.22
+# （保留朝东南的斜向边缘）；EXTRUDE_X=0.16（设备侧面仍清楚可见）；
+# WALL_HEIGHT=64（2 cell）。墙/天花板退到边缘，中央地板与设备成为主视角。
 #
 # headless 可靠性：无 class_name 依赖（项目约定），跨脚本 preload alias。
 class_name ObliqueProjection extends RefCounted
 
-## 俯角（度，30-45° 区间）。FLOOR_SCALE = sin(TILT)、HEIGHT_SCALE = cos(TILT)。
-const TILT_DEG := 38.0
-## 地板垂直压缩（y 轴屏幕缩放 = sin 38° ≈ 0.616 —— 纵深透视感）。
-const FLOOR_SCALE := 0.62
-## 高度挤出（z → 屏幕 y 缩放 = cos 38° ≈ 0.788 —— 墙体/设备立起）。
-const HEIGHT_SCALE := 0.79
+## 俯角（度）。50° 使中央地板更接近俯视，同时仍保留可见立面。
+const TILT_DEG := 50.0
+## 地板垂直缩放（y 轴屏幕缩放 = sin 50° ≈ 0.766）。
+const FLOOR_SCALE := 0.77
+## 高度挤出（z → 屏幕 y 缩放 = cos 50° ≈ 0.643）。
+const HEIGHT_SCALE := 0.64
 ## 地板 y 轴向右倾斜量（x += y * SHEAR）—— 使侧面可见。
-const SHEAR := 0.35
+const SHEAR := 0.22
 ## 高度挤出向左偏移（x -= z * EXTRUDE_X）—— 使东侧面可见。
-const EXTRUDE_X := 0.20
-## 墙面高度（世界像素，≈3.4 cell）。北墙/侧墙的面高。
-const WALL_HEIGHT := 110.0
+const EXTRUDE_X := 0.16
+## 墙面高度（世界像素，2 cell）。北墙/侧墙只承担边缘空间感。
+const WALL_HEIGHT := 64.0
 
 ## 扁平世界像素空间尺寸（与 main.gd / WorldLayout 对齐）。
 const WORLD_W := 416
 const WORLD_H := 320
 ## 网格 cell 尺寸（世界像素）。
 const CELL := 32
+
+## 投影 bounds 的可复用常量。main.gd 的低分辨率视口偏移直接引用，避免
+## 调参后出现输入映射/渲染中心错位。
+const PROJECTED_MIN := Vector2(
+	SHEAR * CELL - EXTRUDE_X * WALL_HEIGHT,
+	-HEIGHT_SCALE * WALL_HEIGHT)
+const PROJECTED_MAX := Vector2(
+	WORLD_W + WORLD_H * SHEAR,
+	WORLD_H * FLOOR_SCALE)
+const PROJECTED_SIZE := PROJECTED_MAX - PROJECTED_MIN
 
 # === 世界像素空间 → 投影后画布空间 ===
 
@@ -76,20 +87,10 @@ static func floor_transform() -> Transform2D:
 
 ## 投影后画布边界（含墙面向上的挤出）。main.gd 的 SubViewport 尺寸/偏移、
 ## evidence 采样、canvas 背景填充都用它。精确计算（无外扩）：
-##   - 最左 = 西墙北端顶面 proj(0,32,110).x = 11.2 - 22 = -10.8
-##   - 最上 = 东墙北端顶面 proj(402,0,110).y = -86.9（北墙顶面 -49.5）
-##   - 最右 = 地板东南角 proj(416,320,0).x = 416 + 112 = 528
-##   - 最下 = 地板南边 proj(0,320,0).y = 198.4
-## V3.1 R1：HEIGHT_SCALE 0.62→0.79 使墙顶更高（min_y -68.2→-86.9），
-## FLOOR_SCALE 0.78→0.62 使地板更压缩（max_y 249.6→198.4）—— 画布总高
-## 317.8→285.3，viewport offset 相应重算（main.gd 常量已更新）。
+## camera fix 后约为 (-3.2,-40.96)..(486.4,246.4)：地板占据主要高度，
+## 64px 墙体只在投影边缘立起。
 static func bounds() -> Rect2:
-	var min_x := SHEAR * 0.0 - EXTRUDE_X * WALL_HEIGHT + SHEAR * 32.0
-	var min_y := -HEIGHT_SCALE * WALL_HEIGHT
-	var max_x := WORLD_W + WORLD_H * SHEAR
-	var max_y := WORLD_H * FLOOR_SCALE
-	return Rect2(Vector2(min_x, min_y),
-		Vector2(max_x - min_x, max_y - min_y))
+	return Rect2(PROJECTED_MIN, PROJECTED_SIZE)
 
 ## WorldRoot 在 SubViewport 中的偏移：把投影后画布 bounds() 在 viewport 内
 ## 居中（bounds 含负坐标 —— 墙顶在 y<0，偏移必须把这些部分拉回屏幕内）。
