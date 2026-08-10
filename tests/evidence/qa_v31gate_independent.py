@@ -21,7 +21,7 @@ from collections import deque
 
 from PIL import Image
 
-PNG = "/Users/bmac/CodeBase/gym_manager/tests/evidence/v31-gate-final.png"
+PNG = "/Users/bmac/CodeBase/gym_manager/tests/evidence/v31-gate-r2-final.png"
 
 SAT_HI = 0.72          # P5 验收口径（P5 审查用 0.72 得 13 簇；0.74 过严排除 ACCENT_ORANGE 0.7187）
 MIN_CLUSTER_PX = 25    # 25px minimum cluster (P5 used 30/20)
