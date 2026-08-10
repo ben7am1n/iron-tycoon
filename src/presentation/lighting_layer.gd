@@ -118,11 +118,64 @@ func _bake_light_map() -> void:
 	img.fill(Color(0, 0, 0, 0))
 	_paint_edge_shadow(img)
 	_paint_light_pools(img)
+	_paint_ambient_cool_falloff(img)
 	_paint_window_light(img)
 	_paint_foreground_warm(img)
 	_paint_static_glows(img)
 	_light_map_image = img
 	_light_map = ImageTexture.create_from_image(img)
+
+
+## 远处环境冷灰回落（返工3 P3 FAIL1 链尾 + FAIL3 空气透视）：离所有光源
+## 落点都远的区域（灯池半径之外的地板）撒稀疏冷蓝灰散射 —— 构成「灯下
+## 暖池 → 扩散 → 远处回落到冷灰环境色」的链条终点。低密度低 alpha：
+## 是环境色回落，不是贴图式暗块/深灰噪点（alpha ≤ 0.12，hash 缺口）。
+## 位置与暖池错开（只画 metric > 1.0 的区域），不覆盖灯池/窗光/前景带。
+## 确定性：hash 驱动，无 RNG 状态。
+func _paint_ambient_cool_falloff(img: Image) -> void:
+	var seed := 2017
+	var landings: Array[Vector2] = []
+	for light: Dictionary in WorldLayout.HANGING_LIGHTS:
+		landings.append(light.get("landing", Vector2.ZERO))
+	landings.append(WorldLayout.FLOOR_LIGHT.get("landing", Vector2.ZERO))
+	for y in range(0, img.get_height(), 2):
+		for x in range(0, img.get_width(), 2):
+			# 只画在暖池半径之外（metric>1 的区域）—— 与暖池不重叠。
+			var inside_any_pool := false
+			for light: Dictionary in WorldLayout.HANGING_LIGHTS:
+				var half: Vector2 = light.get("pool_half", Vector2(52, 36))
+				var center: Vector2 = light.get("landing", Vector2.ZERO)
+				var nx := absf((x + 0.5 - center.x) / maxf(half.x, 1.0))
+				var ny := absf((y + 0.5 - center.y) / maxf(half.y, 1.0))
+				var metric := maxf(nx, ny) * 0.62 + (nx + ny) * 0.22
+				if metric <= 1.0:
+					inside_any_pool = true
+					break
+			if inside_any_pool:
+				continue
+			# 墙边暗角带（_paint_edge_shadow 已画）内不再撒环境冷灰 ——
+			# 否则与 edge shadow 叠加会把墙饰（红广告等 P5 焦点）底部
+			# 饱和度压到 gate A 阈值以下（簇分裂超上限）。环境回落只
+			# 作用于墙边带之外的远地板。
+			if _edge_distance(x, y) <= WorldLayout.EDGE_SHADOW_WIDTH:
+				continue
+			# 距最近光源落点的距离 → 越远越冷（远处冷灰环境色）
+			# 起点 96：紧接暖池 fade band 之后开始冷灰回落（返工3 P3）。
+			# 注意：起点收到 78 时 gate A 高饱和簇计数 19 超上限（淡蓝灰
+			# 像素在力量区深灰橡胶上产生额外饱和簇），保持 96 —— 远处
+			# 冷灰回落仍存在（fade band 已把池边过渡做连续）。
+			var nearest := INF
+			for landing in landings:
+				nearest = minf(nearest, Vector2(x, y).distance_to(landing))
+			if nearest < 96.0:
+				continue
+			var t := clampf((nearest - 96.0) / 90.0, 0.0, 1.0)
+			# 稀疏：远处密度略升但始终低（≤0.22 keep）
+			if float(_hash2(x + seed, y * 3 + seed) % 1000) / 1000.0 > 0.10 + 0.12 * t:
+				continue
+			var c := Palette.LIGHT_EDGE_SHADOW
+			var a := 0.05 + 0.07 * t * (0.5 + 0.5 * float(_hash2(x + 23, y + 41) % 100) / 100.0)
+			img.set_pixel(x, y, Color(c.r, c.g, c.b, minf(a, 0.12)))
 
 
 ## 前景暖光带（V3.1 返工2 R3 FAIL3 三层景深）：画面底部（世界 y 240..290，
@@ -139,12 +192,14 @@ func _paint_foreground_warm(img: Image) -> void:
 		for x in range(80, 340, 2):
 			# 越靠近镜头（y 越大）密度/alpha 越高 —— 前景受光更强
 			var t := float(y - y0) / float(y1 - y0)
-			var keep := 0.16 + 0.30 * t
+			# 返工3 P3：keep 略升（0.16+0.30t → 0.18+0.32t）—— 前景带
+			# 比背景墙更暖更亮（FAIL3 三层景深：fore 明度最高）。
+			var keep := 0.18 + 0.32 * t
 			if float(_hash2(x + seed, y * 3 + seed) % 100) / 100.0 > keep:
 				continue
 			var c := Palette.LIGHT_POOL_MID
-			var a := 0.06 + 0.10 * t * (0.5 + 0.5 * float(_hash2(x + 41, y + 53) % 100) / 100.0)
-			img.set_pixel(x, y, Color(c.r, c.g, c.b, minf(a, 0.17)))
+			var a := 0.07 + 0.11 * t * (0.5 + 0.5 * float(_hash2(x + 41, y + 53) % 100) / 100.0)
+			img.set_pixel(x, y, Color(c.r, c.g, c.b, minf(a, 0.18)))
 
 
 ## 墙边暗角（V3.1 P4 近墙像素变暗）：EDGE_SHADOW_WIDTH 内散射冷蓝灰暗像素，
@@ -183,6 +238,10 @@ func _paint_edge_shadow(img: Image) -> void:
 ##     （南半）回落 ×0.88 —— 暖光向远处衰减，形成「灯下亮 → 远处冷灰」的
 ##     方向分层
 ##   - mid/edge alpha 提高（0.27→0.33 / 0.11→0.15），暖池更可读
+## 返工3 P3（FAIL1 受光链可读）：方向 bias 拉强（1.12/0.88 → 1.24/0.76）
+##   使「灯下亮 → 向南衰减」有可见梯度（受光面明暗朝向）；三档 alpha 再
+##   提高（0.50→0.58 / 0.33→0.40 / 0.15→0.19）让亮→衰减→远处冷灰的链条
+##   在帧中可读 —— 热核 keep=0.85/0.80 行不动（R4 ring<0.95 硬门保持）。
 func _paint_light_pools(img: Image) -> void:
 	var seed := 301
 	for light: Dictionary in WorldLayout.HANGING_LIGHTS:
@@ -195,18 +254,28 @@ func _paint_light_pools(img: Image) -> void:
 ## 分面暖光落点：metric 是八边形距离，不使用圆/径向 gradient。
 ## 返工2 R1 方向性：北半（靠近吊灯，y < center.y）受光更暖更亮，南半
 ## （远离光源）回落 —— 配合 edge shadow 的冷灰环境色形成暖→冷方向分层。
+## 返工3 P3：方向 bias 加强（可见的明→暗梯度），alpha 三档提高 ——
+## 受光链「亮→衰减」在帧中可读（FAIL1）。keep 行（R4 热核 0.85/0.80）
+## 逐字不动 —— ring coverage 由 keep 决定，alpha 变化不改变覆盖率。
 func _paint_faceted_pool(img: Image, center: Vector2, half_size: Vector2,
 		seed: int, strength: float) -> void:
-	var x0 := maxi(int(floor(center.x - half_size.x)) - 2, 0)
-	var y0 := maxi(int(floor(center.y - half_size.y)) - 2, 0)
-	var x1 := mini(int(ceil(center.x + half_size.x)) + 3, img.get_width())
-	var y1 := mini(int(ceil(center.y + half_size.y)) + 3, img.get_height())
+	# 循环范围覆盖池体 + 外缘渐弱带（metric ≤ 1.55，返工3 P3）。
+	var fade_extent := 1.55
+	var x0 := maxi(int(floor(center.x - half_size.x * fade_extent)) - 2, 0)
+	var y0 := maxi(int(floor(center.y - half_size.y * fade_extent)) - 2, 0)
+	var x1 := mini(int(ceil(center.x + half_size.x * fade_extent)) + 3, img.get_width())
+	var y1 := mini(int(ceil(center.y + half_size.y * fade_extent)) + 3, img.get_height())
 	for y in range(y0, y1):
 		for x in range(x0, x1):
 			var nx := absf((x + 0.5 - center.x) / maxf(half_size.x, 1.0))
 			var ny := absf((y + 0.5 - center.y) / maxf(half_size.y, 1.0))
 			# max + taxicab 混合得到八边形/阶梯边，不是同心圆。
 			var metric := maxf(nx, ny) * 0.62 + (nx + ny) * 0.22
+			# 池体只画到 metric ≤ 1.0；之外交给独立 fade band（避免主池边缘
+			# 70% 覆盖率的暖亮壳 + fade 双重绘制 —— 返工3 P3 降噪）。
+			if metric > 1.0:
+				_paint_pool_fade(img, center, x, y, metric, seed)
+				continue
 			var edge_jitter := (float(_hash2(x + seed, y - seed) % 100) / 100.0 - 0.5) * 0.10
 			if metric + edge_jitter > 1.0:
 				continue
@@ -219,18 +288,37 @@ func _paint_faceted_pool(img: Image, center: Vector2, half_size: Vector2,
 			if float(_hash2(x + seed * 3, y + seed) % 1000) / 1000.0 > keep:
 				continue
 			# 分三档而非平滑透明渐变；每档再用少量 hash 做像素材质变化。
-			var a := 0.15
+			var a := 0.19
 			var warm := Palette.LIGHT_POOL_EDGE
 			if metric < 0.25:
-				a = 0.50
+				a = 0.58
 				warm = Palette.LIGHT_TOP_WARM
 			elif metric < 0.56:
-				a = 0.33
+				a = 0.40
 				warm = Palette.LIGHT_POOL_MID
 			# 方向性：北半（灯下，y<center）更亮，南半回落 —— 光有方向。
-			var dir_bias := 1.12 if y < center.y else 0.88
+			# 返工3 P3：bias 拉强（1.24/0.76）→ 灯下亮→向南衰减有可见梯度。
+			var dir_bias := 1.24 if y < center.y else 0.76
 			a *= strength * dir_bias * (0.86 + 0.14 * float(_hash2(x + 7, y + 11) % 100) / 100.0)
-			img.set_pixel(x, y, Color(warm.r, warm.g, warm.b, minf(a, 0.50)))
+			img.set_pixel(x, y, Color(warm.r, warm.g, warm.b, minf(a, 0.58)))
+
+
+## 暖池外缘渐弱带（返工3 P3 FAIL1 边缘渐弱）：metric 1.0..1.55 稀疏暖边 ——
+## 暖池不是硬切到无，而是继续衰减到极低 alpha（边缘渐弱，非色块边界），
+## 与远处 ambient cool falloff 的冷灰环境色自然衔接。独立于池体绘制
+## （池体只画 metric ≤ 1.0，避免双重绘制噪点）。仍是 hash 散射稀疏像素，
+## 覆盖率远低于 0.95 —— R4 环测试采样半径（r ≤ 44 ≈ metric 0.85）不进入
+## 本带，硬门保持。
+func _paint_pool_fade(img: Image, center: Vector2, x: int, y: int, metric: float, seed: int) -> void:
+	if metric > 1.55:
+		return
+	var fade := clampf(1.0 - (metric - 1.0) / 0.55, 0.0, 1.0)
+	if float(_hash2(x + seed * 7, y * 11 + seed) % 1000) / 1000.0 > 0.12 + 0.34 * fade:
+		return
+	var edge_a := 0.05 + 0.09 * fade * (0.5 + 0.5 * float(_hash2(x + 31, y + 47) % 100) / 100.0)
+	var edge_c := Palette.LIGHT_POOL_EDGE
+	img.set_pixel(x, y, Color(edge_c.r, edge_c.g, edge_c.b,
+		minf(edge_a * (1.24 if y < center.y else 0.76), 0.14)))
 
 
 ## 高处灯泡→地面落点的投影空间光图。与地板 light map 分离：这里不再套
@@ -266,8 +354,49 @@ func _bake_projected_light_map() -> void:
 	var floor_landing := Proj2D.project_world(floor_landing_world)
 	_paint_projected_shaft(img, floor_source, floor_landing, 2.0, 10.0, 1181)
 	_paint_projected_source(img, floor_source, 1201)
+	_paint_far_wall_haze(img)
 	_projected_light_map_image = img
 	_projected_light_map = ImageTexture.create_from_image(img)
+
+
+## 远景墙面冷灰雾化（返工3 P3 FAIL3 空气透视）：投影空间光图顶部墙带
+## （画布 y < 15，即北墙/侧墙上方区域）撒稀疏冷蓝灰散射 —— 背景墙/远景
+## 明度降低、冷退（atmospheric perspective），与中景器械/前景受光形成
+## 三层明度差。低密度低 alpha（≤0.10）：冷灰雾化，不是贴图式暗块。
+## 三盏吊灯灯罩所在列（x 60..104 / 198..242 / 336..380）跳过 —— 灯罩
+## 本体与灯泡核心不被雾化盖住（R4 光源可辨识保持）。
+func _paint_far_wall_haze(img: Image) -> void:
+	var seed := 331
+	var shade_x_ranges: Array = [
+		[60, 104], [198, 242], [336, 380],
+	]
+	# 北墙装饰带（wall-local x 130..360 → canvas x ≈125..355）：海报/ad_red/
+	# 计时器/TV 是 P5 高饱和焦点，雾化若叠在上面会把红广告等像素饱和度
+	# 压到 gate A 阈值以下（簇分裂 —— gate A 计数超上限）。雾化只作用于
+	# 墙面空白区（装饰带之外的左/右段 + 墙顶条），不盖墙饰。
+	var decor_x_lo := 118
+	var decor_x_hi := 362
+	for y in range(0, 57):  # 画布 y ≈ -41..15（墙带）
+		for x in range(0, img.get_width(), 2):
+			if x >= decor_x_lo and x <= decor_x_hi:
+				continue  # 墙饰带：保持 P5 焦点对比（雾化不盖广告/海报）
+			var in_shade_col := false
+			for r: Array in shade_x_ranges:
+				if x >= int(r[0]) and x <= int(r[1]):
+					in_shade_col = true
+					break
+			if in_shade_col:
+				continue
+			# 越靠近墙顶（y 越小）雾化越强 —— 远景越远越退
+			var t := 1.0 - float(y) / 57.0
+			# 返工3 P3：密度略升（0.10+0.16t → 0.14+0.20t）—— 后景墙带
+			# 对比降下来（GPT 反馈「后景过于活跃，抢中景注意力」）；仍稀疏
+			# 冷灰雾（alpha ≤ 0.12），不形成贴图式暗块。
+			if float(_hash2(x + seed, y * 5 + seed) % 1000) / 1000.0 > 0.14 + 0.20 * t:
+				continue
+			var c := Palette.LIGHT_WINDOW_COOL
+			var a := 0.05 + 0.07 * t * (0.5 + 0.5 * float(_hash2(x + 3, y + 71) % 100) / 100.0)
+			img.set_pixel(x, y, Color(c.r, c.g, c.b, minf(a, 0.12)))
 
 
 ## 稀疏投影光束：沿 source→landing 方向扩张，横向分档 + 纵向断续条带。
@@ -309,12 +438,15 @@ func _paint_projected_shaft(img: Image, source_canvas: Vector2,
 			# 返工2 R3：光束密度/alpha 小幅提高（0.36→0.42 基座、0.14→0.16
 			# 基座 alpha）—— 灯泡→落点的「受光路径」更可读（FAIL1 光源→
 			# 受光面→扩散连续），但仍稀疏 dither + 断续光丝，非实心锥。
-			var keep := 0.42 + 0.34 * center_t + (0.16 if streak else 0.0) \
+			# 返工3 P3：基座再提（0.42→0.52 / 0.16→0.20）+ 中轴光丝提亮
+			# （+0.18→+0.22）—— 灯泡到落点的体积光束在帧中可读，灯不再是
+			# 孤立的亮符号；仍是散射簇 + 断续光丝，非实心锥（P4 负约束）。
+			var keep := 0.52 + 0.34 * center_t + (0.18 if streak else 0.0) \
 				+ (0.22 if dash else 0.0)
 			if float(_hash2(x + seed, y + seed * 2) % 1000) / 1000.0 > keep:
 				continue
 			var endpoint_gain := maxf(1.0 - t * 3.0, (t - 0.78) * 2.0)
-			var a := 0.16 + 0.11 * center_t + 0.055 * clampf(endpoint_gain, 0.0, 1.0) \
+			var a := 0.20 + 0.11 * center_t + 0.055 * clampf(endpoint_gain, 0.0, 1.0) \
 				+ (0.05 if dash else 0.0)
 			# 金黄而非透明白：叠到墙/设备后直接改变材质色温，来源色与灯罩一致。
 			var warm := Palette.LAMP_SHADE_LIT
@@ -322,18 +454,23 @@ func _paint_projected_shaft(img: Image, source_canvas: Vector2,
 
 
 ## 灯泡发光核心：5×3 暖白像素 + 稀疏 1px 暖橙外缘，无圆 halo。
+## 返工3 P3：核心从 5×3 微扩到 7×4、alpha 0.82→0.90（灯在帧中读作
+## 「光源」而非贴上的亮色符号）；外缘 16 个 1px 暖橙散射（半径 ±7，
+## α 0.20-0.38 距离衰减）—— 光晕柔和（GPT 自检反馈「灯芯/光晕偏硬」），
+## 仍是无圆稀疏散射（P4 负约束；gate A 簇计数 <18 保持 —— 散射点扩到
+## 20 个/半径 ±9 时簇计数 19 超上限，收回到 16 个/±7）。
 func _paint_projected_source(img: Image, source_canvas: Vector2, seed: int) -> void:
 	var p := Vector2i(roundi(source_canvas.x - _projected_light_origin.x),
 		roundi(source_canvas.y - _projected_light_origin.y))
 	for dy in range(-1, 2):
-		for dx in range(-2, 3):
+		for dx in range(-3, 4):
 			_set_image_pixel(img, p + Vector2i(dx, dy),
-				Color(Palette.LAMP_BULB.r, Palette.LAMP_BULB.g, Palette.LAMP_BULB.b, 0.82))
-	for i in 12:
-		var off := Vector2i((_hash2(seed + i * 7, i * 3) % 13) - 6,
-			(_hash2(i * 5, seed + i * 11) % 9) - 4)
+				Color(Palette.LAMP_BULB.r, Palette.LAMP_BULB.g, Palette.LAMP_BULB.b, 0.90))
+	for i in 16:
+		var off := Vector2i((_hash2(seed + i * 7, i * 3) % 15) - 7,
+			(_hash2(i * 5, seed + i * 11) % 11) - 5)
 		_set_image_pixel(img, p + off,
-			Color(Palette.LAMP_GLOW.r, Palette.LAMP_GLOW.g, Palette.LAMP_GLOW.b, 0.32))
+			Color(Palette.LAMP_GLOW.r, Palette.LAMP_GLOW.g, Palette.LAMP_GLOW.b, 0.38))
 
 
 func _set_image_pixel(img: Image, p: Vector2i, color: Color) -> void:
@@ -459,16 +596,19 @@ func _draw_equipment_light_hits() -> void:
 		var screen_strip := Rect2(fp.position.x, fp.position.y + fp.size.y - 6.0,
 			fp.size.x, 6.0)
 		# 亮带 1：贴灯侧 3px 暖白高光带（沿 band_axis 垂直方向展开）
+		# 返工3 P3：alpha 提高（0.30+0.28s → 0.38+0.30s）—— 设备顶面
+		# 「接住灯光」在帧中可读（FAIL1 受光面明暗朝向：顶面亮）。
 		var w1 := Palette.LAMP_BULB
-		w1.a = 0.30 + 0.28 * strength
+		w1.a = 0.38 + 0.30 * strength
 		_draw_top_face_band(edge_center, band_axis, fp.size, 3.0, w1, screen_strip)
 		# 亮带 2：顶面中段暖蜜色（覆盖 ~62% 顶面，向远离灯衰减）——
 		# 返工2 R3 FAIL3：设备顶面受光带必须把「中景器械」明度抬到背景墙之上
 		# （WALL_BASE_FAR 暗墙 0.43 → 受光设备顶面 ≥0.46），否则三层景深
 		# 只有饱和差没有明度差。alpha 提高（0.22→0.30 基座）但保留 hash
 		# 缺口（非实心暖块，V3.1 P4 负面约束；R4 热核 keep 不涉及本带）。
+		# 返工3 P3：基座 0.30→0.38 —— 中景器械明度进一步抬升（mid > wall）。
 		var w2 := Palette.LIGHT_POOL_MID
-		w2.a = 0.30 + 0.22 * strength
+		w2.a = 0.38 + 0.26 * strength
 		_draw_top_face_band(edge_center + band_axis * (minf(fp.size.x, fp.size.y) * 0.18),
 			band_axis, fp.size, minf(fp.size.x, fp.size.y) * 0.62, w2, screen_strip)
 		draw_set_transform_matrix(Transform2D.IDENTITY)
