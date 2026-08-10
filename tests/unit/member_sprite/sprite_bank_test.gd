@@ -3,17 +3,17 @@
 # (design/art/visual-remaster-spec-v3.md §8/§9/§11 + art-bible.md §4/§7)
 #
 # BLOCKING assertions (Phase 4 exit conditions 1/2 的 headless 侧验证):
-#   - 状态双通道映射：walking 状态群 → Sky 通道 / queue·using → Peach 通道 /
+#   - 状态双通道映射：walking → Sky / queue → Dusty / using → Peach /
 #     leaving → 低饱和灰通道 / GONE·被动 → 不渲染（""）
-#   - 姿态通道（V3 §8 更丰富）：walk / idle / tired / satisfied / use_*
-#     按状态 + 上下文映射；QUEUEING → tired（累弯腰擦汗喘气 + 汗滴）、
+#   - 姿态通道（V3 §8 更丰富）：walk / idle / wait / satisfied / use_*
+#     按状态 + 上下文映射；QUEUEING → wait（直立 + 暂停符号）、
 #     LEAVING+quota_met → satisfied（挺胸举手 + 闪光）
 #   - 设备专属使用姿态（V3 §8 与设备互动匹配）：treadmill / bench_press /
 #     bike / yoga_mat → 各不相同；bench 结束坐起窗口（use_ticks_remaining）
 #   - 颜色通道像素正确：衬衫像素 == palette 对应色（单一色源，非硬编码）
 #   - V3 §8 阴影侧/高光侧：左高光右阴影（同色源 lightened/darkened 派生）
 #   - V3 §11 深色轮廓：剪影边缘存在 CHARCOAL 轮廓环（非透明直跳主体色）
-#   - 微元素（V3 §9）：tired 头顶 BUTTER 汗滴、satisfied 闪光 BUTTER 像素
+#   - 微元素（V3 §9）：wait 暂停符号、satisfied 闪光均为 BUTTER 像素
 #   - 外观变体（V3 §8 每人清晰发型/皮肤色块）：member_id → 不同发色/肤色
 #   - 朝向镜像：facing_left 纹理 == facing_right 的水平镜像（逐像素）
 #   - 确定性：同一状态/帧两次生成像素一致
@@ -58,7 +58,7 @@ func run_all() -> Dictionary:
 	_test_appearance_variants()
 	_test_bench_situp_window()
 	_test_satisfied_vs_walk()
-	_test_tired_vs_idle()
+	_test_wait_vs_idle_and_using()
 	_test_equipment_poses_differ()
 	_test_facing_mirror()
 	_test_determinism()
@@ -92,7 +92,7 @@ func _test_state_channel_mapping() -> void:
 	_check(s.state_channel("WALKING_TO") == "sky", "WALKING_TO → sky")
 	_check(s.state_channel("ENTERING") == "sky", "ENTERING → sky")
 	_check(s.state_channel("SELECTING_TARGET") == "sky", "SELECTING_TARGET → sky")
-	_check(s.state_channel("QUEUEING") == "peach", "QUEUEING → peach")
+	_check(s.state_channel("QUEUEING") == "dusty", "QUEUEING → dusty")
 	_check(s.state_channel("USING") == "peach", "USING → peach")
 	_check(s.state_channel("LEAVING") == "gray", "LEAVING → gray")
 	_check(s.state_channel("GONE") == "", "GONE → 不渲染")
@@ -105,7 +105,7 @@ func _test_state_pose_mapping() -> void:
 	_check(s.state_pose("WALKING_TO") == "walk", "WALKING_TO → walk 姿态")
 	_check(s.state_pose("ENTERING") == "walk", "ENTERING → walk 姿态")
 	_check(s.state_pose("LEAVING") == "walk", "LEAVING → walk 姿态（基础；quota_met 由 ctx 升级为 satisfied）")
-	_check(s.state_pose("QUEUEING") == "tired", "QUEUEING → tired 姿态（V3 §8 累弯腰擦汗）")
+	_check(s.state_pose("QUEUEING") == "wait", "QUEUEING → wait 姿态（直立等待 + 暂停符号）")
 	_check(s.state_pose("SELECTING_TARGET") == "idle", "SELECTING_TARGET → idle 姿态")
 	_check(s.state_pose("USING") == "use", "USING → use 姿态（设备专属由 ctx 解析）")
 
@@ -128,9 +128,9 @@ func _test_frame_bit_cadence() -> void:
 	_check(s.frame_bit("WALKING_TO", 2) == 0, "walk tick2 → frame A")
 	# use：同样 10Hz 交替
 	_check(s.frame_bit("USING", 3) == 1, "use tick3 → frame B")
-	# tired / satisfied：10Hz 交替（擦汗/闪光节奏）
-	_check(s.frame_bit("QUEUEING", 4) == 0, "tired tick4 → A")
-	_check(s.frame_bit("QUEUEING", 5) == 1, "tired tick5 → B")
+	# wait / satisfied：10Hz 交替（暂停符号微移/闪光节奏）
+	_check(s.frame_bit("QUEUEING", 4) == 0, "wait tick4 → A")
+	_check(s.frame_bit("QUEUEING", 5) == 1, "wait tick5 → B")
 	_check(s.frame_bit("LEAVING", 5) == 1, "satisfied base tick5 → B")
 	# idle：每 2 tick 交替（5Hz 微晃）
 	_check(s.frame_bit("SELECTING_TARGET", 0) == 0, "idle tick0 → A")
@@ -145,8 +145,8 @@ func _test_shirt_color_channel_pixels() -> void:
 	var p := Vector2i(24, 19)
 	_check(_near(_tex_pixel(s, "WALKING_TO", 0, false, p), Palette.SKY),
 		"walking 衬衫像素 == SKY（实际 %s）" % _tex_pixel(s, "WALKING_TO", 0, false, p))
-	_check(_near(_tex_pixel(s, "QUEUEING", 0, false, p), Palette.PEACH),
-		"queue 衬衫像素 == PEACH（实际 %s）" % _tex_pixel(s, "QUEUEING", 0, false, p))
+	_check(_near(_tex_pixel(s, "QUEUEING", 0, false, p), Palette.MEMBER_WAIT_DUSTY),
+		"queue 衬衫像素 == MEMBER_WAIT_DUSTY（实际 %s）" % _tex_pixel(s, "QUEUEING", 0, false, p))
 	_check(_near(_tex_pixel(s, "USING", 0, false, p), Palette.PEACH),
 		"using 衬衫像素 == PEACH")
 	_check(_near(_tex_pixel(s, "LEAVING", 0, false, p), Palette.MEMBER_LEAVE_GRAY),
@@ -209,11 +209,12 @@ func _test_dark_outline() -> void:
 
 
 func _test_micro_elements() -> void:
-	# V3 §9 微型动态元素：tired 头顶汗滴（BUTTER）、satisfied 闪光（BUTTER）。
+	# V3 §9 微型动态元素：wait 暂停符号（BUTTER）、satisfied 闪光（BUTTER）。
 	var s := MemberSpriteScript.new()
-	var tired := s.texture_for("QUEUEING", 0, false, {"member_id": 0}).get_image()
-	var sweat := tired.get_pixel(22, 0)
-	_check(_near(sweat, Palette.BUTTER), "tired 头顶汗滴 == BUTTER（实际 %s）" % sweat)
+	var wait := s.texture_for("QUEUEING", 0, false, {"member_id": 0}).get_image()
+	var pause_bar := wait.get_pixel(37, 0)
+	_check(_near(pause_bar, Palette.BUTTER), "wait 暂停符号 == BUTTER（实际 %s）" % pause_bar)
+	_check(wait.get_pixel(39, 0).a == 0.0, "wait 暂停符号双竖条中间透明（形状通道）")
 	var sat := s.texture_for("LEAVING", 0, false, {"leaving_reason": "quota_met", "member_id": 0}).get_image()
 	var sparkle := sat.get_pixel(9, 0)
 	_check(_near(sparkle, Palette.BUTTER), "satisfied 闪光 == BUTTER（实际 %s）" % sparkle)
@@ -283,17 +284,23 @@ func _test_satisfied_vs_walk() -> void:
 	_check(diff > 20, "satisfied 与普通离场 walk 像素不同（diff=%d）" % diff)
 
 
-func _test_tired_vs_idle() -> void:
-	# QUEUEING → tired（弯腰擦汗喘气 + 汗滴）≠ SELECTING_TARGET → idle。
+func _test_wait_vs_idle_and_using() -> void:
+	# QUEUEING → wait（直立 + 暂停符号）与 idle、设备 use 均应有明显形状差。
 	var s := MemberSpriteScript.new()
-	var tired := s.texture_for("QUEUEING", 0, false, {"member_id": 0}).get_image()
+	var wait := s.texture_for("QUEUEING", 0, false, {"member_id": 0}).get_image()
 	var idle := s.texture_for("SELECTING_TARGET", 0, false, {"member_id": 0}).get_image()
-	var diff := 0
+	var using := s.texture_for("USING", 0, false,
+		{"equipment_id": "treadmill", "member_id": 0}).get_image()
+	var idle_diff := 0
+	var using_diff := 0
 	for y in SIZE:
 		for x in SIZE:
-			if not _near(tired.get_pixel(x, y), idle.get_pixel(x, y)):
-				diff += 1
-	_check(diff > 20, "tired 与 idle 像素不同（diff=%d）" % diff)
+			if not _near(wait.get_pixel(x, y), idle.get_pixel(x, y)):
+				idle_diff += 1
+			if not _near(wait.get_pixel(x, y), using.get_pixel(x, y)):
+				using_diff += 1
+	_check(idle_diff > 20, "wait 与 idle 像素不同（diff=%d）" % idle_diff)
+	_check(using_diff > 100, "wait 与 treadmill use 明显不同（diff=%d）" % using_diff)
 
 
 func _test_equipment_poses_differ() -> void:

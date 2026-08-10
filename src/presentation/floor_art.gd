@@ -85,11 +85,13 @@ func build_image() -> Image:
 func _draw_walkway(img: Image) -> void:
 	var w := img.get_width()
 	var h := img.get_height()
-	# 瓷砖色差 cluster：每 cell 一个不规则笔触簇（亮/暗瓷砖色，非规则点阵、
-	# 非圆点）—— 返工2 R1：手绘短笔触。
+	# 瓷砖色差 cluster：约半数 cell 一个低对比不规则笔触簇。保留手绘变化，
+	# 但让纹理退到设备之后，不再每格都有显眼笔触。
 	for cy in _grid_h:
 		for cx in _grid_w:
 			var seed := _hash2(cx * 5 + 1, cy * 7 + 3)
+			if seed % 2 != 0:
+				continue
 			var cx_px := cx * _cell + _cell / 2 + (seed % 5) - 2
 			var cy_px := cy * _cell + _cell / 2 + ((seed >> 4) % 5) - 2
 			var c: Color = Palette.FLOOR_WALK_CL_LIGHT if (seed + cy) % 3 != 0 \
@@ -104,9 +106,8 @@ func _draw_walkway(img: Image) -> void:
 		if _hash2(gy * 13, 5) % 3 == 0:
 			continue
 		_paint_jagged_seam_h(img, 0, w, gy * _cell, Palette.FLOOR_WALK_GROUT, gy * 17)
-	# 少量污渍 cluster（手绘局部细节，不铺满）—— 返工2 R1：污渍用短笔触
-	# 而非圆点（手绘污痕）。
-	for i in 24:
+	# 污渍 cluster 密度减半（24 → 12），且颜色已向底色收敛。
+	for i in 12:
 		var seed := _hash2(i * 3, i * 5 + 11)
 		var px := int(seed % w)
 		var py := int((seed >> 6) % h)
@@ -169,13 +170,13 @@ func _blend_zone_edge(img: Image, rect: Rect2i, colors: Array, seed: int) -> voi
 			colors, seed + x * 11)
 
 
-## 单行混合带：沿行撒 ~30% 混合色（hash 驱动 —— 断裂不连续）。
+## 单行混合带：沿行撒 ~15% 混合色（hash 驱动 —— 断裂不连续）。
 func _blend_row(img: Image, x0: int, x1: int, y: int, colors: Array, seed: int) -> void:
 	if y < 0 or y >= img.get_height():
 		return
 	for x in range(maxi(0, x0), mini(x1, img.get_width())):
 		var h := _hash2(x * 3 + seed, y * 7 + seed)
-		if h % 100 < 30:
+		if h % 100 < 15:
 			img.set_pixel(x, y, colors[(h >> 6) % colors.size()])
 
 
@@ -185,7 +186,7 @@ func _blend_col(img: Image, x: int, y0: int, y1: int, colors: Array, seed: int) 
 		return
 	for y in range(maxi(0, y0), mini(y1, img.get_height())):
 		var h := _hash2(x * 5 + seed, y * 3 + seed)
-		if h % 100 < 30:
+		if h % 100 < 15:
 			img.set_pixel(x, y, colors[(h >> 6) % colors.size()])
 
 
@@ -222,38 +223,36 @@ func _paint_floor_mat(img: Image, rect: Rect2i, seed: int) -> void:
 		var seam_x2 := rect.position.x + rect.size.x / 2 + (_hash2(seed, 17) % 5) - 2
 		_paint_jagged_seam_v(img, seam_x2, rect.position.y, rect.position.y + rect.size.y,
 			Palette.FLOOR_MAT_SEAM, seed + 19)
-	# 磨损：亮/暗 cluster（脚踩处磨亮、压痕磨暗）—— 手绘短笔触
-	for i in 14:
+	# 磨损：亮/暗 cluster 减半，避免地垫比设备更抢眼。
+	for i in 7:
 		var h := _hash2(seed + i * 3, i * 5 + 1)
 		var px := rect.position.x + int(h % maxi(rect.size.x, 1))
 		var py := rect.position.y + int((h >> 5) % maxi(rect.size.y, 1))
 		var c: Color = Palette.FLOOR_WEAR_LIGHT if h % 2 == 0 else Palette.FLOOR_WEAR_DARK
-		_paint_stroke(img, px, py, 3 + (h >> 9) % 3, c, h ^ seed)
+		_paint_stroke(img, px, py, 2 + (h >> 9) % 3, c, h ^ seed)
 
 
 ## 使用频繁区磨损（任务 3 生活痕迹）：入口→器械的走道路径 + 设备前
 ## 落地区 —— 亮/暗色差 cluster（脚踩处磨亮、边缘压暗）。手绘笔触。
 ## 全部在 walkway 上（不侵入 zone 内部窗口 —— 分区材质纯度不受影响）。
 func _draw_wear(img: Image) -> void:
-	# 入口路径（左上角 → 前台）：横向磨损（x 24..104 —— 避开 (110,12)）
-	_wear_path(img, Rect2i(24, 8, 80, 14), 911)
-	# 入口纵向路径（左墙 → 有氧区）：沿 x 24..38 的竖向磨损（左走道列）
-	_wear_path(img, Rect2i(24, 24, 14, 80), 919)
-	# 底部走道横向路径（左→右，通往出口）
-	_wear_path(img, Rect2i(60, 292, 280, 16), 923)
+	# 只保留三条短而窄的使用痕迹；移除贯穿左侧的纵向脏路径，底部路径
+	# 面积缩小约 70%，让设备轮廓成为前景。
+	_wear_path(img, Rect2i(28, 10, 60, 8), 911)
+	_wear_path(img, Rect2i(100, 296, 160, 8), 923)
 	# 跑步机区前（treadmill(2,2) 北侧落地区：设备前使用频繁区）
-	_wear_path(img, Rect2i(64, 40, 60, 12), 929)
+	_wear_path(img, Rect2i(68, 42, 42, 8), 929)
 
 
 ## 在矩形内撒磨损笔触（亮/暗交替 —— 使用频繁区亮度/色差变化）。
 func _wear_path(img: Image, rect: Rect2i, seed: int) -> void:
-	var count := maxi(4, rect.size.x * rect.size.y / 90)
+	var count := maxi(3, rect.size.x * rect.size.y / 180)
 	for i in count:
 		var h := _hash2(seed + i * 7, i * 11 + 3)
 		var px := rect.position.x + int(h % maxi(rect.size.x, 1))
 		var py := rect.position.y + int((h >> 5) % maxi(rect.size.y, 1))
 		var c: Color = Palette.FLOOR_WEAR_LIGHT if (h >> 9) % 2 == 0 else Palette.FLOOR_WEAR_DARK
-		_paint_stroke(img, px, py, 3 + (h >> 12) % 3, c, h ^ seed)
+		_paint_stroke(img, px, py, 2 + (h >> 12) % 2, c, h ^ seed)
 
 
 # === 区域材质（V3.1 P3：全部多色 cluster + jagged 边缘） ===
@@ -274,16 +273,22 @@ func _draw_strength(img: Image) -> void:
 		Palette.FLOOR_STRENGTH_BLOCK,
 		Palette.FLOOR_STRENGTH_CL_GRAYBLUE,
 		Palette.FLOOR_STRENGTH_CL_WARMGRAY,
-		Palette.FLOOR_STRENGTH_STAIN,
 	]
 	_paint_cluster_zone(img, rect, palette, Palette.FLOOR_STRENGTH_SEAM, 9, 101)
-	# 磨损高光 cluster（稀疏，不铺满）：小块 WEAR 亮色 —— 返工2 R1：磨损
-	# 用短笔触（刮痕）而非圆点。
-	for i in 36:
+	# 汗渍/磨损各 12/18 个局部短笔触；STAIN 不再混入每一轮主 cluster，
+	# 密度约为旧实现的一半且与底色低对比。
+	for i in 12:
+		var stain_seed := _hash2(i * 13 + 5, i * 17 + 9)
+		var sx := rect.position.x + int(stain_seed % rect.size.x)
+		var sy := rect.position.y + int((stain_seed >> 5) % rect.size.y)
+		_paint_stroke(img, sx, sy, 2 + (stain_seed >> 9) % 2,
+			Palette.FLOOR_STRENGTH_STAIN, stain_seed * 5, rect)
+	for i in 18:
 		var seed := _hash2(i * 7 + 3, i * 11 + 5)
 		var wx := rect.position.x + int(seed % rect.size.x)
 		var wy := rect.position.y + int((seed >> 5) % rect.size.y)
-		_paint_stroke(img, wx, wy, 2 + (seed >> 9) % 3, Palette.FLOOR_STRENGTH_WEAR, seed * 3)
+		_paint_stroke(img, wx, wy, 2 + (seed >> 9) % 2,
+			Palette.FLOOR_STRENGTH_WEAR, seed * 3, rect)
 
 
 ## 有氧区：偏暖灰/蓝灰地面 —— 不规则暖灰/蓝灰 cluster（无规则点阵/无压条）。
@@ -315,13 +320,13 @@ func _draw_flex(img: Image) -> void:
 	# 木纹：稀疏短笔触 cluster（手绘木纹，非规则条带）—— 返工2 R1：木纹
 	# 使用短倾斜笔触（_paint_stroke），端点/方向抖动，色相微差（GRAIN 与
 	# CL_DARK 交替）。
-	for i in 40:
+	for i in 20:
 		var seed := _hash2(i * 5 + 2, i * 9 + 7)
 		var gy := rect.position.y + int(seed % rect.size.y)
 		var gx := rect.position.x + int((seed >> 5) % (rect.size.x - 6))
 		var grain_col: Color = Palette.FLOOR_FLEX_GRAIN \
 			if (seed >> 9) % 3 != 0 else Palette.FLOOR_FLEX_CL_DARK
-		_paint_stroke(img, gx, gy, 3 + (seed >> 9) % 3, grain_col, seed * 11)
+		_paint_stroke(img, gx, gy, 2 + (seed >> 9) % 3, grain_col, seed * 11, rect)
 
 
 # === V3.1 P3 手绘原语（全部确定性，无 RNG 状态） ===
@@ -337,7 +342,8 @@ func _paint_cluster_zone(img: Image, rect: Rect2i, palette: Array, seam: Color,
 		spacing: int, seed_base: int) -> void:
 	_fill_jagged(img, rect, palette[0], seed_base)
 	var bleed := maxi(6, spacing)
-	# 笔触簇（主力，~3/4）：短线段，方向/长度/端点抖动 —— 手绘感。
+	# 笔触簇（主力，~3/4）：主笔触 + 更短的交叉副笔触；色差已在 palette
+	# 收敛到邻近底色，因此仍满足“非纯色大块”的覆盖护栏但视觉对比更安静。
 	# 起始点钳制在 zone rect 内（±2 容差）—— 笔触不泄漏进相邻 walkway/
 	# 其它区（phase1/2 GRID-hidden 窗口依赖 walkway 亮瓷砖面平坦）。
 	for gy in range(rect.position.y - bleed, rect.position.y + rect.size.y + bleed, spacing):
@@ -347,16 +353,19 @@ func _paint_cluster_zone(img: Image, rect: Rect2i, palette: Array, seam: Color,
 			var cy := gy + ((h >> 4) % 7) - 3
 			cx = clampi(cx, rect.position.x - 2, rect.position.x + rect.size.x - 1)
 			cy = clampi(cy, rect.position.y - 2, rect.position.y + rect.size.y - 1)
-			var col: Color = palette[(h >> 12) % palette.size()]
+			# palette[0] 已作为底色铺满；笔触只从其余近邻色选，避免“用底色
+			# 画纹理”浪费覆盖，同时不需要加大笔触或提高污渍对比。
+			var col_index := 1 + (h >> 12) % maxi(palette.size() - 1, 1)
+			var col: Color = palette[mini(col_index, palette.size() - 1)]
 			if h % 4 == 0:
 				# ~1/4 保留小磨损点（局部旧痕，非噪点主力）
 				_paint_blob(img, cx, cy, 1 + (h >> 8) % 2, col, h ^ seed_base)
 			else:
-				# 双笔触（不同方向交叉）—— 覆盖量与旧 blob 相当，且呈手绘
-				# 短笔触簇（非圆点噪点）。绘制边界钳制在 rect 内 ——
+				# 短主笔触（非圆点噪点）。绘制边界钳制在 rect 内 ——
 				# 笔触不泄漏进相邻 walkway/其它区。
-				_paint_stroke(img, cx, cy, 6 + (h >> 8) % 7, col, h ^ seed_base, rect)
-				_paint_stroke(img, cx, cy, 5 + ((h >> 9) % 6), col, (h ^ seed_base) * 7 + 3, rect)
+				_paint_stroke(img, cx, cy, 5 + (h >> 8) % 5, col, h ^ seed_base, rect)
+				_paint_stroke(img, cx, cy, 4 + ((h >> 9) % 4), col,
+					(h ^ seed_base) * 7 + 3, rect)
 	_paint_jagged_seams(img, rect, seam, seed_base * 3)
 
 ## 手绘短笔触（返工2 R1）：5-9px 短线段，方向 8 桶 hash 抖动、端点偏移

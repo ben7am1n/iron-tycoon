@@ -59,7 +59,7 @@ const ZONE_COLORS := {
 #
 # 供 src/presentation/member_sprite.gd 使用。全部从 art-bible §4 主色域
 # 派生（暖调、低饱和），状态双通道的“颜色通道”直接引用 SKY / PEACH /
-# MEMBER_LEAVE_GRAY —— 绘制处不得另写色值。
+# MEMBER_WAIT_DUSTY / MEMBER_LEAVE_GRAY —— 绘制处不得另写色值。
 
 ## 肤色：暖调浅肤色（Warm Cream 亮化暖化，不抢状态色）。
 const MEMBER_SKIN := Color("EACBA6")
@@ -69,8 +69,11 @@ const MEMBER_HAIR := Color("5E4638")
 const MEMBER_PANTS := Color("6E5F53")
 ## 鞋色：暖深灰（Charcoal 暖化，鞋底块面）。
 const MEMBER_SHOE := Color("4A413B")
+## 排队灰蓝：低饱和 Dusty 蓝灰（QUEUEING 等待状态专用）。比 Sky 更灰暗、
+## 与 Peach 使用态拉开冷暖和明度，保持“平静等待”而非警告色。
+const MEMBER_WAIT_DUSTY := Color("8494A6")
 ## 离场灰：低饱和暖灰（LEAVING 状态通道 —— 脱出饱和区，与
-## walking≈Sky / queue≈Peach 三态区分；非 art-bible 主色，状态专用）。
+## walking≈Sky / queue≈Dusty / using≈Peach 四态区分；非 art-bible 主色，状态专用）。
 const MEMBER_LEAVE_GRAY := Color("9A948C")
 ## 脚底阴影：Soft Charcoal 低透明（art-bible-25d §2 “大块阴影”）。
 const MEMBER_SHADOW := Color(0.235, 0.227, 0.259, 0.28)
@@ -140,33 +143,33 @@ const WINDOW_FRAME := Color("57534A")
 
 ## 地板材质 —— 力量区深灰橡胶地垫（V3 §1/§7 炭灰深蓝灰系）。
 const FLOOR_STRENGTH_BASE := Color("4B4F57")
-const FLOOR_STRENGTH_BLOCK := Color("454952")   # 略有色差的橡胶块
-const FLOOR_STRENGTH_SEAM := Color("3C4047")    # 接缝
-const FLOOR_STRENGTH_WEAR := Color("5A5F68")    # 磨损/高光
-const FLOOR_STRENGTH_STAIN := Color("383C44")   # 汗渍
+const FLOOR_STRENGTH_BLOCK := Color("494D55")   # 略有色差的橡胶块
+const FLOOR_STRENGTH_SEAM := Color("474B53")    # 接缝（低对比，退到背景）
+const FLOOR_STRENGTH_WEAR := Color("4F535B")    # 磨损/高光（靠近底色）
+const FLOOR_STRENGTH_STAIN := Color("474B53")   # 汗渍（靠近底色）
 ## V3.1 P3：力量区手绘 cluster 色（深灰/灰蓝/暖灰 —— 非纯色大块填充）。
-const FLOOR_STRENGTH_CL_GRAYBLUE := Color("4E5663")   # 灰蓝 cluster
-const FLOOR_STRENGTH_CL_WARMGRAY := Color("5A5049")   # 暖灰 cluster
+const FLOOR_STRENGTH_CL_GRAYBLUE := Color("4C5058")   # 灰蓝 cluster
+const FLOOR_STRENGTH_CL_WARMGRAY := Color("4F4E53")   # 暖灰 cluster
 ## 地板材质 —— 有氧区偏暖灰/蓝灰地面。
 const FLOOR_CARDIO_BASE := Color("8B7764")
-const FLOOR_CARDIO_DOT := Color("796552")       # 细小重复纹理
-const FLOOR_CARDIO_EDGE := Color("666C72")      # 边缘压条
+const FLOOR_CARDIO_DOT := Color("836F5C")       # 稀疏辨识色（非规则点阵）
+const FLOOR_CARDIO_EDGE := Color("857463")      # 断裂接缝（低对比）
 ## V3.1 P3：有氧区手绘 cluster 色（暖灰/蓝灰 —— 无 4px 规则点阵）。
-const FLOOR_CARDIO_CL_GRAYBLUE := Color("747D87")
-const FLOOR_CARDIO_CL_WARMGRAY := Color("95806D")
+const FLOOR_CARDIO_CL_GRAYBLUE := Color("87786A")
+const FLOOR_CARDIO_CL_WARMGRAY := Color("8F7863")
 ## 地板材质 —— 瑜伽区暖色木地板（V3 §7 木材暖橙棕）。
 const FLOOR_FLEX_BASE := Color("A9744C")
-const FLOOR_FLEX_PLANK := Color("96653F")       # 木板分隔
-const FLOOR_FLEX_GRAIN := Color("8F5F3B")       # 像素化木纹
+const FLOOR_FLEX_PLANK := Color("A36F48")       # 木板分隔（低对比）
+const FLOOR_FLEX_GRAIN := Color("A6714A")       # 像素化木纹
 ## V3.1 P3：瑜伽区手绘 cluster 色（亮/暗木板 —— 木纹不规则）。
-const FLOOR_FLEX_CL_LIGHT := Color("B58055")
-const FLOOR_FLEX_CL_DARK := Color("96633C")
+const FLOOR_FLEX_CL_LIGHT := Color("AD7850")
+const FLOOR_FLEX_CL_DARK := Color("A57049")
 ## 地板材质 —— 公共通道浅灰/暖灰瓷砖（比训练区亮，有砖缝）。
 const FLOOR_WALK_BASE := Color("DFCFB6")
-const FLOOR_WALK_GROUT := Color("C9B18F")
+const FLOOR_WALK_GROUT := Color("DAC9B0")
 ## V3.1 P3：通道手绘 cluster 色（亮/暗瓷砖 —— 砖缝不规则）。
-const FLOOR_WALK_CL_LIGHT := Color("E6D9C1")
-const FLOOR_WALK_CL_DARK := Color("CCB99B")
+const FLOOR_WALK_CL_LIGHT := Color("E2D2B9")
+const FLOOR_WALK_CL_DARK := Color("DCCBB2")
 
 ## 返工3 P1（收敛灰霾空地 + 生活痕迹）：地垫/地胶拼块与磨损用色。
 ## 全部低-中饱和（V3 §7 环境色域；不新增高饱和大块）—— 用于打破
@@ -176,15 +179,15 @@ const FLOOR_WALK_CL_DARK := Color("CCB99B")
 ## 地垫暖木棕（走廊地垫/橡胶拼块基色）：比 FLOOR_WALK_BASE 暗、偏暖。
 const FLOOR_MAT_WOOD := Color("B89A72")
 ## 地垫暗部（磨损/压痕）：同族更暗一档。
-const FLOOR_MAT_DARK := Color("9C7F5C")
+const FLOOR_MAT_DARK := Color("B0936E")
 ## 地垫亮部（受光/新拼块）：同族更亮一档。
-const FLOOR_MAT_LIGHT := Color("CDB48E")
+const FLOOR_MAT_LIGHT := Color("C0A37B")
 ## 橡胶地垫拼缝（深一档，断裂 jagged —— 无等宽边框）。
-const FLOOR_MAT_SEAM := Color("8A6F50")
+const FLOOR_MAT_SEAM := Color("AC8F69")
 ## 使用频繁区磨损（地垫磨亮）：暖亮色差 cluster —— 脚踩处比周边亮。
-const FLOOR_WEAR_LIGHT := Color("E0C9A4")
+const FLOOR_WEAR_LIGHT := Color("C3A77F")
 ## 使用频繁区磨损（磨暗）：暖暗色差 cluster —— 阴影/压痕。
-const FLOOR_WEAR_DARK := Color("8E7355")
+const FLOOR_WEAR_DARK := Color("AD906A")
 
 ## 清洁桶（小储物/清洁道具组，返工3 P1）：低饱和蓝灰桶身 + 暖灰把手。
 ## 用于跑步机区/力量区「小储物/清洁桶」叙事道具（任务 2），低对比不抢

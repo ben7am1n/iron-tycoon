@@ -15,12 +15,12 @@
 #
 # 状态双通道（色盲安全，沿用 Phase C 机制 —— 仅重绘视觉，不改语义）：
 #   - 颜色通道（衬衫色）：WALKING_TO/ENTERING/SELECTING_TARGET → Sky 系
-#                          QUEUEING/USING → Peach 系
+#                          QUEUEING → Dusty 灰蓝 / USING → Peach 系
 #                          LEAVING → 低饱和灰（MEMBER_LEAVE_GRAY）
 #   - 形状/姿态通道（V3 §8 更丰富的表达）：
 #       idle      站立微晃（SELECTING_TARGET 思考）
 #       walk      跑步：前倾 + 摆臂 + 腿部明显循环（WALKING_TO/ENTERING/LEAVING）
-#       tired     累：弯腰 + 擦汗 + 喘气 + 头顶汗滴（QUEUEING 等待，§9 汗滴）
+#       wait      等待：直立 + 双手放松 + 头侧暂停符号（QUEUEING，形状优先）
 #       satisfied 满意：挺胸 + 举手 + 小闪光（LEAVING 且 quota_met，§9 闪光）
 #       use_*     设备专属使用姿态（§8 与设备互动匹配）：
 #                 treadmill 跑带奔跑 / bench_press 卧推杠铃上下+结束坐起 /
@@ -30,7 +30,7 @@
 # 4 个外观变体（发型颜色/皮肤/裤/鞋，单一色源 palette.gd；发型顶型 tuft/
 # fringe 两种）。同一 member_id 永远同一外观（确定性，测试可断言）。
 #
-# 帧：每姿态 2 帧（A/B）。walk/use/tired/satisfied 按 tick 奇偶交替（10Hz
+# 帧：每姿态 2 帧（A/B）。walk/use/wait/satisfied 按 tick 奇偶交替（10Hz
 # 观感），idle 每 2 tick 交替（5Hz 微晃）。游戏逻辑 60fps 不变 —— 仅渲染帧选择。
 # 朝向：facing_left 时水平镜像生成，不依赖渲染期变换。
 extends RefCounted
@@ -42,12 +42,13 @@ const SIZE := 48
 # === 颜色通道（状态 → 衬衫色，Phase C 语义保留） ===
 const CH_SKY := "sky"
 const CH_PEACH := "peach"
+const CH_DUSTY := "dusty"
 const CH_GRAY := "gray"
 
 # === 姿态（形状通道，V3 §8 扩充） ===
 const POSE_IDLE := "idle"
 const POSE_WALK := "walk"
-const POSE_TIRED := "tired"
+const POSE_WAIT := "wait"
 const POSE_SATISFIED := "satisfied"
 const POSE_USE := "use"
 
@@ -118,13 +119,16 @@ var _cache: Dictionary = {}
 
 # === 状态映射（member_sim.gd 状态枚举名，已核实） ===
 
-## 状态 → 颜色通道（Phase C 语义保留）。GONE / 被动成员（无 state 键）/
+## 状态 → 颜色通道。QUEUEING 用低饱和 Dusty 灰蓝，USING 保持 Peach，
+## 使设备旁的等待者不再被误读为第二个使用者。GONE / 被动成员（无 state 键）/
 ## 未知 → ""（不渲染）。
 func state_channel(state: String) -> String:
 	match state:
 		"ENTERING", "SELECTING_TARGET", "WALKING_TO":
 			return CH_SKY
-		"QUEUEING", "USING":
+		"QUEUEING":
+			return CH_DUSTY
+		"USING":
 			return CH_PEACH
 		"LEAVING":
 			return CH_GRAY
@@ -142,7 +146,7 @@ func state_pose(state: String) -> String:
 		"LEAVING":
 			return POSE_WALK
 		"QUEUEING":
-			return POSE_TIRED
+			return POSE_WAIT
 		"USING":
 			return POSE_USE
 		_:
@@ -164,7 +168,7 @@ func use_pose(equipment_id: String) -> String:
 			return USE_GENERIC
 
 
-## 帧位（0/1）：walk/use/tired/satisfied 按 tick 奇偶交替（10Hz 观感），
+## 帧位（0/1）：walk/use/wait/satisfied 按 tick 奇偶交替（10Hz 观感），
 ## idle 每 2 tick 交替（5Hz 微晃）。游戏逻辑 60fps 不变 —— 这只是渲染帧选择。
 func frame_bit(state: String, tick: int) -> int:
 	if state_pose(state) == POSE_IDLE:
@@ -304,8 +308,8 @@ func _frame_rows(pose: String, frame: int, variant: int) -> PackedStringArray:
 	match pose:
 		POSE_WALK:
 			return _walk_rows(frame, variant)
-		POSE_TIRED:
-			return _tired_rows(frame, variant)
+		POSE_WAIT:
+			return _wait_rows(frame, variant)
 		POSE_SATISFIED:
 			return _satisfied_rows(frame, variant)
 		USE_TREADMILL:
@@ -980,33 +984,26 @@ func _walk_rows(frame: int, variant: int) -> PackedStringArray:
 	return rows
 
 
-## tired（QUEUEING 等待）：累弯腰 + 擦汗 + 喘气 + 头顶汗滴（V3 §8/§9）。
-## A=擦汗手举到额侧 + 汗滴在头顶左；B=汗滴右移 + 弯腰更深（下蹲 1px）。
-## 布局：2 行汗滴（0..1）+ compact 头 16 行（2..17）+ 躯干 14（18..31）
-## + 腿 9（32..40）+ 鞋 3（41..43）+ 影 4（44..47）= 48。
-func _tired_rows(frame: int, variant: int) -> PackedStringArray:
+## wait（QUEUEING 等待）：直立、双臂自然下垂、双脚稳定站立；头侧的两道
+## 暂停符号提供不依赖颜色的“等待”形状通道。没有擦汗、泵举、扶把或踏步，
+## 因而不会在设备旁被误读为器械动作。A/B 只让暂停符号轻微横移。
+## 布局：2 行暂停符号 + compact 头 12 + 躯干 14 + 腿 13 + 鞋 3 + 影 4 = 48。
+func _wait_rows(frame: int, variant: int) -> PackedStringArray:
 	var rows := PackedStringArray()
-	# 头顶汗滴（§9 角色汗滴）：位于头之上，A/B 左右微移形成"滴落感"。
-	# V3 §15（P0-3）：2px→3px 加宽，远景辨识度（unit 断言仍 pin (22,0)）。
-	if frame == 0:
-		rows.append(_r(21, "www"))
-		rows.append(_r(22, "www"))
-	else:
-		rows.append(_r(23, "www"))
-		rows.append(_r(24, "www"))
-	rows.append_array(_head_rows(FACE_PANT, variant, true))
-	rows.append_array(_torso_rows("wipe", variant))
-	rows.append_array(_leg_rows("bent", variant))
+	var glyph_x := 37 if frame == 0 else 36
+	rows.append(_r(glyph_x, "ww.ww"))
+	rows.append(_r(glyph_x, "ww.ww"))
+	rows.append_array(_head_rows(FACE_BORED, variant, true))
+	rows.append_array(_torso_rows("down", variant))
+	rows.append_array(_leg_rows("stand", variant))
 	rows.append_array(_shoe_rows())
 	rows.append_array(_shadow_rows())
-	if frame == 1:
-		rows = _bob_up(rows, 1)
 	return rows
 
 
 ## satisfied（LEAVING + quota_met）：满意挺胸 + 举手 + 小闪光（V3 §8/§9）。
 ## A=闪光在举手上方左；B=闪光右移（闪烁感）。
-## 布局同 tired：2 行闪光（0..1）+ compact 头 16（2..17）+ 躯干 14 + 腿 9
+## 布局同 wait：2 行闪光（0..1）+ compact 头 12（2..13）+ 躯干 14 + 腿 13
 ## + 鞋 3 + 影 4 = 48。
 func _satisfied_rows(frame: int, variant: int) -> PackedStringArray:
 	var rows := PackedStringArray()
@@ -1147,13 +1144,15 @@ func _r(left: int, content: String) -> String:
 
 # === 颜色 ===
 
-## 颜色通道 → 衬衫色（全部来自 palette.gd 单一色源，Phase C 语义保留）。
+## 颜色通道 → 衬衫色（全部来自 palette.gd 单一色源）。
 func _shirt_color(channel: String) -> Color:
 	match channel:
 		CH_SKY:
 			return Palette.SKY
 		CH_PEACH:
 			return Palette.PEACH
+		CH_DUSTY:
+			return Palette.MEMBER_WAIT_DUSTY
 		CH_GRAY:
 			return Palette.MEMBER_LEAVE_GRAY
 		_:
