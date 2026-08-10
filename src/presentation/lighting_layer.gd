@@ -175,8 +175,10 @@ func _paint_edge_shadow(img: Image) -> void:
 ## 中心热核、八边形分段衰减、hash 缺口共同表达「地板材质被暖光照亮」；
 ## 高处灯泡到这里的方向关系由 projected light map 连续表达。
 ## 返工2 R1：光从「色块」变成「有方向的照明」——
-##   - 热核 keep 0.98 → 0.90：中心恢复 hash 缺口（R4 硬门 ring<0.95；
-##     R1 光不是实心暖块）
+## 返工2 R4：热核 keep 0.90 → 0.85（pre-R4 散射水平）：keep=0.90 时
+##   r=10 环 coverage=0.96 仍 >0.95 硬门（R4 审查 t_de3327ed FAIL），
+##   0.85 时 coverage=0.92 —— 中心恢复足够 hash 缺口（散射 cluster），
+##   暖池仍可读（保留 85% 热核像素 + 满 alpha 0.50）。
 ##   - 方向性 bias：灯下（北半，y<center）更暖更亮 ×1.12，远离光源
 ##     （南半）回落 ×0.88 —— 暖光向远处衰减，形成「灯下亮 → 远处冷灰」的
 ##     方向分层
@@ -211,7 +213,7 @@ func _paint_faceted_pool(img: Image, center: Vector2, half_size: Vector2,
 			var density := clampf(1.0 - metric, 0.0, 1.0)
 			var keep := 0.30 + 0.46 * density
 			if metric < 0.25:
-				keep = 0.90
+				keep = 0.85
 			elif metric < 0.56:
 				keep = 0.80
 			if float(_hash2(x + seed * 3, y + seed) % 1000) / 1000.0 > keep:
