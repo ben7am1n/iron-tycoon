@@ -251,6 +251,8 @@ const CLOCK_SEED := 0xC10C
 ## 时钟纹理 texel（2px —— 高分辨率 UI 层，圆润手绘钟面）。
 const CLOCK_TEXEL := 2
 var _clock_face_tex: ImageTexture = null
+## 时钟纹理缓存 key（radius:tod —— 手针随 _time_of_day 转动，变化即重建）。
+var _clock_face_key: String = ""
 ## 顶带墙饰纹理（V3.1 返工3 P4）：三块挂牌之间的墙面点缀 —— 手绘小物件
 ## （海报 / 挂钟 / 绿植）。两个作用：
 ##   1) 打破顶带墙面的水平连通（gate PIL B：无大面积纯色平涂 —— 旧全宽
@@ -493,35 +495,151 @@ func _build_ui() -> void:
 ## 时间牌右侧画一面小钟（倍速 → 场景内时钟）。_panel_alpha 由面板淡入
 ## 动效驱动（调制绘制 alpha）。绘制在 HUD root 的 _draw() 里（不新增子节点：
 ## hud_layout_test 固定 root child-count == 1 / TopBar 结构）。
+##
+## V3.1 返工3 收尾（t_704f26e7，draw_calls 202→<200）：顶带合并绘制。
+## 原 _draw() 4 次 draw_texture_rect（wall_decor + 3 挂牌）→ 1 次复合纹理
+## （_draw_top_strip：wall_decor 与三块挂牌烘焙进单张 ImageTexture，逐像素
+## NEAREST 采样与分开绘制一致）。布局变化（group rect 变）时按 key 重建。
+## 时钟面 + 时针/分针合并为单纹理（_clock_face_texture 烘焙手针，按
+## _time_of_day 重建 —— 2 条 draw_line → 0）。性能预算 <200 达标。
 func _draw() -> void:
 	if _panel_alpha <= 0.001:
 		return
 	var base_alpha := _panel_alpha
-	_draw_wall_decor(base_alpha)
-	_draw_plaque(_money_group, PLAQUE_SEED_MONEY, "money", base_alpha)
-	_draw_plaque(_satisfaction_group, PLAQUE_SEED_SAT, "sat", base_alpha)
-	_draw_plaque(_time_group, PLAQUE_SEED_TIME, "time", base_alpha)
+	_draw_top_strip(base_alpha)
 	_draw_clock_face(base_alpha)
 
 
-## 顶带墙饰（公告板 / 黑板）：三块挂牌之间的墙面物件 —— 打破墙面平涂连通
-## （gate PIL B：无大面积纯色平涂）+ 墙上物件语言（diagetic：状态栏=墙上
-## 挂牌/黑板）。烘焙单纹理 1 draw call。两件物件横跨顶带全高（y 4..44），
-## 在挂牌之间形成非墙色垂直屏障，阻断墙面水平连通（旧全宽条带靠深色遮墙
-## 达成；挂牌间露墙会把左右墙面连成 22% 平涂区 —— B 回归 FAIL）。
-func _draw_wall_decor(alpha: float) -> void:
-	var tex := _wall_decor_texture()
+## 顶带复合纹理缓存（wall_decor + 3 挂牌 —— 4 次 draw_texture_rect → 1 次）。
+var _top_strip_tex: ImageTexture = null
+var _top_strip_rect: Rect2 = Rect2()
+var _top_strip_key: String = ""
+
+## 顶带一次绘制：复合纹理（wall_decor + 三块挂牌）→ 1 draw call。
+## 绘制位置 = 复合纹理的 union rect（HUD root 局部坐标 —— HUD root 锚点
+## 全屏位于 (0,0)，group get_global_rect() == 局部坐标，与旧分开绘制一致）。
+func _draw_top_strip(alpha: float) -> void:
+	var tex := _top_strip_texture()
 	if tex == null:
 		return
+	draw_texture_rect(tex, _top_strip_rect, false, Color(1.0, 1.0, 1.0, alpha))
+
+
+## 懒生成顶带复合纹理（wall_decor + 3 挂牌烘焙进单张 ImageTexture）。key =
+## ui_scale + 3 个 group rect（布局变化即重建；money label 宽度变化时 group
+## rect 变化 → item_rect_changed → queue_redraw → 此处 key 变化重建）。
+## 各元素按各自 rect（HUD 局部坐标）逐像素 NEAREST 采样写入 —— 与分开
+## draw_texture_rect 完全一致（同一纹理、同一 rect、同一 NEAREST 映射）。
+func _top_strip_texture() -> ImageTexture:
+	var key := _top_strip_cache_key()
+	if _top_strip_tex != null and key == _top_strip_key:
+		return _top_strip_tex
+	var entries: Array = []  # [{tex: ImageTexture, rect: Rect2}]
+	var wd_tex := _wall_decor_texture()
+	if wd_tex != null:
+		entries.append({"tex": wd_tex, "rect": _wall_decor_rect()})
+	for gv in [_plaque_entry(_money_group, PLAQUE_SEED_MONEY, "money"),
+		_plaque_entry(_satisfaction_group, PLAQUE_SEED_SAT, "sat"),
+		_plaque_entry(_time_group, PLAQUE_SEED_TIME, "time")]:
+		if gv != null:
+			entries.append(gv)
+	if entries.is_empty():
+		return null
+	var union := entries[0]["rect"] as Rect2
+	for e in entries:
+		union = union.merge(e["rect"])
+	if union.size.x <= 1.0 or union.size.y <= 1.0:
+		return null
+	# union 对齐到 4px texel 网格（向下取整起点 / 向上取整终点）
+	union.position.x = floorf(union.position.x / 4.0) * 4.0
+	union.position.y = floorf(union.position.y / 4.0) * 4.0
+	var end_x := ceili(union.end.x / 4.0) * 4.0
+	var end_y := ceili(union.end.y / 4.0) * 4.0
+	union.size = Vector2(end_x - union.position.x, end_y - union.position.y)
+	var img := Image.create(int(union.size.x), int(union.size.y), false, Image.FORMAT_RGBA8)
+	img.fill(Color(0.0, 0.0, 0.0, 0.0))
+	for e in entries:
+		var er: Rect2 = e["rect"]
+		er.position -= union.position
+		_blit_nearest(img, e["tex"], er)
+	_top_strip_tex = ImageTexture.create_from_image(img)
+	_top_strip_rect = union
+	_top_strip_key = key
+	return _top_strip_tex
+
+
+## 复合纹理 key：ui_scale + 3 个 group 的全局 rect（挂牌 rect 由此派生）。
+func _top_strip_cache_key() -> String:
+	return "%d|%.1f,%.1f,%.1f,%.1f|%.1f,%.1f,%.1f,%.1f|%.1f,%.1f,%.1f,%.1f" % [
+		_ui_scale,
+		_money_group.get_global_rect().position.x, _money_group.get_global_rect().position.y,
+		_money_group.get_global_rect().size.x, _money_group.get_global_rect().size.y,
+		_satisfaction_group.get_global_rect().position.x, _satisfaction_group.get_global_rect().position.y,
+		_satisfaction_group.get_global_rect().size.x, _satisfaction_group.get_global_rect().size.y,
+		_time_group.get_global_rect().position.x, _time_group.get_global_rect().position.y,
+		_time_group.get_global_rect().size.x, _time_group.get_global_rect().size.y,
+	]
+
+
+## 一块挂牌的复合条目：rect 计算与旧 _draw_plaque 相同；纹理懒生成（key =
+## seed:wxh:tone）。group rect 未布局（size<=1）时返回 null（旧代码直接跳过）。
+## 返回类型 Variant（Dictionary 或 null —— Godot 4.7.1 不允许 Dictionary 返回 null）。
+func _plaque_entry(group: Control, seed: int, variant: String) -> Variant:
+	var grect := group.get_global_rect()
+	if grect.size.x <= 1.0 or grect.size.y <= 1.0:
+		return null
+	var v: Dictionary = PLAQUE_VARIANTS.get(variant, {"h": PLAQUE_HEIGHT, "dy": 0, "tone": 0.0})
+	var body_h := _scaled(int(v["h"]))
+	var shadow_px := _scaled(PLAQUE_SHADOW_TEXELS * PLAQUE_TEXEL)
+	var prect := Rect2(
+		grect.position.x - _scaled(PLAQUE_PAD_X),
+		grect.position.y + grect.size.y * 0.5 - body_h * 0.5 + _scaled(int(v["dy"])),
+		grect.size.x + _scaled(PLAQUE_PAD_X) * 2.0,
+		body_h + shadow_px
+	)
+	var tex := _plaque_texture(seed, prect.size, float(v["tone"]))
+	if tex == null:
+		return null
+	return {"tex": tex, "rect": prect}
+
+
+## 逐像素 NEAREST 采样把 [tex] 画入 [dst] 的 [rect] 区域（HUD 局部像素坐标，
+## rect 可为浮点 —— 与 draw_texture_rect NEAREST 映射一致：(i+0.5)/w * texel）。
+## 透明度为 0 的像素跳过（保留 dst 已有内容 —— 挂牌撕裂轮廓/墙饰透明底）。
+func _blit_nearest(dst: Image, tex: ImageTexture, rect: Rect2) -> void:
+	var src := tex.get_image()
+	if src == null or rect.size.x <= 0.0 or rect.size.y <= 0.0:
+		return
+	var sw := tex.get_width()
+	var sh := tex.get_height()
+	var x0 := maxi(0, floori(rect.position.x))
+	var y0 := maxi(0, floori(rect.position.y))
+	var x1 := mini(dst.get_width(), ceili(rect.end.x))
+	var y1 := mini(dst.get_height(), ceili(rect.end.y))
+	for py in range(y0, y1):
+		for px in range(x0, x1):
+			var u := (px + 0.5 - rect.position.x) / rect.size.x
+			var v := (py + 0.5 - rect.position.y) / rect.size.y
+			var sx := clampi(int(u * sw), 0, sw - 1)
+			var sy := clampi(int(v * sh), 0, sh - 1)
+			var c := src.get_pixel(sx, sy)
+			if c.a > 0.0:
+				dst.set_pixel(px, py, c)
+
+
+## 顶带墙饰绘制 rect（HUD 局部坐标；与旧 _draw_wall_decor 相同）。
+func _wall_decor_rect() -> Rect2:
+	var tex := _wall_decor_texture()
+	if tex == null:
+		return Rect2()
 	var texel := _scaled(WALL_DECOR_TEXEL)
 	var size_px := Vector2(tex.get_width() * texel, tex.get_height() * texel)
-	var rect := Rect2(
+	return Rect2(
 		_scaled(SAFE_MARGIN_PX) - _scaled(8),
 		_scaled(4),
 		size_px.x,
 		size_px.y
 	)
-	draw_texture_rect(tex, rect, false, Color(1.0, 1.0, 1.0, alpha))
 
 
 ## 懒生成顶带墙饰纹理（确定性 seed）。设计宽 = 1280-16（条带区），texel 4px
@@ -610,37 +728,13 @@ func _draw_chalk_board(img: Image, x0: int, x1: int, y0: int, y1: int) -> void:
 			start = end + 2 + rng.randi_range(0, 2)
 
 
-## 画一块挂牌（木牌纹理 + 内置手绘阴影 —— 单纹理一次绘制，1 draw call）。
-## 牌 rect 由 group 的实际布局 rect 外扩（+PLAQUE_PAD_X 宽 / variant 高度
-## 居中 + variant 垂直偏移）—— 每块牌高度/偏移不同（手挂不同高度），牌与
-## 牌之间留白（墙露出）。NEAREST 拉伸（texel 4px）。确定性 seed。
-## 阴影烘焙在纹理内（pixel_panel.plaque_texture shadow_texels）—— 挂牌 +
-## 阴影合计 1 draw call（性能预算 <200）。variant_tone 让三块牌木色深浅
-## 不同（GPT 视觉：等高校验带 → 墙上分别挂着的物件）。
-func _draw_plaque(group: Control, seed: int, variant: String, alpha: float) -> void:
-	var grect := group.get_global_rect()
-	if grect.size.x <= 1.0 or grect.size.y <= 1.0:
-		return
-	var v: Dictionary = PLAQUE_VARIANTS.get(variant, {"h": PLAQUE_HEIGHT, "dy": 0, "tone": 0.0})
-	var body_h := _scaled(int(v["h"]))
-	var shadow_px := _scaled(PLAQUE_SHADOW_TEXELS * PLAQUE_TEXEL)
-	var prect := Rect2(
-		grect.position.x - _scaled(PLAQUE_PAD_X),
-		grect.position.y + grect.size.y * 0.5 - body_h * 0.5 + _scaled(int(v["dy"])),
-		grect.size.x + _scaled(PLAQUE_PAD_X) * 2.0,
-		body_h + shadow_px
-	)
-	var tex := _plaque_texture(seed, prect.size, float(v["tone"]))
-	if tex == null:
-		return
-	draw_texture_rect(tex, prect, false, Color(1.0, 1.0, 1.0, alpha))
-
-
 ## HBox 布局落地后重绘挂牌/时钟（group rect 变化时）。首次 _draw() 发生在
 ## 容器排序 children 之前（group 全在 x=16），item_rect_changed 保证布局
 ## 完成后再次 queue_redraw —— 挂牌实际位置跟随布局。_draw 内部对未布局
 ## rect（size<=1）已有防御。
 func _on_group_rect_changed() -> void:
+	# 布局变化 → 顶带复合纹理失效（key 变化，_top_strip_texture 重建）
+	_top_strip_key = ""
 	queue_redraw()
 
 
@@ -671,8 +765,9 @@ func _plaque_texture(seed: int, size: Vector2, tone: float = 0.0) -> ImageTextur
 
 
 ## 场景内时钟（倍速控制 → 墙钟）：在时间牌右侧画一面小钟 —— Butter 圆 +
-## 12 刻度（烘焙纹理，1 draw call）+ 时针/分针（2 条线，由 _time_of_day
-## 驱动）。transport 按钮（透明主题）叠加在钟面上 = 钟面上的手写标签。
+## 12 刻度 + 时针/分针全部烘焙进单张纹理（1 draw call，由 _time_of_day
+## 驱动重建 —— 收尾 t_704f26e7：原 2 条 draw_line → 0，时钟 2→1 call）。
+## transport 按钮（透明主题）叠加在钟面上 = 钟面上的手写标签。
 ## 低 alpha —— 半融入挂牌，不主导画面（V3.1 负面约束：无等宽边框，圆非矩形）。
 func _draw_clock_face(alpha: float) -> void:
 	var grect := _time_group.get_global_rect()
@@ -682,29 +777,22 @@ func _draw_clock_face(alpha: float) -> void:
 	var radius := _scaled(CLOCK_RADIUS)
 	var col := UiTheme.panel_border()
 	col.a = 0.85 * alpha
-	# 钟体 + 12 刻度：烘焙纹理（1 draw call，NEAREST 像素钟面）
-	var tex := _clock_face_texture(radius)
+	# 钟体 + 12 刻度 + 时针/分针：单纹理（1 draw call，NEAREST 像素钟面）。
+	var tex := _clock_face_texture(radius, _time_of_day)
 	if tex != null:
 		var texel := _scaled(CLOCK_TEXEL)
 		var size_px := Vector2(tex.get_width() * texel, tex.get_height() * texel)
 		var rect := Rect2(center - size_px * 0.5, size_px)
 		draw_texture_rect(tex, rect, false, col)
-	# 时针/分针（_time_of_day [0,1) → 24h）
-	var tod: float = clampf(_time_of_day, 0.0, 0.999999)
-	var minute: float = fmod(tod * 24.0 * 60.0, 60.0)
-	var hour: float = fmod(tod * 24.0, 12.0)
-	var hour_ang := TAU * (hour / 12.0) - PI * 0.5
-	var min_ang := TAU * (minute / 60.0) - PI * 0.5
-	var hand_col := col
-	hand_col.a = 0.85 * alpha
-	draw_line(center, center + Vector2(cos(hour_ang), sin(hour_ang)) * radius * 0.5, hand_col, maxf(1.5, _ui_scale), true)
-	draw_line(center, center + Vector2(cos(min_ang), sin(min_ang)) * radius * 0.72, hand_col, maxf(1.0, _ui_scale), true)
 
 
-## 懒生成时钟钟体纹理（圆 + 12 刻度；短长交替 —— 手绘感）。尺寸 texel
-## 2px，确定性 seed。时钟指针不烘焙（随时间转动，_draw 画线）。
-func _clock_face_texture(radius_px: float) -> ImageTexture:
-	if _clock_face_tex != null:
+## 懒生成时钟钟体纹理（圆 + 12 刻度 + 时针/分针；短长交替 —— 手绘感）。
+## 尺寸 texel 2px，确定性 seed。手针按 [tod] 烘焙进纹理（_time_of_day 变化
+## 即重建 —— 10Hz tick 下重建成本 ~1.3k set_pixel，可忽略；纹理内容完全
+## 由 seed + tod 决定 → 确定性）。key = radius:tod，缓存按 key 区分。
+func _clock_face_texture(radius_px: float, tod: float) -> ImageTexture:
+	var key := "%d:%.4f" % [radius_px, snappedf(tod, 0.0001)]
+	if _clock_face_tex != null and key == _clock_face_key:
 		return _clock_face_tex
 	var radius_texel := maxi(4, ceili(radius_px / CLOCK_TEXEL))
 	var size := Vector2i(radius_texel * 2 + 2, radius_texel * 2 + 2)
@@ -730,8 +818,37 @@ func _clock_face_texture(radius_px: float) -> ImageTexture:
 		for t in range(0.0, 1.0, 0.25):
 			var p := Vector2(cx + cos(ang) * lerpf(inner, outer, t), cy + sin(ang) * lerpf(inner, outer, t))
 			img.set_pixel(roundi(p.x), roundi(p.y), white)
+	# 时针/分针（烘焙进纹理 —— 0 extra draw call；_time_of_day [0,1) → 24h）。
+	# 白色像素随钟面一起被 modulate 成 panel_border 色（与旧 draw_line 同色）。
+	var tod_c: float = clampf(tod, 0.0, 0.999999)
+	var minute: float = fmod(tod_c * 24.0 * 60.0, 60.0)
+	var hour: float = fmod(tod_c * 24.0, 12.0)
+	var hour_ang := TAU * (hour / 12.0) - PI * 0.5
+	var min_ang := TAU * (minute / 60.0) - PI * 0.5
+	_draw_hand_into(img, Vector2(cx, cy), hour_ang, r * 0.5, 1.0)
+	_draw_hand_into(img, Vector2(cx, cy), min_ang, r * 0.72, 1.0)
 	_clock_face_tex = ImageTexture.create_from_image(img)
+	_clock_face_key = key
 	return _clock_face_tex
+
+
+## 把一条从 [center] 出发、方向 [ang]、长 [len] 的手针画进 [img]（texel 空间，
+## 宽度 [half_w] texel —— 2px 钟面 texel 下手针 ≥1 texel 保证可见）。
+## 逐 texel 距离判定 —— 与圆/刻度同款手绘像素风。
+func _draw_hand_into(img: Image, center: Vector2, ang: float, len: float, half_w: float) -> void:
+	var dir := Vector2(cos(ang), sin(ang))
+	var tip := center + dir * len
+	var white := Color(1.0, 1.0, 1.0, 1.0)
+	for y in img.get_height():
+		for x in img.get_width():
+			var p := Vector2(x, y)
+			var rel := p - center
+			var along := rel.dot(dir)
+			if along < 0.0 or along > len:
+				continue
+			var perp := absf(rel.x * dir.y - rel.y * dir.x)
+			if perp <= half_w:
+				img.set_pixel(x, y, white)
 
 
 ## Two-phase init (ADR-0001 for UI Nodes): stores the injected systems,
