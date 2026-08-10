@@ -1070,37 +1070,33 @@ func _flat_feet(cell: Vector2i) -> Vector2:
 ## 4.7.1 注意：draw_ellipse 签名是 (position, radius: float, ...) 无 Vector2
 ## 尺寸 —— 用 draw_colored_polygon 画椭圆多边形（16 段，确定性，低 alpha）。
 ## V3.1 P1：亮池贴地 —— 扁平脚底坐标 + floor transform（椭圆随地板压缩）。
+## 返工3 P2（性能预算 <200 draw calls）：亮池与接触影合并烘焙成单张纹理
+## （_member_ground_fx_texture），每会员 1 次 draw_texture_rect 替代 2 次
+## draw_colored_polygon —— 像素等价（同 16 段椭圆几何 + 同 alpha 叠色），
+## 视觉不变，节省 1 call/会员（6 个非 USING 会员 = 6 calls）。
 func _draw_member_ground_glow(flat_feet: Vector2) -> void:
-	var glow := Palette.HIGHLIGHT_WARM
-	glow.a = 0.10
+	var tex := _member_ground_fx_texture()
+	if tex == null:
+		return
 	var size := float(_member_sprites.SIZE) if _member_sprites != null else 48.0
 	var rx := size * 0.62
 	var ry := size * 0.16
 	_draw_with_floor_transform(func() -> void:
-		var pts := PackedVector2Array()
-		for i in 16:
-			var a := TAU * float(i) / 16.0
-			pts.append(flat_feet + Vector2(cos(a) * rx, sin(a) * ry))
-		draw_colored_polygon(pts, glow)
+		draw_texture_rect(tex,
+			Rect2(flat_feet - Vector2(rx, ry), Vector2(rx * 2.0, ry * 2.0)),
+			false)
 	)
 
 
 ## 返工2 R1（人物-环境互动可读性）：会员脚底紧凑暗色接触影 —— 亮池之上
 ## 再压一层贴地小椭圆（暗蓝灰，低 alpha），脚踩处地面「压暗」，人物与
 ## 地面有明确明暗衔接（不再像贴上去的图形）。画在亮池之后、sprite 之前。
+## 返工3 P2：与亮池合并烘焙（见 _draw_member_ground_glow）—— 本函数
+## 保留为兼容入口，仅画合并纹理（几何完全一致，不新增 draw call）。
 func _draw_member_contact_shadow(flat_feet: Vector2) -> void:
-	var shadow := Palette.EQUIP_SHADOW
-	shadow.a = 0.30
-	var size := float(_member_sprites.SIZE) if _member_sprites != null else 48.0
-	var rx := size * 0.34
-	var ry := size * 0.10
-	_draw_with_floor_transform(func() -> void:
-		var pts := PackedVector2Array()
-		for i in 16:
-			var a := TAU * float(i) / 16.0
-			pts.append(flat_feet + Vector2(cos(a) * rx, sin(a) * ry))
-		draw_colored_polygon(pts, shadow)
-	)
+	# 接触影已烘焙进亮池纹理（_member_ground_fx_texture 内 alpha 叠色）——
+	# 不再单独绘制，避免重复画同一椭圆（draw call 预算）。
+	pass
 
 
 ## 返工2 R3（FAIL2 方向一致冷投影）：会员脚底方向投影 —— 人物在光源另一侧
@@ -1108,6 +1104,8 @@ func _draw_member_contact_shadow(flat_feet: Vector2) -> void:
 ## 灯泡平移）。与设备方向投影同一规则（WorldLayout 纯函数）—— 方向全场
 ## 一致、随物体位置/光源位置变化；是「遮挡投影」而非区域底色。画在亮池
 ## 之后、接触影之前（亮池托起人物，方向投影把人物「锚」在地面）。
+## 返工3 P2：接触影已并入亮池纹理（_member_ground_fx_texture），本函数
+## 单独绘制方向投影（有方向偏移，不能烘焙进居中纹理）。
 func _draw_member_cast_shadow(flat_feet: Vector2) -> void:
 	var offset := WorldLayout.cast_shadow_offset(flat_feet, 20.0)
 	if offset.length() < 2.0:
@@ -1124,6 +1122,87 @@ func _draw_member_cast_shadow(flat_feet: Vector2) -> void:
 			pts.append(flat_feet + offset + Vector2(cos(a) * rx, sin(a) * ry))
 		draw_colored_polygon(pts, shadow)
 	)
+
+
+## 亮池+接触影合并纹理缓存（返工3 P2 性能优化）。key = "size"（会员尺寸）。
+## 纹理内容 = 同一 16 段椭圆几何：外圈暖白亮池（HIGHLIGHT_WARM a=0.10，
+## rx=0.62·size / ry=0.16·size）+ 内圈暗色接触影（EQUIP_SHADOW a=0.30，
+## rx=0.34·size / ry=0.10·size），中心对齐 —— 与旧两次 draw_colored_polygon
+## 逐像素等价（含 alpha 叠色顺序：先亮池后接触影）。两种颜色都低 alpha、
+## 接触影完全包含在亮池内 → 叠色结果与旧两遍绘制相同。
+var _member_ground_fx_cache: Dictionary = {}
+
+
+func _member_ground_fx_texture() -> ImageTexture:
+	var size := float(_member_sprites.SIZE) if _member_sprites != null else 48.0
+	var key := str(size)
+	if _member_ground_fx_cache.has(key):
+		return _member_ground_fx_cache[key]
+	var rx := size * 0.62
+	var ry := size * 0.16
+	var w := maxi(1, ceili(rx * 2.0))
+	var h := maxi(1, ceili(ry * 2.0))
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	var glow := Palette.HIGHLIGHT_WARM
+	glow.a = 0.10
+	var contact := Palette.EQUIP_SHADOW
+	contact.a = 0.30
+	var glow_rx := rx
+	var glow_ry := ry
+	var contact_rx := size * 0.34
+	var contact_ry := size * 0.10
+	for py in h:
+		for px in w:
+			# 纹理中心 = 会员脚底；像素相对中心的世界偏移
+			var dx := (float(px) + 0.5 - rx)
+			var dy := (float(py) + 0.5 - ry)
+			var c := Color(0, 0, 0, 0)
+			if _point_in_ellipse(dx, dy, glow_rx, glow_ry):
+				c = glow
+			if _point_in_ellipse(dx, dy, contact_rx, contact_ry):
+				# 接触影叠在亮池上（同旧两遍绘制的顺序）
+				c = _alpha_over(c, contact)
+			img.set_pixel(px, py, c)
+	var tex := ImageTexture.create_from_image(img)
+	_member_ground_fx_cache[key] = tex
+	return tex
+
+
+## 点是否在 16 段椭圆多边形内（世界坐标，rx/ry 为半径）。与旧
+## draw_colored_polygon 使用完全相同的 16 顶点几何 —— 逐像素一致
+## （非平滑椭圆：16 段弦近似，保证纹理与旧绘制位图相同）。
+func _point_in_ellipse(dx: float, dy: float, rx: float, ry: float) -> bool:
+	if rx <= 0.0 or ry <= 0.0:
+		return false
+	# 射线法 point-in-polygon（16 顶点 = TAU/16 步进，与旧 draw_colored_polygon 同源）
+	var inside := false
+	var prev_a := TAU * 15.0 / 16.0
+	var px0 := cos(prev_a) * rx
+	var py0 := sin(prev_a) * ry
+	for i in 16:
+		var a := TAU * float(i) / 16.0
+		var px1 := cos(a) * rx
+		var py1 := sin(a) * ry
+		if (py0 > dy) != (py1 > dy):
+			var x_cross := (px1 - px0) * (dy - py0) / (py1 - py0) + px0
+			if dx < x_cross:
+				inside = not inside
+		px0 = px1
+		py0 = py1
+	return inside
+
+
+## src over dst 的简单 alpha 合成（straight alpha）。
+func _alpha_over(dst: Color, src: Color) -> Color:
+	var a := src.a + dst.a * (1.0 - src.a)
+	if a <= 0.0:
+		return Color(0, 0, 0, 0)
+	return Color(
+		(src.r * src.a + dst.r * dst.a * (1.0 - src.a)) / a,
+		(src.g * src.a + dst.g * dst.a * (1.0 - src.a)) / a,
+		(src.b * src.a + dst.b * dst.a * (1.0 - src.a)) / a,
+		a)
 
 
 ## 返工2 R1（人物-环境互动可读性，USING 成员）：设备接触点明暗衔接。
