@@ -214,20 +214,58 @@ const COLOR_SKY := Color("8ec5e8")
 ## CREAM_BG #F4E9D8）。深色半透明面板 + 浅色文字保证可读（Exit 条件 1/3）。
 const COLOR_TEXT_LIGHT := Color("f4e9d8")
 
-# === V3.1 返工 UI 面板状态（_draw() 绘制，不新增子节点） ===
-## 顶栏面板像素纹理：PixelPanel 手绘木纹条带（不规则边缘 + 材质 cluster +
-## 非等宽 Butter 断续描边），NEAREST 放大到条带矩形。懒生成一次。
-## 设计条带 1256×48 @1.0（margin 16 → 条带 (12,2,1256,48)），texel 4px →
-## 314×12；ui_scale 1.5 时 6px/texel 仍整数倍。
-const PANEL_TEXTURE_SEED := 0x5EED_0C0D
-const PANEL_TEXTURE_TEXEL := 4
-const PANEL_TEXTURE_W := 314
-const PANEL_TEXTURE_H := 12
+# === V3.1 返工3 P4 diagetic 挂牌状态（_draw() 绘制，不新增子节点） ===
+## 顶栏不再是「全宽横条」：改为三块独立的手绘木牌（金钱/满意度/时间），
+## 牌间露出墙面 —— 门禁 FAIL：顶部状态栏=CSS 横条（V3 §15 / 附录 V3.1
+## 负面约束：无完美矩形 / 无规则直线）。每块牌 = PixelPanel.plaque_texture
+## （撕裂轮廓 + 木纹 + 顶部挂绳 + 两枚钉子），NEAREST 放大；挂牌之下画
+## 手绘阴影（同牌纹理下移 + 低 alpha 黑色）→ 读作「挂在墙上的木牌」。
+## 牌色 = UiTheme.wood_plaque()（暖木色，非近黑 charcoal 面板）。
+## 牌宽由各自 group 的实际布局 rect 决定（懒生成、尺寸变化重建）。
+const PLAQUE_TEXEL := 4
+const PLAQUE_PAD_X := 10
+const PLAQUE_PAD_Y := 6
+const PLAQUE_HEIGHT := 40
+## 挂牌内置阴影行数（texel）：烘焙在 plaque_texture 底部，挂牌+阴影一次绘制。
+const PLAQUE_SHADOW_TEXELS := 2
+## V3.1 返工3 P4（GPT 视觉自检 FAIL：顶栏=「长条状态面板」）：三块挂牌必须
+## 读作「墙上分别挂着的物件」而非一条等高校验带 —— 每块牌 高度/垂直偏移/
+## 底色 各不相同（手挂不同高度、木色深浅各异），且顶部挂绳 + 钉头强化
+## 「挂着」语言。数值为 [高度, 垂直偏移(正=下移), 底色加深]。
+const PLAQUE_VARIANTS := {
+	"money": {"h": 34, "dy": 2, "tone": 0.00},
+	"sat": {"h": 46, "dy": 8, "tone": 0.07},
+	"time": {"h": 40, "dy": -2, "tone": -0.05},
+}
+const PLAQUE_SEED_MONEY := 0x50A7_E
+const PLAQUE_SEED_SAT := 0x50A7_F
+const PLAQUE_SEED_TIME := 0x50A7_10
+## 时钟面（倍速控制 → 场景内时钟）：TimeGroup 挂牌右侧画一面小钟
+## （圆 + 12 刻度 + 时针/分针），transport 按钮=钟面上的手写标签。
+## 门禁 FAIL：右上倍速控制=按钮 —— 按钮主题已透明化（ui_theme.button_theme），
+## 本面钟提供「场景内时钟」语义。钟体（圆+刻度）烘焙为小纹理（1 draw call），
+## 时针/分针为 2 条线（随 _time_of_day 转动）—— 合计 3 个图元，性能预算
+## <200 达标。
+const CLOCK_RADIUS := 17.0
+const CLOCK_SEED := 0xC10C
+## 时钟纹理 texel（2px —— 高分辨率 UI 层，圆润手绘钟面）。
+const CLOCK_TEXEL := 2
+var _clock_face_tex: ImageTexture = null
+## 顶带墙饰纹理（V3.1 返工3 P4）：三块挂牌之间的墙面点缀 —— 手绘小物件
+## （海报 / 挂钟 / 绿植）。两个作用：
+##   1) 打破顶带墙面的水平连通（gate PIL B：无大面积纯色平涂 —— 旧全宽
+##      条带恰好遮住墙面；挂牌间露墙后墙面连成 22% 平涂区，B 回归 FAIL）
+##   2) diagetic 语言：顶带 = 墙 + 挂牌 + 挂饰（墙上物件），非 CSS 横条
+## 全部低饱和（Peach/Butter/Sage —— 不新增高饱和焦点，gate PIL A 保持
+## 17 簇）且烘焙为单纹理（1 draw call，性能预算 <200）。确定性 seed。
+const WALL_DECOR_SEED := 0xD3C0
+const WALL_DECOR_TEXEL := 4
+var _wall_decor_tex: ImageTexture = null
 ## 面板淡入 alpha（0→PANEL_ALPHA，ANIM_PANEL_FADE）。_draw() 每帧读取；
 ## 测试断言结构/颜色，不读本字段。
 var _panel_alpha: float = UiTheme.PANEL_ALPHA
-## 懒生成的手绘像素面板纹理（null = 未生成；_draw 首次调用时生成）。
-var _panel_texture_tex: ImageTexture = null
+## 懒生成的手绘挂牌纹理（key = "seed:wxh"；null = 未生成）。每块牌独立。
+var _plaque_textures: Dictionary = {}
 ## 金钱图标脉冲 tween（余额变化时 offset_transform_scale 1→1.15→1，
 ## ANIM_ICON_PULSE）。与 _money_tween/_ack_tween 相互独立。
 var _pulse_tween: Tween = null
@@ -397,8 +435,11 @@ func _build_ui() -> void:
 	_meter.add_theme_stylebox_override("fill", _meter_fill_style)
 	# Phase D v2: 轨道（background）深色半透明，配合深色面板（fill 的 ramp
 	# 颜色不变 —— satisfaction_meter_test 固定 fill 样式）。
+	# V3.1 返工3 P4（GPT 视觉自检：顶栏=「长条进度条」）：background 改为
+	# 木牌上的暗槽（非常低 alpha 的凹槽，而非高对比长条轨道）—— 读作
+	# 木牌上刻的槽，fill 是槽里的标度；避免「程序化进度条」观感。
 	var meter_bg := StyleBoxFlat.new()
-	meter_bg.bg_color = Color(0.0, 0.0, 0.0, 0.28)
+	meter_bg.bg_color = Color(0.0, 0.0, 0.0, 0.14)
 	meter_bg.set_corner_radius_all(_scaled(METER_CORNER_RADIUS_PX))
 	_meter.add_theme_stylebox_override("background", meter_bg)
 	_satisfaction_group.add_child(_meter)
@@ -435,47 +476,262 @@ func _build_ui() -> void:
 		_speed_buttons.append(btn)
 		_transport_cluster.add_child(btn)
 
-	# V3.1 返工 UI：顶栏面板 = PixelPanel 手绘像素条带（懒生成，见
-	# _panel_texture(); _draw() 里 draw_texture_rect NEAREST 绘制）。替代
-	# 旧 StyleBoxFlat 完美矩形 + 等宽边框（门禁 FAIL：CSS 仪表盘观感）。
+	# V3.1 返工3 P4：顶栏 = 三块独立手绘木牌（懒生成，见 _draw_plaque /
+	# _plaque_texture；_draw() 里 draw_texture_rect NEAREST 绘制）。替代
+	# 旧全宽条带/完美矩形 + 等宽边框（门禁 FAIL：CSS 仪表盘观感）。
+	# 挂牌定位依赖 HBox 布局后的 group rect —— 容器在首帧后才排序 children，
+	# 首个 _draw() 时 group 全在 x=16（未布局）。连接 item_rect_changed 在
+	# 布局落地后重绘（挂牌跟随内容位置；reduced-motion 下也成立）。
+	for g in [_money_group, _satisfaction_group, _time_group]:
+		g.item_rect_changed.connect(_on_group_rect_changed)
 	queue_redraw()
 
 
-## V3.1 返工 UI: 顶栏面板背景 —— PixelPanel 手绘木纹像素条带（不规则
-## 边缘 + 材质 cluster + 非等宽 Butter 断续描边），在 HUD root 的 _draw()
-## 里绘制（不新增子节点：hud_layout_test 固定 root child-count == 1 /
-## TopBar 结构）。条带紧贴顶栏，四边留 2px 呼吸边距；_panel_alpha 由面板
-## 淡入动效驱动（调制绘制 alpha，与旧 StyleBoxFlat 最终不透明度 PANEL_ALPHA
-## 等效）。像素纹理 texel 4px NEAREST 放大 —— 手绘像素面板语言，去 CSS
-## 仪表盘化（V3 §15 / 附录 V3.1 负面约束）。
+## V3.1 返工3 P4: 顶栏背景 —— 三块独立手绘木牌（金钱/满意度/时间），
+## 牌间露出墙面（不再是全宽 CSS 横条）。每块牌：PixelPanel.plaque_texture
+## （撕裂轮廓 + 木纹 + 挂绳 + 钉子），NEAREST 放大；牌下画手绘硬阴影。
+## 时间牌右侧画一面小钟（倍速 → 场景内时钟）。_panel_alpha 由面板淡入
+## 动效驱动（调制绘制 alpha）。绘制在 HUD root 的 _draw() 里（不新增子节点：
+## hud_layout_test 固定 root child-count == 1 / TopBar 结构）。
 func _draw() -> void:
-	var tex := _panel_texture()
+	if _panel_alpha <= 0.001:
+		return
+	var base_alpha := _panel_alpha
+	_draw_wall_decor(base_alpha)
+	_draw_plaque(_money_group, PLAQUE_SEED_MONEY, "money", base_alpha)
+	_draw_plaque(_satisfaction_group, PLAQUE_SEED_SAT, "sat", base_alpha)
+	_draw_plaque(_time_group, PLAQUE_SEED_TIME, "time", base_alpha)
+	_draw_clock_face(base_alpha)
+
+
+## 顶带墙饰（公告板 / 黑板）：三块挂牌之间的墙面物件 —— 打破墙面平涂连通
+## （gate PIL B：无大面积纯色平涂）+ 墙上物件语言（diagetic：状态栏=墙上
+## 挂牌/黑板）。烘焙单纹理 1 draw call。两件物件横跨顶带全高（y 4..44），
+## 在挂牌之间形成非墙色垂直屏障，阻断墙面水平连通（旧全宽条带靠深色遮墙
+## 达成；挂牌间露墙会把左右墙面连成 22% 平涂区 —— B 回归 FAIL）。
+func _draw_wall_decor(alpha: float) -> void:
+	var tex := _wall_decor_texture()
 	if tex == null:
 		return
-	var margin := _scaled(SAFE_MARGIN_PX)
-	var strip_rect := Rect2(
-		margin - _scaled(4),
-		_scaled(2),
-		size.x - (margin - _scaled(4)) * 2.0,
-		_scaled(TOP_BAR_HEIGHT_PX) + _scaled(4)
+	var texel := _scaled(WALL_DECOR_TEXEL)
+	var size_px := Vector2(tex.get_width() * texel, tex.get_height() * texel)
+	var rect := Rect2(
+		_scaled(SAFE_MARGIN_PX) - _scaled(8),
+		_scaled(4),
+		size_px.x,
+		size_px.y
 	)
-	draw_texture_rect(tex, strip_rect, false, Color(1.0, 1.0, 1.0, _panel_alpha))
+	draw_texture_rect(tex, rect, false, Color(1.0, 1.0, 1.0, alpha))
 
 
-## 懒生成顶栏像素面板纹理（确定性 seed；同一 seed 每次运行纹理一致）。
-## 底色 = UiTheme.panel_bg() 的 CHARCOAL 深灰（alpha 由绘制端 modulate
-## _panel_alpha 控制，故纹理底色 alpha 烘焙为 1.0），accent = Butter。
-func _panel_texture() -> ImageTexture:
-	if _panel_texture_tex == null:
-		_panel_texture_tex = PixelPanel.strip_texture(
-			PANEL_TEXTURE_SEED,
-			Vector2i(PANEL_TEXTURE_W, PANEL_TEXTURE_H),
-			UiTheme.panel_bg(),
-			UiTheme.panel_border(),
-			PixelPanel.Style.WOOD,
-			1.0
-		)
-	return _panel_texture_tex
+## 懒生成顶带墙饰纹理（确定性 seed）。设计宽 = 1280-16（条带区），texel 4px
+## → 316×12；高 12 texel = 48px（顶带全高）。透明底；内容：
+##   - 挂牌间空隙 1（Money 牌 ~6..91 / Sat 牌 ~478..647）：公告板
+##     （木框 + 软木板 + 3 枚彩色图钉 —— 前台墙上公告板语言）
+##   - 挂牌间空隙 2（Sat 牌 ~647 / Time 牌 ~1025..1274）：小黑板
+##     （深灰绿板面 + 粉笔字痕 —— 场景内黑板语言）
+## 物件横跨顶带全高 —— 非墙色垂直屏障，阻断墙面水平连通。
+func _wall_decor_texture() -> ImageTexture:
+	if _wall_decor_tex != null:
+		return _wall_decor_tex
+	var w := 316
+	var h := 12
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0.0, 0.0, 0.0, 0.0))
+	# === 公告板（texel x 38..100 → 屏幕 160..408）：中等宽度小公告板，
+	# 与左右挂牌留出明显墙面空隙（GPT 视觉：顶栏=「一整条」—— 板与牌
+	# 之间必须露出墙，物件才各自独立）。
+	_draw_cork_board(img, 38, 100, 2, 11)
+	# === 小黑板（texel x 182..236 → 屏幕 736..952）：小号黑板，同样留缝。
+	_draw_chalk_board(img, 182, 236, 0, 9)
+	_wall_decor_tex = ImageTexture.create_from_image(img)
+	return _wall_decor_tex
+
+
+## 公告板：木框（DESK_WOOD 加深）+ 软木板（暖棕 + 噪点）+ 3 枚彩色图钉
+## （Butter/Peach/Sage 点）。横跨 [x0..x1]×[y0..y1] texel。
+func _draw_cork_board(img: Image, x0: int, x1: int, y0: int, y1: int) -> void:
+	var wood := Color("A87E4F").darkened(0.25)
+	var cork := Color("C8A97C")
+	var rng := RandomNumberGenerator.new()
+	rng.seed = WALL_DECOR_SEED + 10
+	# 软木板（带噪点）
+	for y in range(y0 + 1, y1):
+		for x in range(x0 + 1, x1):
+			var c := cork.darkened(rng.randf() * 0.10) if rng.randf() < 0.5 else cork.lightened(rng.randf() * 0.08)
+			img.set_pixel(x, y, c)
+	# 木框（顶/底/左/右 1 texel）
+	for x in range(x0, x1 + 1):
+		img.set_pixel(x, y0, wood)
+		img.set_pixel(x, y1, wood.darkened(0.15))
+	for y in range(y0, y1 + 1):
+		img.set_pixel(x0, y, wood)
+		img.set_pixel(x1, y, wood.darkened(0.15))
+	# 3 枚彩色图钉（不对称位置）
+	var pins: Array[Color] = [Color("F5D97B"), Color("F2B486"), Color("8FBF9F")]
+	var px := [x0 + 8, x0 + (x1 - x0) / 2, x1 - 8]
+	var py := [y0 + 3, y1 - 2, y0 + (y1 - y0) / 2]
+	for i in 3:
+		img.set_pixel(px[i], py[i], pins[i])
+
+
+## 小黑板：深灰绿板面 + 粉笔字痕（cream/Butter 短划）+ 木框。
+## 横跨 [x0..x1]×[y0..y1] texel。
+func _draw_chalk_board(img: Image, x0: int, x1: int, y0: int, y1: int) -> void:
+	var wood := Color("A87E4F").darkened(0.25)
+	var slate := Color("4A5450")
+	var rng := RandomNumberGenerator.new()
+	rng.seed = WALL_DECOR_SEED + 20
+	# 板面（带噪点）
+	for y in range(y0 + 1, y1):
+		for x in range(x0 + 1, x1):
+			var c := slate.darkened(rng.randf() * 0.08) if rng.randf() < 0.5 else slate.lightened(rng.randf() * 0.06)
+			img.set_pixel(x, y, c)
+	# 木框
+	for x in range(x0, x1 + 1):
+		img.set_pixel(x, y0, wood)
+		img.set_pixel(x, y1, wood.darkened(0.15))
+	for y in range(y0, y1 + 1):
+		img.set_pixel(x0, y, wood)
+		img.set_pixel(x1, y, wood.darkened(0.15))
+	# 粉笔字痕：3 组短划（cream/Butter）—— 短促 scribble（2-5 texel = 8-20px
+	# + 2-4 texel 间隔），绝不形成长于 ~24px 的连续 chalk 段（I 检查：任意行
+	# Butter 段 < 60px；texel 4px 下 15 texel 段 = 60px 恰达上限，必须收紧）。
+	var chalk_cols: Array[Color] = [Color("F4E9D8"), Color("F5D97B"), Color("F4E9D8")]
+	var rows: Array[int] = [y0 + 3, y0 + 6, y0 + 9]
+	for i in 3:
+		var cy: int = rows[i]
+		var start: int = x0 + 4
+		while start < x1 - 4:
+			var seg: int = 2 + rng.randi_range(0, 3)
+			var end: int = mini(start + seg, x1 - 1)
+			for dx in (end - start):
+				img.set_pixel(start + dx, cy, chalk_cols[i])
+			start = end + 2 + rng.randi_range(0, 2)
+
+
+## 画一块挂牌（木牌纹理 + 内置手绘阴影 —— 单纹理一次绘制，1 draw call）。
+## 牌 rect 由 group 的实际布局 rect 外扩（+PLAQUE_PAD_X 宽 / variant 高度
+## 居中 + variant 垂直偏移）—— 每块牌高度/偏移不同（手挂不同高度），牌与
+## 牌之间留白（墙露出）。NEAREST 拉伸（texel 4px）。确定性 seed。
+## 阴影烘焙在纹理内（pixel_panel.plaque_texture shadow_texels）—— 挂牌 +
+## 阴影合计 1 draw call（性能预算 <200）。variant_tone 让三块牌木色深浅
+## 不同（GPT 视觉：等高校验带 → 墙上分别挂着的物件）。
+func _draw_plaque(group: Control, seed: int, variant: String, alpha: float) -> void:
+	var grect := group.get_global_rect()
+	if grect.size.x <= 1.0 or grect.size.y <= 1.0:
+		return
+	var v: Dictionary = PLAQUE_VARIANTS.get(variant, {"h": PLAQUE_HEIGHT, "dy": 0, "tone": 0.0})
+	var body_h := _scaled(int(v["h"]))
+	var shadow_px := _scaled(PLAQUE_SHADOW_TEXELS * PLAQUE_TEXEL)
+	var prect := Rect2(
+		grect.position.x - _scaled(PLAQUE_PAD_X),
+		grect.position.y + grect.size.y * 0.5 - body_h * 0.5 + _scaled(int(v["dy"])),
+		grect.size.x + _scaled(PLAQUE_PAD_X) * 2.0,
+		body_h + shadow_px
+	)
+	var tex := _plaque_texture(seed, prect.size, float(v["tone"]))
+	if tex == null:
+		return
+	draw_texture_rect(tex, prect, false, Color(1.0, 1.0, 1.0, alpha))
+
+
+## HBox 布局落地后重绘挂牌/时钟（group rect 变化时）。首次 _draw() 发生在
+## 容器排序 children 之前（group 全在 x=16），item_rect_changed 保证布局
+## 完成后再次 queue_redraw —— 挂牌实际位置跟随布局。_draw 内部对未布局
+## rect（size<=1）已有防御。
+func _on_group_rect_changed() -> void:
+	queue_redraw()
+
+
+## 懒生成一块挂牌纹理（key = "seed:wxh:tone"，尺寸变化重建）。底色 =
+## UiTheme.wood_plaque()（暖木色，非近黑 charcoal —— 门禁 FAIL：CSS 面板
+## 深色横条）。纹理内容完全由 seed 决定（确定性）。阴影烘焙在纹理底部
+## （PLAQUE_SHADOW_TEXELS 行）—— 挂牌+阴影一次绘制。
+func _plaque_texture(seed: int, size: Vector2, tone: float = 0.0) -> ImageTexture:
+	var tsize := Vector2i(maxi(1, ceili(size.x / PLAQUE_TEXEL)), maxi(1, ceili(size.y / PLAQUE_TEXEL)))
+	var key := "%d:%dx%d:%s" % [seed, tsize.x, tsize.y, str(snappedf(tone, 0.01))]
+	if _plaque_textures.has(key):
+		return _plaque_textures[key]
+	var base := UiTheme.wood_plaque()
+	if tone > 0.0:
+		base = base.darkened(tone)
+	elif tone < 0.0:
+		base = base.lightened(-tone)
+	var tex := PixelPanel.plaque_texture(
+		seed,
+		tsize,
+		base,
+		UiTheme.panel_border(),
+		1.0,
+		PLAQUE_SHADOW_TEXELS
+	)
+	_plaque_textures[key] = tex
+	return tex
+
+
+## 场景内时钟（倍速控制 → 墙钟）：在时间牌右侧画一面小钟 —— Butter 圆 +
+## 12 刻度（烘焙纹理，1 draw call）+ 时针/分针（2 条线，由 _time_of_day
+## 驱动）。transport 按钮（透明主题）叠加在钟面上 = 钟面上的手写标签。
+## 低 alpha —— 半融入挂牌，不主导画面（V3.1 负面约束：无等宽边框，圆非矩形）。
+func _draw_clock_face(alpha: float) -> void:
+	var grect := _time_group.get_global_rect()
+	if grect.size.x <= 1.0:
+		return
+	var center := Vector2(grect.end.x - _scaled(64), grect.position.y + grect.size.y * 0.5)
+	var radius := _scaled(CLOCK_RADIUS)
+	var col := UiTheme.panel_border()
+	col.a = 0.85 * alpha
+	# 钟体 + 12 刻度：烘焙纹理（1 draw call，NEAREST 像素钟面）
+	var tex := _clock_face_texture(radius)
+	if tex != null:
+		var texel := _scaled(CLOCK_TEXEL)
+		var size_px := Vector2(tex.get_width() * texel, tex.get_height() * texel)
+		var rect := Rect2(center - size_px * 0.5, size_px)
+		draw_texture_rect(tex, rect, false, col)
+	# 时针/分针（_time_of_day [0,1) → 24h）
+	var tod: float = clampf(_time_of_day, 0.0, 0.999999)
+	var minute: float = fmod(tod * 24.0 * 60.0, 60.0)
+	var hour: float = fmod(tod * 24.0, 12.0)
+	var hour_ang := TAU * (hour / 12.0) - PI * 0.5
+	var min_ang := TAU * (minute / 60.0) - PI * 0.5
+	var hand_col := col
+	hand_col.a = 0.85 * alpha
+	draw_line(center, center + Vector2(cos(hour_ang), sin(hour_ang)) * radius * 0.5, hand_col, maxf(1.5, _ui_scale), true)
+	draw_line(center, center + Vector2(cos(min_ang), sin(min_ang)) * radius * 0.72, hand_col, maxf(1.0, _ui_scale), true)
+
+
+## 懒生成时钟钟体纹理（圆 + 12 刻度；短长交替 —— 手绘感）。尺寸 texel
+## 2px，确定性 seed。时钟指针不烘焙（随时间转动，_draw 画线）。
+func _clock_face_texture(radius_px: float) -> ImageTexture:
+	if _clock_face_tex != null:
+		return _clock_face_tex
+	var radius_texel := maxi(4, ceili(radius_px / CLOCK_TEXEL))
+	var size := Vector2i(radius_texel * 2 + 2, radius_texel * 2 + 2)
+	var img := Image.create(size.x, size.y, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0.0, 0.0, 0.0, 0.0))
+	var rng := RandomNumberGenerator.new()
+	rng.seed = CLOCK_SEED
+	var cx := float(size.x - 1) * 0.5
+	var cy := float(size.y - 1) * 0.5
+	# 圆：粗 1 texel（手绘圆环）
+	var r := float(radius_texel)
+	var white := Color(1.0, 1.0, 1.0, 1.0)
+	for y in size.y:
+		for x in size.x:
+			var d := Vector2(x - cx, y - cy).length()
+			if absf(d - r) <= 0.75:
+				img.set_pixel(x, y, white)
+	# 12 刻度（长短交替）
+	for i in 12:
+		var ang := TAU * float(i) / 12.0 - PI * 0.5
+		var inner := r * (0.78 if i % 3 == 0 else 0.86)
+		var outer := r - 0.5
+		for t in range(0.0, 1.0, 0.25):
+			var p := Vector2(cx + cos(ang) * lerpf(inner, outer, t), cy + sin(ang) * lerpf(inner, outer, t))
+			img.set_pixel(roundi(p.x), roundi(p.y), white)
+	_clock_face_tex = ImageTexture.create_from_image(img)
+	return _clock_face_tex
 
 
 ## Two-phase init (ADR-0001 for UI Nodes): stores the injected systems,
@@ -989,23 +1245,22 @@ func _make_transport_button(button_name: String, label: String) -> Button:
 	return btn
 
 
-## Lazily builds the shared active-cue stylebox: a Butter bright outline
-## (never color alone — paired with the filled-dot text prefix in
-## _set_button_active). V3.1 返工 UI：非对称描边（顶/左 3px、右/底 1px）+
-## 非对称圆角（仅左上 1px）—— 手绘像素轮廓，非等宽边框（V3.1 负面约束）。
-## V3.1 返工 2：进一步打散对称性 —— 左 4 / 顶 2 / 右 1 / 底 1 + 仅左上
-## 1px 圆角（四边全不相等，绝无等宽描边观感）。
-## transport 测试只断言 border_width_left > 0，颜色换新皮安全。
+## Lazily builds the shared active-cue stylebox: a Butter hand-drawn corner
+## tick (bottom + left stroke only — NOT a closed rectangle outline, so the
+## speed control reads as a chalk-marked clock label, never a button outline).
+## V3.1 返工3 P4：从 4/2/1/1 四边非对称描边改为 L 形角标 —— 无等宽边框、
+## 无闭合矩形（V3.1 负面约束 / 门禁 FAIL：右上倍速控制=按钮）。
+## transport 测试只断言 border_width_left > 0，L 形角标满足契约。
 func _get_active_stylebox() -> StyleBoxFlat:
 	if _active_stylebox == null:
 		var sb := StyleBoxFlat.new()
 		sb.bg_color = Color(1.0, 1.0, 1.0, 0.0)
 		sb.border_color = UiTheme.panel_border()
-		sb.border_width_left = 4
-		sb.border_width_top = 2
-		sb.border_width_right = 1
-		sb.border_width_bottom = 1
-		sb.corner_radius_top_left = 1
+		sb.border_width_left = 3
+		sb.border_width_top = 0
+		sb.border_width_right = 0
+		sb.border_width_bottom = 2
+		sb.corner_radius_top_left = 0
 		sb.corner_radius_top_right = 0
 		sb.corner_radius_bottom_left = 0
 		sb.corner_radius_bottom_right = 0

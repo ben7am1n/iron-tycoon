@@ -114,16 +114,21 @@ const RETURN_CUE_MODULATE := Color(1.0, 0.99, 0.93)
 ## 深色半透明面板 + Butter 亮色描边（_draw() 绘制，不新增子节点）。
 ## V3.1 返工 UI：条带改为 PixelPanel 手绘金属像素纹理（不规则边缘 + 拉丝
 ## cluster + 铆钉 + 非等宽 Butter 断续描边）—— 去 CSS 卡片式矩形。
+## V3.1 返工3 P4：全宽深色条带 → 底部一条薄木展示架（前台货架/价目板）——
+## 架上 tiles 读作「架上的小标签」，架上方露出墙面（门禁 FAIL：底部商品栏
+## = CSS 横条 / 重复规则纹理）。tile 自身 = PixelPanel.tag_texture 手绘价签。
 const UiTheme := preload("res://src/ui/ui_theme.gd")
 const PixelPanel := preload("res://src/ui/pixel_panel.gd")
-## 条带像素纹理（_draw() 使用；PixelPanel 生成，懒缓存）。
-var _strip_texture_tex: ImageTexture = null
+## 展示架像素纹理（_draw() 使用；PixelPanel 生成，懒缓存）。
+var _shelf_texture_tex: ImageTexture = null
 
-## 条带像素纹理参数：设计条带 1272×80 @1.0（rect (4,4,1272,80)），
-## texel 4px → 318×20。确定性 seed。
-const STRIP_TEXTURE_SEED := 0x5EED_51DE
-const STRIP_TEXTURE_W := 318
-const STRIP_TEXTURE_H := 20
+## 展示架纹理参数：设计架条 1272×16 @1.0（rect (2, size.y-18, 1272, 16)），
+## texel 4px → 318×4。确定性 seed。架条远薄于旧全宽 80px 深色条带。
+const SHELF_TEXTURE_SEED := 0x5EED_51DF
+const SHELF_TEXTURE_W := 318
+const SHELF_TEXTURE_H := 4
+## 展示架高度（px，@1.0）：薄木条 —— 视觉重量收敛（UI 不主导第一眼）。
+const SHELF_H := 16
 
 ## Injected read-only catalog (composition-root owned).
 var _catalog: EquipmentCatalog
@@ -483,9 +488,9 @@ func _hit_test_tile(pos: Vector2) -> String:
 func _build_ui() -> void:
 	# 节点命名（与 HUD 的 `name = "Hud"` 同约定）：证据捕获/调试按名定位。
 	name = "BuildShopPalette"
-	# V3.1 返工 UI：条带面板 = PixelPanel 手绘金属像素纹理（懒生成，见
-	# _strip_texture(); _draw() 里 draw_texture_rect NEAREST 绘制）。替代
-	# 旧 StyleBoxFlat 完美矩形 + 等宽边框（门禁 FAIL：CSS 卡片式矩形）。
+	# V3.1 返工3 P4：底部 = 薄木展示架（懒生成，见 _shelf_texture(); _draw()
+	# 里 draw_texture_rect NEAREST 绘制）+ tile 手绘价签。替代旧全宽深色
+	# 条带 + 卡片式矩形（门禁 FAIL：CSS 卡片式矩形 / 底部横条）。
 	for id in _catalog.get_all_ids():
 		var def := _catalog.get_definition(id)
 		var tile: PaletteTileScript = PaletteTileScript.new()
@@ -509,30 +514,42 @@ func _build_ui() -> void:
 	queue_redraw()
 
 
-## V3.1 返工 UI：建造商店条带背景 —— PixelPanel 手绘金属像素条带（不规则
-## 边缘 + 拉丝 cluster + 铆钉 + 非等宽 Butter 断续描边）。在条带 root 的
-## _draw() 里绘制（不新增子节点，HBox 布局与 hit-test 不受影响）。纹理
-## 底色 alpha 烘焙为 PANEL_ALPHA（半透明让场景透出，同旧 StyleBoxFlat）。
+## V3.1 返工3 P4：建造商店背景 —— 底部一段段木展示架（前台货架/价目板，
+## 每 tile 一段 —— 读作「架上的物件」而非一条连续底栏）。架上方不再有
+## 深色条带 —— 墙面/地板露出，底部横条从视觉上消失（门禁 FAIL：底部商品
+## 栏=CSS 横条）。架条 = PixelPanel.shelf_texture（木纹 + 顶部参差 + 底部
+## 暗边），NEAREST 绘制。绘制在条带 root 的 _draw() 里（不新增子节点，
+## HBox 布局与 hit-test 不受影响）。
 func _draw() -> void:
-	var tex := _strip_texture()
+	var tex := _shelf_texture()
 	if tex == null:
 		return
-	draw_texture_rect(tex, Rect2(4, 4, size.x - 8, size.y - 8), false)
+	var shelf_y := size.y - SHELF_H - 2
+	# 每 tile 一段架条（等宽分段 + 段间留缝 —— 非连续底栏；GPT 视觉自检：
+	# 底部=「连续底栏承载的卡片行」—— 分段后读作架上的独立物件）。
+	var seg_w := 88.0
+	var seg_gap := 8.0
+	var x := 4.0
+	var seg := 0
+	while x < size.x - 8.0:
+		var w := mini(seg_w, size.x - 8.0 - x)
+		if w > 12.0:
+			draw_texture_rect(tex, Rect2(x, shelf_y, w, SHELF_H), false)
+		x += seg_w + seg_gap
+		seg += 1
 
 
-## 懒生成条带像素纹理（确定性 seed）。底色 = UiTheme.panel_bg() 深灰、
-## accent = Butter、材质 = METAL（拉丝 + 铆钉，器械区面板语言）。
-func _strip_texture() -> ImageTexture:
-	if _strip_texture_tex == null:
-		_strip_texture_tex = PixelPanel.strip_texture(
-			STRIP_TEXTURE_SEED,
-			Vector2i(STRIP_TEXTURE_W, STRIP_TEXTURE_H),
-			UiTheme.panel_bg(),
-			UiTheme.panel_border(),
-			PixelPanel.Style.METAL,
+## 懒生成展示架像素纹理（确定性 seed）。底色 = UiTheme.wood_shelf() 暖木色
+## （前台货架语言，非近黑 charcoal 条带）、accent = Butter 散点。
+func _shelf_texture() -> ImageTexture:
+	if _shelf_texture_tex == null:
+		_shelf_texture_tex = PixelPanel.shelf_texture(
+			SHELF_TEXTURE_SEED,
+			Vector2i(SHELF_TEXTURE_W, SHELF_TEXTURE_H),
+			UiTheme.wood_shelf(),
 			UiTheme.PANEL_ALPHA
 		)
-	return _strip_texture_tex
+	return _shelf_texture_tex
 
 
 ## Re-derives every tile's state through the injected query layer, then

@@ -29,7 +29,9 @@ const PixelPanel := preload("res://src/ui/pixel_panel.gd")
 # === 面板体系（V3.1 手绘像素面板：颜色单一来源；纹理生成见 pixel_panel.gd） ===
 
 ## 面板底色不透明度（art-bible-25d：alpha 0.7-0.85，半透明让 2.5D 场景透出）。
-const PANEL_ALPHA := 0.82
+## V3.1 返工3 P4：0.82 → 0.76 —— HUD 视觉重量降低（半融入背景，UI 不主导
+## 第一眼；门禁 FAIL：HUD 直接覆盖最终渲染并主导第一眼）。
+const PANEL_ALPHA := 0.76
 
 ## 面板底色：CHARCOAL 加深后的深灰（同色系派生，非新色）。alpha 由
 ## PANEL_ALPHA 控制。返回新 Color（每次调用独立实例）。
@@ -45,6 +47,27 @@ static func panel_bg() -> Color:
 ## V3.1 返工 UI：作为 PixelPanel 纹理的 accent（断续像素线）与按钮描边色。
 static func panel_border() -> Color:
 	return Palette.BUTTER
+
+# === V3.1 返工3 P4 — diagetic 挂牌/价签/木架色（场景内物体语言，非 CSS 面板） ===
+
+## 顶栏挂牌木色：暖中深棕（DESK_WOOD 加深派生，同一色源）。木牌读作
+## 墙上物体，非近黑 charcoal 面板（门禁 FAIL：顶部状态栏=CSS 横条）。
+static func wood_plaque() -> Color:
+	var c := Palette.DESK_WOOD.darkened(0.22)
+	c.a = PANEL_ALPHA
+	return c
+
+## 底部价目标签木色：比挂牌略浅（架上的小标签）。
+static func wood_tag() -> Color:
+	var c := Palette.DESK_WOOD.darkened(0.10)
+	c.a = PANEL_ALPHA
+	return c
+
+## 底部展示架木色：更亮木色（前台货架/价目板）。
+static func wood_shelf() -> Color:
+	var c := Palette.DESK_WOOD.lightened(0.10)
+	c.a = 0.92
+	return c
 
 # === 文字（浅色 Cream 系，深色面板上可读） ===
 
@@ -119,74 +142,56 @@ static func apply_outlined_fill(
 	label.add_theme_color_override("font_outline_color", outline)
 	label.add_theme_constant_override("outline_size", outline_px)
 
-# === 按钮（手绘像素平板 + 非等宽散点描边，主题级 stylebox） ===
+# === 按钮（V3.1 返工3 P4：手绘标签语言 —— 无芯片矩形，读作木牌上的手写标签） ===
 
 static var _button_theme: Theme = null
 
-## 共享按钮平板纹理（V3.1 返工 2）：PixelPanel 金属小板（不规则边缘 +
-## 材质 cluster + 散点 accent —— 无全宽虚线、无纯色块、无等宽边框）。
-## StyleBoxTexture NEAREST 拉伸到按钮尺寸；边缘缺口透明像素让场景透出，
-## 按钮轮廓读作手绘像素片，绝非 CSS 矩形芯片。确定性 seed，懒生成一次。
-static var _button_plate_tex: ImageTexture = null
-
-## 按钮平板纹理设计尺寸（texel 4px）：16×10 texel = 64×40 设计像素，
-## NEAREST 拉伸到任意按钮尺寸（transport ~40×28 / toolbar ~90×34）。
-const BUTTON_PLATE_SEED := 0x8077E5
-const BUTTON_PLATE_W := 16
-const BUTTON_PLATE_H := 10
-
-## 手绘按钮平板：PixelPanel 金属小板 + 散点 accent（无全宽虚线/无等宽边框
-## —— V3.1 返工 2，第二轮 FAIL：右上速度按钮规整矩形分区与等宽描边）。
-static func _button_plate() -> ImageTexture:
-	if _button_plate_tex == null:
-		var base := Palette.CHARCOAL.darkened(0.45)
-		base.a = PANEL_ALPHA
-		_button_plate_tex = PixelPanel.plate_texture(
-			BUTTON_PLATE_SEED,
-			Vector2i(BUTTON_PLATE_W, BUTTON_PLATE_H),
-			base,
-			Palette.BUTTER,
-			PixelPanel.Style.METAL,
-			PANEL_ALPHA
-		)
-	return _button_plate_tex
-
-## 像素芯片按钮 stylebox（V3.1 返工 2）：StyleBoxTexture 手绘金属小板，
-## NEAREST 拉伸 + 透明边缘缺口 → 不规则手绘轮廓；底色含逐 texel 噪声
-## （非纯色块）+ 散点 accent（非等宽边框/非重复虚线）。[bg_boost] 映射到
-## modulate_color 提亮（hover 用）。替代旧 StyleBoxFlat 规整矩形 + 等宽
-## 描边（门禁 FAIL：CSS 芯片观感）。
-static func make_pixel_chip_style(border_color: Color, bg_boost: float = 0.0) -> StyleBoxTexture:
-	var sb := StyleBoxTexture.new()
-	sb.texture = _button_plate()
-	var boost: float = clampf(bg_boost, 0.0, 1.0)
-	sb.modulate_color = Color(1.0 + boost * 0.5, 1.0 + boost * 0.4, 1.0 + boost * 0.2, 1.0)
-	sb.content_margin_left = 8.0
-	sb.content_margin_right = 8.0
-	sb.content_margin_top = 4.0
-	sb.content_margin_bottom = 4.0
-	return sb
-
-## 共享 Button Theme：normal/hover/pressed/focus 全为手绘像素小板（非对称
-## 散点 accent —— V3.1 返工 UI，替代旧 rounded chip）。通过
-## `btn.theme = button_theme()` 挂到按钮上 —— 这是 4.7.1 的「主题级
-## stylebox」路径（probe 验证：Control 无 add_theme_stylebox()；
-## Theme.set_stylebox() + control.theme 后 has_theme_stylebox_override() 保持
-## false，transport 测试的「inactive 无 override」断言依赖此行为）。
-## 按钮文字用 theme color override（浅 Cream）+ 粗字体，见
-## UiTheme.style_button()。
+## 手绘标签按钮主题（V3.1 返工3 P4，门禁 FAIL：右上倍速控制=按钮）：normal
+## 完全透明（无芯片、无边框 —— 按钮读作挂牌/木架上的手写标签，绝非 CSS
+## 按钮），hover 仅极轻暖色底（手绘高亮感），pressed 轻微压暗。ACTIVE 状态
+## 由调用方以 StyleBoxFlat override 提供（transport 测试契约：
+## border_width_left > 0 的选中记号 —— 见 hud._get_active_stylebox）。
+## 主题级 stylebox（非 override）保持 has_theme_stylebox_override 为 false 的
+## 测试契约不变。
 static func button_theme() -> Theme:
 	if _button_theme == null:
 		_button_theme = Theme.new()
-		var normal := make_pixel_chip_style(Palette.BUTTER, 0.0)
-		var hover := make_pixel_chip_style(Palette.BUTTER, 0.12)
-		# pressed：modulate 压暗（物理按压感）—— 手绘小板压暗而非描边内陷
-		var pressed := make_pixel_chip_style(Palette.BUTTER, 0.0)
-		pressed.modulate_color = Color(0.72, 0.72, 0.78, 1.0)
-		_button_theme.set_stylebox("normal", "Button", normal)
+		# normal：透明 —— 按钮不画任何芯片/边框，只剩文字（手写标签语言）。
+		var plain := StyleBoxFlat.new()
+		plain.bg_color = Color(0.0, 0.0, 0.0, 0.0)
+		plain.border_width_left = 0
+		plain.border_width_top = 0
+		plain.border_width_right = 0
+		plain.border_width_bottom = 0
+		plain.content_margin_left = 6.0
+		plain.content_margin_right = 6.0
+		plain.content_margin_top = 2.0
+		plain.content_margin_bottom = 2.0
+		# hover：极轻暖色底（手绘高亮，非按钮高亮）
+		var hover := StyleBoxFlat.new()
+		hover.bg_color = Color(0.96, 0.85, 0.6, 0.10)
+		hover.content_margin_left = 6.0
+		hover.content_margin_right = 6.0
+		hover.content_margin_top = 2.0
+		hover.content_margin_bottom = 2.0
+		# pressed：轻微压暗
+		var pressed := StyleBoxFlat.new()
+		pressed.bg_color = Color(0.0, 0.0, 0.0, 0.12)
+		pressed.content_margin_left = 6.0
+		pressed.content_margin_right = 6.0
+		pressed.content_margin_top = 2.0
+		pressed.content_margin_bottom = 2.0
+		# focus：透明（键盘焦点不画矩形框 —— 无等宽边框语言）
+		var focus := StyleBoxFlat.new()
+		focus.bg_color = Color(0.0, 0.0, 0.0, 0.0)
+		focus.content_margin_left = 6.0
+		focus.content_margin_right = 6.0
+		focus.content_margin_top = 2.0
+		focus.content_margin_bottom = 2.0
+		_button_theme.set_stylebox("normal", "Button", plain)
 		_button_theme.set_stylebox("hover", "Button", hover)
 		_button_theme.set_stylebox("pressed", "Button", pressed)
-		_button_theme.set_stylebox("focus", "Button", make_pixel_chip_style(Palette.BUTTER, 0.0))
+		_button_theme.set_stylebox("focus", "Button", focus)
 		_button_theme.set_color("font_color", "Button", Palette.CREAM_BG)
 		_button_theme.set_color("font_hover_color", "Button", Palette.CREAM_BG)
 		_button_theme.set_color("font_pressed_color", "Button", Palette.CREAM_BG)

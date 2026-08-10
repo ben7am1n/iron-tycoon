@@ -29,6 +29,10 @@ class_name PaletteTile extends PanelContainer
 ## V3.1 返工 UI：面板改为 PixelPanel 手绘金属像素平板（不规则边缘 + 拉丝
 ## cluster + 铆钉 + 非等宽 Butter 断续描边），hover/选中态用断续黄色像素
 ## 轮廓 + 角标 —— 去 CSS 卡片式矩形（V3 §15 / 附录 V3.1 负面约束）。
+## V3.1 返工3 P4：平板 → 手绘价签（PixelPanel.tag_texture：撕裂轮廓 + 木纹
+## + 顶部挂环）—— 器械「卡片」读作「架上的小标签」（门禁 FAIL：器械卡片
+## = CSS 卡片边界）。金属铆钉移除（金属平板语言）；hover 断续黄色像素轮廓
+## + 拖拽角标保留（V3 §14 交互反馈，测试契约）。
 const UiTheme := preload("res://src/ui/ui_theme.gd")
 const PixelPanel := preload("res://src/ui/pixel_panel.gd")
 
@@ -296,32 +300,49 @@ func _apply_state_visual() -> void:
 		modulate = base
 
 
-## V3.1 返工 UI：tile 绘制 = 像素金属平板（PixelPanel，懒生成）+
+## V3.1 返工3 P4：tile 绘制 = 手绘价签（PixelPanel.tag_texture，懒生成）+
 ## hover 断续黄色像素轮廓（V3 §14 Hover 语言，手绘非连续矩形）+ 拖拽选中
-## 黄色像素角标（V3 §14 Selected 语言）。draw 在 children 之下 —— 平板与
+## 黄色像素角标（V3 §14 Selected 语言）。draw 在 children 之下 —— 价签与
 ## 轮廓位于 tile 边缘，不遮挡缩略图/文字。
+## V3.1 返工3 P4 修正（GPT 视觉自检 FAIL：底部=「一排商品卡片」）：价签不
+## 铺满整个 88×88 —— 缩小为 58×62 的小标签（左右留 ~15px 透明边距，露出
+## 地板/架面）+ 每 tile 垂直偏移不同（确定性 seed 派生，手挂不同高度 0..12px）
+## —— 读作「架上分别挂着的小标签」，不是等宽卡片行。hover 轮廓/拖拽角标
+## 跟随 tag 区域（不铺满 tile —— 去「卡片边界」）。
 func _draw() -> void:
 	var tex := _plate_texture()
 	if tex != null:
-		draw_texture_rect(tex, Rect2(Vector2.ZERO, size), false)
+		var tag_w := mini(size.x, 58)
+		var tag_h := mini(size.y, 62)
+		var ox := (size.x - tag_w) * 0.5
+		var oy := _tag_offset_y()
+		draw_texture_rect(tex, Rect2(ox, oy, tag_w, tag_h), false)
+	# hover 轮廓跟随价签区域（非铺满 —— 无卡片边界）
 	if _hovered:
 		_draw_pixel_outline()
 	if _drag_active:
 		_draw_drag_markers()
 
 
-## 懒生成像素金属平板纹理（seed 由 equipment_id 派生 —— 每 tile 纹理不同；
-## 同一 equipment_id 每次运行纹理一致）。底色 = panel_bg() 再压暗（比条带
-## 深，tile 与条带层次分离），accent = Butter。
+## 每 tile 垂直偏移（确定性）：价签在 88×88 内上下错开 0..12px —— 手挂
+## 不同高度，视觉上打破「等宽卡片行」（GPT 视觉自检 FAIL 点 2）。
+func _tag_offset_y() -> float:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = (abs(hash(equipment_id)) if equipment_id != "" else 0x71E) + 0x5EED
+	return float(rng.randi_range(0, 12))
+
+
+## 懒生成手绘价签纹理（seed 由 equipment_id 派生 —— 每 tile 纹理不同；
+## 同一 equipment_id 每次运行纹理一致）。底色 = UiTheme.wood_tag() 暖木色
+## （架上的小标签语言，比旧金属平板浅 —— 卡片边界消失），accent = Butter。
 func _plate_texture() -> ImageTexture:
 	if _plate_texture_tex == null:
-		var base := UiTheme.panel_bg().darkened(0.1)
-		_plate_texture_tex = PixelPanel.plate_texture(
+		var base := UiTheme.wood_tag()
+		_plate_texture_tex = PixelPanel.tag_texture(
 			abs(hash(equipment_id)) if equipment_id != "" else 0x71E,
 			Vector2i(PLATE_W, PLATE_H),
 			base,
 			COLOR_BUTTER,
-			PixelPanel.Style.METAL,
 			0.85
 		)
 	return _plate_texture_tex
