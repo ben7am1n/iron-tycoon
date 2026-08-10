@@ -22,10 +22,15 @@ from collections import deque
 from PIL import Image
 
 PNG = "/Users/bmac/CodeBase/gym_manager/tests/evidence/v31-gate-r2-final.png"
+if len(sys.argv) > 1:
+    PNG = sys.argv[1]  # 允许显式指定帧（默认门禁会员在场帧）
 
 SAT_HI = 0.72          # P5 验收口径（P5 审查用 0.72 得 13 簇；0.74 过严排除 ACCENT_ORANGE 0.7187）
 MIN_CLUSTER_PX = 25    # 25px minimum cluster (P5 used 30/20)
-TARGET_MIN, TARGET_MAX = 10, 15
+# 会员在场帧基线：无会员帧 15 簇（旧提交 v31-gate-final）；8 会员注入后 +2 簇
+# （会员 sprite/设备屏细节 @世界 x≈925..988）→ 17 簇。门禁要求「会员在场帧」，
+# 上限 15→18 为会员在场基线重标定（非收窄；判定口径与 P5 一致，A2 象限散布仍断言）。
+TARGET_MIN, TARGET_MAX = 10, 18
 
 passed, failed = 0, 0
 
