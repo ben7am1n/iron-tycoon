@@ -301,6 +301,10 @@ func _bake_background_texture() -> ImageTexture:
 		ceiling = ceiling_tex.get_image()
 	if ceiling != null:
 		_blend_stretched(img, ceiling, vp, vp, CEILING_CENTER_ALPHA)
+		# 返工6 P4（N1 顶部条带）：天花板边缘手绘锯齿 —— 沿天花板区域
+		# 顶/底边界（投影空间）按列画 1-3px 参差暗边，打破「深灰横向带
+		# 上下边界笔直」的读法（GPT：顶部条带 y≈54-75 深灰带直边）。
+		_draw_jagged_ceiling_trim(img, vp)
 		# 房间盒边缘两级暗角带（与原 per-frame 绘制同位置同 alpha）。
 		var b := Proj2D.bounds()
 		var rect := Rect2(b.position - Vector2(8, 8), b.size + Vector2(16, 16))
@@ -309,6 +313,37 @@ func _bake_background_texture() -> ImageTexture:
 		# 延展墙区：更高对比墙面纹理（替代纯色暗底 / 低对比天花板）。
 		_blend_extended_walls(img, vp)
 	return ImageTexture.create_from_image(img)
+
+
+## 返工6 P4（N1）：天花板边缘手绘锯齿。背景烘焙的投影空间里，房间盒
+## 顶缘（bounds().y 附近）是一条轴对齐直线 —— 在 GPT 帧中读作「顶部
+## 深灰横向带上下边界」。这里沿天花板顶/底各画一条逐列 1-3px 参差的暗
+## 边（深色小段 + 缺口），把直边打散成手绘锯齿。确定性 hash，无 RNG。
+func _draw_jagged_ceiling_trim(img: Image, vp: Rect2) -> void:
+	var b := Proj2D.bounds()
+	# 天花板带在投影图 y = b.position.y（顶缘）与墙帽交界附近。画两行锯齿。
+	var top_y := int(floor(b.position.y - vp.position.y)) + 2
+	var bottom_y := int(floor(b.position.y + 8.0 - vp.position.y))
+	var x0 := int(floor(b.position.x - vp.position.x))
+	var x1 := int(floor(b.end.x - vp.position.x))
+	if top_y < 0 or bottom_y >= img.get_height():
+		return
+	var trim_col := Palette.WALL_BASE.darkened(0.46)
+	var x := x0
+	while x < x1:
+		var h := _hash2(x, 0xCE11)
+		var seg := 8 + (h % 12)         # 8..19px 一段
+		var depth := 1 + (h >> 4) % 3   # 1..3px 锯齿深度
+		for dx in range(0, mini(seg, x1 - x)):
+			var col := trim_col
+			if (h >> 7) % 5 == 0:
+				col = trim_col.darkened(0.08)
+			var py := top_y - depth
+			if py >= 0 and py < img.get_height():
+				img.set_pixel(x + dx, py, col)
+			if bottom_y >= 0 and bottom_y < img.get_height():
+				img.set_pixel(x + dx, bottom_y + depth - 1, col)
+		x += seg + ((h >> 9) % 5)  # 段间缺口
 
 
 ## 把 src 拉伸铺进 dst_rect（投影空间坐标），按 alpha 混合进 img。

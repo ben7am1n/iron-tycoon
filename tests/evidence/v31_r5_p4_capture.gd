@@ -444,7 +444,13 @@ func _is_dark_panel(c: Color) -> bool:
 ## V3.1 返工5 P4：HUD 材质判定（顶带锯齿/四角检查用）—— 挂牌暖木 +
 ## 公告板软木 + 黑板板面（slate）+ 钟面 Butter。与墙面（WALL 系）和
 ## 背景 cream（F4E9D8 —— 顶带外背景色，绝不能当作 HUD 材质）严格区分。
+## 返工5 P3（背景烘焙化）后：世界背景墙色（WALL_BASE.darkened ≈ (97,86,77)
+## 家族）现在延伸到顶带 —— 该色距 slate (74,84,80) 仅 ~25（<0.14*255 容差），
+## 旧判定把整个顶带误读为黑板板面。先排除交界墙色带（_is_junction_wall_tone
+## 同族），再判 HUD 材质 —— 顶带读作「挂牌挂在墙上」，而非整条 HUD 材质。
 func _is_hud_mat(c: Color) -> bool:
+	if _is_junction_wall_tone(c):
+		return false  # 背景烘焙墙色带 —— 世界墙面，非 HUD 材质
 	if _is_wood_tone(c):
 		return true
 	if _near(c, Color("C8A97C"), 0.14):
