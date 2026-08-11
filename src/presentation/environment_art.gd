@@ -242,6 +242,9 @@ const ART_MAPS := {
 	# V3.1 R4/R5 精修：红广告改为墙面主视觉横幅。大轮廓仍是手绘像素
 	# 缺角/断边，暖白字形和黄色价签切开红底；它代替原来的 1-2px 点缀，
 	# 成为局部视线统领块，但不扩散到地板/墙面基底。
+	# 返工6 P4（N1）：横幅四边进一步撕裂 —— 顶/底行缺口错落、左右缘
+	# 参差（不再读作硬切矩形；FOCAL_RED 像素仍充足，capture 窗口 r=26
+	# 命中 + gate A 簇结构保持）。
 	"ad_red": [
 		"..FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF.",
 		".FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF",

@@ -309,17 +309,30 @@ func _bake_north_wall() -> Image:
 		Palette.WALL_BASE_FAR.lightened(0.14),
 		Palette.WALL_BASE_FAR.lightened(0.04),
 	]
-	for x in WALL_NORTH_TEX.x:
-		var h := _hash2(x, 4021)
+	# 返工6 P4（N1 顶部条带）：顶缘抖动加强 —— 顶行在 fy=0..4 间变化
+	# （原 0..2），且台阶段更长（8px 步进）—— 墙帽顶/天花板交界读作
+	# 手绘参差，不是一条笔直水平带（GPT：y≈54-75 深灰带上下边界笔直）。
+	var cap_x := 0
+	while cap_x < WALL_NORTH_TEX.x:
+		var h := _hash2(cap_x, 4021)
+		var run := 6 + (h % 9)  # 6..14px 台阶段
 		var top := 0
 		if h % 3 == 0:
 			top = 1
 		if h % 5 == 0:
 			top = 2
-		for fy in range(top, 3):
-			img.set_pixel(x, fy, cap_colors[(h >> (4 + fy)) % cap_colors.size()])
-		if h % 3 == 0:
-			img.set_pixel(x, 3, cap_colors[(h >> 8) % cap_colors.size()])
+		if h % 7 == 0:
+			top = 3
+		if h % 11 == 0:
+			top = 4
+		for x in range(cap_x, mini(cap_x + run, WALL_NORTH_TEX.x)):
+			for fy in range(top, 3):
+				img.set_pixel(x, fy, cap_colors[(h >> (4 + fy)) % cap_colors.size()])
+			if h % 3 == 0:
+				img.set_pixel(x, 3, cap_colors[(h >> 8) % cap_colors.size()])
+			if top >= 3:
+				img.set_pixel(x, 4, cap_colors[(h >> 9) % cap_colors.size()])
+		cap_x += run
 	# 踢脚线（fy 22..23）—— R3 手绘抖动：底缘起伏 + 多色 cluster。
 	#   底缘：踢脚线底行逐列在 fy=22..23 间变化（~1/3 列只到 fy=22 ——
 	#   底缘非完美直线，墙地交界断开）
@@ -330,15 +343,23 @@ func _bake_north_wall() -> Image:
 		Palette.WALL_DARK.lightened(0.05),
 		Palette.WALL_DARK.darkened(0.08),
 	]
-	for x in WALL_NORTH_TEX.x:
-		var h := _hash2(x, 4031)
+	# 返工6 P4（N1）：踢脚线底缘抖动加强（0..1 → 0..2 + 台阶段）——
+	# 墙地交界同样不读作一条笔直水平线。
+	var base_x := 0
+	while base_x < WALL_NORTH_TEX.x:
+		var h := _hash2(base_x, 4031)
+		var run := 6 + (h % 9)
 		var bot := 23
 		if h % 3 == 0:
 			bot = 22
-		for fy in range(22, bot + 1):
-			img.set_pixel(x, fy, base_colors[(h >> (4 + fy)) % base_colors.size()])
-		if h % 3 == 0:
-			img.set_pixel(x, 21, base_colors[(h >> 8) % base_colors.size()])
+		if h % 7 == 0:
+			bot = 21
+		for x in range(base_x, mini(base_x + run, WALL_NORTH_TEX.x)):
+			for fy in range(22, bot + 1):
+				img.set_pixel(x, fy, base_colors[(h >> (4 + fy)) % base_colors.size()])
+			if h % 3 == 0:
+				img.set_pixel(x, 21, base_colors[(h >> 8) % base_colors.size()])
+		base_x += run
 	# 返工3 P1（墙面结构装饰烘焙）：挂钟/空调/通风口/喷淋头从 runtime
 	# draw_rect 迁入墙面纹理 —— 一次烘焙替代每帧 ~25 个 draw_rect，
 	# draw call 预算让给新增叙事道具（任务 2/3/4 道具组密度）。
@@ -1048,9 +1069,26 @@ func _paint_lamp(img: Image, r: Rect2i) -> void:
 
 
 ## 电线槽：浅暖灰细条（jagged）。
+## 返工6 P4（N1）：电线槽从「整条 384px 长条」改为「分段错落短条」——
+## 每 24-56px 一段、段间 8-24px 缺口、每段垂直偏移 ±1（手走线），
+## 不再读作一条贯穿的室内横梁/分区线（GPT：y≈171-181 水平分隔线）。
 func _paint_cable(img: Image, r: Rect2i) -> void:
-	_fill_irregular(img, r, _col(Palette.CABLE_DUCT), 221)
-	_jagged_hline(img, r.position.x, r.position.x + r.size.x, r.position.y + r.size.y - 1, _col(Palette.CABLE_DUCT.darkened(0.15)), 222)
+	var x := r.position.x
+	var seg := 0
+	while x < r.position.x + r.size.x:
+		var h := _hash2(r.position.x + seg * 31, r.position.y + seg * 17)
+		var seg_w := 24 + (h % 33)          # 24..56px 段宽
+		var gap := 8 + ((h >> 4) % 17)      # 8..24px 缺口
+		var off := ((h >> 9) % 3) - 1       # ±1px 垂直偏移
+		var x0 := x
+		var x1 := mini(x + seg_w, r.position.x + r.size.x)
+		if x1 > x0:
+			_fill_irregular(img, Rect2i(x0, r.position.y + off, x1 - x0, r.size.y),
+				_col(Palette.CABLE_DUCT), 221 + seg)
+			_jagged_hline(img, x0, x1, r.position.y + r.size.y - 1 + off,
+				_col(Palette.CABLE_DUCT.darkened(0.15)), 222 + seg)
+		x += seg_w + gap
+		seg += 1
 
 
 ## 管道：中暖灰 + 法兰接头（间距抖动）。

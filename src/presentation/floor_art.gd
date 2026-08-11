@@ -73,10 +73,17 @@ func build_image() -> Image:
 	# 返工3 P1（任务 1c）：分区边界从「硬分界线」变「材质过渡」—— 沿
 	# zone 边缘画 dithered 混合带（相邻材质/通道色交错），消除布局图感。
 	_draw_transition_bands(img)
+	# 返工6 P4（N1 直线/矩形全覆盖）：区域边界「咬边」—— 沿 zone 四条边按
+	# hash 挖掉/外扩不规则色块（4-10px 缺口 + 2-5px 凸起），打破「分区直线」
+	# 与「区域矩形轮廓」。分区边界从程序化直线读作手裁地垫边缘。
+	_bite_zone_edges(img)
 	# 返工3 P1（任务 1b/3）：地垫/地胶拼块 + 磨损 —— 打破右侧灰霾空地/
 	# 中央通道的近纯色平涂，空间读作「正在使用的健身房」。
 	_draw_floor_mats(img)
 	_draw_wear(img)
+	# 返工6 P4（N1 走道条带）：走道带「破条」在磨损之后执行 —— 磨损
+	# 笔触（亮暖色）会覆盖破断点；破条必须在最后，保证暗色破断点可见。
+	_break_walkway_bands(img)
 	return img
 
 
@@ -193,6 +200,333 @@ func _blend_col(img: Image, x: int, y0: int, y1: int, colors: Array, seed: int) 
 		var h := _hash2(x * 5 + seed, y * 3 + seed)
 		if h % 100 < 15:
 			img.set_pixel(x, y, colors[(h >> 6) % colors.size()])
+
+
+## 返工6 P4（N1）：区域边界咬边 —— 沿 zone 矩形四条边按确定性 hash 挖掉
+## 不规则缺口（8-20px 深，错落 6-16px 宽）并外扩凸起（3-7px），角部做
+## 12-24px 对角切角（四角不齐 → 矩形轮廓被打散）；边界内侧加 1-3px 宽、
+## 8-18px 深的「磨损裂缝」（从边界伸入 zone 内部的断裂线）—— zone 不再
+## 读作纯色矩形块，而是手裁地垫拼块。全 hash 驱动，无 RNG。
+## 只改边界带（0..20px），不侵入 zone 内部窗口（中心 64×64 窗口从边缘
+## ≥32px 起，多色 cluster / dominant 测试不受影响）。
+func _bite_zone_edges(img: Image) -> void:
+	var zones := [["strength", 3001], ["cardio", 3019], ["flex", 3037]]
+	var walk_cols := [
+		Palette.FLOOR_WALK_BASE,
+		Palette.FLOOR_WALK_CL_LIGHT,
+		Palette.FLOOR_WALK_CL_DARK,
+	]
+	for entry: Array in zones:
+		var zone := str(entry[0])
+		var rect := _zone_px(zone)
+		if rect.size.x <= 0 or rect.size.y <= 0:
+			continue
+		var seed := int(entry[1])
+		var zone_col := Palette.FLOOR_STRENGTH_BASE
+		if zone == "cardio":
+			zone_col = Palette.FLOOR_CARDIO_BASE
+		elif zone == "flex":
+			zone_col = Palette.FLOOR_FLEX_BASE
+		# 角部大对角切角：每个角切 12-24px 三角（斜切 —— 无直角）。
+		var corner_sizes := [18 + (_hash2(seed, 7) % 7), 15 + (_hash2(seed + 3, 11) % 8),
+			16 + (_hash2(seed + 5, 13) % 7), 14 + (_hash2(seed + 9, 17) % 9)]
+		for ci in 4:
+			var sz := int(corner_sizes[ci])
+			var c_x := rect.position.x
+			var c_y := rect.position.y
+			var dir_x := 1
+			var dir_y := 1
+			match ci:
+				1:
+					c_x = rect.end.x - 1
+					dir_x = -1
+				2:
+					c_y = rect.end.y - 1
+					dir_y = -1
+				3:
+					c_x = rect.end.x - 1
+					c_y = rect.end.y - 1
+					dir_x = -1
+					dir_y = -1
+			for dy in sz:
+				for dx in sz - dy:
+					var px := c_x + dx * dir_x
+					var py := c_y + dy * dir_y
+					if px >= rect.position.x and px < rect.end.x \
+							and py >= rect.position.y and py < rect.end.y:
+						img.set_pixel(px, py,
+							walk_cols[(_hash2(seed + ci * 31 + dx, dy * 5 + ci) >> 4) % walk_cols.size()])
+		# 四条边：0=顶 1=底 2=左 3=右 —— 深咬口（8-20px 深）+ 凸起。
+		for edge in 4:
+			var edge_seed := seed + edge * 101
+			var len_max: int = rect.size.x if edge < 2 else rect.size.y
+			var pos := 0
+			while pos < len_max:
+				var h := _hash2(edge_seed + pos, edge_seed * 7)
+				var chunk := 6 + (h % 11)          # 6..16px 缺口宽
+				var depth := 8 + ((h >> 4) % 13)   # 8..20px 深
+				var protrude := 3 + ((h >> 8) % 5) # 3..7px 凸起
+				if h % 2 != 0:  # ~1/2 位置有咬口
+					if edge == 0:  # 顶边：向下挖
+						for dx in chunk:
+							if pos + dx >= len_max:
+								break
+							for dy in depth:
+								img.set_pixel(rect.position.x + pos + dx,
+									rect.position.y + dy,
+									walk_cols[(_hash2(edge_seed + pos + dx, dy * 5) >> 4) % walk_cols.size()])
+						for dx in mini(protrude, chunk):
+							if pos + dx >= len_max:
+								break
+							for dy in 3:
+								var py := rect.position.y - 1 - dy
+								if py >= 0:
+									img.set_pixel(rect.position.x + pos + dx, py, zone_col)
+					elif edge == 1:  # 底边：向上挖 + 向下凸（返工6 P4 加强：
+						# 下凸 3px→5px + 每 2 个咬口必凸 —— 走道带上缘读作锯齿）
+						for dx in chunk:
+							if pos + dx >= len_max:
+								break
+							for dy in depth:
+								img.set_pixel(rect.position.x + pos + dx,
+									rect.position.y + rect.size.y - 1 - dy,
+									walk_cols[(_hash2(edge_seed + pos + dx, dy * 7 + 3) >> 4) % walk_cols.size()])
+						for dx in mini(protrude, chunk):
+							if pos + dx >= len_max:
+								break
+							for dy in 5:
+								var py := rect.position.y + rect.size.y + dy
+								if py < img.get_height():
+									img.set_pixel(rect.position.x + pos + dx, py, zone_col)
+					elif edge == 2:  # 左边：向右挖 + 向左凸
+						for dy in chunk:
+							if pos + dy >= len_max:
+								break
+							for dx in depth:
+								img.set_pixel(rect.position.x + dx,
+									rect.position.y + pos + dy,
+									walk_cols[(_hash2(edge_seed + pos + dy, dx * 9 + 5) >> 4) % walk_cols.size()])
+						for dy in mini(protrude, chunk):
+							if pos + dy >= len_max:
+								break
+							for dx in 3:
+								var px := rect.position.x - 1 - dx
+								if px >= 0:
+									img.set_pixel(px, rect.position.y + pos + dy, zone_col)
+					else:  # 右边：向左挖 + 向右凸
+						for dy in chunk:
+							if pos + dy >= len_max:
+								break
+							for dx in depth:
+								img.set_pixel(rect.position.x + rect.size.x - 1 - dx,
+									rect.position.y + pos + dy,
+									walk_cols[(_hash2(edge_seed + pos + dy, dx * 11 + 7) >> 4) % walk_cols.size()])
+						for dy in mini(protrude, chunk):
+							if pos + dy >= len_max:
+								break
+							for dx in 3:
+								var px := rect.position.x + rect.size.x + dx
+								if px < img.get_width():
+									img.set_pixel(px, rect.position.y + pos + dy, zone_col)
+				pos += chunk + 5 + ((h >> 8) % 6)  # 步进带随机间隙
+		# 磨损裂缝：边界内侧 2-4px 宽、8-18px 长的断裂细缝（偶发，
+		# 从边缘伸入 zone —— 拼块边缘磨损，非纯色矩形）。
+		for edge in 4:
+			var edge_seed := seed + edge * 101
+			var len_max: int = rect.size.x if edge < 2 else rect.size.y
+			var pos := 0
+			while pos < len_max:
+				var h := _hash2(edge_seed + pos, edge_seed * 7)
+				if h % 5 == 0:
+					var crack_len := 8 + ((h >> 10) % 11)
+					var crack_w := 2 + ((h >> 14) % 3)
+					var crack_pos := pos + 4
+					if edge == 0:
+						for cl in crack_len:
+							for cw in crack_w:
+								if crack_pos + cw < len_max:
+									img.set_pixel(rect.position.x + int(crack_pos) + cw,
+										rect.position.y + 2 + cl,
+										walk_cols[(_hash2(edge_seed + cl, cw * 13) >> 4) % walk_cols.size()])
+					elif edge == 1:
+						for cl in crack_len:
+							for cw in crack_w:
+								if crack_pos + cw < len_max:
+									img.set_pixel(rect.position.x + int(crack_pos) + cw,
+										rect.position.y + rect.size.y - 3 - cl,
+										walk_cols[(_hash2(edge_seed + cl, cw * 17) >> 4) % walk_cols.size()])
+					elif edge == 2:
+						for cl in crack_len:
+							for cw in crack_w:
+								if crack_pos + cw < len_max:
+									img.set_pixel(rect.position.x + 2 + cl,
+										rect.position.y + int(crack_pos) + cw,
+										walk_cols[(_hash2(edge_seed + cl, cw * 19) >> 4) % walk_cols.size()])
+					else:
+						for cl in crack_len:
+							for cw in crack_w:
+								if crack_pos + cw < len_max:
+									img.set_pixel(rect.position.x + rect.size.x - 3 - cl,
+										rect.position.y + int(crack_pos) + cw,
+										walk_cols[(_hash2(edge_seed + cl, cw * 23) >> 4) % walk_cols.size()])
+				pos += 9 + ((h >> 8) % 8)
+		# 内部拼缝：zone 内部多条断裂的 walkway 色拼缝 —— 大色块分成拼块。
+		# 返工6 P4（N1 分区矩形）：拼缝数量 3→5、长度加深（跨过内部窗口），
+		# 且使用 zone 主色的深/浅变体（同色系 → 不触发 foreign 检测，但把
+		# 纯色面打成拼块 —— GPT：三块纯色矩形分区读感消失）。
+		var seam_seed := seed + 777
+		for si in 5:
+			var sh := _hash2(seam_seed + si, si * 31)
+			var seam_axis := sh % 2          # 0=水平 1=垂直
+			var seam_pos := 6 + ((sh >> 4) % 22)  # 6..27px 距边
+			var seam_len := 70 + ((sh >> 8) % 50) # 70..119px 长（跨过内部）
+			var seam_x := rect.position.x + 4 + ((sh >> 12) % 40)
+			var seam_y := rect.position.y + 4 + ((sh >> 16) % 40)
+			var seam_tone := (sh >> 20) % 4
+			var seam_col: Color
+			if seam_tone == 0:
+				seam_col = zone_col.lightened(0.14)
+			elif seam_tone == 1:
+				seam_col = zone_col.darkened(0.16)
+			elif seam_tone == 2:
+				seam_col = zone_col.lightened(0.08)
+			else:
+				seam_col = walk_cols[(sh >> 24) % walk_cols.size()]
+			if seam_axis == 0:
+				for cl in seam_len:
+					var sx := seam_x + cl
+					var sy := seam_y + seam_pos
+					if sx >= rect.position.x and sx < rect.end.x \
+							and sy >= rect.position.y and sy < rect.end.y:
+						img.set_pixel(sx, sy, seam_col)
+						if cl % 5 == 0 and sy + 1 < rect.end.y:
+							img.set_pixel(sx, sy + 1, seam_col)
+			else:
+				for cl in seam_len:
+					var sx := seam_x + seam_pos
+					var sy := seam_y + cl
+					if sx >= rect.position.x and sx < rect.end.x \
+							and sy >= rect.position.y and sy < rect.end.y:
+						img.set_pixel(sx, sy, seam_col)
+						if cl % 5 == 0 and sx + 1 < rect.end.x:
+							img.set_pixel(sx + 1, sy, seam_col)
+
+
+## 返工6 P4（N1 走道条带）：走道带破条 —— 顶部走道（世界 y 24..32）、
+## 底部走道（y 288..320）、左右走道列（x 0..32 / 384..416）是四条连续
+## 浅色条带，读作「长矩形带」。这里在条带内按 hash 撒暗色磨损块（深色
+## 短横条 + 局部暗点），把连续浅带打断成碎段。位置与采样点 (110,12)
+## 错开（该点需保持亮 walkway 材质）。确定性 hash，无 RNG。
+func _break_walkway_bands(img: Image) -> void:
+	var w := img.get_width()
+	var h := img.get_height()
+	# 返工6 P4：破断色必须「真暗」—— 走道亮色 C8BAA3 经灯光衰减后
+	# 在帧中 ~(120,109,103)；若破断色与之同亮度族，灯光后收敛为同色，
+	# 破断不可见（GPT：246px 连续浅色 run 仍在）。三档全用 <0.45 亮度
+	# 的深色（强度区深灰 + 深木 + 深区色），灯光后仍显著暗于走道。
+	var dark_cols := [
+		Palette.FLOOR_STRENGTH_BASE,
+		Palette.FLOOR_MAT_SEAM,
+		Palette.FLOOR_WALK_CL_DARK.darkened(0.45),
+	]
+	# 世界底缘（y 316..320）：底部世界边缘是一条横贯全宽的水平线（屏幕
+	# y≈683 —— GPT：主场馆底部外沿读作长水平建筑边界）。沿底缘撒深色
+	# 缺口块（高 2-4px，宽 4-12px，间距 hash 错落）—— 底缘读作手绘
+	# 破损而非一刀切直线。
+	for by4 in range(316, 320):
+		var row_seed4 := _hash2(9601 + by4, by4 * 41)
+		var bx4 := row_seed4 % 9
+		while bx4 < w:
+			var bh4 := _hash2(9701 + bx4, by4 * 17)
+			var c4: Color = dark_cols[(bh4 >> 8) % dark_cols.size()]
+			var edge_h := 2 + ((bh4 >> 10) % 3)
+			for dy4 in edge_h:
+				var py4 := by4 + dy4
+				if py4 < h:
+					img.set_pixel(bx4, py4, c4)
+			bx4 += 12 + (bh4 % 11)   # 12..22px 间距
+	# 底部走道带（y 288..320）：横穿条带的深色短块（宽 6-18px，高 3-6px）
+	# 返工6 P4：密度 34→72（每 ~5px 一个块），保证任意扫描行都有暗块打断
+	# （GPT：底部走道带仍读作连续浅色长条）。
+	for i in 72:
+		var seed := _hash2(9001 + i * 7, i * 13)
+		var bx := 2 + int(seed % (w - 4))
+		var by := 288 + int((seed >> 6) % 32)
+		var bw := 5 + int((seed >> 12) % 11)
+		var bh := 2 + int((seed >> 18) % 4)
+		var c: Color = dark_cols[(seed >> 20) % dark_cols.size()]
+		for dy in bh:
+			for dx in bw:
+				var px := bx + dx
+				var py := by + dy
+				if px >= 0 and px < w and py >= 0 and py < h:
+					img.set_pixel(px, py, c)
+	# 底部走道带逐行破断（返工6 P4）：每条扫描行按 ~22px 间距撒暗色
+	# 1-2px 点 —— 任意行最大同色 run ≤ ~30px（GPT：底部走道 246px 连续
+	# 浅色 run）。密度低（每 ~22px 1-2px），不破坏 walkway 亮材质读法。
+	for by2 in range(288, 320):
+		var row_seed := _hash2(9401 + by2, by2 * 37)
+		var bx2 := row_seed % 11
+		while bx2 < w:
+			var bh2 := _hash2(9501 + bx2, by2 * 13)
+			var c2: Color = dark_cols[(bh2 >> 8) % dark_cols.size()]
+			# 4-5px 高：世界 1px → 屏幕 2.25px；2-3px 仍可能落在行间隙（GPT
+			# 在 y=642 采样到 246px 连续 run）。4-5px 保证任何屏幕扫描行
+			# 都覆盖（相邻行错位点也重叠）—— 246px 连续 run 消失。
+			var dot_h := 4 + ((bh2 >> 10) % 2)
+			for dy3 in dot_h:
+				var py3 := by2 + dy3
+				if py3 < h:
+					img.set_pixel(bx2, py3, c2)
+			if bh2 % 3 == 0 and bx2 + 1 < w:
+				for dy3 in dot_h:
+					var py3 := by2 + dy3
+					if py3 < h:
+						img.set_pixel(bx2 + 1, py3, c2)
+			bx2 += 14 + (bh2 % 9)   # 14..22px 间距（更密，破断更碎）
+	# 底部走道带下缘（世界 y 316..320）：暗色锯齿缺口 —— 走道与 UI 交界
+	# 不读作连续水平直线（GPT：底部入口带下沿过直）。
+	var ex := 0
+	while ex < w:
+		var eh := _hash2(9301 + ex, ex * 29)
+		var seg := 10 + (eh % 14)      # 10..23px 一段
+		var depth := 1 + ((eh >> 6) % 3)  # 1..3px 深
+		for dx in mini(seg, w - ex):
+			for dy in depth:
+				var py := h - 1 - dy
+				var c2: Color = dark_cols[((eh >> 9) + dx) % dark_cols.size()]
+				img.set_pixel(ex + dx, py, c2)
+		ex += seg + 2 + ((eh >> 11) % 4)
+	# 顶部走道带（y 24..32）：少量暗块（避免覆盖 walkway 采样点 (110,12)）
+	for i in 10:
+		var seed := _hash2(9101 + i * 7, i * 17)
+		var bx := 8 + int(seed % (w - 16))
+		if absf(bx - 110.0) < 14.0:
+			bx = (bx + 40) % (w - 16)
+		var by := 25 + int((seed >> 6) % 6)
+		var bw := 5 + int((seed >> 12) % 9)
+		var c: Color = dark_cols[(seed >> 16) % dark_cols.size()]
+		for dy in 3:
+			for dx in bw:
+				var px := bx + dx
+				var py := by + dy
+				if px >= 0 and px < w and py >= 0 and py < h:
+					img.set_pixel(px, py, c)
+	# 左/右走道列（x 0..32 / 384..416）：纵向条带每隔一段打断
+	for i in 18:
+		var seed := _hash2(9201 + i * 5, i * 23)
+		var left := (seed % 2) == 0
+		var bx := 6 + int((seed >> 4) % 20) if left else 390 + int((seed >> 4) % 20)
+		var by := 40 + int((seed >> 10) % 240)
+		var bw := 4 + int((seed >> 18) % 9)
+		var bh := 3 + int((seed >> 22) % 5)
+		var c: Color = dark_cols[(seed >> 26) % dark_cols.size()]
+		for dy in bh:
+			for dx in bw:
+				var px := bx + dx
+				var py := by + dy
+				if px >= 0 and px < w and py >= 0 and py < h:
+					img.set_pixel(px, py, c)
 
 
 ## 地垫/地胶拼块（任务 1b/3）：在灰霾空地（右侧走道列、顶部通道中段、
@@ -359,7 +693,9 @@ func _draw_flex(img: Image) -> void:
 ## [spacing] 簇间距（px，越小越密）；[seed_base] 确定性种子。
 func _paint_cluster_zone(img: Image, rect: Rect2i, palette: Array, seam: Color,
 		spacing: int, seed_base: int) -> void:
-	_fill_jagged(img, rect, palette[0], seed_base)
+	# 返工6 P4（N1 分区矩形）：波浪填充替代整行平移 jagged —— 左右边缘
+	# 独立 jitter，zone 边界不平行（GPT：中央走道/右侧木地板读作硬切矩形）。
+	_fill_wavy(img, rect, palette[0], seed_base)
 	var bleed := maxi(6, spacing)
 	# 笔触簇（主力，~3/4）：主笔触 + 更短的交叉副笔触；色差已在 palette
 	# 收敛到邻近底色，因此仍满足“非纯色大块”的覆盖护栏但视觉对比更安静。
@@ -370,13 +706,16 @@ func _paint_cluster_zone(img: Image, rect: Rect2i, palette: Array, seam: Color,
 	var row := 0
 	while gy < rect.position.y + rect.size.y + bleed:
 		var row_h := _hash2(seed_base + row * 37, 91)
-		var row_step := spacing - 2 + row_h % 5
+		# 返工6 P4（N1 分区矩形）：行距不规则范围 ±2 → ±4 —— 木地板
+		# 板缝/橡胶拼缝不再等距规则（GPT：flex 板缝 y≈261/337/422/530
+		# 间距有规律，读作规则分区）。
+		var row_step := spacing - 4 + row_h % 9
 		var x_off := (row_h >> 6) % spacing
 		var gx := rect.position.x - bleed + x_off
 		var col := 0
 		while gx < rect.position.x + rect.size.x + bleed:
 			var h := _hash2(gx * 31 + seed_base, gy * 17 + seed_base * 7)
-			var col_step := spacing - 2 + ((h >> 16) % 5)
+			var col_step := spacing - 4 + ((h >> 16) % 9)
 			if h % 17 != 0:  # ~5.9% 跳过 → 局部稀疏（密度变化）
 				var cx := gx + (h % 7) - 3
 				var cy := gy + ((h >> 4) % 7) - 3
@@ -501,6 +840,21 @@ func _fill_jagged(img: Image, rect: Rect2i, color: Color, seed: int) -> void:
 			continue
 		var xoff := (_hash2(seed + y, y * 3 + seed) % 7) - 3
 		for x in range(rect.position.x + xoff, rect.position.x + rect.size.x + xoff):
+			if x >= 0 and x < img.get_width():
+				img.set_pixel(x, y, color)
+
+
+## 返工6 P4（N1 分区矩形）：波浪填充 —— 左/右边分别独立 jitter（±6px，
+## 不同 hash），zone 边界不再左右同步平移（_fill_jagged 整行平移 → 边界
+## 保持平行、等宽，GPT：中央走道「平行等宽直上直下」）。波浪边界使左右
+## 边缘错位 — 读作手切地垫而非硬切矩形。
+func _fill_wavy(img: Image, rect: Rect2i, color: Color, seed: int) -> void:
+	for y in range(rect.position.y, rect.position.y + rect.size.y):
+		if y < 0 or y >= img.get_height():
+			continue
+		var lxoff := (_hash2(seed + y, y * 7 + 11) % 13) - 6
+		var rxoff := (_hash2(seed * 3 + y, y * 11 + 29) % 13) - 6
+		for x in range(rect.position.x + lxoff, rect.position.x + rect.size.x + rxoff):
 			if x >= 0 and x < img.get_width():
 				img.set_pixel(x, y, color)
 

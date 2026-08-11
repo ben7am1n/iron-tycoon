@@ -546,6 +546,64 @@ func _draw() -> void:
 			draw_texture_rect(tex, Rect2(x, shelf_y + jitter, w, SHELF_H), false)
 		x += w + _shelf_seg_gap(seg)
 		seg += 1
+	# 返工6 P4（N1 底部条带）：段顶缘手绘缺口 —— 整条架条顶部按同布局
+	# 烘焙一张「缺口条带」纹理（1 draw call），在架条上方挖 3-6px 缺口，
+	# 单段顶缘读作手绘参差而非规则水平直线（不新增逐像素 draw call）。
+	var notch_tex := _shelf_notch_texture(size.y)
+	if notch_tex != null:
+		draw_texture_rect(notch_tex,
+			Rect2(4.0, shelf_y - 2.0, size.x - 8.0, notch_tex.get_height()), false)
+
+
+## 返工6 P4（N1 底部条带）：懒生成「架条顶缘缺口条带」纹理 —— 与架条
+## 分段同布局（同宽/同缝/同错落 hash），在每个段顶缘按 hash 位置画深色
+## 咬口（暗木色，非透明 —— 覆盖在架条上方，把顶缘直线切成参差段）。
+## 烘焙成 1 张纹理 → 整条只 1 个 draw call（性能预算 <200 保持）。
+## 确定性：段索引 + 局部 x hash，无 RNG。
+var _shelf_notch_tex: ImageTexture = null
+func _shelf_notch_texture(palette_h: float) -> ImageTexture:
+	if _shelf_notch_tex != null:
+		return _shelf_notch_tex
+	var shelf_y := palette_h - SHELF_H - 2
+	var w := int(ceil(1280.0 - 8.0))
+	var img := Image.create(w, SHELF_H + 4, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0.0, 0.0, 0.0, 0.0))
+	var bite_col := UiTheme.wood_shelf().darkened(0.42)
+	var x := 4.0
+	var seg := 0
+	while x < 1280.0 - 8.0:
+		var sw := _shelf_seg_width(seg)
+		sw = mini(sw, 1280.0 - 8.0 - x)
+		if sw > 12.0:
+			var jitter := _segment_y_jitter(seg)
+			var top_row := int(round(shelf_y + jitter - (palette_h - SHELF_H - 2)))
+			top_row = clampi(top_row, 0, SHELF_H + 2)
+			var nx := 0.0
+			while nx < sw - 4.0:
+				var h := _hash_seg(seg, int(nx))
+				if h % 3 != 0:  # ~2/3 位置有咬口
+					var notch := 3 + (h % 4)   # 3..6px 缺口宽
+					var depth := 1 + ((h >> 4) % 3)  # 1..3px 深
+					for dx in notch:
+						var tx := int(x + nx + dx)
+						if tx < 0 or tx >= img.get_width():
+							continue
+						for dy in depth:
+							var ty := top_row + 1 + dy
+							if ty >= 0 and ty < img.get_height():
+								img.set_pixel(tx, ty, bite_col)
+				nx += 7.0 + float((h >> 8) % 5)
+		x += sw + _shelf_seg_gap(seg)
+		seg += 1
+	_shelf_notch_tex = ImageTexture.create_from_image(img)
+	return _shelf_notch_tex
+
+
+## 确定性 hash（段 + x 局部）—— 顶缘缺口位确定性、可测试。
+func _hash_seg(seg: int, x: int) -> int:
+	var h := (seg * 0x9E3779B1) ^ (x * 0x85EBCA6B)
+	h = (h ^ (h >> 13)) * 1274126177
+	return h & 0x7fffffff
 
 
 ## 非等宽段宽（返工5 P4）：确定性 hash（段索引）→ 56..136px。段宽各异
@@ -621,9 +679,11 @@ func _junction_trim_texture() -> ImageTexture:
 
 ## 每段架条垂直错落（V3.1 返工4 P4）：确定性 hash（段索引）→ -2..+2px。
 ## 架条整体不再是一条等高直线（四角不齐/轻微不规则多边形）。
+## 返工6 P4（N1 底部条带）：错落加强 -3..+3px + 段内顶缘手绘缺口 ——
+## 单段架条顶缘不再是一条水平直线（GPT：架条顶部边缘读作规则横线）。
 func _segment_y_jitter(seg: int) -> float:
 	var h := (seg * 0x9E3779B1) ^ 0x5EED
-	return float((h % 5) - 2)
+	return float((h % 7) - 3)
 
 
 ## 懒生成展示架像素纹理（确定性 seed）。底色 = UiTheme.wood_shelf() 暖木色

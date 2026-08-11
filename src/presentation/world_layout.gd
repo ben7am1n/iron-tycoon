@@ -173,7 +173,11 @@ const DECOR := {
 	# 全深）在 HEIGHT_SCALE 0.79 下于屏幕遮挡 flex 区西缘 x 284..308 ——
 	# 瑜伽球/带原 x=288 落入柱影，东移到 (320,136)/(320,176) 可见木地板。
 	"cup_yellow_f1": Vector2i(88, 108),
-	"yoga_ball_f1": Vector2i(320, 136),
+	# 返工6 P4：瑜伽球东移至吊灯 3 光池内（世界 326..398 × 145..195）——
+	# 池光暖化球体 → 高饱和像素被池光稀释，A 簇计数保持 ≤18（shrunk pool
+	# 后球在池外，FOCAL_PINK 簇 621→1044px 超上限；移入池内恢复稀释）。
+	# 证据窗口 r=26 仍覆盖（距 (320,136) ≈ 13px）。
+	"yoga_ball_f1": Vector2i(326, 148),
 	"yoga_strap_f1": Vector2i(320, 176),
 	# 中央通道（walkway 环道，V3 §15 第一眼：消除空荡通道）—— 长椅/盆栽/垫子
 	# 沿顶部通道：前台右侧等待长椅 + 通道盆栽（cell row 1 空闲格，避开前台
@@ -202,19 +206,21 @@ const DECOR := {
 }
 
 ## 顶墙挂饰（海报/计时器/招牌/电视）：prop_id -> 墙上锚点（24px 精灵，贴墙）。
+## 返工6 P4（N1）：各挂饰 y 锚点错落（1..4）—— 手挂不同高度，底部不再
+## 对齐成一条水平直线（GPT：海报底缘 y≈144 读作整齐横梁/分区线）。
 const WALL_DECOR := {
-	"poster_run": Vector2i(140, 1),
-	"poster_yoga": Vector2i(260, 1),
+	"poster_run": Vector2i(140, 2),
+	"poster_yoga": Vector2i(260, 4),
 	"timer_bike": Vector2i(52, 1),
-	"sign_entrance": Vector2i(36, 1),
+	"sign_entrance": Vector2i(36, 3),
 	"tv": Vector2i(320, 1),
 	# V3.1 R4/R5 精修：红色促销横幅占据顶墙中部，成为墙面主焦点。
 	"ad_red": Vector2i(164, 1),
 	# 返工3 P1（中央通道「海报墙」）：海报墙贴在北墙空闲带 ——
 	# poster_wall_1 在 ad_red 东侧（244..260，贴 ad_red 右缘 2px 拼贴）、
 	# poster_wall_2 在 timer_bike 东侧（68..84）。等待区上方墙面叙事密集。
-	"poster_wall_1": Vector2i(244, 1),
-	"poster_wall_2": Vector2i(68, 1),
+	"poster_wall_1": Vector2i(244, 2),
+	"poster_wall_2": Vector2i(68, 4),
 }
 
 # === V3 §6 / V3.1 R4 灯光锚点 ===
@@ -226,17 +232,17 @@ const HANGING_LIGHTS := [
 	{
 		"id": "hanging_lamp_1", "rect": Rect2i(72, 18, 28, 36),
 		"height": 78.0, "bulb_local": Vector2(14, 29),
-		"landing": Vector2(86, 170), "pool_half": Vector2(52, 36),
+		"landing": Vector2(86, 170), "pool_half": Vector2(36, 25),
 	},
 	{
 		"id": "hanging_lamp_2", "rect": Rect2i(210, 18, 28, 36),
 		"height": 78.0, "bulb_local": Vector2(14, 29),
-		"landing": Vector2(224, 170), "pool_half": Vector2(52, 36),
+		"landing": Vector2(224, 170), "pool_half": Vector2(36, 25),
 	},
 	{
 		"id": "hanging_lamp_3", "rect": Rect2i(348, 18, 28, 36),
 		"height": 78.0, "bulb_local": Vector2(14, 29),
-		"landing": Vector2(362, 170), "pool_half": Vector2(52, 36),
+		"landing": Vector2(362, 170), "pool_half": Vector2(36, 25),
 	},
 ]
 
