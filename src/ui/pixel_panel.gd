@@ -300,6 +300,13 @@ static func plaque_texture(
 	_texture_clusters(body, rng, Vector2i(size.x, body_h), base, Style.WOOD)
 	_torn_silhouette(body, rng, Vector2i(size.x, body_h))
 	_edge_tone_jitter(body, rng, Vector2i(size.x, body_h))
+	# 返工5 P4（FAIL #1：顶带仍读作「长条矩形+等宽边框」）：每块挂牌加
+	# 手绘框线 —— 非等宽边框 + 框线抖动。框厚逐边不同（上 1-2 / 下 3-5 /
+	# 左 1-3 / 右 2-4 texel），框线逐段 ±1 texel 抖动 + ~15% 缺口 —— 每块
+	# 牌读作手绘面板，绝非等宽描边。低饱和深木色（同族派生，不新增焦点）。
+	_hand_drawn_frame(body, rng, Vector2i(size.x, body_h), base)
+	# 返工5 P4（弱项 N4：面板纯色平涂）：面板内部加手绘笔触/色阶微差。
+	_brush_hue_steps(body, rng, Vector2i(size.x, body_h), base)
 	# 挂绳：顶部中央 2-3 texel 高的小提绳（亮色短线，手绘）
 	_hanging_string(body, rng, Vector2i(size.x, body_h), base.lightened(0.18))
 	# 钉子：左上/右上各一枚 2×2 高光钉头（不对称偏移 —— 手绘）
@@ -487,6 +494,98 @@ static func _torn_silhouette(img: Image, rng: RandomNumberGenerator, size: Vecto
 					img.set_pixel(size.x - 2, ry, CLEAR)
 					if rng.randf() < 0.35 and size.x > 2:
 						img.set_pixel(size.x - 3, ry, CLEAR)
+
+
+## 手绘框线（返工5 P4 FAIL #1：顶带读作「长条矩形+等宽边框」）：
+## 每块挂牌画一圈手绘框线 —— 非等宽边框：四条边框厚各自不同
+## （上 1 / 下 2-3 / 左 1 / 右 1-2 texel —— 随面板尺寸缩放，保证内部木色
+## 面积充足），每条边逐段 ±1 texel 抖动 + ~15% 缺口（框线断断续续，绝非
+## 闭合等宽描边）。颜色 = 底色加深 0.36（深木色，低饱和 —— 不新增高饱和
+## 焦点，gate PIL A 保持）。确定性：rng 顺序消费，同 seed 同框线。
+static func _hand_drawn_frame(img: Image, rng: RandomNumberGenerator, size: Vector2i, base: Color) -> void:
+	if size.x < 8 or size.y < 8:
+		return
+	var frame := base.darkened(0.36)
+	var th_top := 1
+	var th_bot := 2 + (1 if size.y >= 12 else 0)
+	var th_left := 1
+	var th_right := 1 + (1 if size.x >= 32 else 0)
+	var x := 0
+	while x < size.x:
+		var seg := 2 + rng.randi_range(0, 2)
+		var wob := rng.randi_range(-1, 1)
+		var gap := rng.randf() < 0.15
+		for dx in mini(seg, size.x - x):
+			if gap and dx == 0:
+				continue
+			for t in th_top:
+				var py := t + wob
+				if py >= 0 and py < size.y:
+					img.set_pixel(x + dx, py, frame)
+		x += seg
+	x = 0
+	while x < size.x:
+		var seg := 2 + rng.randi_range(0, 2)
+		var wob := rng.randi_range(-1, 1)
+		var gap := rng.randf() < 0.15
+		for dx in mini(seg, size.x - x):
+			if gap and dx == 0:
+				continue
+			for t in th_bot:
+				var py := size.y - 1 - t - wob
+				if py >= 0 and py < size.y:
+					img.set_pixel(x + dx, py, frame)
+		x += seg
+	var y := 0
+	while y < size.y:
+		var seg := 2 + rng.randi_range(0, 2)
+		var wob := rng.randi_range(-1, 1)
+		var gap := rng.randf() < 0.15
+		for dy in mini(seg, size.y - y):
+			if gap and dy == 0:
+				continue
+			for t in th_left:
+				var px := t + wob
+				if px >= 0 and px < size.x:
+					img.set_pixel(px, y + dy, frame)
+		y += seg
+	y = 0
+	while y < size.y:
+		var seg := 2 + rng.randi_range(0, 2)
+		var wob := rng.randi_range(-1, 1)
+		var gap := rng.randf() < 0.15
+		for dy in mini(seg, size.y - y):
+			if gap and dy == 0:
+				continue
+			for t in th_right:
+				var px := size.x - 1 - t - wob
+				if px >= 0 and px < size.x:
+					img.set_pixel(px, y + dy, frame)
+		y += seg
+
+
+## 手绘笔触/色阶微差（返工5 P4 弱项 N4：面板纯色平涂）：面板内部加
+## 4-8 条短斜向手绘笔触（2-5 texel 长），颜色 = 底色加深/提亮微差
+## （0.06-0.16）—— 面板读作艺术家逐笔绘制，绝非纯色大面积填充。
+## 低饱和同族色，不新增焦点。确定性：rng 顺序消费。
+static func _brush_hue_steps(img: Image, rng: RandomNumberGenerator, size: Vector2i, base: Color) -> void:
+	if size.x < 8 or size.y < 8:
+		return
+	var strokes := 4 + rng.randi_range(0, 4)
+	for i in strokes:
+		var sx := rng.randi_range(2, maxi(2, size.x - 5))
+		var sy := rng.randi_range(2, maxi(2, size.y - 5))
+		var slen := 2 + rng.randi_range(0, 3)
+		var dark := rng.randf() < 0.55
+		var c := base.darkened(0.06 + rng.randf() * 0.10) if dark else base.lightened(0.05 + rng.randf() * 0.11)
+		var dir_x := rng.randi_range(-1, 1)
+		var dir_y := rng.randi_range(0, 1)
+		for l in slen:
+			var px := sx + dir_x * l
+			var py := sy + dir_y * l
+			if px >= 0 and px < size.x and py >= 0 and py < size.y:
+				if img.get_pixel(px, py).a > 0.0:
+					img.set_pixel(px, py, c)
 
 
 ## 挂牌顶部挂绳：顶部中央 1 texel 宽、2-3 texel 高的小提绳（亮色，手绘）。

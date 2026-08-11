@@ -87,12 +87,16 @@ func _draw_walkway(img: Image) -> void:
 	var h := img.get_height()
 	# 瓷砖色差 cluster：约三分之一 cell 一个短而低对比的不规则笔触簇。
 	# 仍可读出手绘变化，但大面积观看时不再形成抢眼的散点噪声。
+	# 返工5 P4（FAIL #3 同根）：cell 网格行错位 —— 每行起点随机偏移 ±半格、
+	# 行密度随 hash 变化 —— 消除「整行对齐」的规则平铺读法。
 	for cy in _grid_h:
+		var row_off := (_hash2(cy * 7 + 3, 131) % 17) - 8
+		var row_density := 3 + (_hash2(cy * 11 + 5, 251) % 3)  # 3..5 分之一
 		for cx in _grid_w:
-			var seed := _hash2(cx * 5 + 1, cy * 7 + 3)
-			if seed % 3 != 0:
+			var seed := _hash2(cx * 5 + 1 + row_off, cy * 7 + 3)
+			if seed % row_density != 0:
 				continue
-			var cx_px := cx * _cell + _cell / 2 + (seed % 5) - 2
+			var cx_px := cx * _cell + _cell / 2 + (seed % 5) - 2 + row_off
 			var cy_px := cy * _cell + _cell / 2 + ((seed >> 4) % 5) - 2
 			var c: Color = Palette.FLOOR_WALK_CL_LIGHT if (seed + cy) % 3 != 0 \
 				else Palette.FLOOR_WALK_CL_DARK
@@ -332,11 +336,17 @@ func _draw_flex(img: Image) -> void:
 
 # === V3.1 P3 手绘原语（全部确定性，无 RNG 状态） ===
 
-## 多色 cluster 区域（P3 核心 + 返工2 R1 手绘笔触）：jagged 底 + 不规则
-## 短笔触簇叠色 + 断裂接缝。R1：材质不再以「噪点圆点」（blob）为主 ——
-## 改为「手绘笔触」—— 短线段（_paint_stroke）按 hash 方向/长度抖动、
-## 端点偏移，笔触色从同族色表选（色相微差），形成艺术家逐笔绘制的质感；
-## 少量 blob 仅作局部磨损点（非主力）。
+## 多色 cluster 区域（P3 核心 + 返工2 R1 手绘笔触 + 返工5 P4 去规则平铺）：
+## jagged 底 + 不规则短笔触簇叠色 + 断裂接缝。R1：材质不再以「噪点圆点」
+## （blob）为主 —— 改为「手绘笔触」—— 短线段（_paint_stroke）按 hash 方向/
+## 长度抖动、端点偏移，笔触色从同族色表选（色相微差），形成艺术家逐笔
+## 绘制的质感；少量 blob 仅作局部磨损点（非主力）。
+## 返工5 P4（FAIL #3：地面密集规则颗粒/短条平铺读作程序重复纹理）：笔触
+## 排布去规则化 —— 旧版固定 spacing 网格（for range(…, spacing)）产生规则
+## 平铺栅格读法。改为：行距/列距逐行逐列变化（spacing±2）、行起点错位
+## （0..spacing-1，行错位）、~8% 跳过 + ~5% 加笔（局部密度变化）—— 无
+## 规律平铺网格。全 hash 驱动，确定性不变；平均步距 = spacing，覆盖率与
+## 旧版相当（floor_art 测试 distinct>=5 / dominant<0.75 不受影响）。
 ## [palette] cluster 色表（含 base，第一个 = 底色）；[seam] 接缝色；
 ## [spacing] 簇间距（px，越小越密）；[seed_base] 确定性种子。
 func _paint_cluster_zone(img: Image, rect: Rect2i, palette: Array, seam: Color,
@@ -347,26 +357,46 @@ func _paint_cluster_zone(img: Image, rect: Rect2i, palette: Array, seam: Color,
 	# 收敛到邻近底色，因此仍满足“非纯色大块”的覆盖护栏但视觉对比更安静。
 	# 起始点钳制在 zone rect 内（±2 容差）—— 笔触不泄漏进相邻 walkway/
 	# 其它区（phase1/2 GRID-hidden 窗口依赖 walkway 亮瓷砖面平坦）。
-	for gy in range(rect.position.y - bleed, rect.position.y + rect.size.y + bleed, spacing):
-		for gx in range(rect.position.x - bleed, rect.position.x + rect.size.x + bleed, spacing):
+	# 排布去规则化：行距/列距 hash 变化 + 行错位 + 局部密度变化。
+	var gy := rect.position.y - bleed
+	var row := 0
+	while gy < rect.position.y + rect.size.y + bleed:
+		var row_h := _hash2(seed_base + row * 37, 91)
+		var row_step := spacing - 2 + row_h % 5
+		var x_off := (row_h >> 6) % spacing
+		var gx := rect.position.x - bleed + x_off
+		var col := 0
+		while gx < rect.position.x + rect.size.x + bleed:
 			var h := _hash2(gx * 31 + seed_base, gy * 17 + seed_base * 7)
-			var cx := gx + (h % 7) - 3
-			var cy := gy + ((h >> 4) % 7) - 3
-			cx = clampi(cx, rect.position.x - 2, rect.position.x + rect.size.x - 1)
-			cy = clampi(cy, rect.position.y - 2, rect.position.y + rect.size.y - 1)
-			# palette[0] 已作为底色铺满；笔触只从其余近邻色选，避免“用底色
-			# 画纹理”浪费覆盖，同时不需要加大笔触或提高污渍对比。
-			var col_index := 1 + (h >> 12) % maxi(palette.size() - 1, 1)
-			var col: Color = palette[mini(col_index, palette.size() - 1)]
-			if h % 4 == 0:
-				# ~1/4 保留小磨损点（局部旧痕，非噪点主力）
-				_paint_blob(img, cx, cy, 1 + (h >> 8) % 2, col, h ^ seed_base)
-			else:
-				# 短主笔触（非圆点噪点）。绘制边界钳制在 rect 内 ——
-				# 笔触不泄漏进相邻 walkway/其它区。
-				_paint_stroke(img, cx, cy, 5 + (h >> 8) % 5, col, h ^ seed_base, rect)
-				_paint_stroke(img, cx, cy, 4 + ((h >> 9) % 4), col,
-					(h ^ seed_base) * 7 + 3, rect)
+			var col_step := spacing - 2 + ((h >> 16) % 5)
+			if h % 17 != 0:  # ~5.9% 跳过 → 局部稀疏（密度变化）
+				var cx := gx + (h % 7) - 3
+				var cy := gy + ((h >> 4) % 7) - 3
+				cx = clampi(cx, rect.position.x - 2, rect.position.x + rect.size.x - 1)
+				cy = clampi(cy, rect.position.y - 2, rect.position.y + rect.size.y - 1)
+				# palette[0] 已作为底色铺满；笔触只从其余近邻色选，避免“用底色
+				# 画纹理”浪费覆盖，同时不需要加大笔触或提高污渍对比。
+				var col_index := 1 + (h >> 12) % maxi(palette.size() - 1, 1)
+				var col_c: Color = palette[mini(col_index, palette.size() - 1)]
+				if h % 4 == 0:
+					# ~1/4 保留小磨损点（局部旧痕，非噪点主力）
+					_paint_blob(img, cx, cy, 1 + (h >> 8) % 2, col_c, h ^ seed_base)
+				else:
+					# 短主笔触（非圆点噪点）。绘制边界钳制在 rect 内 ——
+					# 笔触不泄漏进相邻 walkway/其它区。返工5 P4：主笔触稍长
+					# （5-10px）补偿去规则化导致的局部覆盖下降（flex dominant
+					# 保持 < 0.75）。
+					_paint_stroke(img, cx, cy, 5 + (h >> 8) % 6, col_c, h ^ seed_base, rect)
+					_paint_stroke(img, cx, cy, 4 + ((h >> 9) % 4), col_c,
+						(h ^ seed_base) * 7 + 3, rect)
+				if h % 19 == 0 and gx + spacing < rect.position.x + rect.size.x:
+					# ~5% 局部加笔（密度变化）—— 邻近短笔触簇
+					_paint_stroke(img, cx + spacing / 2, cy + 2, 3 + ((h >> 20) % 3), col_c,
+						(h ^ seed_base) * 11 + 5, rect)
+			gx += col_step
+			col += 1
+		gy += row_step
+		row += 1
 	_paint_jagged_seams(img, rect, seam, seed_base * 3)
 
 ## 手绘短笔触（返工2 R1）：5-9px 短线段，方向 8 桶 hash 抖动、端点偏移

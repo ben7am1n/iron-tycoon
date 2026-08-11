@@ -531,20 +531,35 @@ func _draw() -> void:
 	# 交界破形带（架条上方 —— 错落短段，打断底部世界/HUD 交界直线）
 	_draw_junction_trim()
 	var shelf_y := size.y - SHELF_H - 2
-	# 每 tile 一段架条（等宽分段 + 段间留缝 —— 非连续底栏；GPT 视觉自检：
-	# 底部=「连续底栏承载的卡片行」—— 分段后读作架上的独立物件）。
-	var seg_w := 88.0
-	var seg_gap := 8.0
+	# 每 tile 一段架条（非等宽分段 + 段间错落间隙 —— 返工5 P4 FAIL #1：
+	# 旧版等宽 88px 段 + 等距 8px 缝读作「等宽分段条带」。改为确定性 hash
+	# 驱动的非等宽段宽（56..136px）+ 非等距缝（6..26px）+ 垂直错落 ±3px
+	# —— 读作前台木架上长短不一的搁板，绝非规则分段）。
 	var x := 4.0
 	var seg := 0
 	while x < size.x - 8.0:
-		var w := mini(seg_w, size.x - 8.0 - x)
+		var w := _shelf_seg_width(seg)
+		w = mini(w, size.x - 8.0 - x)
 		if w > 12.0:
-			# 每段垂直错落 ±2px（确定性 hash）—— 架条边缘不再一条直线
+			# 每段垂直错落 ±3px（确定性 hash）—— 架条边缘不再一条直线
 			var jitter := _segment_y_jitter(seg)
 			draw_texture_rect(tex, Rect2(x, shelf_y + jitter, w, SHELF_H), false)
-		x += seg_w + seg_gap
+		x += w + _shelf_seg_gap(seg)
 		seg += 1
+
+
+## 非等宽段宽（返工5 P4）：确定性 hash（段索引）→ 56..136px。段宽各异
+## —— 架条不再等宽分段（旧版 88px 全等）。
+func _shelf_seg_width(seg: int) -> float:
+	var h := (seg * 0x9E3779B1) ^ 0x5EED
+	return 56.0 + float(h % 81)
+
+
+## 段间错落间隙（返工5 P4）：确定性 hash → 6..26px。缝隙宽窄不一 ——
+## 段间墙缝错落（旧版 8px 全等）。
+func _shelf_seg_gap(seg: int) -> float:
+	var h := ((seg + 3) * 0x9E3779B1) ^ 0xB01B
+	return 6.0 + float(h % 21)
 
 
 ## 交界破形带（V3.1 返工4 P4）：架条上方一条带（世界地板底缘与架条之间）

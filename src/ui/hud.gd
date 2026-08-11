@@ -235,8 +235,8 @@ const PLAQUE_SHADOW_TEXELS := 2
 ## 「挂着」语言。数值为 [高度, 垂直偏移(正=下移), 底色加深]。
 const PLAQUE_VARIANTS := {
 	"money": {"h": 34, "dy": 2, "tone": 0.00},
-	"sat": {"h": 46, "dy": 8, "tone": 0.07},
-	"time": {"h": 40, "dy": -2, "tone": -0.05},
+	"sat": {"h": 50, "dy": 14, "tone": 0.07},
+	"time": {"h": 42, "dy": 2, "tone": -0.05},
 }
 const PLAQUE_SEED_MONEY := 0x50A7_E
 const PLAQUE_SEED_SAT := 0x50A7_F
@@ -776,12 +776,12 @@ func _wall_decor_texture() -> ImageTexture:
 	var h := 12
 	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
 	img.fill(Color(0.0, 0.0, 0.0, 0.0))
-	# === 公告板（texel x 38..100 → 屏幕 160..408）：中等宽度小公告板，
-	# 与左右挂牌留出明显墙面空隙（GPT 视觉：顶栏=「一整条」—— 板与牌
-	# 之间必须露出墙，物件才各自独立）。
-	_draw_cork_board(img, 38, 100, 2, 11)
-	# === 小黑板（texel x 182..236 → 屏幕 736..952）：小号黑板，同样留缝。
-	_draw_chalk_board(img, 182, 236, 0, 9)
+	# === 公告板（texel x 55..85 → 屏幕 220..340）：小公告板，左右留明显
+	# 墙面空隙（Money 牌 ~12..180 / Sat 牌 ~430..640 —— 板与牌之间露出墙，
+	# 物件各自独立 —— 返工5 P4：分段面板读法，段间有可见墙缝）。===
+	_draw_cork_board(img, 55, 85, 2, 11)
+	# === 小黑板（texel x 190..220 → 屏幕 760..880）：小号黑板，同样留缝。===
+	_draw_chalk_board(img, 190, 220, 0, 9)
 	_wall_decor_tex = ImageTexture.create_from_image(img)
 	return _wall_decor_tex
 
