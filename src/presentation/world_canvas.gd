@@ -939,13 +939,17 @@ func _draw_equipment() -> void:
 ## b>r —— 与暖光环境冷暖对比，非深灰噪点）。保持 draw_rect（同一颜色下
 ## 引擎自动批量 —— draw call 预算 <200 硬门；draw_colored_polygon 逐个
 ## 不批量，5 台设备 +5 calls 直接超预算）。
+## 返工6 P3（第三眼#4 空间层次）：alpha 0.20→0.17 —— 深色器械 + 投影不
+## 再合成同一块深灰蓝团块（GPT：左中器械群阴影与器械暗部连成团）；方向
+## 仍由 MAIN_LIGHT_DIR 全局统一（第三眼#2）。接触影（EQUIP_SHADOW 深色）
+## 承担「近物深硬」，方向投影降到「远端一档软化」。
 func _draw_equipment_cast_shadow(fp: Rect2i, height: float) -> void:
 	var center := Vector2(fp.position) + Vector2(fp.size) * 0.5
 	var offset := WorldLayout.cast_shadow_offset(center, height)
 	if offset.length() < 2.0:
 		return
 	var shadow := Palette.SHADOW_COOL
-	shadow.a = 0.20
+	shadow.a = 0.17
 	var shadow_rect := Rect2(Vector2(fp.position) + offset, Vector2(fp.size))
 	_draw_with_floor_transform(func() -> void:
 		draw_rect(shadow_rect, shadow, true)
