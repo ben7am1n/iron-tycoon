@@ -876,14 +876,24 @@ func _draw_equipment() -> void:
 		# draw call 预算不变（197<200 硬门）。
 		# 返工5 P1（FAIL3 噪点退让）：外层 grow 7→9、alpha 0.30→0.36；
 		# 内层 grow 3→4、alpha 0.46→0.54 —— 近道具噪点进一步压平。
+		# 返工6 P3（第三眼#2 方向一致冷投影）：接触影沿全局主光方向偏移 ——
+		# 外层 MAIN_LIGHT_DIR×5、内层 ×3（「近物深硬、远端一档软化」：
+		# 内侧贴脚深硬、外侧沿光方向延伸软化），不再是居中团块 —— 暗部
+		# 读作「定向投影」而非「区域压暗」（GPT：左侧器械旁大面积深冷影
+		# 像无方向团块，中央碎、右侧无 —— 接触影必须同方向）。
+		# 尺寸/alpha 保持返工5 P1 口径（grow 9/4、0.36/0.54）—— 只加
+		# 方向偏移，不缩尺寸（缩尺寸会把低-sat 覆盖面积让给地板，推高
+		# low-sat 基线 0.6313；方向性由偏移承担）。
 		_draw_with_floor_transform(func() -> void:
 			var soft_rect := fp_rect.grow(9)
-			soft_rect.position.y += 3
+			soft_rect.position = soft_rect.position + Vector2i(roundi(WorldLayout.MAIN_LIGHT_DIR.x * 5.0),
+				roundi(WorldLayout.MAIN_LIGHT_DIR.y * 5.0))
 			var soft := Palette.EQUIP_SHADOW
 			soft.a = 0.36
 			draw_rect(soft_rect, soft, true)
 			var core_rect := fp_rect.grow(4)
-			core_rect.position.y += 2
+			core_rect.position = core_rect.position + Vector2i(roundi(WorldLayout.MAIN_LIGHT_DIR.x * 3.0),
+				roundi(WorldLayout.MAIN_LIGHT_DIR.y * 3.0))
 			var core := Palette.EQUIP_SHADOW
 			core.a = 0.54
 			draw_rect(core_rect, core, true)
@@ -1316,6 +1326,9 @@ func _draw_member_contact_shadow(flat_feet: Vector2) -> void:
 ## 之后、接触影之前（亮池托起人物，方向投影把人物「锚」在地面）。
 ## 返工3 P2：接触影已并入亮池纹理（_member_ground_fx_texture），本函数
 ## 单独绘制方向投影（有方向偏移，不能烘焙进居中纹理）。
+## 返工6 P3（第三眼#2 方向一致冷投影）：方向来自全局 MAIN_LIGHT_DIR（不再
+## 逐物体最近灯摆动 —— 全场投影方向一致）；alpha 0.16→0.19 —— 人物/器械/
+## 地面层次拉开（GPT：人物脚底方向投影可读，人物不再悬在地面噪点上）。
 func _draw_member_cast_shadow(flat_feet: Vector2) -> void:
 	var offset := WorldLayout.cast_shadow_offset(flat_feet, 20.0)
 	if offset.length() < 2.0:
@@ -1323,7 +1336,7 @@ func _draw_member_cast_shadow(flat_feet: Vector2) -> void:
 	# 返工3 P3（FAIL2 阴影色温统一）：会员投影同样用干净冷蓝灰 SHADOW_COOL
 	# （b>r）—— 与设备投影同色温，全场景冷色阴影统一（非深灰噪点）。
 	var shadow := Palette.SHADOW_COOL
-	shadow.a = 0.16
+	shadow.a = 0.19
 	var size := float(_member_sprites.SIZE) if _member_sprites != null else 48.0
 	var rx := size * 0.30
 	var ry := size * 0.09
@@ -1337,11 +1350,15 @@ func _draw_member_cast_shadow(flat_feet: Vector2) -> void:
 
 
 ## 亮池+接触影合并纹理缓存（返工3 P2 性能优化）。key = "size"（会员尺寸）。
-## 纹理内容 = 同一 16 段椭圆几何：外圈暖白亮池（HIGHLIGHT_WARM a=0.10，
-## rx=0.62·size / ry=0.16·size）+ 内圈暗色接触影（EQUIP_SHADOW a=0.30，
-## rx=0.34·size / ry=0.10·size），中心对齐 —— 与旧两次 draw_colored_polygon
+## 纹理内容 = 同一 16 段椭圆几何：外圈暖白亮池（HIGHLIGHT_WARM a=0.12，
+## rx=0.62·size / ry=0.16·size）+ 内圈暗色接触影（EQUIP_SHADOW a=0.36，
+## rx=0.28·size / ry=0.09·size），中心对齐 —— 与旧两次 draw_colored_polygon
 ## 逐像素等价（含 alpha 叠色顺序：先亮池后接触影）。两种颜色都低 alpha、
 ## 接触影完全包含在亮池内 → 叠色结果与旧两遍绘制相同。
+## 返工6 P3（第三眼#4 空间层次）：接触影「更小更纯」—— rx 0.34→0.28、
+## alpha 0.30→0.36（GPT：人物脚下用更小、更纯的接触阴影，脚踩处明暗衔接
+## 明确、不扩散成暗块）；亮池 alpha 0.10→0.12（人物/地面中间明度差拉大，
+## 消除「人物下半身/器械底座/阴影合成同一块深灰蓝」的粘连读法）。
 var _member_ground_fx_cache: Dictionary = {}
 
 
@@ -1357,13 +1374,13 @@ func _member_ground_fx_texture() -> ImageTexture:
 	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
 	img.fill(Color(0, 0, 0, 0))
 	var glow := Palette.HIGHLIGHT_WARM
-	glow.a = 0.10
+	glow.a = 0.12
 	var contact := Palette.EQUIP_SHADOW
-	contact.a = 0.30
+	contact.a = 0.36
 	var glow_rx := rx
 	var glow_ry := ry
-	var contact_rx := size * 0.34
-	var contact_ry := size * 0.10
+	var contact_rx := size * 0.28
+	var contact_ry := size * 0.09
 	for py in h:
 		for px in w:
 			# 纹理中心 = 会员脚底；像素相对中心的世界偏移

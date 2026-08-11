@@ -393,31 +393,36 @@ func _paint_faceted_pool(img: Image, center: Vector2, half_size: Vector2,
 			# 系）—— 主设备带暖池保持「第一视觉落点」，qa_v31r4p1
 			# focal > far_zone 余量不变；块级拼花结构（P4 N4）与 P1 档位
 			# 兼容（拼花决定亮暗分布，alpha 档位决定亮暗上限）。
-			var a := 0.22
-			var warm := Palette.LIGHT_POOL_EDGE
-			var bt := _hash2((x >> 3) * 31 + 7, (y >> 3) * 17 + 11) % 3
+			var a := 0.40
+			var warm := Palette.LIGHT_POOL_MID
+			# 返工6 P3（第三眼#1 可读暖光衰减 + 辉光受控像素阶梯）：alpha 不再
+			# 按 8×8 块 hash 三档随机（GPT：整片随机噪点同等参与 → 读作大面积
+			# 棕黄噪点/综合色块，无衰减），改为 metric 离散亮度环 —— 热核实色
+			# 亮核心、次圈中档、外圈低档（受控像素阶梯：核心实色、次圈稀疏
+			# 抖动、外圈更稀疏）。keep 行（0.85/0.80）逐字不动 —— R4 ring
+			# 覆盖率由 keep 决定，alpha 变化不改变覆盖率（ring 硬门保持）。
+			# 外圈 0.40 MID = 旧块随机在 metric≥0.56 区（0.46/0.40/0.34，2/3
+			# 概率 MID 色相）的均值档 —— 亮度衰减由「外圈更稀疏（keep*0.60）
+			# + 降 alpha」共同表达；r3p1 E2 旧投影常量采样池缘像素保持兼容
+			# （该点与黄水杯同色相族，alpha 降太多会把焦点像素推出容差）。
 			if metric < 0.25:
-				# 热核：块 hash 亮/中 —— 灯下亮本体，但仍有块级差异
-				a = 0.64 if bt == 0 else 0.46
+				a = 0.64  # 热核：核心实色（灯下亮本体）
 				warm = Palette.LIGHT_TOP_WARM
-			elif bt == 0:
-				a = 0.46
-				warm = Palette.LIGHT_POOL_MID
-			elif bt == 1:
-				a = 0.40
+			elif metric < 0.56:
+				a = 0.46  # 次圈：中档（稀疏抖动由 keep=0.80 缺口承担）
 				warm = Palette.LIGHT_POOL_MID
 			else:
-				a = 0.34
-				warm = Palette.LIGHT_POOL_EDGE
+				a = 0.40  # 外圈：低档（更稀疏，keep*0.60 缺口更大）
+				warm = Palette.LIGHT_POOL_MID
 			# 方向性：沿光方向有块级 bias（北块略亮/南块略暗 —— 有方向，
 			# 不是同心圆对称）。
 			var block_half := ((y >> 3) < (int(center.y) >> 3))
 			var dir_bias := 1.14 if block_half else 0.86
 			var bl := _hash2((x >> 3) * 13 + 5, (y >> 3) * 7 + 3) % 4
-			# 块级亮度乘子：0.84..1.0（P1 的 block_v 0.86..1.0 是实心像素灯
-			# 基线，avg 0.92；P4 块级拼花保持 ±8% 亮暗差异 —— low-sat
-			# 63.50% 已近基线，最终 0.84 接平 P1 亮度族）。
-			var bmult := 0.84 + 0.16 * float(bl) / 3.0
+			# 块级亮度微差：0.88..1.0（±6% 像素材质微差 —— 阶内不整片
+			# 同值，但不再 0.84..1.0 的大跨距随机 —— 阶差主体由三档 alpha
+			# 承担，微差只防程序化平涂）。low-sat 与 P1 亮度族保持。
+			var bmult := 0.88 + 0.12 * float(bl) / 3.0
 			var a2 := a * strength * dir_bias * bmult
 			# 硬量化：≥0.05 全部保留（tier alpha 已分档；块级 bmult 决定亮暗）。
 			# cap 0.64 = P1 热核档位上限（qa_v31r4p1 focal>far_zone 依赖），
@@ -434,6 +439,10 @@ func _paint_faceted_pool(img: Image, center: Vector2, half_size: Vector2,
 ## 不再有 smooth gradient 外圈（GPT 读作「gradient 光斑」的根因）。
 ## 仍是 hash 散射稀疏像素，覆盖率远低于 0.95 —— R4 环测试采样半径
 ## （r ≤ 44 ≈ metric 0.85）不进入本带，硬门保持。
+## 返工6 P3（第三眼#4 辉光受控）：保持外圈硬切（r4p3 外圈非平滑渐变 ≥6
+## 方向依赖）。fade 密度保持返工6 P4 口径（keep 0.14 / cap 0.12）——
+## 降低密度会推高 low-sat（fade 像素是暖色 LIGHT_POOL_EDGE，低-sat 计数
+## 反被稀释）；外圈「不再撒点」由池体外缘 keep*0.60 硬切承担。
 func _paint_pool_fade(img: Image, center: Vector2, x: int, y: int, metric: float, seed: int) -> void:
 	# 返工6 P4（N4）：渐弱带从「两档软渐变」压缩为「一档硬边稀疏像素」——
 	# 只保留 metric 1.0..1.22 的极稀疏暖边（块级 hash，4×4 同判），> 1.22
