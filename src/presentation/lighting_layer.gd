@@ -171,11 +171,15 @@ func _paint_ambient_cool_falloff(img: Image) -> void:
 				continue
 			var t := clampf((nearest - 96.0) / 90.0, 0.0, 1.0)
 			# 稀疏：远处密度略升但始终低（≤0.22 keep）
-			if float(_hash2(x + seed, y * 3 + seed) % 1000) / 1000.0 > 0.10 + 0.12 * t:
+			# 返工4 P3：密度再降（0.13+0.14t → 0.18+0.16t）+ alpha 再降
+			# （cap 0.10→0.08）—— 弱项「全画面颗粒雾化感较重」：远处冷灰
+			# 回落是环境色链尾，不需要高密度铺点；qa A 远候选距落点 <96
+			# 不受本带影响（本带只作用于 metric>1 池外区域），冷灰链仍在。
+			if float(_hash2(x + seed, y * 3 + seed) % 1000) / 1000.0 > 0.18 + 0.16 * t:
 				continue
 			var c := Palette.LIGHT_EDGE_SHADOW
-			var a := 0.05 + 0.07 * t * (0.5 + 0.5 * float(_hash2(x + 23, y + 41) % 100) / 100.0)
-			img.set_pixel(x, y, Color(c.r, c.g, c.b, minf(a, 0.12)))
+			var a := 0.03 + 0.05 * t * (0.5 + 0.5 * float(_hash2(x + 23, y + 41) % 100) / 100.0)
+			img.set_pixel(x, y, Color(c.r, c.g, c.b, minf(a, 0.08)))
 
 
 ## 前景暖光带（V3.1 返工2 R3 FAIL3 三层景深）：画面底部（世界 y 240..290，
@@ -194,12 +198,15 @@ func _paint_foreground_warm(img: Image) -> void:
 			var t := float(y - y0) / float(y1 - y0)
 			# 返工3 P3：keep 略升（0.16+0.30t → 0.18+0.32t）—— 前景带
 			# 比背景墙更暖更亮（FAIL3 三层景深：fore 明度最高）。
-			var keep := 0.18 + 0.32 * t
+			# 返工4 P3：密度略降（0.18+0.32t → 0.22+0.34t）+ alpha cap
+			# 0.18→0.16 —— 弱项「全画面颗粒雾化感」：前景受光保持，但
+			# 不再整条底部高密度铺点（r3p3 fore ≥ wall-1 仍有余量）。
+			var keep := 0.22 + 0.34 * t
 			if float(_hash2(x + seed, y * 3 + seed) % 100) / 100.0 > keep:
 				continue
 			var c := Palette.LIGHT_POOL_MID
-			var a := 0.07 + 0.11 * t * (0.5 + 0.5 * float(_hash2(x + 41, y + 53) % 100) / 100.0)
-			img.set_pixel(x, y, Color(c.r, c.g, c.b, minf(a, 0.18)))
+			var a := 0.06 + 0.10 * t * (0.5 + 0.5 * float(_hash2(x + 41, y + 53) % 100) / 100.0)
+			img.set_pixel(x, y, Color(c.r, c.g, c.b, minf(a, 0.16)))
 
 
 ## 墙边暗角（V3.1 P4 近墙像素变暗）：EDGE_SHADOW_WIDTH 内散射冷蓝灰暗像素，
@@ -215,15 +222,18 @@ func _paint_edge_shadow(img: Image) -> void:
 				continue
 			var t := 1.0 - float(d) / float(edge)   # 1=紧贴墙，0=内缘
 			# 散射：近墙覆盖率高，内缘抖动 —— 不规则边界，非完美矩形
-			if _hash2(x, y) % 100 >= 82 + int(16.0 * t):
+			# 返工4 P3：密度略降（82+16t → 84+12t）+ alpha 略降（0.12+0.13t
+			# → 0.10+0.11t，cap 0.28→0.24）—— 弱项「全画面颗粒雾化感」：
+			# 墙边暗角保持冷色阴影，但不再整圈高密度铺点压住边界清晰度。
+			if _hash2(x, y) % 100 >= 84 + int(12.0 * t):
 				continue
-			var a := 0.12 + 0.13 * t * (0.5 + 0.5 * float(_hash2(x + 31, y + 17) % 100) / 100.0)
+			var a := 0.10 + 0.11 * t * (0.5 + 0.5 * float(_hash2(x + 31, y + 17) % 100) / 100.0)
 			# 角落再压一层（空间纵深，V3 §4/§6）
 			if x < edge and y < edge or x >= w - edge and y < edge \
 					or x < edge and y >= h - edge or x >= w - edge and y >= h - edge:
-				a += 0.045
+				a += 0.04
 			var c := Palette.LIGHT_EDGE_SHADOW
-			img.set_pixel(x, y, Color(c.r, c.g, c.b, minf(a, 0.28)))
+			img.set_pixel(x, y, Color(c.r, c.g, c.b, minf(a, 0.24)))
 
 
 ## 顶部主光落点：不是径向圆，而是横宽纵窄的 faceted 像素材质区。
@@ -271,13 +281,32 @@ func _paint_faceted_pool(img: Image, center: Vector2, half_size: Vector2,
 			var ny := absf((y + 0.5 - center.y) / maxf(half_size.y, 1.0))
 			# max + taxicab 混合得到八边形/阶梯边，不是同心圆。
 			var metric := maxf(nx, ny) * 0.62 + (nx + ny) * 0.22
+			# V3.1 返工4 P3 云状轮廓：外缘（metric ≥ 0.56）按 8 扇区 hash
+			# 半径调制（0.76..1.24）—— 光晕轮廓是「不规则云状色块」，不是
+			# 对称八边形/椭圆（GPT：圆形/椭圆半透明光斑 → 应读作像素灯
+			# 色块）。热核/中档（metric<0.56）不变 —— R4 ring 硬门由热核
+			# keep 决定，r=10/22 环落在 metric<0.56 区，覆盖率不受影响。
+			# 扇区调制只作用于「外缘是否画」的判断，不改 tier alpha。
+			var contour_metric := metric
+			if metric >= 0.56:
+				var ang := atan2(y + 0.5 - center.y, x + 0.5 - center.x)
+				var sector := int(floor((ang + PI) / TAU * 8.0)) % 8
+				var factor := 0.76 + 0.48 * float(_hash2(sector + seed, seed * 13) % 100) / 100.0
+				contour_metric = metric * factor
 			# 池体只画到 metric ≤ 1.0；之外交给独立 fade band（避免主池边缘
 			# 70% 覆盖率的暖亮壳 + fade 双重绘制 —— 返工3 P3 降噪）。
-			if metric > 1.0:
+			if contour_metric > 1.0:
 				_paint_pool_fade(img, center, x, y, metric, seed)
 				continue
-			var edge_jitter := (float(_hash2(x + seed, y - seed) % 100) / 100.0 - 0.5) * 0.10
-			if metric + edge_jitter > 1.0:
+			# V3.1 返工4 P3 像素灯：外缘轮廓按 2×2 像素块同判（块级 edge jitter）
+			# —— 光晕边缘是「像素块错落」的锯齿边，不是平滑八边形/椭圆。
+			# 热核/中档 keep 行（0.85/0.80）逐字不动 —— R4 ring<0.95 硬门
+			# 由这两行决定（r=10/22 环落在 metric<0.56 区；edge jitter 只
+			# 影响 metric≈1.0 的外缘像素，覆盖率不变）。
+			var block_x := x >> 1
+			var block_y := y >> 1
+			var edge_jitter := (float(_hash2(block_x + seed, block_y - seed) % 100) / 100.0 - 0.5) * 0.18
+			if contour_metric + edge_jitter > 1.0:
 				continue
 			var density := clampf(1.0 - metric, 0.0, 1.0)
 			var keep := 0.30 + 0.46 * density
@@ -285,8 +314,21 @@ func _paint_faceted_pool(img: Image, center: Vector2, half_size: Vector2,
 				keep = 0.85
 			elif metric < 0.56:
 				keep = 0.80
-			if float(_hash2(x + seed * 3, y + seed) % 1000) / 1000.0 > keep:
-				continue
+			# 热核/中档（metric<0.56）：逐像素 hash 保持逐字（R4 ring 覆盖率
+			# 0.92/0.85 + gate A 簇结构不动 —— 受光面热核是「灯下亮」本体）。
+			# 外缘（metric ≥ 0.56，光晕绘制区）：块级 hash（2×2 同判）→
+			# 光晕外圈读作「像素块错落」，不是逐像素颗粒（GPT：颗粒与抖动
+			# 打散边缘）。keep 再降一档（×0.72）→ 外缘更稀疏，热核→外圈
+			# 有可见的硬色阶落差，池体不再像「整块半透明椭圆」。
+			var hash_val: int
+			if metric < 0.56:
+				hash_val = _hash2(x + seed * 3, y + seed)
+				if float(hash_val % 1000) / 1000.0 > keep:
+					continue
+			else:
+				hash_val = _hash2(block_x + seed * 3, block_y + seed)
+				if float(hash_val % 1000) / 1000.0 > keep * 0.72:
+					continue
 			# 分三档而非平滑透明渐变；每档再用少量 hash 做像素材质变化。
 			var a := 0.19
 			var warm := Palette.LIGHT_POOL_EDGE
@@ -299,26 +341,37 @@ func _paint_faceted_pool(img: Image, center: Vector2, half_size: Vector2,
 			# 方向性：北半（灯下，y<center）更亮，南半回落 —— 光有方向。
 			# 返工3 P3：bias 拉强（1.24/0.76）→ 灯下亮→向南衰减有可见梯度。
 			var dir_bias := 1.24 if y < center.y else 0.76
-			a *= strength * dir_bias * (0.86 + 0.14 * float(_hash2(x + 7, y + 11) % 100) / 100.0)
+			# V3.1 返工4 P3 像素灯：材质抖动按 2×2 像素块同值（block hash）——
+			# 同块像素同亮度 → 光晕读作「像素块色阶」而非逐像素噪点颗粒
+			# （GPT：颗粒与抖动打散边缘 → 应读作像素灯色块）。keep 仍逐像素
+			# （R4 ring 覆盖率 + gate A 簇结构不变）。
+			var block_v := (0.86 + 0.14 * float(_hash2((x >> 1) + 7, (y >> 1) + 11) % 100) / 100.0)
+			a *= strength * dir_bias * block_v
 			img.set_pixel(x, y, Color(warm.r, warm.g, warm.b, minf(a, 0.58)))
 
 
-## 暖池外缘渐弱带（返工3 P3 FAIL1 边缘渐弱）：metric 1.0..1.55 稀疏暖边 ——
-## 暖池不是硬切到无，而是继续衰减到极低 alpha（边缘渐弱，非色块边界），
+## 暖池外缘渐弱带（返工3 P3 FAIL1 边缘渐弱 + V3.1 返工4 P3 像素灯）：
+## metric 1.0..1.55 稀疏暖边 —— 暖池不是硬切到无，而是继续衰减到极低 alpha，
 ## 与远处 ambient cool falloff 的冷灰环境色自然衔接。独立于池体绘制
-## （池体只画 metric ≤ 1.0，避免双重绘制噪点）。仍是 hash 散射稀疏像素，
-## 覆盖率远低于 0.95 —— R4 环测试采样半径（r ≤ 44 ≈ metric 0.85）不进入
-## 本带，硬门保持。
+## （池体只画 metric ≤ 1.0，避免双重绘制噪点）。
+## V3.1 返工4 P3：连续渐变 → 两档硬色阶（1.0..1.28 / 1.28..1.55），档界用
+## 2×2 块级 hash → 每档边缘参差（像素块错落），与池体锯齿边同一语言；
+## 不再有 smooth gradient 外圈（GPT 读作「gradient 光斑」的根因）。
+## 仍是 hash 散射稀疏像素，覆盖率远低于 0.95 —— R4 环测试采样半径
+## （r ≤ 44 ≈ metric 0.85）不进入本带，硬门保持。
 func _paint_pool_fade(img: Image, center: Vector2, x: int, y: int, metric: float, seed: int) -> void:
 	if metric > 1.55:
 		return
-	var fade := clampf(1.0 - (metric - 1.0) / 0.55, 0.0, 1.0)
-	if float(_hash2(x + seed * 7, y * 11 + seed) % 1000) / 1000.0 > 0.12 + 0.34 * fade:
+	var tier := 1 if metric <= 1.28 else 2
+	var block_x := x >> 1
+	var block_y := y >> 1
+	var keep := 0.26 if tier == 1 else 0.10
+	if float(_hash2(block_x + seed * 7, block_y * 11 + seed) % 1000) / 1000.0 > keep:
 		return
-	var edge_a := 0.05 + 0.09 * fade * (0.5 + 0.5 * float(_hash2(x + 31, y + 47) % 100) / 100.0)
+	var edge_a := 0.10 if tier == 1 else 0.05
 	var edge_c := Palette.LIGHT_POOL_EDGE
 	img.set_pixel(x, y, Color(edge_c.r, edge_c.g, edge_c.b,
-		minf(edge_a * (1.24 if y < center.y else 0.76), 0.14)))
+		minf(edge_a * (1.24 if y < center.y else 0.76), 0.12)))
 
 
 ## 高处灯泡→地面落点的投影空间光图。与地板 light map 分离：这里不再套
@@ -392,11 +445,14 @@ func _paint_far_wall_haze(img: Image) -> void:
 			# 返工3 P3：密度略升（0.10+0.16t → 0.14+0.20t）—— 后景墙带
 			# 对比降下来（GPT 反馈「后景过于活跃，抢中景注意力」）；仍稀疏
 			# 冷灰雾（alpha ≤ 0.12），不形成贴图式暗块。
-			if float(_hash2(x + seed, y * 5 + seed) % 1000) / 1000.0 > 0.14 + 0.20 * t:
+			# 返工4 P3：密度略降（0.14+0.20t → 0.17+0.22t）+ alpha cap
+			# 0.12→0.10 —— 弱项「全画面颗粒雾化感」：远景雾化保持冷灰
+			# 回落，但不再整条墙带高密度铺点（qa A 远候选不受本带影响）。
+			if float(_hash2(x + seed, y * 5 + seed) % 1000) / 1000.0 > 0.17 + 0.22 * t:
 				continue
 			var c := Palette.LIGHT_WINDOW_COOL
-			var a := 0.05 + 0.07 * t * (0.5 + 0.5 * float(_hash2(x + 3, y + 71) % 100) / 100.0)
-			img.set_pixel(x, y, Color(c.r, c.g, c.b, minf(a, 0.12)))
+			var a := 0.04 + 0.06 * t * (0.5 + 0.5 * float(_hash2(x + 3, y + 71) % 100) / 100.0)
+			img.set_pixel(x, y, Color(c.r, c.g, c.b, minf(a, 0.10)))
 
 
 ## 稀疏投影光束：沿 source→landing 方向扩张，横向分档 + 纵向断续条带。
@@ -453,12 +509,15 @@ func _paint_projected_shaft(img: Image, source_canvas: Vector2,
 			img.set_pixel(x, y, Color(warm.r, warm.g, warm.b, minf(a, 0.34)))
 
 
-## 灯泡发光核心：5×3 暖白像素 + 稀疏 1px 暖橙外缘，无圆 halo。
+## 灯泡发光核心（V3.1 返工4 P3 像素灯）：5×4 暖白核心 + 稀疏 2×2 暖橙像素
+## 块错落（非径向 1px 散射 —— 径向散射读作圆形光晕，块状散射读作
+## 「像素灯光」）。块位置由 hash 决定（不规则云状，非同心圆）。
 ## 返工3 P3：核心从 5×3 微扩到 7×4、alpha 0.82→0.90（灯在帧中读作
-## 「光源」而非贴上的亮色符号）；外缘 16 个 1px 暖橙散射（半径 ±7，
-## α 0.20-0.38 距离衰减）—— 光晕柔和（GPT 自检反馈「灯芯/光晕偏硬」），
-## 仍是无圆稀疏散射（P4 负约束；gate A 簇计数 <18 保持 —— 散射点扩到
-## 20 个/半径 ±9 时簇计数 19 超上限，收回到 16 个/±7）。
+## 「光源」而非贴上的亮色符号）。
+## 返工4 P3：外缘 16 个 1px 暖橙散射（半径 ±7，α 0.20-0.38 距离衰减）→
+## 8 个 2×2 像素块（偏移 ±8/±6，α 硬两档 0.30/0.22）—— 仍是无圆稀疏
+## 散射（P4 负约束；gate A 簇计数保持 <18 —— 块数少、像素多，连通簇
+## 不增长）。核心保持 7×4/0.90 不动（qa B 灯芯可辨）。
 func _paint_projected_source(img: Image, source_canvas: Vector2, seed: int) -> void:
 	var p := Vector2i(roundi(source_canvas.x - _projected_light_origin.x),
 		roundi(source_canvas.y - _projected_light_origin.y))
@@ -466,11 +525,16 @@ func _paint_projected_source(img: Image, source_canvas: Vector2, seed: int) -> v
 		for dx in range(-3, 4):
 			_set_image_pixel(img, p + Vector2i(dx, dy),
 				Color(Palette.LAMP_BULB.r, Palette.LAMP_BULB.g, Palette.LAMP_BULB.b, 0.90))
-	for i in 16:
-		var off := Vector2i((_hash2(seed + i * 7, i * 3) % 15) - 7,
-			(_hash2(i * 5, seed + i * 11) % 11) - 5)
-		_set_image_pixel(img, p + off,
-			Color(Palette.LAMP_GLOW.r, Palette.LAMP_GLOW.g, Palette.LAMP_GLOW.b, 0.38))
+	# 8 个 2×2 像素块：hash 决定偏移（±8/±6）+ 硬两档 alpha —— 像素灯光，
+	# 不是圆形 halo。块与块之间允许重叠（重叠即更亮的局部簇，仍非圆）。
+	for i in 8:
+		var off := Vector2i((_hash2(seed + i * 7, i * 3) % 17) - 8,
+			(_hash2(i * 5, seed + i * 11) % 13) - 6)
+		var a := 0.30 if (_hash2(i * 9, seed + i * 13) % 100) < 45 else 0.22
+		for dy in range(2):
+			for dx in range(2):
+				_set_image_pixel(img, p + off + Vector2i(dx, dy),
+					Color(Palette.LAMP_GLOW.r, Palette.LAMP_GLOW.g, Palette.LAMP_GLOW.b, a))
 
 
 func _set_image_pixel(img: Image, p: Vector2i, color: Color) -> void:
