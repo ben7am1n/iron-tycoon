@@ -136,11 +136,13 @@ const SNAP_PULSE_COLOR := BUTTER
 
 ## 顶墙基底：暖灰奶油灰（V3 §3 墙壁）。
 const WALL_BASE := Color("9D8B7C")
-## 远景墙面基底（V3.1 返工2 R3 三层景深）：比 WALL_BASE 暗一档、中性偏冷 ——
-## 背景墙面明度低/偏冷（V3 §4 BACKGROUND 低对比 + FAIL3 前中后景分离）。
+## 远景墙面基底（V3.1 返工2 R3 三层景深 + 返工5 P3 N11 灰蒙消除）：比
+## WALL_BASE 暗一档、低饱和但带暖相（r>b）—— 远景「降饱和+暖化而非纯灰」
+## （N11：暖光区与冷阴影区色分明；远景暖灰不压成中性灰）。仍满足 r3p3
+## 独立复核「背景墙面偏冷/中性 b>=r-10」：r-b=10 恰在容差内。
 ## P3 采样容差 0.10/通道内仍属 WALL 族（vs WALL_BASE (139,131,120) 距离
 ## (23,17,6) < 25.5；darkened/lightened 变体 vs WALL_DARK/WALL_BASE 同理）。
-const WALL_BASE_FAR := Color("747272")
+const WALL_BASE_FAR := Color("786F6E")
 ## 顶墙踢脚/明暗块：低饱和棕（比墙基底深一档）。
 const WALL_DARK := Color("736557")
 ## 墙裙线：暖灰更亮一档（装饰压条）。
