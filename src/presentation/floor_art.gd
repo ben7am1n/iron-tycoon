@@ -96,9 +96,12 @@ func _draw_walkway(img: Image) -> void:
 	# 返工5 P1（FAIL3 噪点退让）：1/3 → 1/4 cell（-25% 密度），笔触更短。
 	# 返工5 P4（FAIL #3 同根）：cell 网格行错位 —— 每行起点随机偏移 ±半格、
 	# 行密度随 hash 变化 —— 消除「整行对齐」的规则平铺读法。
+	# 返工6 P1（FAIL1 全局噪点降密）：1/4 → 1/5 cell（-20% 密度）——
+	# 通道是「留白」区域，瓷砖色差保留近看生活痕迹即可（walkway GROUT
+	# 砖缝 + lum>0.6 断言不受影响：cluster 用 CL_* 色，非 GROUT）。
 	for cy in _grid_h:
 		var row_off := (_hash2(cy * 7 + 3, 131) % 17) - 8
-		var row_density := 4 + (_hash2(cy * 11 + 5, 251) % 3)  # 4..6 分之一
+		var row_density := 5 + (_hash2(cy * 11 + 5, 251) % 3)  # 5..7 分之一
 		for cx in _grid_w:
 			var seed := _hash2(cx * 5 + 1 + row_off, cy * 7 + 3)
 			if seed % row_density != 0:
