@@ -542,6 +542,19 @@ func texture_size(prop_id: String) -> Vector2i:
 
 
 ## 建立 prop 图像：透明底 + 按 ART_SCALE 放大每个 art px。
+## 返工6 P1（FAIL3 道具轮廓/色阶稳定一致 + FAIL4 道具受光关系）：装饰
+## 道具不再是「单色平涂贴片」—— 追加手绘后处理（确定性 hash，同输入
+## 同输出）：
+##   1. _apply_prop_outline：外轮廓深一档勾边（CHARCOAL 混合 55-75%，
+##      与设备 EQUIP_EDGE_OUTLINE 同一视觉语言 —— 道具从背景勾出，
+##      Δlum≥25 全帧一致；高光侧开放 + 手绘缺口 ~12%，非等宽边框）
+##   2. _apply_prop_levels：受光面/主体/暗面三阶 —— 顶部 1-2 行向
+##      HIGHLIGHT_WARM 混合（受光边），底部 1-2 行向 EQUIP_SHADOW_TONE
+##      混合（暗面接地）—— 每件主要道具 ≥3 层色阶清晰可辨
+##   3. 色阶边界手绘抖动：只混合邻近色阶（hash 缺口，笔触断裂，
+##      禁止平滑渐变）
+## 只作用于中性/语义色道具（FOCAL_* 高饱和焦点与设备 sprite 同源跳过，
+## gate A 簇结构不动 —— cup_yellow/yoga_ball 等 P5 焦点保持原样）。
 func _build_image(prop_id: String) -> Image:
 	var rows: Array = ART_MAPS[prop_id]
 	var w: int = String(rows[0]).length()
@@ -557,7 +570,98 @@ func _build_image(prop_id: String) -> Image:
 			for py in ART_SCALE:
 				for px in ART_SCALE:
 					img.set_pixel(x * ART_SCALE + px, y * ART_SCALE + py, color)
+	_apply_prop_levels(img)
+	_apply_prop_outline(img)
 	return img
+
+
+## 三阶手绘色阶（FAIL3 每件主要道具 ≥3 层色阶）：受光边（顶行）向
+## HIGHLIGHT_WARM 混合、暗面（底行）向 EQUIP_SHADOW_TONE 混合。hash
+## 缺口 ~25%（笔触断裂，非平滑渐变/非等宽描边）。跳过 FOCAL_* 高饱和
+## 道具（gate A 簇结构不动）。
+func _apply_prop_levels(img: Image) -> void:
+	var w := img.get_width()
+	var h := img.get_height()
+	for x in w:
+		# 找该列最顶/最底不透明行（受光边 = 顶行，暗面 = 底行）
+		var top := -1
+		var bottom := -1
+		for y in h:
+			if img.get_pixel(x, y).a > 0.5:
+				if top < 0:
+					top = y
+				bottom = y
+		if top < 0:
+			continue
+		_apply_level_row(img, x, top, Palette.HIGHLIGHT_WARM, 0.30)
+		if bottom > top:
+			_apply_level_row(img, x, bottom, Palette.EQUIP_SHADOW_TONE, 0.38)
+
+
+## 单行色阶混合：hash 缺口 ~25%，混合量固定（受光边/暗面各有 ±10% 抖动）。
+func _apply_level_row(img: Image, x: int, y: int, target: Color, amt: float) -> void:
+	var c := img.get_pixel(x, y)
+	if c.a <= 0.5:
+		return
+	if _is_focal_tone(c):
+		return
+	var hsh := _hash2(x * 5 + 3, y * 7 + 11)
+	if hsh % 100 < 25:
+		return
+	var mix := amt + float((hsh >> 8) % 21) / 100.0 * 0.2  # amt ± 0.10
+	img.set_pixel(x, y, c.lerp(target, mix))
+
+
+## 外轮廓勾边（FAIL3 道具从背景勾出）：与透明相邻的边界像素向 CHARCOAL
+## 混合 55-75%（Δlum≥25 全帧一致；高光侧开放 + 手绘缺口 ~12% —— 非等宽
+## 边框，V3.1 负面约束）。跳过 FOCAL_* 高饱和道具（gate A 簇结构不动）。
+func _apply_prop_outline(img: Image) -> void:
+	var w := img.get_width()
+	var h := img.get_height()
+	for y in h:
+		for x in w:
+			var c := img.get_pixel(x, y)
+			if c.a <= 0.5:
+				continue
+			if _is_focal_tone(c):
+				continue
+			if not _is_boundary(img, x, y):
+				continue
+			var hsh := _hash2(x * 3 + 7, y * 5 + 9)
+			if hsh % 100 < 12:
+				continue
+			var amt := 0.55 + float((hsh >> 8) % 21) / 100.0  # 55-75%
+			img.set_pixel(x, y, c.lerp(Palette.CHARCOAL, amt))
+
+
+## 像素是否与透明相邻（精灵外轮廓边界）。
+func _is_boundary(img: Image, x: int, y: int) -> bool:
+	if x <= 0 or y <= 0 or x >= img.get_width() - 1 or y >= img.get_height() - 1:
+		return true
+	for n in [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]]:
+		if img.get_pixel(n[0], n[1]).a <= 0.5:
+			return true
+	return false
+
+
+## 高饱和焦点色（P5 FOCAL_* / ACCENT / EMISSIVE 族）：跳过轮廓/色阶混合，
+## 保持 P5 高饱和焦点簇结构（gate A 计数 ≤18 硬门，返工5 P1 教训：
+## 改设备/道具 sprite 会影响全帧簇数）。判定 = HSV sat > 0.55（中性/
+## 语义色全系 sat≤0.45，不会误判；ACCENT_YELLOW 0.63 / FOCAL_* 0.56-0.80
+## 全被跳过）。
+func _is_focal_tone(c: Color) -> bool:
+	var mx := maxf(c.r, maxf(c.g, c.b))
+	var mn := minf(c.r, minf(c.g, c.b))
+	if mx <= 0.0:
+		return false
+	return (mx - mn) / mx > 0.55
+
+
+## 确定性 hash（同 floor_art._hash2 —— 无 RNG 状态，headless 可测）。
+func _hash2(x: int, y: int) -> int:
+	var h := x * 374761393 + y * 668265263
+	h = (h ^ (h >> 13)) * 1274126177
+	return h & 0x7fffffff
 
 
 ## map 字符 → 实际颜色（色值全部来自 palette.gd）。

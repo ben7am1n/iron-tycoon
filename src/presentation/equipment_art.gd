@@ -576,6 +576,10 @@ func _is_silhouette_boundary(img: Image, x: int, y: int) -> bool:
 ## 无完美直线、无程序色块）。只混合中性材质（BODY/METAL/HIGHLIGHT/
 ## SHADOW/OUTLINE 族），不触碰 accent（A/Z/D/L —— 区域语义色与屏幕青蓝
 ## 保持清晰可辨）。确定性 hash 驱动（同输入同输出）。
+## 返工6 P1（FAIL3 器械内部噪点降）：混合密度 30% → 10%、hard-swap 1/5
+## → 1/12、2×2 簇 1/2 → 1/5 —— GPT 二次确认：器械主体内部仍读作
+## 「深蓝/灰褐碎点切碎大块固有色」→ 再删一半以上随机单像素噪点，只保留
+## 明确的材质过渡区；高光改为连续小条带（top-edge band），不散落白点。
 func _apply_hand_drawn_jitter(img: Image) -> void:
 	var w := img.get_width()
 	var h := img.get_height()
@@ -597,22 +601,22 @@ func _apply_hand_drawn_jitter(img: Image) -> void:
 				if d > best_d:
 					best_d = d
 					best = nc
-			if best_d < 0.10:
+			if best_d < 0.12:
 				continue
 			var hsh := _hash2(x * 7 + 3, y * 13 + 1)
-			if hsh % 100 >= 30:
+			if hsh % 100 >= 10:
 				continue
-			if hsh % 5 == 0:
-				# 笔触断裂：完全切到邻阶色（硬台阶，非平滑混合）
+			if hsh % 12 == 0:
+				# 笔触断裂：完全切到邻阶色（硬台阶）—— 极稀有
 				img.set_pixel(x, y, best)
 			else:
-				var amt := 0.45 + float((hsh >> 8) % 31) / 100.0  # 45-75%
+				var amt := 0.35 + float((hsh >> 8) % 21) / 100.0  # 35-55%
 				img.set_pixel(x, y, c.lerp(best, amt))
-			# 2×2 手绘笔触簇：邻像素向同目标低量混合（刷痕感）
-			if hsh % 2 == 0 and x + 1 < w:
+			# 2×2 手绘笔触簇：邻像素向同目标低量混合 —— 1/5 触发
+			if hsh % 5 == 0 and x + 1 < w:
 				var rc := img.get_pixel(x + 1, y)
 				if rc.a > 0.5 and _is_neutral_tone(rc):
-					var sub := 0.25 + float((hsh >> 12) % 26) / 100.0
+					var sub := 0.20 + float((hsh >> 12) % 21) / 100.0
 					img.set_pixel(x + 1, y, rc.lerp(best, sub))
 
 
@@ -649,7 +653,7 @@ func _apply_silhouette_outline(img: Image) -> void:
 			var hsh := _hash2(x * 3 + 7, y * 5 + 9)
 			if hsh % 100 < 2:
 				continue  # 手绘缺口 ~2% —— 近闭合（非等宽边框）
-			var amt := 0.88 + float((hsh >> 8) % 13) / 100.0  # 88-100%
+			var amt := 0.90 + float((hsh >> 8) % 11) / 100.0  # 90-100%（返工6 P1 更连续更深）
 			img.set_pixel(x, y, c.lerp(Palette.EQUIP_EDGE_OUTLINE, amt))
 	# 第二圈：轮廓内侧 1px 半压深（宽度 1-2px 交替，2x 可辨；非等宽）
 	for y in h:
@@ -674,9 +678,9 @@ func _apply_silhouette_outline(img: Image) -> void:
 			if not touching:
 				continue
 			var hsh := _hash2(x * 11 + 5, y * 7 + 3)
-			if hsh % 100 >= 40:
-				continue  # ~40% 内圈加深 —— 宽度变化
-			var amt := 0.35 + float((hsh >> 8) % 21) / 100.0  # 35-55%
+			if hsh % 100 >= 45:
+				continue  # ~45% 内圈加深 —— 宽度变化
+			var amt := 0.40 + float((hsh >> 8) % 21) / 100.0  # 40-60%（返工6 P1 更连续）
 			img.set_pixel(x, y, c.lerp(Palette.EQUIP_EDGE_OUTLINE, amt))
 
 
@@ -710,6 +714,13 @@ func _apply_grounding_line(img: Image) -> void:
 ## 视觉从顶面延伸到面上缘，正面中调 / 侧面暗部与顶面亮缘形成明确三层分离。
 ## 只作用于渲染路径面纹理（不污染 raw_face_images）；hash 缺口 ~15% ——
 ## 手绘断续，非程序渐变（V3.1 负面约束：无圆形光斑/无程序色块）。
+## 返工6 P1（FAIL3 浅色高光过多 → 连续小条带）：混合密度 85% → 88%
+## （更连续，缺口 15% → 12%）、混合量 45-70% → 35-55%、METAL_HIGHLIGHT
+## （sat 0.80，gate A 高饱和簇来源）占比 1/2 → 1/4 —— 顶面受光边是
+## 「一条连续暖亮带」（沿受光边的连续小条带），不是散落白点/逐像素
+## 高光贴片（GPT：高光应连续成条带、沿金属管/面板朝向布置）。
+## 返工6 P1 二次：混合量 35-55% → 28-45%（GPT：蓝白高亮横条仍像
+## 程序化贴片而非金属体积受光 —— 受光边降一档强度，读作材质过渡）。
 func _apply_top_edge_band(img: Image, rows: int) -> void:
 	var w := img.get_width()
 	var h := img.get_height()
@@ -721,10 +732,10 @@ func _apply_top_edge_band(img: Image, rows: int) -> void:
 			if c.a <= 0.5:
 				continue
 			var hsh := _hash2(x * 7 + 1, y * 11 + 3)
-			if hsh % 100 < 15:
+			if hsh % 100 < 12:
 				continue
-			var target := Palette.EQUIP_HIGHLIGHT if hsh % 2 == 0 else Palette.METAL_HIGHLIGHT
-			var amt := 0.45 + float((hsh >> 8) % 25) / 100.0  # 45-70%
+			var target := Palette.EQUIP_HIGHLIGHT if hsh % 4 != 0 else Palette.METAL_HIGHLIGHT
+			var amt := 0.28 + float((hsh >> 8) % 18) / 100.0  # 28-45%
 			img.set_pixel(x, y, c.lerp(target, amt))
 
 

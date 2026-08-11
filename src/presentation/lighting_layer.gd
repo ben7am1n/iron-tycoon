@@ -58,6 +58,10 @@ var _light_map_image: Image = null
 var _projected_light_map: ImageTexture = null
 var _projected_light_map_image: Image = null
 var _projected_light_origin := Vector2.ZERO
+## V3.1 返工6 P1（FAIL1 设备体上零噪点）：设备 footprint mask（世界像素空间）。
+## 烘焙时由 placed instances 生成；散射光照（暗角/冷灰/前景/窗光）跳过这些
+## 矩形，噪点不叠在器械 sprite 上。暖池不参与 mask。
+var _equipment_mask_rects: Array = []
 
 
 ## 两阶段 init（ADR-0001 形态）：注入 grid / resolver / tick_provider。
@@ -116,6 +120,12 @@ func projected_light_map_origin() -> Vector2:
 func _bake_light_map() -> void:
 	var img := Image.create(WorldLayout.WORLD_W, WorldLayout.WORLD_H, false, Image.FORMAT_RGBA8)
 	img.fill(Color(0, 0, 0, 0))
+	# V3.1 返工6 P1（FAIL1 设备体上零噪点）：烘焙前采集设备 footprint mask ——
+	# 散射光照（墙边暗角/冷灰回落/前景暖带/窗光）跳过设备体像素，噪点不再
+	# 叠在器械 sprite 上（LightingLayer z_index=1 画在 WorldCanvas 之上，
+	# 不 mask 则散射像素会直接落在设备体上，GPT「深色器械内部高频噪点」）。
+	# 暖池（灯下落点）不 mask —— 受光面暖亮是 V3 §6 目标效果。
+	_equipment_mask_rects = _compute_equipment_mask_rects()
 	_paint_edge_shadow(img)
 	_paint_light_pools(img)
 	_paint_ambient_cool_falloff(img)
@@ -159,6 +169,9 @@ func _paint_ambient_cool_falloff(img: Image) -> void:
 			# 作用于墙边带之外的远地板。
 			if _edge_distance(x, y) <= WorldLayout.EDGE_SHADOW_WIDTH:
 				continue
+			# V3.1 返工6 P1（FAIL1 设备体上零噪点）：冷灰回落跳过设备体
+			if _inside_equipment_mask(x, y):
+				continue
 			# 距最近光源落点的距离 → 越远越冷（远处冷灰环境色）
 			# 起点 96：紧接暖池 fade band 之后开始冷灰回落（返工3 P3）。
 			# 注意：起点收到 78 时 gate A 高饱和簇计数 19 超上限（淡蓝灰
@@ -175,11 +188,14 @@ func _paint_ambient_cool_falloff(img: Image) -> void:
 			# （cap 0.10→0.08）—— 弱项「全画面颗粒雾化感较重」：远处冷灰
 			# 回落是环境色链尾，不需要高密度铺点；qa A 远候选距落点 <96
 			# 不受本带影响（本带只作用于 metric>1 池外区域），冷灰链仍在。
-			if float(_hash2(x + seed, y * 3 + seed) % 1000) / 1000.0 > 0.18 + 0.16 * t:
+			# 返工6 P1（FAIL1 远离焦点几乎无噪点）：密度再降（0.18+0.16t →
+			# 0.06+0.05t）、alpha cap 0.08→0.04 —— 远处是「留白」而非贴图
+			# 噪点；冷灰回落链由 fade band 延续，本带只保留最低存在感。
+			if float(_hash2(x + seed, y * 3 + seed) % 1000) / 1000.0 > 0.06 + 0.05 * t:
 				continue
 			var c := Palette.LIGHT_EDGE_SHADOW
-			var a := 0.03 + 0.05 * t * (0.5 + 0.5 * float(_hash2(x + 23, y + 41) % 100) / 100.0)
-			img.set_pixel(x, y, Color(c.r, c.g, c.b, minf(a, 0.08)))
+			var a := 0.02 + 0.02 * t * (0.5 + 0.5 * float(_hash2(x + 23, y + 41) % 100) / 100.0)
+			img.set_pixel(x, y, Color(c.r, c.g, c.b, minf(a, 0.04)))
 
 
 ## 前景暖光带（V3.1 返工2 R3 FAIL3 三层景深）：画面底部（世界 y 240..290，
@@ -194,6 +210,9 @@ func _paint_foreground_warm(img: Image) -> void:
 	var seed := 577
 	for y in range(y0, y1):
 		for x in range(80, 340, 2):
+			# V3.1 返工6 P1（FAIL1 设备体上零噪点）：前景暖带跳过设备体
+			if _inside_equipment_mask(x, y):
+				continue
 			# 越靠近镜头（y 越大）密度/alpha 越高 —— 前景受光更强
 			var t := float(y - y0) / float(y1 - y0)
 			# 返工3 P3：keep 略升（0.16+0.30t → 0.18+0.32t）—— 前景带
@@ -201,12 +220,16 @@ func _paint_foreground_warm(img: Image) -> void:
 			# 返工4 P3：密度略降（0.18+0.32t → 0.22+0.34t）+ alpha cap
 			# 0.18→0.16 —— 弱项「全画面颗粒雾化感」：前景受光保持，但
 			# 不再整条底部高密度铺点（r3p3 fore ≥ wall-1 仍有余量）。
-			var keep := 0.22 + 0.34 * t
+			# 返工6 P1（FAIL1 全局噪点降密降强）：密度再降（0.22+0.34t →
+			# 0.12+0.18t）、alpha cap 0.16→0.10 —— 前景是「受光面」不是
+			# 噪点带；低密度暖亮仍可读（r3p3 三层景深保持，fore 地板本身
+			# 就是亮瓷砖，不依赖暖带铺点）。
+			var keep := 0.12 + 0.18 * t
 			if float(_hash2(x + seed, y * 3 + seed) % 100) / 100.0 > keep:
 				continue
 			var c := Palette.LIGHT_POOL_MID
-			var a := 0.06 + 0.10 * t * (0.5 + 0.5 * float(_hash2(x + 41, y + 53) % 100) / 100.0)
-			img.set_pixel(x, y, Color(c.r, c.g, c.b, minf(a, 0.16)))
+			var a := 0.05 + 0.05 * t * (0.5 + 0.5 * float(_hash2(x + 41, y + 53) % 100) / 100.0)
+			img.set_pixel(x, y, Color(c.r, c.g, c.b, minf(a, 0.10)))
 
 
 ## 墙边暗角（V3.1 P4 近墙像素变暗）：EDGE_SHADOW_WIDTH 内散射冷蓝灰暗像素，
@@ -220,20 +243,26 @@ func _paint_edge_shadow(img: Image) -> void:
 			var d := _edge_distance(x, y)
 			if d >= edge:
 				continue
+			# V3.1 返工6 P1（FAIL1 设备体上零噪点）：墙边暗角散射跳过设备体
+			if _inside_equipment_mask(x, y):
+				continue
 			var t := 1.0 - float(d) / float(edge)   # 1=紧贴墙，0=内缘
 			# 散射：近墙覆盖率高，内缘抖动 —— 不规则边界，非完美矩形
 			# 返工4 P3：密度略降（82+16t → 84+12t）+ alpha 略降（0.12+0.13t
 			# → 0.10+0.11t，cap 0.28→0.24）—— 弱项「全画面颗粒雾化感」：
 			# 墙边暗角保持冷色阴影，但不再整圈高密度铺点压住边界清晰度。
-			if _hash2(x, y) % 100 >= 84 + int(12.0 * t):
+			# 返工6 P1（FAIL1 全局噪点降密降强）：密度再降（84+12t → 58+10t）、
+			# alpha 再降（0.10+0.11t → 0.07+0.08t，cap 0.24→0.16）——
+			# 墙边暗角是「冷阴影过渡」，不是贴图噪点；低密度冷暗仍可读。
+			if _hash2(x, y) % 100 >= 58 + int(10.0 * t):
 				continue
-			var a := 0.10 + 0.11 * t * (0.5 + 0.5 * float(_hash2(x + 31, y + 17) % 100) / 100.0)
+			var a := 0.07 + 0.08 * t * (0.5 + 0.5 * float(_hash2(x + 31, y + 17) % 100) / 100.0)
 			# 角落再压一层（空间纵深，V3 §4/§6）
 			if x < edge and y < edge or x >= w - edge and y < edge \
 					or x < edge and y >= h - edge or x >= w - edge and y >= h - edge:
-				a += 0.04
+				a += 0.03
 			var c := Palette.LIGHT_EDGE_SHADOW
-			img.set_pixel(x, y, Color(c.r, c.g, c.b, minf(a, 0.24)))
+			img.set_pixel(x, y, Color(c.r, c.g, c.b, minf(a, 0.16)))
 
 
 ## 顶部主光落点：不是径向圆，而是横宽纵窄的 faceted 像素材质区。
@@ -255,9 +284,20 @@ func _paint_edge_shadow(img: Image) -> void:
 func _paint_light_pools(img: Image) -> void:
 	var seed := 301
 	for light: Dictionary in WorldLayout.HANGING_LIGHTS:
+		# 返工6 P1（FAIL2 主次焦点）：中灯（主设备带 treadmill(6,3) 落点
+		# 224,170）是「第一视觉落点」，暖池 alpha ×1.15 加强；左灯
+		# (86,170) 保持（bike 受光面 + R4 ring 采样区，不动）；右灯
+		# (362,170) 压暗 ×0.80 —— 右区（yoga 垫 + 紫色道具）让位，
+		# 画面不再三池均权竞争（GPT：黄光/紫点/红条同时抢注意力）。
+		var pool_strength := 1.0
+		var lx: float = light.get("landing", Vector2.ZERO).x
+		if lx > 300.0:
+			pool_strength = 0.80
+		elif lx > 150.0:
+			pool_strength = 1.15
 		_paint_faceted_pool(img,
 			light.get("landing", Vector2.ZERO),
-			light.get("pool_half", Vector2(52, 36)), seed, 1.0)
+			light.get("pool_half", Vector2(52, 36)), seed, pool_strength)
 		seed += 97
 
 
@@ -330,13 +370,19 @@ func _paint_faceted_pool(img: Image, center: Vector2, half_size: Vector2,
 				if float(hash_val % 1000) / 1000.0 > keep * 0.72:
 					continue
 			# 分三档而非平滑透明渐变；每档再用少量 hash 做像素材质变化。
-			var a := 0.19
+			# 返工6 P1（FAIL2 强焦点）：三档 alpha 略升（0.19/0.40/0.58 →
+			# 0.22/0.46/0.64）—— 主设备带暖池是「第一视觉落点」，焦点区
+			# 明度显著高于周边（qa_v31r4p1 focal > far_zone 余量拉大）；
+			# keep 热核行（0.85/0.80）逐字不动 —— R4 ring<0.95 由 keep
+			# 决定覆盖率，alpha 变化不改变覆盖率（gate A 高饱和簇：池色
+			# sat 0.40-0.59 < 0.72，不产生新簇；low-sat 62.9% ≤ 63.45%）。
+			var a := 0.22
 			var warm := Palette.LIGHT_POOL_EDGE
 			if metric < 0.25:
-				a = 0.58
+				a = 0.64
 				warm = Palette.LIGHT_TOP_WARM
 			elif metric < 0.56:
-				a = 0.40
+				a = 0.46
 				warm = Palette.LIGHT_POOL_MID
 			# 方向性：北半（灯下，y<center）更亮，南半回落 —— 光有方向。
 			# 返工3 P3：bias 拉强（1.24/0.76）→ 灯下亮→向南衰减有可见梯度。
@@ -448,11 +494,15 @@ func _paint_far_wall_haze(img: Image) -> void:
 			# 返工4 P3：密度略降（0.14+0.20t → 0.17+0.22t）+ alpha cap
 			# 0.12→0.10 —— 弱项「全画面颗粒雾化感」：远景雾化保持冷灰
 			# 回落，但不再整条墙带高密度铺点（qa A 远候选不受本带影响）。
-			if float(_hash2(x + seed, y * 5 + seed) % 1000) / 1000.0 > 0.17 + 0.22 * t:
+			# 返工6 P1（FAIL1 全局噪点降密降强）：密度再降（0.17+0.22t →
+			# 0.10+0.12t）、alpha cap 0.10→0.06 —— 远景墙带是「空气透视」
+			# 氛围，不是噪点；低密度冷灰回落仍可读（N11 远景暖化由投影
+			# 光束承担，本带只是冷灰链尾）。
+			if float(_hash2(x + seed, y * 5 + seed) % 1000) / 1000.0 > 0.10 + 0.12 * t:
 				continue
 			var c := Palette.LIGHT_WINDOW_COOL
-			var a := 0.04 + 0.06 * t * (0.5 + 0.5 * float(_hash2(x + 3, y + 71) % 100) / 100.0)
-			img.set_pixel(x, y, Color(c.r, c.g, c.b, minf(a, 0.10)))
+			var a := 0.03 + 0.03 * t * (0.5 + 0.5 * float(_hash2(x + 3, y + 71) % 100) / 100.0)
+			img.set_pixel(x, y, Color(c.r, c.g, c.b, minf(a, 0.06)))
 
 
 ## 稀疏投影光束：沿 source→landing 方向扩张，横向分档 + 纵向断续条带。
@@ -558,10 +608,15 @@ func _paint_window_light(img: Image) -> void:
 			for x in range(maxi(int(b.position.x), 0), mini(int(b.end.x), img.get_width())):
 				if not Geometry2D.is_point_in_polygon(Vector2(x + 0.5, y + 0.5), cone):
 					continue
-				if _hash2(x, y) % 100 >= 45:
+				# V3.1 返工6 P1（FAIL1 设备体上零噪点）：窗光散射跳过设备体
+				if _inside_equipment_mask(x, y):
+					continue
+				# 返工6 P1（FAIL1 全局噪点降密降强）：45% → 28% ——
+				# 窗光是冷色环境氛围，低密度仍可读（窗下冷光渗透保持）。
+				if _hash2(x, y) % 100 >= 28:
 					continue
 				var c := Palette.LIGHT_WINDOW_COOL
-				img.set_pixel(x, y, Color(c.r, c.g, c.b, 0.07 + 0.07 * float(_hash2(x + 13, y + 19) % 100) / 100.0))
+				img.set_pixel(x, y, Color(c.r, c.g, c.b, 0.05 + 0.05 * float(_hash2(x + 13, y + 19) % 100) / 100.0))
 
 
 ## 静态发光体（饮水机/招牌/计时器，V3.1 P4 小范围亮色）：1-3px 亮像素 cluster。
@@ -662,8 +717,12 @@ func _draw_equipment_light_hits() -> void:
 		# 亮带 1：贴灯侧 3px 暖白高光带（沿 band_axis 垂直方向展开）
 		# 返工3 P3：alpha 提高（0.30+0.28s → 0.38+0.30s）—— 设备顶面
 		# 「接住灯光」在帧中可读（FAIL1 受光面明暗朝向：顶面亮）。
+		# 返工6 P1（FAIL3 浅色高光过多）：alpha 降回（0.38+0.30s → 0.30+0.24s）
+		# —— GPT「深色器械内部高频噪点和浅色高光过多，局部碎成一团」：
+		# 顶面受光带是「一条方向明确的高光」，不是逐像素亮斑贴片；焦点区
+		# 亮度由灯下暖池 + 顶面本体色阶承担，不靠受光带铺亮。
 		var w1 := Palette.LAMP_BULB
-		w1.a = 0.38 + 0.30 * strength
+		w1.a = 0.30 + 0.24 * strength
 		_draw_top_face_band(edge_center, band_axis, fp.size, 3.0, w1, screen_strip)
 		# 亮带 2：顶面中段暖蜜色（覆盖 ~62% 顶面，向远离灯衰减）——
 		# 返工2 R3 FAIL3：设备顶面受光带必须把「中景器械」明度抬到背景墙之上
@@ -671,8 +730,11 @@ func _draw_equipment_light_hits() -> void:
 		# 只有饱和差没有明度差。alpha 提高（0.22→0.30 基座）但保留 hash
 		# 缺口（非实心暖块，V3.1 P4 负面约束；R4 热核 keep 不涉及本带）。
 		# 返工3 P3：基座 0.30→0.38 —— 中景器械明度进一步抬升（mid > wall）。
+		# 返工6 P1（FAIL3 浅色高光过多）：基座 0.38→0.32 —— 受光带回到
+		# 「方向性暖边」强度，不把顶面铺成亮斑贴片（mid > wall 仍由
+		# 顶面本体 EQUIP_BODY_LIGHT + 灯下暖池保持）。
 		var w2 := Palette.LIGHT_POOL_MID
-		w2.a = 0.38 + 0.26 * strength
+		w2.a = 0.32 + 0.22 * strength
 		_draw_top_face_band(edge_center + band_axis * (minf(fp.size.x, fp.size.y) * 0.18),
 			band_axis, fp.size, minf(fp.size.x, fp.size.y) * 0.62, w2, screen_strip)
 		draw_set_transform_matrix(Transform2D.IDENTITY)
@@ -697,12 +759,15 @@ func _draw_top_face_band(band_center: Vector2, band_axis: Vector2,
 	var along_half := fp_size.length() * 0.42
 	var seed := int(band_center.x) * 31 + int(band_center.y) * 17
 	# 分 3-4 段 draw_rect（hash 缺口 —— 不是一整块色带，仍像素散射）
+	# 返工6 P1（FAIL3 高光连续条带）：缺口 30% → 12% —— GPT「高光应连续
+	# 成条带/沿金属管朝向，不散落白点」：受光带是「一条连续暖亮带」，
+	# 少量 hash 缺口只防程序色块（V3.1 负面约束），不再断裂成碎块。
 	var segs := 4
 	for i in segs:
 		var t0 := -along_half + (2.0 * along_half) * float(i) / float(segs)
 		var t1 := -along_half + (2.0 * along_half) * float(i + 1) / float(segs)
-		if _hash2(seed + i * 7, seed * 3 + i) % 100 >= 30:
-			continue  # hash 缺口：~30% 段跳过
+		if _hash2(seed + i * 7, seed * 3 + i) % 100 >= 12:
+			continue  # hash 缺口：~12% 段跳过（连续条带，非碎块）
 		var p0 := band_center + perp * t0
 		# 带沿 perp 方向展开（宽 = t 跨度），厚 = half_width*2 沿 band_axis。
 		# 顶面 footprint 多为轴对齐，用 axis-aligned rect 覆盖 perp 段即可。
@@ -820,6 +885,50 @@ func _footprint_rect(cells: Array) -> Rect2i:
 	var cell := 32
 	var size := (max_c - min_c + Vector2i.ONE) * cell
 	return Rect2i(min_c * cell, size)
+
+
+## V3.1 返工6 P1（FAIL1 设备体上零噪点）：设备 mask 矩形集（世界像素
+## 空间）。footprint 由 placed instances 决定；掩码矩形 = footprint 外扩
+## 2px 后，向「顶面投影方向」扩展设备挤出高度（顶面在光图空间落在
+## footprint 以北 ≈ HEIGHT_SCALE/FLOOR_SCALE × h，侧面/东侧另有
+## EXTRUDE_X 偏移）—— 散射像素落在设备体上（含顶面/侧面）全部跳过。
+## 烘焙时 grid 已有放置设备（capture _ready 先于首帧 draw），mask 与
+## 渲染帧逐字节一致。确定性（遍历顺序 = grid 返回序）。
+func _compute_equipment_mask_rects() -> Array:
+	var rects: Array = []
+	if _grid == null:
+		return rects
+	for inst in _grid.get_placed_instances():
+		var fp := _footprint_rect(inst.footprint_cells)
+		if fp.size.x <= 0 or fp.size.y <= 0:
+			continue
+		var h := float(_equipment_height(inst))
+		# 顶面在光图空间向北偏移 ≈ h * HS/FS；东侧偏移 ≈ h * EX。
+		var north := int(ceil(h * Proj2D.HEIGHT_SCALE / Proj2D.FLOOR_SCALE)) + 2
+		var west := int(ceil(h * Proj2D.EXTRUDE_X)) + 2
+		var r := Rect2i(fp.position.x - west, fp.position.y - north,
+			fp.size.x + west * 2, fp.size.y + north + 2)
+		rects.append(r)
+	return rects
+
+
+## 实例设备高度（世界像素）。优先 _resolver（EquipmentDefCatalog 的
+## equipment_height），退化时用默认高度（与 WorldCanvas 挤出一致）。
+func _equipment_height(inst) -> float:
+	var h: float = EquipmentArt.DEFAULT_EQUIP_HEIGHT
+	if _resolver != null:
+		var resolved: Variant = _resolver.call(inst.instance_id)
+		if resolved is float or resolved is int:
+			h = float(resolved)
+	return h
+
+
+## 世界像素点是否落在任一设备 mask 矩形内（散射光照跳过）。
+func _inside_equipment_mask(x: int, y: int) -> bool:
+	for r: Rect2i in _equipment_mask_rects:
+		if r.has_point(Vector2i(x, y)):
+			return true
+	return false
 
 
 # === helpers ===
