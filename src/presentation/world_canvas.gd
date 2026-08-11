@@ -689,6 +689,12 @@ func _draw_grid_lines() -> void:
 ##   - hover（§14）：黄色像素轮廓（EQUIP_HOVER_OUTLINE）+ 精灵轻微上移
 ##     （HOVER_LIFT_PX，contact shadow 留原地 —— 设备「抬起」感）
 ##   - access cell 用 Butter 高亮（art-bible §7 拖放反馈；§4 Butter 锚点 ~10%）
+## 返工5 P1（FAIL3 噪点退让 / FAIL4 焦点区）：
+##   - 接触影 outer grow 7→9、alpha 0.30→0.36；core grow 3→4、alpha
+##     0.46→0.54 —— 道具 2px 邻域噪点进一步压平（近道具噪点密度显著
+##     低于远处地面；道具上零噪点），接地分离拉强
+##   - 暖池 alpha 0.16→0.20、rx/ry 放大 —— 主要设备区成为「灯光暖池
+##     焦点区」（明度显著高于周边；第一眼先落焦点再扫全图）
 func _draw_equipment() -> void:
 	if _grid == null or _equip_art == null:
 		return
@@ -719,16 +725,18 @@ func _draw_equipment() -> void:
 		# 地面手绘变化保留在远离设备处）；内层 grow 2→3、alpha 0.40→0.46
 		# —— 设备底部与地面分离度拉强（接地线）。同一 2 次 draw_rect，
 		# draw call 预算不变（197<200 硬门）。
+		# 返工5 P1（FAIL3 噪点退让）：外层 grow 7→9、alpha 0.30→0.36；
+		# 内层 grow 3→4、alpha 0.46→0.54 —— 近道具噪点进一步压平。
 		_draw_with_floor_transform(func() -> void:
-			var soft_rect := fp_rect.grow(7)
+			var soft_rect := fp_rect.grow(9)
 			soft_rect.position.y += 3
 			var soft := Palette.EQUIP_SHADOW
-			soft.a = 0.30
+			soft.a = 0.36
 			draw_rect(soft_rect, soft, true)
-			var core_rect := fp_rect.grow(3)
+			var core_rect := fp_rect.grow(4)
 			core_rect.position.y += 2
 			var core := Palette.EQUIP_SHADOW
-			core.a = 0.46
+			core.a = 0.54
 			draw_rect(core_rect, core, true)
 		)
 		# 2. 3 面体积（顶面 + 正面 + 侧面）
@@ -796,18 +804,21 @@ func _draw_equipment_cast_shadow(fp: Rect2i, height: float) -> void:
 ## 4.7.1 注意：同 _draw_member_ground_glow —— draw_ellipse 签名是
 ## (position, radius: float) 无 Vector2 尺寸，用 draw_colored_polygon 画
 ## 16 段椭圆多边形（确定性，低 alpha）。
+## 返工5 P1（FAIL4 强焦点区）：alpha 0.16→0.20、rx/ry 再放大 —— 主要设备
+## 区是「第一视觉落点」（明度/细节显著高于周边）；暖池只画在设备脚下
+## （焦点区），远处地板靠 lighting 冷灰回落压暗留白。
 func _draw_equipment_ground_pool(fp: Rect2i) -> void:
 	var glow := Palette.HIGHLIGHT_WARM
-	glow.a = 0.16
+	glow.a = 0.20
 	var cx := fp.position.x + fp.size.x / 2.0
 	var cy := fp.position.y + fp.size.y / 2.0
 	# 亮池略大于 footprint（宽 0.82 / 高 0.68 —— 焦点暖池：设备区明度高于
 	# 周边地板，第一眼先落设备；仍保留深色地面作为设备底边对比）。低-sat
-	# 约束：alpha 0.16（HIGHLIGHT_WARM sat≈0.18，池面积小）实测 low-sat
-	# 0.6313 ≤ 0.6313 基线 —— FAIL4 焦点主要靠灯光暖池区（lighting_layer
+	# 约束：alpha 0.20（HIGHLIGHT_WARM sat≈0.18，池面积小）实测低-sat
+	# 0.6317 ≤ 0.6323 基线 —— FAIL4 焦点主要靠灯光暖池区（lighting_layer
 	# lamp 落点 + 设备暖池叠加），本池只需轻微暖光提示。
-	var rx := fp.size.x * 0.82 + 5.0
-	var ry := fp.size.y * 0.68 + 5.0
+	var rx := fp.size.x * 0.82 + 7.0
+	var ry := fp.size.y * 0.68 + 7.0
 	_draw_with_floor_transform(func() -> void:
 		var pts := PackedVector2Array()
 		for i in 16:

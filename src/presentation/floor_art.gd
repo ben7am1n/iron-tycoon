@@ -85,13 +85,13 @@ func build_image() -> Image:
 func _draw_walkway(img: Image) -> void:
 	var w := img.get_width()
 	var h := img.get_height()
-	# 瓷砖色差 cluster：约三分之一 cell 一个短而低对比的不规则笔触簇。
-	# 仍可读出手绘变化，但大面积观看时不再形成抢眼的散点噪声。
+	# 瓷砖色差 cluster：约四分之一 cell 一个短而低对比的不规则笔触簇。
+	# 返工5 P1（FAIL3 噪点退让）：1/3 → 1/4 cell（-25% 密度），笔触更短。
 	# 返工5 P4（FAIL #3 同根）：cell 网格行错位 —— 每行起点随机偏移 ±半格、
 	# 行密度随 hash 变化 —— 消除「整行对齐」的规则平铺读法。
 	for cy in _grid_h:
 		var row_off := (_hash2(cy * 7 + 3, 131) % 17) - 8
-		var row_density := 3 + (_hash2(cy * 11 + 5, 251) % 3)  # 3..5 分之一
+		var row_density := 4 + (_hash2(cy * 11 + 5, 251) % 3)  # 4..6 分之一
 		for cx in _grid_w:
 			var seed := _hash2(cx * 5 + 1 + row_off, cy * 7 + 3)
 			if seed % row_density != 0:
@@ -110,9 +110,9 @@ func _draw_walkway(img: Image) -> void:
 		if _hash2(gy * 13, 5) % 3 == 0:
 			continue
 		_paint_jagged_seam_h(img, 0, w, gy * _cell, Palette.FLOOR_WALK_GROUT, gy * 17)
-	# 污渍 cluster 再收尾一档（12 → 7，约 -42%），笔触缩短且颜色继续
+	# 污渍 cluster 再收尾一档（12 → 5，约 -58%），笔触缩短且颜色继续
 	# 向通道底色收敛；只留下近看可见的生活痕迹。
-	for i in 7:
+	for i in 5:
 		var seed := _hash2(i * 3, i * 5 + 11)
 		var px := int(seed % w)
 		var py := int((seed >> 6) % h)
@@ -269,6 +269,10 @@ func _draw_zones(img: Image) -> void:
 
 
 ## 力量区：深灰橡胶地垫 —— 多色 cluster（深灰/灰蓝/暖灰）+ 断裂接缝 + 磨损。
+## 返工5 P1（FAIL3 噪点退让）：stain 7→4、wear 10→6 —— 地面局部脏点/磨损
+## 进一步稀疏化（主体区域亮度/对比显著高于地面；近道具 2px 邻域由接触影
+## 压平，噪点远离主体）。cluster spacing 保持 9（dominant-color 单元测试
+## 约束：≤0.75 主色占比）。
 func _draw_strength(img: Image) -> void:
 	var rect := _zone_px("strength")
 	if rect.size.x <= 0 or rect.size.y <= 0:
@@ -280,15 +284,15 @@ func _draw_strength(img: Image) -> void:
 		Palette.FLOOR_STRENGTH_CL_WARMGRAY,
 	]
 	_paint_cluster_zone(img, rect, palette, Palette.FLOOR_STRENGTH_SEAM, 9, 101)
-	# 汗渍/磨损再降到 7/10 个局部短笔触（约 -42%/-44%）；两者色值也
+	# 汗渍/磨损再降到 4/6 个局部短笔触（约 -43%/-40%）；两者色值也
 	# 继续贴近底色，留下材质感而不形成可扫读的脏点。
-	for i in 7:
+	for i in 4:
 		var stain_seed := _hash2(i * 13 + 5, i * 17 + 9)
 		var sx := rect.position.x + int(stain_seed % rect.size.x)
 		var sy := rect.position.y + int((stain_seed >> 5) % rect.size.y)
 		_paint_stroke(img, sx, sy, 2,
 			Palette.FLOOR_STRENGTH_STAIN, stain_seed * 5, rect)
-	for i in 10:
+	for i in 6:
 		var seed := _hash2(i * 7 + 3, i * 11 + 5)
 		var wx := rect.position.x + int(seed % rect.size.x)
 		var wy := rect.position.y + int((seed >> 5) % rect.size.y)
@@ -297,6 +301,8 @@ func _draw_strength(img: Image) -> void:
 
 
 ## 有氧区：偏暖灰/蓝灰地面 —— 不规则暖灰/蓝灰 cluster（无规则点阵/无压条）。
+## 返工5 P1（FAIL3 噪点退让）：保持低对比 cluster（spacing 9 受 dominant
+## 单元测试约束）；噪点退让主要由接触影 + walkway/strength 稀疏化完成。
 func _draw_cardio(img: Image) -> void:
 	var rect := _zone_px("cardio")
 	if rect.size.x <= 0 or rect.size.y <= 0:
@@ -311,6 +317,8 @@ func _draw_cardio(img: Image) -> void:
 
 
 ## 瑜伽区：暖色木地板 —— 不规则木板分隔 + 亮/暗木板 cluster + 木纹。
+## 返工5 P1（FAIL3 噪点退让）：木纹 20→14 —— 手绘木纹稀疏化；仍保留
+## PLANK/GRAIN 色（单元测试断言存在）。
 func _draw_flex(img: Image) -> void:
 	var rect := _zone_px("flex")
 	if rect.size.x <= 0 or rect.size.y <= 0:
@@ -325,7 +333,7 @@ func _draw_flex(img: Image) -> void:
 	# 木纹：稀疏短笔触 cluster（手绘木纹，非规则条带）—— 返工2 R1：木纹
 	# 使用短倾斜笔触（_paint_stroke），端点/方向抖动，色相微差（GRAIN 与
 	# CL_DARK 交替）。
-	for i in 20:
+	for i in 14:
 		var seed := _hash2(i * 5 + 2, i * 9 + 7)
 		var gy := rect.position.y + int(seed % rect.size.y)
 		var gx := rect.position.x + int((seed >> 5) % (rect.size.x - 6))

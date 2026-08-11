@@ -80,7 +80,7 @@ const ART_MAPS := {
 		"..O2222222222O..",
 		"..O2M1111M222O..",
 		"..O2WWDDDDWW2O..",
-		"..O2WAAAWW2..O..",
+		"..O2WAAA11WW2O..",
 		"..O1111111111O..",
 		"..O1111111111O..",
 	],
@@ -361,6 +361,10 @@ func extrusion_faces_for(equipment_id: String, zone: String, rotation: int,
 ## 返工4 P1（FAIL1/弱项#5）：变暗后追加手绘后处理 —— 外轮廓深一档勾边 +
 ## 底部接地线（设备从背景中勾出 + 底部与地面分离；只作用于渲染路径，
 ## raw_face_images 不受污染 —— 单元测试 5 色层断言保持）。
+## 返工5 P1（FAIL2 三阶手绘分色）：正面/侧面暗化拉大分离 —— 顶面受光
+## （不暗化）、正面中调（0.55）、侧面暗调（0.75）：三面明度台阶清晰可辨
+## （旧 0.60/0.65 差过小，正面/侧面读作同一平涂面）。仍中性-only，
+## 高光/accent 保留（零部件可辨）。
 func _authored_faces_for(equipment_id: String, zone: String, height: float,
 		face_h: int) -> Dictionary:
 	var result := {"front": null, "side": null}
@@ -375,7 +379,7 @@ func _authored_faces_for(equipment_id: String, zone: String, height: float,
 		if img != null:
 			# 返工4 P2：中性-only 压暗（正面中调：亮顶面 vs 正面 vs 暗侧面三层
 			# 分离，方向与 P3 灯光同侧 —— 顶面受光最亮，正面中，侧面最暗）
-			_darken_neutral(img, Palette.EQUIP_SHADOW_TONE, 0.60)
+			_darken_neutral(img, Palette.EQUIP_SHADOW_TONE, 0.55)
 			# 返工4 P2：zone 色 accent（Z/L/D）在正面压一档 —— 顶面受光最亮 /
 			# 正面中调（凳面、飞轮毂、控制台底座在 2x 下与顶面有明度台阶，不再
 			# 扁平同色）。A 屏幕与 W/H 高光保持全亮（屏幕是全场景高饱和焦点）。
@@ -388,9 +392,10 @@ func _authored_faces_for(equipment_id: String, zone: String, height: float,
 		var img := _build_face_image(side_rows, zone_color, shade_dark, shade_light)
 		if img != null:
 			# 返工4 P2：中性-only 压暗（侧面暗调，比正面再暗一档）+ 受光边
-			_darken_neutral(img, Palette.EQUIP_SHADOW_TONE, 0.65)
+			# 返工5 P1：0.65→0.75 —— 侧面/正面明度台阶拉开（三阶分色）
+			_darken_neutral(img, Palette.EQUIP_SHADOW_TONE, 0.75)
 			# 侧面 zone 色 accent（Z/L/D）压一档 —— 三层分离中侧面最暗
-			_darken_zone_accents(img, zone_color, 0.25)
+			_darken_zone_accents(img, zone_color, 0.32)
 			_apply_silhouette_outline(img)
 			_apply_top_edge_band(img, 1)
 			_apply_grounding_line(img)
@@ -561,9 +566,13 @@ func _is_silhouette_boundary(img: Image, x: int, y: int) -> bool:
 	return false
 
 
-## 返工4 P1（FAIL2 色阶分层 · 手绘质感核心）：手绘式色阶抖动 —— 在相邻
-## 「中性机身材质」色阶边界（色距 > 0.10）撒 ~15% 像素向邻阶混合 30-50%，
-## 使亮/中/暗面过渡呈锯齿手绘感而非程序渐变/完美直线（V3.1 负面约束：
+## 返工4 P1（FAIL2 色阶分层 · 手绘质感核心）+ 返工5 P1（FAIL2 三阶手绘
+## 分色强化）：手绘式色阶抖动 —— 在相邻「中性机身材质」色阶边界（色距
+## > 0.10）撒 ~30% 像素向邻阶混合 45-75%（返工5 P1：15%→30%、30-50%→
+## 45-75% —— 层间过渡读作更强的手绘抖动/笔触断裂，不再像程序色块）。
+## 返工5 P1 新增：~1/5 混合像素完全切到邻阶色（hard swap，笔触断裂），
+## ~1/2 混合像素带动 2×2 相邻像素一起向同目标混合（手绘笔触簇）——
+## 亮/中/暗面过渡呈锯齿手绘感而非程序渐变/完美直线（V3.1 负面约束：
 ## 无完美直线、无程序色块）。只混合中性材质（BODY/METAL/HIGHLIGHT/
 ## SHADOW/OUTLINE 族），不触碰 accent（A/Z/D/L —— 区域语义色与屏幕青蓝
 ## 保持清晰可辨）。确定性 hash 驱动（同输入同输出）。
@@ -591,32 +600,46 @@ func _apply_hand_drawn_jitter(img: Image) -> void:
 			if best_d < 0.10:
 				continue
 			var hsh := _hash2(x * 7 + 3, y * 13 + 1)
-			if hsh % 100 >= 15:
+			if hsh % 100 >= 30:
 				continue
-			var amt := 0.30 + float((hsh >> 8) % 20) / 100.0  # 30-50%
-			img.set_pixel(x, y, c.lerp(best, amt))
+			if hsh % 5 == 0:
+				# 笔触断裂：完全切到邻阶色（硬台阶，非平滑混合）
+				img.set_pixel(x, y, best)
+			else:
+				var amt := 0.45 + float((hsh >> 8) % 31) / 100.0  # 45-75%
+				img.set_pixel(x, y, c.lerp(best, amt))
+			# 2×2 手绘笔触簇：邻像素向同目标低量混合（刷痕感）
+			if hsh % 2 == 0 and x + 1 < w:
+				var rc := img.get_pixel(x + 1, y)
+				if rc.a > 0.5 and _is_neutral_tone(rc):
+					var sub := 0.25 + float((hsh >> 12) % 26) / 100.0
+					img.set_pixel(x + 1, y, rc.lerp(best, sub))
 
 
-## 返工4 P1（FAIL1 轮廓勾边）+ 返工4 P2（FAIL1 轮廓连续性）：外轮廓深一档
-## 勾边 —— 与透明相邻的「非 outline」边界像素向 EQUIP_EDGE_OUTLINE 混合
-## （lum≈50，比 EQUIP_OUTLINE 67.5 再暗一档；vs 深灰力量区地面 78.7 明度差
-## ~29，2x 可见）。已 outline 像素（O，EQUIP_OUTLINE）保留 —— 单元测试断言
-## EQUIP_OUTLINE 存在；高光（W/H）与 accent（A/Z/D/L）像素保留 —— 高光侧
-## 开放（V3 §11）、区域语义色可辨。
-## 返工4 P2：hash 缺口 25%→12%、混合 55-90%→65-95% —— 2x 特写下外轮廓
-## 连续不糊（FAIL1「轮廓缺失/不连续」），仍保留手绘缺口（非等宽边框，
-## V3.1 负面约束）。
+## 返工4 P1（FAIL1 轮廓勾边）+ 返工4 P2（FAIL1 轮廓连续性）+ 返工5 P1
+## （FAIL1 完整深色外轮廓库）：外轮廓深一档勾边 —— 与透明相邻的「全部」
+## 边界像素向 EQUIP_EDGE_OUTLINE 混合（lum≈50，比 EQUIP_OUTLINE 67.5 再暗
+## 一档；vs 深灰力量区地面 78.7 明度差 ~29 ≥ 25，2x 缩放下主体从背景中
+## 「剪」出）。返工5 P1 要点：
+##   1. 已 outline 像素（EQUIP_OUTLINE）在边界处也继续压深一档 —— 旧实现
+##      跳过 O 像素使外围 rim 停在 EQUIP_OUTLINE（Δlum≈11，主体融进地面）；
+##      现在 rim 整体读 EDGE_OUTLINE（Δlum≈29）。单元测试断言的是「纹理中
+##      存在 EQUIP_OUTLINE」—— 内部 O 像素（非 silhouette boundary）保留。
+##   2. 手绘缺口 12% → ~2%（逐像素闭合轮廓，仅保留极少量断口 → 非等宽边框）。
+##   3. 混合 65-95% → 88-100%（近全深，不再半透偏浅）。
+##   4. 新增第二圈：紧贴轮廓内侧的像素 ~40% 半压深（35-55%）→ 外轮廓
+##      1-2px 交替（2x 缩放下仍可辨，手绘宽度变化，非等宽边框）。
+## 高光（W/H）与 accent（A/Z/D/L）像素保留 —— 高光侧开放（V3 §11）、
+## 区域语义色可辨（FAIL3 零部件）。
 func _apply_silhouette_outline(img: Image) -> void:
 	var w := img.get_width()
 	var h := img.get_height()
+	# 第一圈：逐像素闭合外轮廓（silhouette boundary）
 	for y in h:
 		for x in w:
 			var c := img.get_pixel(x, y)
 			if c.a <= 0.5:
 				continue
-			if _color_distance(c, Palette.EQUIP_OUTLINE) <= 0.05 \
-					or _color_distance(c, Palette.EQUIP_EDGE_OUTLINE) <= 0.05:
-				continue  # 已 outline —— 保留（测试断言 EQUIP_OUTLINE 存在）
 			if _is_highlight_tone(c):
 				continue  # 高光侧开放，不全勾（V3 §11）
 			if _is_accent_tone(c):
@@ -624,9 +647,36 @@ func _apply_silhouette_outline(img: Image) -> void:
 			if not _is_silhouette_boundary(img, x, y):
 				continue
 			var hsh := _hash2(x * 3 + 7, y * 5 + 9)
-			if hsh % 100 < 12:
-				continue  # 手绘缺口 ~12% —— 非等宽边框
-			var amt := 0.65 + float((hsh >> 8) % 35) / 100.0  # 65-95%
+			if hsh % 100 < 2:
+				continue  # 手绘缺口 ~2% —— 近闭合（非等宽边框）
+			var amt := 0.88 + float((hsh >> 8) % 13) / 100.0  # 88-100%
+			img.set_pixel(x, y, c.lerp(Palette.EQUIP_EDGE_OUTLINE, amt))
+	# 第二圈：轮廓内侧 1px 半压深（宽度 1-2px 交替，2x 可辨；非等宽）
+	for y in h:
+		for x in w:
+			var c := img.get_pixel(x, y)
+			if c.a <= 0.5:
+				continue
+			if _is_highlight_tone(c) or _is_accent_tone(c):
+				continue
+			if _is_silhouette_boundary(img, x, y):
+				continue  # 第一圈已处理
+			if _color_distance(c, Palette.EQUIP_EDGE_OUTLINE) <= 0.06:
+				continue  # 已是深轮廓
+			var touching := false
+			for n in [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]]:
+				if n[0] < 0 or n[1] < 0 or n[0] >= w or n[1] >= h:
+					continue
+				var nc := img.get_pixel(n[0], n[1])
+				if _color_distance(nc, Palette.EQUIP_EDGE_OUTLINE) <= 0.06:
+					touching = true
+					break
+			if not touching:
+				continue
+			var hsh := _hash2(x * 11 + 5, y * 7 + 3)
+			if hsh % 100 >= 40:
+				continue  # ~40% 内圈加深 —— 宽度变化
+			var amt := 0.35 + float((hsh >> 8) % 21) / 100.0  # 35-55%
 			img.set_pixel(x, y, c.lerp(Palette.EQUIP_EDGE_OUTLINE, amt))
 
 
