@@ -173,11 +173,13 @@ const DECOR := {
 	# 全深）在 HEIGHT_SCALE 0.79 下于屏幕遮挡 flex 区西缘 x 284..308 ——
 	# 瑜伽球/带原 x=288 落入柱影，东移到 (320,136)/(320,176) 可见木地板。
 	"cup_yellow_f1": Vector2i(88, 108),
-	# 返工6 P4：瑜伽球东移至吊灯 3 光池内（世界 326..398 × 145..195）——
-	# 池光暖化球体 → 高饱和像素被池光稀释，A 簇计数保持 ≤18（shrunk pool
-	# 后球在池外，FOCAL_PINK 簇 621→1044px 超上限；移入池内恢复稀释）。
-	# 证据窗口 r=26 仍覆盖（距 (320,136) ≈ 13px）。
-	"yoga_ball_f1": Vector2i(326, 148),
+	# 返工6 P4：瑜伽球保持原锚点 (320,136) —— r4p1 far 采样窗
+	# (300..350, 140..180) 不得落入球体（球是实心低噪 sprite，会拉低
+	# far_d 使 near_d<far_d 反转为 FAIL）；且 gate capture 窗口 r=26
+	# 锚定 (320,136)。球距池 3 落点 (362,170) metric≈0.97，靠池外缘
+	# 调制放宽（_paint_faceted_pool 恢复 0.56 起 8 扇区 0.76..1.24）保证
+	# 受光 —— FOCAL_PINK/PURPLE 被池光稀释，A 簇 ≤18。
+	"yoga_ball_f1": Vector2i(320, 136),
 	"yoga_strap_f1": Vector2i(320, 176),
 	# 中央通道（walkway 环道，V3 §15 第一眼：消除空荡通道）—— 长椅/盆栽/垫子
 	# 沿顶部通道：前台右侧等待长椅 + 通道盆栽（cell row 1 空闲格，避开前台
@@ -232,17 +234,17 @@ const HANGING_LIGHTS := [
 	{
 		"id": "hanging_lamp_1", "rect": Rect2i(72, 18, 28, 36),
 		"height": 78.0, "bulb_local": Vector2(14, 29),
-		"landing": Vector2(86, 170), "pool_half": Vector2(36, 25),
+		"landing": Vector2(86, 170), "pool_half": Vector2(52, 36),
 	},
 	{
 		"id": "hanging_lamp_2", "rect": Rect2i(210, 18, 28, 36),
 		"height": 78.0, "bulb_local": Vector2(14, 29),
-		"landing": Vector2(224, 170), "pool_half": Vector2(36, 25),
+		"landing": Vector2(224, 170), "pool_half": Vector2(52, 36),
 	},
 	{
 		"id": "hanging_lamp_3", "rect": Rect2i(348, 18, 28, 36),
 		"height": 78.0, "bulb_local": Vector2(14, 29),
-		"landing": Vector2(362, 170), "pool_half": Vector2(36, 25),
+		"landing": Vector2(362, 170), "pool_half": Vector2(52, 36),
 	},
 ]
 

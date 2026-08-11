@@ -328,16 +328,21 @@ func _paint_faceted_pool(img: Image, center: Vector2, half_size: Vector2,
 			# keep 决定，r=10/22 环落在 metric<0.56 区，覆盖率不受影响。
 			# 扇区调制只作用于「外缘是否画」的判断，不改 tier alpha。
 			var contour_metric := metric
-			# V3.1 返工6 P4（N4 圆形半透明光斑）：扇区调制下沉到 metric ≥ 0.30
-			# （原 0.56）—— 池体中圈也按 16 扇区云状调制，光晕轮廓是「不规则
-			# 云状色块」，不是对称八边形/椭圆。半径调制范围拉宽（0.55..1.45，
-			# 原 0.76..1.24）→ 外缘凹凸更明显。热核/中档 keep 行（0.85/0.80）
-			# 逐字不动 —— R4 ring<0.95 硬门由 keep 决定，r=10/22 环落在
-			# metric<0.56 区，覆盖率不受影响。
-			if metric >= 0.30:
+			# V3.1 返工4 P3 云状轮廓：外缘（metric ≥ 0.56）按 8 扇区 hash
+			# 半径调制（0.76..1.24）—— 光晕轮廓是「不规则云状色块」，不是
+			# 对称八边形/椭圆。热核/中档（metric<0.56）不变 —— R4 ring 硬门
+			# 由热核 keep 决定，r=10/22 环落在 metric<0.56 区，覆盖率不受影响。
+			# 扇区调制只作用于「外缘是否画」的判断，不改 tier alpha。
+			# V3.1 返工6 P4（N4 圆形半透明光斑）：调制保持 P1 口径（0.56 起、
+			# 8 扇区、0.76..1.24）—— 块级拼花 tier（metric<0.25 热核 +
+			# bt 块 hash 三档）才是 N4 非径向读法的本体；调制下沉到 0.30 +
+			# 16 扇区 0.55..1.45 会饿死池外缘受光（瑜伽球 @metric≈0.97 被
+			# 饿死 → FOCAL_PINK 碎片 3 小簇 + low-sat 超基线）。P1 口径下
+			# 外缘仍受光，球被池光稀释，A 簇 ≤18、low-sat ≤63.45%。
+			if metric >= 0.56:
 				var ang := atan2(y + 0.5 - center.y, x + 0.5 - center.x)
-				var sector := int(floor((ang + PI) / TAU * 16.0)) % 16
-				var factor := 0.55 + 0.90 * float(_hash2(sector + seed, seed * 13) % 100) / 100.0
+				var sector := int(floor((ang + PI) / TAU * 8.0)) % 8
+				var factor := 0.76 + 0.48 * float(_hash2(sector + seed, seed * 13) % 100) / 100.0
 				contour_metric = metric * factor
 			# 池体只画到 metric ≤ 1.0；之外交给独立 fade band（避免主池边缘
 			# 70% 覆盖率的暖亮壳 + fade 双重绘制 —— 返工3 P3 降噪）。
@@ -399,17 +404,20 @@ func _paint_faceted_pool(img: Image, center: Vector2, half_size: Vector2,
 				a = 0.46
 				warm = Palette.LIGHT_POOL_MID
 			elif bt == 1:
-				a = 0.30
+				a = 0.40
 				warm = Palette.LIGHT_POOL_MID
 			else:
-				a = 0.22
+				a = 0.34
 				warm = Palette.LIGHT_POOL_EDGE
 			# 方向性：沿光方向有块级 bias（北块略亮/南块略暗 —— 有方向，
 			# 不是同心圆对称）。
 			var block_half := ((y >> 3) < (int(center.y) >> 3))
 			var dir_bias := 1.14 if block_half else 0.86
 			var bl := _hash2((x >> 3) * 13 + 5, (y >> 3) * 7 + 3) % 4
-			var bmult := 0.55 + 0.45 * float(bl) / 3.0
+			# 块级亮度乘子：0.84..1.0（P1 的 block_v 0.86..1.0 是实心像素灯
+			# 基线，avg 0.92；P4 块级拼花保持 ±8% 亮暗差异 —— low-sat
+			# 63.50% 已近基线，最终 0.84 接平 P1 亮度族）。
+			var bmult := 0.84 + 0.16 * float(bl) / 3.0
 			var a2 := a * strength * dir_bias * bmult
 			# 硬量化：≥0.05 全部保留（tier alpha 已分档；块级 bmult 决定亮暗）。
 			# cap 0.64 = P1 热核档位上限（qa_v31r4p1 focal>far_zone 依赖），
