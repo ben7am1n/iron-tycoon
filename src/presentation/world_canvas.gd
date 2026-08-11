@@ -54,6 +54,10 @@ const CEILING_CENTER_ALPHA := 0.14
 const CEILING_EDGE_BAND := 28.0
 const CEILING_OUTER_BAND := 10.0
 
+## SubViewport 逻辑尺寸（与 main.gd WORLD_VIEWPORT_W/H 同源；背景矩形用它
+## 扩展覆盖全视口 —— 返工5 P3 N4 消除视口边缘 clear color 平涂带）。
+const BG_VIEWPORT_SIZE := Vector2(426, 240)
+
 # === 注入依赖（ADR-0001 两阶段 init 形态） ===
 var _grid = null              # GridStateReader：placed instances / conversions
 var _catalog = null           # EquipmentCatalog：equipment_id → def（zone/语义色）
@@ -241,41 +245,172 @@ func _draw() -> void:
 	_draw_placement_ghost()
 
 
-## 画布背景（camera fix）：中央只留弱天花板底纹，手绘天花板纹理集中在两级
-## 边缘带；随后地板覆盖操作区。避免旧实现把整张高对比纹理铺满 bounds，仍在
-## 四周保留 V3.1 P1 的 room-box 氛围。structure_art 未注入时回退暗底色。
+## 画布背景（camera fix + 返工5 P3 N4）：中央只留弱天花板底纹，手绘天花板
+## 纹理集中在两级边缘带；随后地板覆盖操作区。避免旧实现把整张高对比纹理
+## 铺满 bounds，仍在四周保留 V3.1 P1 的 room-box 氛围。
+## 返工5 P3（N4 纯色大面积填充）：背景改为整张烘焙纹理（1 draw call）——
+## 覆盖整个 SubViewport（投影空间），消除视口边缘默认 clear color 的纯色
+## 奶油条（旧帧左右各 ~70 屏 px 平涂带）；房间盒外延展墙区用更强的手绘
+## 天花板纹理（替代旧纯色暗底 —— 旧帧 x≈88..230 / x≈1044..1192 的平涂棕带）。
+## structure_art 未注入时回退暗底色。烘焙确定性（hash 驱动，无 RNG）。
+var _bg_texture: ImageTexture = null
+
 func _draw_canvas_background() -> void:
+	if _bg_texture == null:
+		_bg_texture = _bake_background_texture()
+	if _bg_texture != null:
+		draw_texture_rect(_bg_texture, _viewport_projected_rect(), false)
+		return
+	# 回退：无 structure_art 时只铺暗底色（保持既有测试构造兼容）。
 	var b := Proj2D.bounds()
 	var rect := Rect2(b.position - Vector2(8, 8), b.size + Vector2(16, 16))
 	draw_rect(rect, Palette.WALL_BASE.darkened(0.38), true)
-	if _structure_art != null:
-		var tex: ImageTexture = _structure_art.ceiling_texture()
-		if tex != null:
-			# 中央弱化；地板外的角落不会变成纯色空洞。
-			draw_texture_rect(tex, rect, false,
-				Color(1.0, 1.0, 1.0, CEILING_CENTER_ALPHA))
-			_draw_ceiling_edge_ring(tex, rect, CEILING_EDGE_BAND,
-				Color(1.0, 1.0, 1.0, 0.42))
-			_draw_ceiling_edge_ring(tex, rect, CEILING_OUTER_BAND,
-				Color(1.0, 1.0, 1.0, 0.34))
-			return
 
 
-## 以四个纹理条绘制一圈边缘。角落自然叠加，形成更暗的像素暗角；中央不画。
-func _draw_ceiling_edge_ring(
-	tex: Texture2D,
-	rect: Rect2,
-	band: float,
-	modulate: Color
+## 全视口投影矩形（投影空间坐标 → viewport 由 WorldRoot scale/offset 完成）。
+## 与 main.gd WORLD_VIEWPORT_OFFSET 同源：覆盖 426×240 SubViewport 全域。
+func _viewport_projected_rect() -> Rect2:
+	return Rect2(
+		-Vector2(Proj2D.viewport_offset(BG_VIEWPORT_SIZE, WorldScale.WORLD_SCALE))
+			/ WorldScale.WORLD_SCALE,
+		BG_VIEWPORT_SIZE / WorldScale.WORLD_SCALE)
+
+
+## 烘焙整张背景纹理（返工5 P3 N4）：基色 + 天花板中心弱纹理 + 房间盒边缘
+## 两级暗角带 + 房间盒外延展墙区手绘纹理 —— 全部合成一张 RGBA8 贴图，
+## 运行时 1 次 draw_texture_rect（draw call 预算：旧 10 次 → 1 次，V3 §15）。
+## 确定性：全 hash 驱动（天花板/墙面纹理来自 StructureArt 烘焙），无 RNG。
+func _bake_background_texture() -> ImageTexture:
+	if _structure_art == null:
+		return null
+	var vp := _viewport_projected_rect()
+	var w := int(ceil(vp.size.x))
+	var h := int(ceil(vp.size.y))
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	img.fill(Palette.WALL_BASE.darkened(0.38))
+	var ceiling: Image = null
+	var ceiling_tex: ImageTexture = _structure_art.ceiling_texture()
+	if ceiling_tex != null:
+		ceiling = ceiling_tex.get_image()
+	if ceiling != null:
+		_blend_stretched(img, ceiling, vp, vp, CEILING_CENTER_ALPHA)
+		# 房间盒边缘两级暗角带（与原 per-frame 绘制同位置同 alpha）。
+		var b := Proj2D.bounds()
+		var rect := Rect2(b.position - Vector2(8, 8), b.size + Vector2(16, 16))
+		_blend_ring(img, ceiling, vp, rect, CEILING_EDGE_BAND, 0.42)
+		_blend_ring(img, ceiling, vp, rect, CEILING_OUTER_BAND, 0.34)
+		# 延展墙区：更高对比墙面纹理（替代纯色暗底 / 低对比天花板）。
+		_blend_extended_walls(img, vp)
+	return ImageTexture.create_from_image(img)
+
+
+## 把 src 拉伸铺进 dst_rect（投影空间坐标），按 alpha 混合进 img。
+## 逐像素最邻近采样（像素风；与运行时 NEAREST 滤镜一致）。
+func _blend_stretched(
+	img: Image, src: Image, vp: Rect2, dst_rect: Rect2, alpha: float
+) -> void:
+	var x0 := maxi(int(floor(dst_rect.position.x - vp.position.x)), 0)
+	var y0 := maxi(int(floor(dst_rect.position.y - vp.position.y)), 0)
+	var x1 := mini(int(ceil(dst_rect.end.x - vp.position.x)), img.get_width())
+	var y1 := mini(int(ceil(dst_rect.end.y - vp.position.y)), img.get_height())
+	if x1 <= x0 or y1 <= y0:
+		return
+	var sw := src.get_width()
+	var sh := src.get_height()
+	var dw := maxf(dst_rect.size.x, 1.0)
+	var dh := maxf(dst_rect.size.y, 1.0)
+	for py in range(y0, y1):
+		for px in range(x0, x1):
+			var sx := int(floor((px + vp.position.x - dst_rect.position.x) / dw * sw))
+			var sy := int(floor((py + vp.position.y - dst_rect.position.y) / dh * sh))
+			sx = clampi(sx, 0, sw - 1)
+			sy = clampi(sy, 0, sh - 1)
+			var c := src.get_pixel(sx, sy)
+			var d := img.get_pixel(px, py)
+			img.set_pixel(px, py, Color(
+				lerpf(d.r, c.r, alpha),
+				lerpf(d.g, c.g, alpha),
+				lerpf(d.b, c.b, alpha),
+				1.0))
+
+
+## 四条边缘带（与 _draw_ceiling_edge_ring 同位置）。角落自然叠加更暗。
+func _blend_ring(
+	img: Image, src: Image, vp: Rect2, rect: Rect2, band: float, alpha: float
 ) -> void:
 	var w := minf(band, rect.size.x * 0.5)
 	var h := minf(band, rect.size.y * 0.5)
-	draw_texture_rect(tex, Rect2(rect.position, Vector2(rect.size.x, h)), false, modulate)
-	draw_texture_rect(tex, Rect2(
-		Vector2(rect.position.x, rect.end.y - h), Vector2(rect.size.x, h)), false, modulate)
-	draw_texture_rect(tex, Rect2(rect.position, Vector2(w, rect.size.y)), false, modulate)
-	draw_texture_rect(tex, Rect2(
-		Vector2(rect.end.x - w, rect.position.y), Vector2(w, rect.size.y)), false, modulate)
+	_blend_stretched(img, src, vp, Rect2(rect.position, Vector2(rect.size.x, h)), alpha)
+	_blend_stretched(img, src, vp, Rect2(
+		Vector2(rect.position.x, rect.end.y - h), Vector2(rect.size.x, h)), alpha)
+	_blend_stretched(img, src, vp, Rect2(rect.position, Vector2(w, rect.size.y)), alpha)
+	_blend_stretched(img, src, vp, Rect2(
+		Vector2(rect.end.x - w, rect.position.y), Vector2(w, rect.size.y)), alpha)
+
+
+## 房间盒外延展墙区（返工5 P3 N4）：西/东侧墙在视口内继续延展（世界 x 超出
+## 0..416 的部分），旧实现只铺纯色暗底（帧左右两侧各 ~140 屏 px 的平涂棕带）。
+## 改为直接在投影图上手绘墙面语言（WALL_BASE_FAR 底 + 8px 手绘笔触 +
+## 稀疏噪点）—— 与真实墙面同源（N4 纯色大面积填充：无平涂带）。
+## 经 floor_transform 逆映射：世界坐标 → 投影像素 → 判断是否落在延展矩形内。
+## 地板/墙面随后覆盖在正确位置之上 —— 本层只填「墙外空隙」。确定性。
+func _blend_extended_walls(img: Image, vp: Rect2) -> void:
+	# 延展矩形扩到视口边缘覆盖（世界坐标）：视口左缘投影到 world x 可达
+	# ~-113（y=320 时），右缘可达 ~526 —— 固定延展矩形之外还有少量空隙，
+	# 用覆盖全视口边缘的矩形兜底（内部会被地板/墙面覆盖，只有空隙可见）。
+	var zones := [
+		Rect2i(-120, -12, 140, 344),   # 左侧延展（含墙外空隙）
+		Rect2i(396, -12, 140, 344),    # 右侧延展（含墙外空隙）
+	]
+	for wr in zones:
+		_paint_extended_wall_face(img, vp, wr, int(wr.position.x) * 31 + int(wr.position.y) * 17)
+
+
+## 单个延展矩形：逆映射 + 手绘墙面填充（底 + 笔触 + 噪点）。
+func _paint_extended_wall_face(img: Image, vp: Rect2, wr: Rect2i, seed: int) -> void:
+	var stroke_colors := [
+		Palette.WALL_BASE_FAR.darkened(0.08),
+		Palette.WALL_BASE_FAR.lightened(0.06),
+		Palette.WALL_BASE_FAR.lightened(0.12),
+	]
+	var base_colors := [
+		Palette.WALL_BASE_FAR,
+		Palette.WALL_BASE_FAR.lightened(0.04),
+	]
+	# 世界坐标逐像素逆投影（floor_transform 逆：proj(x,y) = (x+y*S, y*F)）。
+	# 直接在投影空间采样 —— 对投影矩形内每个像素求逆映射到世界坐标。
+	var pmin := Proj2D.project_world(Vector2(wr.position))
+	var pmax := Proj2D.project_world(Vector2(wr.position + wr.size))
+	var img_x0 := maxi(int(floor(pmin.x - vp.position.x)), 0)
+	var img_y0 := maxi(int(floor(pmin.y - vp.position.y)), 0)
+	var img_x1 := mini(int(ceil(pmax.x - vp.position.x)), img.get_width())
+	var img_y1 := mini(int(ceil(pmax.y - vp.position.y)), img.get_height())
+	for iy in range(img_y0, img_y1):
+		for ix in range(img_x0, img_x1):
+			var proj_x := vp.position.x + ix
+			var proj_y := vp.position.y + iy
+			# 逆 floor_transform
+			var world_y := proj_y / Proj2D.FLOOR_SCALE
+			var world_x := proj_x - world_y * Proj2D.SHEAR
+			if world_x < wr.position.x or world_x >= wr.position.x + wr.size.x:
+				continue
+			if world_y < wr.position.y or world_y >= wr.position.y + wr.size.y:
+				continue
+			# 墙面底：两档暖灰交替（N11 远景暖化 + N4 色阶微差 —— 非单色平涂）
+			var h := _hash2(int(world_x) + seed, int(world_y) * 3 + seed)
+			var col: Color = base_colors[(h >> 4) % base_colors.size()]
+			# 6px 手绘笔触（与 _bake_side_wall 同族；无装饰大块）
+			if h % 6 == 0:
+				col = stroke_colors[(h >> 8) % stroke_colors.size()]
+			# 稀疏噪点（N4 色阶微差）
+			elif h % 11 == 0:
+				col = Palette.WALL_BASE.lightened(0.10) if (h >> 12) % 2 == 0 else Palette.WALL_DARK
+			var d := img.get_pixel(ix, iy)
+			img.set_pixel(ix, iy, Color(
+				lerpf(d.r, col.r, 0.94),
+				lerpf(d.g, col.g, 0.94),
+				lerpf(d.b, col.b, 0.94),
+				1.0))
 
 
 ## 地板 pass：全部贴地内容经 floor_transform 一次性投影（V3.1 P1 ——
@@ -383,6 +518,13 @@ func _draw_desk_front_clusters(rect: Rect2i, height: float) -> void:
 ## 前台 cluster 确定性 hash（R3：同输入同输出，headless 可测）。
 func _front_cluster_hash(i: int) -> int:
 	var h := i * 374761393 + 5917 * 668265263
+	h = (h ^ (h >> 13)) * 1274126177
+	return h & 0x7fffffff
+
+
+## 确定性 2D hash（无 RNG 状态 —— 同输入永远同输出；背景烘焙用）。
+func _hash2(x: int, y: int) -> int:
+	var h := x * 374761393 + y * 668265263
 	h = (h ^ (h >> 13)) * 1274126177
 	return h & 0x7fffffff
 
