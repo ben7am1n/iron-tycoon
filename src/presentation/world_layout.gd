@@ -302,20 +302,23 @@ static func nearest_lamp_bulb_world(pos: Vector2) -> Vector2:
 	return best
 
 
+## 全局主光方向（V3.1 返工6 P3 第三眼#2 方向一致冷投影）：三盏吊灯都在北墙，
+## 把它们视为单一主光源 —— 投影方向不再随「最近灯泡」逐物体变化（旧版各物体
+## 投影方向随最近灯摆动，GPT：各物体投影方向/长度/边缘不一致，暗部读作区域
+## 压暗），而是全场统一方向：光源偏北偏西 → 投影统一向南偏西（screen 左下，
+## GPT 建议「统一向左下偏移」）。长度仍随物体高度（越高越长）—— 方向/长度/
+## 边缘规则全场一致，暗部读作「定向投影」。
+## 4.7.1 注意：GDScript 常量必须是常量表达式，Vector2.normalized() 不是 ——
+## 直接内联归一化后的分量（(-0.35,1.0)/|(-0.35,1.0)|）。
+const MAIN_LIGHT_DIR := Vector2(-0.33035042472810605, 0.9438583563660174)
+
 ## 方向投影偏移（世界 px）：物体在光源另一侧投出有方向的投影。
-##   dir = normalize(物体 - 灯泡) —— 背向光源；
+##   dir = MAIN_LIGHT_DIR（全局固定 —— 全场方向一致，不随最近灯摆动）；
 ##   length = 高度 × 0.72 + 5 —— 物体越高投影越长（形状来源 = 物体高度）。
-## 全场方向一致：三盏吊灯都在北墙，物体基本都在其南侧 → 投影统一向南；
-## x 分量随物体相对最近灯泡的左右偏移 —— 「随物体/光源位置变化」。
-## V3.1 返工2 R3：遮挡投影（occlusion）而非区域底色 —— 偏移量由物体位置
-## 与光源位置共同决定，纯函数（headless 可断言确定性）。
+## V3.1 返工2 R3：遮挡投影（occlusion）而非区域底色 —— 偏移量由全局主光方向
+## 与物体高度共同决定，纯函数（headless 可断言确定性）。
 static func cast_shadow_offset(pos: Vector2, height: float) -> Vector2:
-	var bulb := nearest_lamp_bulb_world(pos)
-	var dir := pos - bulb
-	if dir.length_squared() < 1.0:
-		dir = Vector2(0.0, 1.0)
-	dir = dir.normalized()
-	return dir * (height * 0.72 + 5.0)
+	return MAIN_LIGHT_DIR * (height * 0.72 + 5.0)
 
 
 ## 窗口斜向自然光：从窗口底部射向地板的光锥多边形。
