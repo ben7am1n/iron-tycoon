@@ -119,7 +119,13 @@ def butter_coverage(img, box, tol=0.12):
 ## V3.1 返工4 P4：HUD 材质判定（顶带锯齿/四角检查用）—— 挂牌暖木 +
 ## 公告板软木 + 黑板板面（slate）+ 钟面 Butter。与墙面（WALL 系）和
 ## 背景 cream（F4E9D8 —— 顶带外背景色，绝不能当作 HUD 材质）严格区分。
+## 返工5 P3（背景烘焙化）后：世界背景墙色（WALL_BASE.darkened ≈ (97,86,77)
+## 家族）现在延伸到顶带 —— 该色距 slate (74,84,80) 仅 ~25（<0.14*255 容差），
+## 旧判定把整个顶带误读为黑板板面。先排除交界墙色带（is_junction_wall_tone
+## 同族），再判 HUD 材质 —— 顶带读作「挂牌挂在墙上」，而非整条 HUD 材质。
 def is_hud_mat(c):
+    if is_junction_wall_tone(c):
+        return False  # 背景烘焙墙色带 —— 世界墙面，非 HUD 材质
     if is_wood(c):
         return True
     if near(c, (0xC8, 0xA9, 0x7C), 0.14):
@@ -365,10 +371,15 @@ def main():
     # 挂牌撕裂边缘的透明缺口露出墙面 = 半融入背景
     check("O 挂牌半透明融入（撕裂缺口露出墙/景）", torn >= 3, "torn_gaps=%d" % torn)
 
-    # P. 挂牌钉子/挂绳存在：挂牌顶部亮色小钉（木色提亮 ~0.3）
+    # P. 挂牌钉子/挂绳存在：挂牌顶部亮色小钉（木色提亮 ~0.3）。
+    # 返工5 P3（背景烘焙化）后挂牌仍挂在墙上（顶带读作「挂牌挂墙」而非
+    # 整条 HUD 材质）；旧采样区 x=12..26 y=2..10 在烘焙前是 cream 背景
+    # （cream 244,233,216 满足 r>150,g>110,b>70,r>g>b —— 旧 P 项实际是
+    # cream 误报）。改为采样挂牌本体顶带（实测 money 挂牌 body
+    # x≈6..82，顶缘 y≈7..29 撕裂参差）：亮色小钉/高光/文字 cream 均命中。
     nail_hits = 0
-    for x in range(MONEY_X[0] + 2, MONEY_X[0] + 14, 1):
-        for y in range(2, 10, 1):
+    for x in range(MONEY_X[0] - 6, MONEY_X[0] + 70, 1):
+        for y in range(8, 26, 1):
             c = px[x, y]
             if c[0] > 150 and c[1] > 110 and c[2] > 70 and c[0] > c[1] > c[2]:
                 nail_hits += 1
