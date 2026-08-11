@@ -556,11 +556,14 @@ func _torso_rows(arms: String, variant: int) -> PackedStringArray:
 			# 腰 + 下臂（左袖；右手垂下 → 肤色手）
 			r.append(_r(7, "ccc.dddddddddddddddddddddddd.sss"))
 			r.append(_r(8, "ccc.dddddddddddddddddddddd.sss"))
-			r.append(_r(9, "ccc.dddddddddddddddddddd.sss"))
+			r.append(_r(9, "ccc.dddddddddddddddddddddd.sss"))
 			r.append(_r(11, "dddddddddddddddddddddddd"))
+			r.append(_r(11, "dddddddddddddddddddddd"))
 			r.append(_r(12, "dddddddddddddddddddd"))
-			r.append(_r(13, "dddddddddddddddddd"))
-			r.append(_r(14, "dddddddddddddd"))
+			# 返工6 P2：下摆去尖楔 —— 平摆 + 前进方向（右）1px 前突
+			# （GPT：下摆不要收成居中尖楔；行走方向侧保留前突）。
+			# PINNED (24,27)='d' 保持（x13-31 覆盖 x24）。
+			r.append(_r(13, "ddddddddddddddddddd"))
 
 		"swing_b":   # walk B：镜像（右臂前摆 + 左臂后摆）
 			r.append(_r(7, "ccc.dddddddddddddddddddddddd.sss"))
@@ -570,11 +573,11 @@ func _torso_rows(arms: String, variant: int) -> PackedStringArray:
 			r.append(_r(7, "cc.cccccccccccccccccccccccccc.cc"))
 			r.append(_r(7, "sss.dddddddddddddddddddddddd.ccc"))
 			r.append(_r(8, "sss.dddddddddddddddddddddd.ccc"))
-			r.append(_r(9, "sss.dddddddddddddddddddd.ccc"))
+			r.append(_r(9, "sss.dddddddddddddddddddddd.ccc"))
 			r.append(_r(11, "dddddddddddddddddddddddd"))
+			r.append(_r(12, "dddddddddddddddddddddd"))
 			r.append(_r(12, "dddddddddddddddddddd"))
-			r.append(_r(13, "dddddddddddddddddd"))
-			r.append(_r(14, "dddddddddddddd"))
+			r.append(_r(13, "ddddddddddddddddddd"))
 
 		"pump_up":   # use generic A：双手举到肩高（泵）—— 手在肩部两侧清晰
 			r.append(_r(7, "sss.dddddddddddddddddddddddd.sss"))
@@ -934,38 +937,38 @@ func _leg_rows(legs: String, variant: int) -> PackedStringArray:
 		return _leg_build_rows(legs, variant)
 	var r := PackedStringArray()
 	match legs:
-		"stride_f":  # walk A：左腿前迈（屈膝）+ 右腿后蹬（伸直）—— 两腿分开不并拢
-			# 返工5 P2：右腿外摆（不再收拢成底座）—— 腿从 x8-11/x22-25 起步，
-			# 前腿（左）加宽落地、后腿（右）保持 4px 支撑；两腿之间始终保留
-			# 透明缝（outline 成深色缝），脚部两脚分开 —— 消除「并拢底座」
-			# 棋子感。PINNED (9,33) 在左腿（x5-11）内保持。
-			r.append(_r(8, "pppp" + ".........." + "pppp"))
-			r.append(_r(8, "pppp" + ".........." + "pppp"))
-			r.append(_r(8, "pppp" + ".........." + "pppp"))
-			r.append(_r(6, "pppppp" + "........" + "pppp"))
-			r.append(_r(6, "pppppp" + "........" + "pppp"))
-			r.append(_r(5, "ppppppp" + "........" + "ppppp"))  # 行5（abs 33）PINNED 裤
-			r.append(_r(5, "ppppppp" + "........" + "ppppp"))
-			r.append(_r(5, "ppppppp" + "........" + "ppppp"))
-			r.append(_r(5, "ppppppp" + "........" + "ppppp"))
-			r.append(_r(4, "pppppppp" + "......." + "ppppp"))  # 左腿落点加宽
-			r.append(_r(4, "pppppppp" + "......." + "ppppp"))
-			r.append(_r(3, "ppppppppp" + "......" + "ppppp"))  # 前脚着地 + 后脚
-			r.append(_r(3, "ppppppppp" + "......" + "ppppp"))
-		"stride_b":  # walk B：右腿前迈 + 左腿后蹬（镜像）—— 前腿（右）加宽
-			r.append(_r(8, "pppp" + ".........." + "pppp"))
-			r.append(_r(8, "pppp" + ".........." + "pppp"))
-			r.append(_r(8, "pppp" + ".........." + "pppp"))
-			r.append(_r(6, "pppp" + "........" + "pppppp"))
-			r.append(_r(6, "pppp" + "........" + "pppppp"))
-			r.append(_r(5, "ppppp" + "........" + "ppppppp"))  # 行5（abs 33）右腿加宽
-			r.append(_r(5, "ppppp" + "........" + "ppppppp"))
-			r.append(_r(5, "ppppp" + "........" + "ppppppp"))
-			r.append(_r(5, "ppppp" + "........" + "ppppppp"))
-			r.append(_r(4, "ppppp" + "......." + "pppppppp"))  # 右腿落点加宽
-			r.append(_r(4, "ppppp" + "......." + "pppppppp"))
-			r.append(_r(3, "ppppp" + "......" + "ppppppppp"))  # 前脚着地 + 后脚
-			r.append(_r(3, "ppppp" + "......" + "ppppppppp"))
+		"stride_f":  # walk A：左腿前迈 + 右腿后蹬 —— 两腿 4-6px 窄腿清晰分开，
+			# 底部与鞋对齐（左腿 x8-13 / 右腿 x18-22 —— 返工6 P2：旧版左腿
+			# 底部外扩到 x3-11（9px 楔形）且鞋在 x8-13，腿脚错位粘连；改为
+			# 腿宽 4-6px、两腿间 4px 透明缝（outline 成深色缝）、鞋底对齐）。
+			# PINNED (9,33) 在左腿（x6-13）内保持。
+			r.append(_r(8, "pppppp" + "...." + "ppppp"))
+			r.append(_r(8, "pppppp" + "...." + "ppppp"))
+			r.append(_r(8, "pppppp" + "...." + "ppppp"))
+			r.append(_r(7, "ppppppp" + "..." + "ppppp"))
+			r.append(_r(7, "ppppppp" + "..." + "ppppp"))
+			r.append(_r(6, "pppppppp" + ".." + "ppppp"))  # 行5（abs 33）PINNED 裤
+			r.append(_r(6, "pppppppp" + ".." + "ppppp"))
+			r.append(_r(6, "pppppppp" + ".." + "ppppp"))
+			r.append(_r(6, "pppppppp" + ".." + "ppppp"))
+			r.append(_r(7, "ppppppp" + "..." + "ppppp"))  # 膝部回拢
+			r.append(_r(7, "ppppppp" + "..." + "ppppp"))
+			r.append(_r(8, "pppppp" + "...." + "ppppp"))  # 前脚着地（与鞋 x8-13 对齐）
+			r.append(_r(8, "pppppp" + "...." + "ppppp"))
+		"stride_b":  # walk B：右腿前迈 + 左腿后蹬（镜像）—— 前腿（右）x18-23
+			r.append(_r(8, "ppppp" + "...." + "pppppp"))
+			r.append(_r(8, "ppppp" + "...." + "pppppp"))
+			r.append(_r(8, "ppppp" + "...." + "pppppp"))
+			r.append(_r(7, "ppppp" + "..." + "ppppppp"))
+			r.append(_r(7, "ppppp" + "..." + "ppppppp"))
+			r.append(_r(6, "ppppp" + ".." + "pppppppp"))  # 行5（abs 33）右腿加宽
+			r.append(_r(6, "ppppp" + ".." + "pppppppp"))
+			r.append(_r(6, "ppppp" + ".." + "pppppppp"))
+			r.append(_r(6, "ppppp" + ".." + "pppppppp"))
+			r.append(_r(7, "ppppp" + "..." + "ppppppp"))
+			r.append(_r(7, "ppppp" + "..." + "ppppppp"))
+			r.append(_r(8, "ppppp" + "...." + "pppppp"))  # 前脚着地（与鞋 x18-23 对齐）
+			r.append(_r(8, "ppppp" + "...." + "pppppp"))
 		"run_f":     # treadmill A：高抬腿 —— 左膝抬到腰（裤块宽）+ 右腿后伸
 			r.append(_r(6, "pppppppppp" + "......"))        # 左大腿高抬（宽）
 			r.append(_r(6, "pppppppppp" + "......"))
@@ -1098,96 +1101,72 @@ func _leg_build_rows(legs: String, variant: int) -> PackedStringArray:
 		"stride_f":  # walk A：左腿前迈 + 右腿后蹬
 			for _i in 6:
 				r.append(_r(8, up.repeat(lw) + ".".repeat(8) + up.repeat(lw)))
-			for _i in 3:
-				r.append(_r(6, down.repeat(lw * 2) + "...." + down.repeat(lw)))
-			for _i in 2:
-				r.append(_r(4, "k".repeat(lw * 2) + ".." + "k".repeat(lw)))
-			for _i in 2:
-				r.append(_r(6, "k".repeat(lw * 3)))
+			for _i in 7:
+				# 返工6 P2：不再内嵌鞋行（旧实现再拼 _shoe_rows 造成 7px 高
+				# 块状脚）—— 全部裤/小腿色，鞋由 _shoe_rows() 统一提供。
+				# 底行落在鞋位（左 x8-13 / 右 x19-23）正上方，不悬空。
+				r.append(_r(8, down.repeat(lw) + ".".repeat(8) + down.repeat(lw)))
 		"stride_b":  # walk B：右腿前迈 + 左腿后蹬（镜像）
 			for _i in 6:
 				r.append(_r(8, up.repeat(lw) + ".".repeat(8) + up.repeat(lw)))
-			for _i in 3:
-				r.append(_r(8, up.repeat(lw) + "...." + up.repeat(lw * 2)))
-			for _i in 2:
-				r.append(_r(8, "k".repeat(lw) + ".." + "k".repeat(lw * 2)))
-			for _i in 2:
-				r.append(_r(6, "k".repeat(lw * 3)))
+			for _i in 7:
+				r.append(_r(8, down.repeat(lw) + ".".repeat(8) + down.repeat(lw)))
 		"run_f":  # treadmill A：高抬腿 —— 左大腿高抬 + 右腿后伸
 			for _i in 3:
 				r.append(_r(6, up.repeat(lw * 2 + 2) + ".".repeat(6)))
 			for _i in 2:
-				r.append(_r(6, "k".repeat(lw * 2 + 2) + ".".repeat(6)))
+				r.append(_r(6, down.repeat(lw * 2 + 2) + ".".repeat(6)))
 			for _i in 3:
 				r.append(_r(8, up.repeat(lw) + ".".repeat(8)))
 			for _i in 2:
-				r.append(_r(11, "k".repeat(lw)))
+				r.append(_r(11, down.repeat(lw)))
 			for _i in 2:
-				r.append(_r(13, "k".repeat(lw - 1)))
+				r.append(_r(13, down.repeat(lw - 1)))
 			r.append(_r(17, "k"))
 		"run_b":  # treadmill B：右膝高抬 + 左腿后伸（镜像）
 			for _i in 3:
 				r.append(_r(6, ".".repeat(6) + up.repeat(lw * 2 + 2)))
 			for _i in 2:
-				r.append(_r(6, ".".repeat(6) + "k".repeat(lw * 2 + 2)))
+				r.append(_r(6, ".".repeat(6) + down.repeat(lw * 2 + 2)))
 			for _i in 3:
 				r.append(_r(8, ".".repeat(8) + up.repeat(lw)))
 			for _i in 2:
-				r.append(_r(11, "k".repeat(lw)))
+				r.append(_r(11, down.repeat(lw)))
 			for _i in 2:
-				r.append(_r(13, "k".repeat(lw - 1)))
+				r.append(_r(13, down.repeat(lw - 1)))
 			r.append(_r(17, "k"))
 		"plant":  # use：双脚站稳（宽距）
 			for _i in 6:
 				r.append(_r(6, up.repeat(lw * 2)))
-			for _i in 3:
+			for _i in 7:
 				r.append(_r(5, down.repeat(lw * 2 + 2)))
-			for _i in 2:
-				r.append(_r(2, "k".repeat(lw * 2 + 4)))
-			for _i in 2:
-				r.append(_r(6, "k".repeat(lw * 2 + 2)))
 		"pedal_f":  # bike A：左脚下踏 + 右脚上抬
 			for _i in 6:
 				r.append(_r(8, up.repeat(lw) + ".".repeat(8) + up.repeat(lw)))
-			for _i in 3:
-				r.append(_r(6, down.repeat(lw * 2) + "...." + down.repeat(lw)))
-			for _i in 2:
-				r.append(_r(4, "k".repeat(lw * 2) + ".." + "k".repeat(lw)))
-			for _i in 2:
-				r.append(_r(6, "k".repeat(lw * 3)))
+			for _i in 7:
+				# 返工6 P2：同 stride —— 底行落在鞋位正上方
+				r.append(_r(8, down.repeat(lw) + ".".repeat(8) + down.repeat(lw)))
 		"pedal_b":  # bike B：右脚下踏 + 左脚上抬
 			for _i in 6:
 				r.append(_r(8, up.repeat(lw) + ".".repeat(8) + up.repeat(lw)))
-			for _i in 3:
-				r.append(_r(8, up.repeat(lw) + "...." + up.repeat(lw * 2)))
-			for _i in 2:
-				r.append(_r(8, "k".repeat(lw) + ".." + "k".repeat(lw * 2)))
-			for _i in 2:
-				r.append(_r(6, "k".repeat(lw * 3)))
+			for _i in 7:
+				r.append(_r(8, down.repeat(lw) + ".".repeat(8) + down.repeat(lw)))
 		"cross":  # yoga：盘坐（宽、短）
 			for _i in 6:
 				r.append(_r(6, up.repeat(lw * 2)))
-			for _i in 3:
+			for _i in 7:
 				r.append(_r(4, down.repeat(lw * 2 + 2)))
-			for _i in 2:
-				r.append(_r(2, "k".repeat(lw * 2 + 4)))
-			for _i in 2:
-				r.append(_r(6, "k".repeat(lw * 2 + 2)))
 		"bent":  # tired：腿微弯
 			for _i in 6:
 				r.append(_r(9, up.repeat(lw)))
-			for _i in 3:
+			for _i in 7:
 				r.append(_r(8, down.repeat(lw + 2)))
-			for _i in 2:
-				r.append(_r(6, "k".repeat(lw + 4)))
-			for _i in 2:
-				r.append(_r(6, "k".repeat(lw + 4)))
 		_:
 			# stand：双脚并立
 			for _i in 9:
 				r.append(_r(9, up.repeat(lw)))
 			for _i in 4:
-				r.append(_r(8, "k".repeat(lw + 2)))
+				r.append(_r(9, down.repeat(lw)))
 	return r
 
 
@@ -1195,39 +1174,56 @@ func _leg_build_rows(legs: String, variant: int) -> PackedStringArray:
 ## 不跟着浮动（_bob_up 只移动 0..40 行）。
 ## 返工5 P2：两脚分开（左脚 x8-13 含 PIN x12、右脚 x18-22）—— 不再并成
 ## 12px 宽单块底座；walk/stand 腿行底部与两只鞋对齐。
-func _shoe_rows() -> PackedStringArray:
+## 返工6 P2（步态 + 落地）：[lift] -1/0/+1 决定哪只脚抬高 1px（行走周期
+## 后脚脚跟离地：stride_f 右腿为后脚 → lift=+1；stride_b 左腿为后脚 →
+## lift=-1；站/等/用 lift=0 双脚平落）。末行（行 43）为鞋底深色线（鞋色
+## darkened 0.25 —— 连续的 3-4px 深色鞋底线，脚与地面接触关系清晰）。
+func _shoe_rows(lift: int = 0) -> PackedStringArray:
 	var r := PackedStringArray()
-	r.append(_r(8, "kkkkkk.....kkkkk"))
-	r.append(_r(8, "kkkkkk.....kkkkk"))
-	r.append(_r(8, "kkkkkk.....kkkkk"))
+	# 行 41-42：鞋面（抬脚侧少 1 行 → 跟离地 1px）
+	var left_rows := 3
+	var right_rows := 3
+	if lift < 0:
+		left_rows = 2
+	elif lift > 0:
+		right_rows = 2
+	for i in 2:
+		var left_foot := "kkkkkk" if i < left_rows else "......"
+		var right_foot := "kkkkk" if i < right_rows else "....."
+		r.append(_r(8, left_foot + "....." + right_foot))
+	# 行 43：鞋底深色线（连续水平线 —— 脚底与地面接触边）
+	var left_sole := "KKKKKK" if left_rows == 3 else "......"
+	var right_sole := "KKKKK" if right_rows == 3 else "....."
+	r.append(_r(8, left_sole + "....." + right_sole))
 	return r
 
 
 ## 脚底接触影（4 行 44..47）：随身体保持贴地（_bob_up 只移动 0..40 行）。
-## V3.1 R2（P2-sprite）：从「36px 全宽平带」改为「脚下收拢的椭圆」——
-## 行 44 窄（贴身）、行 45-47 渐宽，全部居中 x24；contact shadow 明确
-## （V3 §6 设备/人物脚下明显但柔和的 contact shadow，非整片暗板）。
-## 返工5 P2：椭圆左扩到 x8（覆盖两脚落点 x8-22），不再只托躯干中线。
+## V3.1 R2（P2-sprite）：从「36px 全宽平带」改为「脚下收拢的椭圆」。
+## 返工6 P2：收紧到两脚落点（x8-27，旧 x8-39 右侧多出 17px 悬空 ——
+## GPT 读作「偏移的黑色污渍」）；行 45 仍覆盖 PIN (24,45)。
 func _shadow_rows() -> PackedStringArray:
 	var r := PackedStringArray()
-	r.append(_r(11, "y".repeat(26)))
-	r.append(_r(9, "y".repeat(30)))
-	r.append(_r(8, "y".repeat(32)))
-	r.append(_r(8, "y".repeat(32)))
+	r.append(_r(11, "y".repeat(14)))
+	r.append(_r(9, "y".repeat(18)))
+	r.append(_r(8, "y".repeat(20)))
+	r.append(_r(8, "y".repeat(20)))
 	return r
 
 
 # === 姿态帧组装 ===
 
 ## 组装基础帧：头 + 躯干 + 腿 + 鞋 + 影（48 行）。
+## 返工6 P2：[shoe_lift] 传给 _shoe_rows —— 行走周期后脚脚跟离地
+## （stride_f 右腿后脚 lift=+1；stride_b 左腿后脚 lift=-1；其余 0 平落）。
 func _assemble(face: String, arms: String, legs: String, variant: int,
-		bob: int = 0, build_variant: int = -1) -> PackedStringArray:
+		bob: int = 0, build_variant: int = -1, shoe_lift: int = 0) -> PackedStringArray:
 	var body_variant := variant if build_variant < 0 else build_variant
 	var rows := PackedStringArray()
 	rows.append_array(_head_rows(face, variant))
 	rows.append_array(_torso_rows(arms, body_variant))
 	rows.append_array(_leg_rows(legs, body_variant))
-	rows.append_array(_shoe_rows())
+	rows.append_array(_shoe_rows(shoe_lift))
 	rows.append_array(_shadow_rows())
 	if bob != 0:
 		rows = _bob_up(rows, bob)
@@ -1242,10 +1238,11 @@ func _idle_rows(frame: int, variant: int, build_variant: int = -1) -> PackedStri
 
 ## walk：专注脸 + 前倾摆臂迈步（V3 §8 跑步：身体前倾、手臂摆动、腿部循环）。
 ## A=左臂前摆/左脚迈出；B=镜像（+1px 弹跳）。
+## 返工6 P2：步态落地 —— 前脚平落、后脚脚跟离地 1px（_shoe_rows lift）。
 func _walk_rows(frame: int, variant: int, build_variant: int = -1) -> PackedStringArray:
 	if frame == 0:
-		return _assemble(FACE_FOCUS, "swing_f", "stride_f", variant, 0, build_variant)
-	var rows := _assemble(FACE_FOCUS, "swing_b", "stride_b", variant, 1, build_variant)
+		return _assemble(FACE_FOCUS, "swing_f", "stride_f", variant, 0, build_variant, 1)
+	var rows := _assemble(FACE_FOCUS, "swing_b", "stride_b", variant, 1, build_variant, -1)
 	return rows
 
 
@@ -1463,6 +1460,8 @@ func _char_color(ch: String, shirt: Color, v: Dictionary) -> Color:
 			return v["pants"].darkened(0.18)   # 裤阴影侧
 		"k":
 			return v["shoes"]
+		"K":
+			return v["shoes"].darkened(0.25)   # 返工6 P2：鞋底深色线（落地边）
 		"y":
 			return Palette.MEMBER_SHADOW
 		"w":

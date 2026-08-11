@@ -225,10 +225,17 @@ func set_grid_visible(visible: bool) -> void:
 ##   画布背景（天花板）→ 地板 pass（floor transform 包裹全部贴地内容：
 ##   地板材质/地面装饰/结构 BACKGROUND/网格）→ 体积墙（北墙/东西墙面 +
 ##   墙上装饰，画在地板之上 —— 墙脚被地板压住，墙身立起）→ 结构 GAMEPLAY
-##   （前台，挤出）→ 会员中景（billboard 站立，脚底贴地）→ 设备（顶面+
-##   正面+侧面 3 面挤出，有体积）→ USING 会员前景（叠加在设备上）→
-##   结构 FOREGROUND（立柱挤出/吊灯挂高处/小道具贴地）→ 环境前景（大植物）
-##   → 放置幽灵（贴地预览）。
+##   （前台，挤出）→ 设备（顶面+正面+侧面 3 面挤出，有体积）→ 会员中景
+##   （billboard 站立，脚底贴地 —— 返工6 P2：画在设备之上，会员下半身
+##   不被设备顶面横切；设备顶面受光带与会员脚底接触影形成前后层）→
+##   USING 会员前景（叠加在设备上）→ 结构 FOREGROUND（立柱挤出/吊灯挂
+##   高处/小道具贴地）→ 环境前景（大植物）→ 放置幽灵（贴地预览）。
+##   V3.1 返工6 P2（构图避让）：旧顺序「会员中景 → 设备」使设备顶面
+##   （抬升到 z=height 的受光面）在投影中画在行走会员腰/胯之上 ——
+##   GPT 第二眼读作「人物站在柜台后，下半身被大面积遮挡」。调整为先画
+##   设备、再画中景会员：会员是画面视觉主体（V3 §15 人物视觉权重），
+##   其双腿/双脚/接触影始终完整可读；设备仍是前景体积（USING 会员叠加
+##   在设备上的逻辑不变）。
 func _draw() -> void:
 	if _grid == null:
 		return
@@ -237,8 +244,8 @@ func _draw() -> void:
 	_draw_2_5d_walls()
 	if _structure_art != null:
 		_draw_structure_gameplay()
-	_draw_members(false)
 	_draw_equipment()
+	_draw_members(false)
 	_draw_members(true)
 	_draw_structure_foreground()
 	_draw_environment_foreground()
