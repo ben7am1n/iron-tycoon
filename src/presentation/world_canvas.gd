@@ -442,10 +442,13 @@ func _paint_extended_wall_face(img: Image, vp: Rect2, wr: Rect2i, seed: int) -> 
 			var h := _hash2(int(world_x) + seed, int(world_y) * 3 + seed)
 			var col: Color = base_colors[(h >> 4) % base_colors.size()]
 			# 6px 手绘笔触（与 _bake_side_wall 同族；无装饰大块）
-			if h % 6 == 0:
+			# 返工7 P1（FAIL1 噪点焦点层级）：笔触/噪点密度降档 —— 延展
+			# 墙面是远景背景，笔触 h%6→h%8、噪点 h%11→h%16 —— 墙面不再
+			# 与地板/设备同密度颗粒（GPT：墙面呈现相似颗粒抖动纹理）。
+			if h % 8 == 0:
 				col = stroke_colors[(h >> 8) % stroke_colors.size()]
 			# 稀疏噪点（N4 色阶微差）
-			elif h % 11 == 0:
+			elif h % 16 == 0:
 				col = Palette.WALL_BASE.lightened(0.10) if (h >> 12) % 2 == 0 else Palette.WALL_DARK
 			var d := img.get_pixel(ix, iy)
 			img.set_pixel(ix, iy, Color(
@@ -1007,7 +1010,12 @@ func _draw_equipment_cast_shadow(fp: Rect2i, height: float) -> void:
 ## （焦点区），远处地板靠 lighting 冷灰回落压暗留白。
 func _draw_equipment_ground_pool(fp: Rect2i) -> void:
 	var glow := Palette.HIGHLIGHT_WARM
-	glow.a = 0.20
+	# 返工7 P1 二轮（GPT 仍 FAIL「器械轮廓不干净/左侧区拥挤碎」）：
+	# alpha 0.20 → 0.26 —— 深色设备（EQUIP_OUTLINE 深蓝灰）在深灰橡胶
+	# 力量区（#4B4F57）上明度太接近，silhouette 与地面糊在一起。
+	# 暖池再亮一档把设备「托起」（HIGHLIGHT_WARM sat≈0.18 低饱和，
+	# 不新增 gate A 高饱和簇；池面积小，low-sat 基线不回归）。
+	glow.a = 0.26
 	var cx := fp.position.x + fp.size.x / 2.0
 	var cy := fp.position.y + fp.size.y / 2.0
 	# 亮池略大于 footprint（宽 0.82 / 高 0.68 —— 焦点暖池：设备区明度高于

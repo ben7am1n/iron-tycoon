@@ -580,6 +580,9 @@ func _is_silhouette_boundary(img: Image, x: int, y: int) -> bool:
 ## → 1/12、2×2 簇 1/2 → 1/5 —— GPT 二次确认：器械主体内部仍读作
 ## 「深蓝/灰褐碎点切碎大块固有色」→ 再删一半以上随机单像素噪点，只保留
 ## 明确的材质过渡区；高光改为连续小条带（top-edge band），不散落白点。
+## 返工7 P1（FAIL1 设备体上零噪点）：密度 10% → 4% —— GPT 连续 5 轮
+## 「设备表面呈现相似颗粒抖动纹理」；设备体是画面主体，零噪点读法优先，
+## 手绘色阶过渡由三阶面（受光/主体/暗面）承担，不再靠单像素抖动。
 func _apply_hand_drawn_jitter(img: Image) -> void:
 	var w := img.get_width()
 	var h := img.get_height()
@@ -604,16 +607,16 @@ func _apply_hand_drawn_jitter(img: Image) -> void:
 			if best_d < 0.12:
 				continue
 			var hsh := _hash2(x * 7 + 3, y * 13 + 1)
-			if hsh % 100 >= 10:
+			if hsh % 100 >= 4:
 				continue
-			if hsh % 12 == 0:
+			if hsh % 25 == 0:
 				# 笔触断裂：完全切到邻阶色（硬台阶）—— 极稀有
 				img.set_pixel(x, y, best)
 			else:
 				var amt := 0.35 + float((hsh >> 8) % 21) / 100.0  # 35-55%
 				img.set_pixel(x, y, c.lerp(best, amt))
-			# 2×2 手绘笔触簇：邻像素向同目标低量混合 —— 1/5 触发
-			if hsh % 5 == 0 and x + 1 < w:
+			# 2×2 手绘笔触簇：邻像素向同目标低量混合 —— 1/8 触发
+			if hsh % 8 == 0 and x + 1 < w:
 				var rc := img.get_pixel(x + 1, y)
 				if rc.a > 0.5 and _is_neutral_tone(rc):
 					var sub := 0.20 + float((hsh >> 12) % 21) / 100.0

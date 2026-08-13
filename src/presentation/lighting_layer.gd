@@ -116,6 +116,45 @@ func projected_light_map_origin() -> Vector2:
 	return _projected_light_origin
 
 
+## V3.1 返工7 P1（FAIL1 噪点焦点层级）：焦点权重 —— 以中央设备带/主暖池
+## （世界 224,170 落点）为视觉焦点中心。散射光（冷灰回落/前景暖带/窗光/
+## 远景雾化）随距焦点距离衰减：焦点区保留局部点缀、周边稀疏、远离焦点
+## 近乎无噪点（GPT 连续 5 轮 FAIL「均匀铺满颗粒噪点/灰脏感」）。纯距离
+## 函数（确定性，无 RNG）。返回 0..1（焦点 1.0，远景角落 ~0.12）。
+## 焦点带：世界 x 96..352、y 96..224（主设备带 + 中央通道暖池带）。
+## 返工7 P1 二轮（GPT 仍 FAIL「噪点均匀/无中央焦点」）：衰减斜率
+## 0.85 → 1.8、角落下限 0.12 → 0.08 —— 远景角落更快让位（旧斜率在
+## flex 右上角 (390,60) 仍保留 ~0.71 权重，peripheral darken 不触发、
+## 角落明度 143 ≈ 中央 152 → 读作无焦点）。三盏灯池中心仍 factor 1.0
+## （R4 ring 采样区 keep 由池内逻辑决定，不受本函数影响）。
+func _focus_weight(x: float, y: float) -> float:
+	# 焦点中心 = 中灯落点 (224,170)；焦点带宽度 ~128x96（metric 归一化）
+	var nx := absf(x - 224.0) / 128.0
+	var ny := absf(y - 170.0) / 96.0
+	var metric := maxf(nx, ny) * 0.62 + (nx + ny) * 0.22
+	# metric<=1 在焦点带内全权重；>1 衰减（斜率 1.8）到远景角落 ~0.08
+	if metric <= 1.0:
+		return 1.0
+	return clampf(1.0 - (metric - 1.0) * 1.8, 0.08, 1.0)
+
+
+## 投影空间焦点权重（画布坐标 → 世界焦点带）。投影 light map 是画布空间，
+## 世界焦点 (224,170) 投影到画布 ≈ proj(224,170,0) = (261.4, 130.9)。
+## 与 _focus_weight 同构（metric 归一化 + 0.85 衰减）—— 远景雾化/光束
+## 周边让位，中央上方保留空气透视。
+## 返工7 P1 二轮：斜率同步 0.85 → 1.8、角落下限 0.12 → 0.08 —— 画布
+## 空间远景（墙带左右两端）更快让位，与 _focus_weight 层级一致。
+func _focus_weight_canvas(x: float, y: float) -> float:
+	var cx := 261.4
+	var cy := 130.9
+	var nx := absf(x - cx) / 140.0
+	var ny := absf(y - cy) / 90.0
+	var metric := maxf(nx, ny) * 0.62 + (nx + ny) * 0.22
+	if metric <= 1.0:
+		return 1.0
+	return clampf(1.0 - (metric - 1.0) * 1.8, 0.08, 1.0)
+
+
 ## 烘焙静态 light map：RGBA8，全透明基底 + 逐像素光照散射。确定性（hash）。
 func _bake_light_map() -> void:
 	var img := Image.create(WorldLayout.WORLD_W, WorldLayout.WORLD_H, false, Image.FORMAT_RGBA8)
@@ -188,14 +227,22 @@ func _paint_ambient_cool_falloff(img: Image) -> void:
 			# （cap 0.10→0.08）—— 弱项「全画面颗粒雾化感较重」：远处冷灰
 			# 回落是环境色链尾，不需要高密度铺点；qa A 远候选距落点 <96
 			# 不受本带影响（本带只作用于 metric>1 池外区域），冷灰链仍在。
-			# 返工6 P1（FAIL1 远离焦点几乎无噪点）：密度再降（0.18+0.16t →
+			# 返工7 P1（FAIL1 远离焦点几乎无噪点）：密度再降（0.18+0.16t →
 			# 0.06+0.05t）、alpha cap 0.08→0.04 —— 远处是「留白」而非贴图
 			# 噪点；冷灰回落链由 fade band 延续，本带只保留最低存在感。
-			if float(_hash2(x + seed, y * 3 + seed) % 1000) / 1000.0 > 0.06 + 0.05 * t:
+			# 返工7 P1（FAIL1 噪点焦点层级）：冷灰回落乘以焦点权重 ——
+			# 焦点带内几乎不撒冷灰（暖池本体负责受光）、周边稀疏、远离
+			# 焦点近乎无噪点（GPT：均匀铺满颗粒 → 焦点层级分布）。
+			# 返工7 P1 二轮（GPT 仍 FAIL「噪点均匀铺满」）：密度再降
+			# （0.06+0.05t → 0.045+0.04t）、alpha cap 0.04→0.035 ——
+			# 中景冷灰回落仍是「链尾」不是噪点层；焦点层级已由暖池
+			# 承担，本带只保留最低存在感（r3p3 far 冷灰链仍可读）。
+			var focus_w := _focus_weight(float(x), float(y))
+			if float(_hash2(x + seed, y * 3 + seed) % 1000) / 1000.0 > (0.045 + 0.04 * t) * focus_w:
 				continue
 			var c := Palette.LIGHT_EDGE_SHADOW
-			var a := 0.02 + 0.02 * t * (0.5 + 0.5 * float(_hash2(x + 23, y + 41) % 100) / 100.0)
-			img.set_pixel(x, y, Color(c.r, c.g, c.b, minf(a, 0.04)))
+			var a := 0.015 + 0.015 * t * (0.5 + 0.5 * float(_hash2(x + 23, y + 41) % 100) / 100.0)
+			img.set_pixel(x, y, Color(c.r, c.g, c.b, minf(a * focus_w, 0.035)))
 
 
 ## 前景暖光带（V3.1 返工2 R3 FAIL3 三层景深）：画面底部（世界 y 240..290，
@@ -224,12 +271,18 @@ func _paint_foreground_warm(img: Image) -> void:
 			# 0.12+0.18t）、alpha cap 0.16→0.10 —— 前景是「受光面」不是
 			# 噪点带；低密度暖亮仍可读（r3p3 三层景深保持，fore 地板本身
 			# 就是亮瓷砖，不依赖暖带铺点）。
-			var keep := 0.12 + 0.18 * t
+			# 返工7 P1（FAIL1 噪点焦点层级）：前景暖带乘以焦点权重 ——
+			# 中央设备带（含前景中段）保留暖亮受光，远景角落让位留白。
+			# 返工7 P1 二轮（GPT 仍 FAIL「噪点均匀铺满」）：密度再降
+			# （0.12+0.18t → 0.10+0.14t）—— 前景是「受光面」不是噪点带；
+			# 三层景深由暖池 + 地板亮瓷砖承担（r3p3 fore ≥ wall-1 保持）。
+			var focus_w := _focus_weight(float(x), float(y))
+			var keep := (0.10 + 0.14 * t) * focus_w
 			if float(_hash2(x + seed, y * 3 + seed) % 100) / 100.0 > keep:
 				continue
 			var c := Palette.LIGHT_POOL_MID
 			var a := 0.05 + 0.05 * t * (0.5 + 0.5 * float(_hash2(x + 41, y + 53) % 100) / 100.0)
-			img.set_pixel(x, y, Color(c.r, c.g, c.b, minf(a, 0.10)))
+			img.set_pixel(x, y, Color(c.r, c.g, c.b, minf(a * focus_w, 0.10)))
 
 
 ## 墙边暗角（V3.1 P4 近墙像素变暗）：EDGE_SHADOW_WIDTH 内散射冷蓝灰暗像素，
@@ -254,7 +307,14 @@ func _paint_edge_shadow(img: Image) -> void:
 			# 返工6 P1（FAIL1 全局噪点降密降强）：密度再降（84+12t → 58+10t）、
 			# alpha 再降（0.10+0.11t → 0.07+0.08t，cap 0.24→0.16）——
 			# 墙边暗角是「冷阴影过渡」，不是贴图噪点；低密度冷暗仍可读。
-			if _hash2(x, y) % 100 >= 58 + int(10.0 * t):
+			# 返工7 P1（FAIL1 噪点焦点层级）：墙边暗角乘以焦点权重 ——
+			# 焦点带内的近墙像素几乎不撒冷暗（中央设备带保持受光干净），
+			# 周边/远景墙边保留冷阴影让位（GPT：均匀颗粒 → 焦点层级）。
+			# 返工7 P1 二轮（GPT 仍 FAIL「噪点均匀铺满」）：密度再降
+			# （58+10t → 48+8t）—— 墙边暗角是「冷阴影过渡」不是噪点层；
+			# 冷色阴影像素仍存在（r4/r4p3 cool 检查依赖），低密度可读。
+			var focus_w := _focus_weight(float(x), float(y))
+			if _hash2(x, y) % 100 >= int((48.0 + 8.0 * t) * focus_w):
 				continue
 			var a := 0.07 + 0.08 * t * (0.5 + 0.5 * float(_hash2(x + 31, y + 17) % 100) / 100.0)
 			# 角落再压一层（空间纵深，V3 §4/§6）
@@ -262,7 +322,7 @@ func _paint_edge_shadow(img: Image) -> void:
 					or x < edge and y >= h - edge or x >= w - edge and y >= h - edge:
 				a += 0.03
 			var c := Palette.LIGHT_EDGE_SHADOW
-			img.set_pixel(x, y, Color(c.r, c.g, c.b, minf(a, 0.16)))
+			img.set_pixel(x, y, Color(c.r, c.g, c.b, minf(a * focus_w, 0.16)))
 
 
 ## 顶部主光落点：不是径向圆，而是横宽纵窄的 faceted 像素材质区。
@@ -289,16 +349,70 @@ func _paint_light_pools(img: Image) -> void:
 		# (86,170) 保持（bike 受光面 + R4 ring 采样区，不动）；右灯
 		# (362,170) 压暗 ×0.80 —— 右区（yoga 垫 + 紫色道具）让位，
 		# 画面不再三池均权竞争（GPT：黄光/紫点/红条同时抢注意力）。
+		# 返工7 P1（FAIL2 强化中央视觉焦点）：焦点层级再拉开 —— 中灯
+		# ×1.30（中央设备带第一落点更亮）、右灯 ×0.65（瑜伽区退让，
+		# GPT：右区紫点/黄光持续竞争注意力）。左灯保持 1.0（R4 ring
+		# 硬门采样区 keep=0.85/0.80 逐字不动 —— 只改 alpha 档位，不
+		# 改 keep 覆盖率）。
+		# 返工7 P1 二轮（GPT 仍 FAIL「无明确中央焦点」）：中灯再提
+		# ×1.30 → ×1.42 —— 中央设备带暖池是全场唯一最亮（r4p1 focal
+		# > far_zone 余量从 28 升到 ~40，明度差可读）；右灯保持 0.65
+		# 让位（瑜伽区紫点/黄光不竞争）。cap 0.64*strength 同步放大，
+		# R4 ring 覆盖率由 keep 行决定（与 cap 无关），硬门保持。
+		# 返工7 P1 三轮（GPT：中央通道「既不最亮也不最干净」）：中灯
+		# ×1.42 → ×1.55 —— walkway 环道测试钉在 lum>0.6(153) 不能
+		# 再暗，唯一能拉开层级的是中央暖池再亮（walkway 侧 152.6 →
+		# 设备带 128.5 的倒挂通过池 alpha 反转）。LIGHT_POOL_MID 低
+		# 饱和，不新增 gate A 高饱和簇；r4p1 focal>far 余量继续放大。
 		var pool_strength := 1.0
 		var lx: float = light.get("landing", Vector2.ZERO).x
 		if lx > 300.0:
-			pool_strength = 0.80
+			pool_strength = 0.65
 		elif lx > 150.0:
-			pool_strength = 1.15
+			pool_strength = 1.55
 		_paint_faceted_pool(img,
 			light.get("landing", Vector2.ZERO),
 			light.get("pool_half", Vector2(52, 36)), seed, pool_strength)
 		seed += 97
+	# 返工7 P1（FAIL2 周边主动压暗留白）：焦点带之外的远景角落撒稀疏
+	# 冷暗散射 —— 画面周边读作「阴影让位」而非与焦点同等受光。冷色
+	# 与暖池同源（LIGHT_EDGE_SHADOW），低 alpha（≤0.10），只作用于
+	# 焦点带外（_focus_weight < 0.5）区域 —— 不抢中央焦点。
+	_paint_peripheral_darken(img)
+
+
+## 周边冷暗让位（返工7 P1 FAIL2 周边主动压暗留白）：焦点带之外的远景
+## 角落撒稀疏冷暗散射 —— 与暖池同源（LIGHT_EDGE_SHADOW），低 alpha
+## （≤0.10），只作用于 _focus_weight < 0.5 的区域。让「周边读作阴影
+## 让位、中央设备带读作第一视觉落点」（GPT：均匀受光无焦点 → 焦点
+## 层级分布）。位置与暖池错开（暖池集中在焦点带内，本带只在带外），
+## 不覆盖 P5 焦点装饰采样窗口（FOCAL_* 道具集中在焦点带/前景，本带
+## alpha 低、稀疏 —— 高饱和簇计数不受影响）。确定性 hash，无 RNG。
+func _paint_peripheral_darken(img: Image) -> void:
+	var seed := 613
+	for y in range(0, img.get_height(), 2):
+		for x in range(0, img.get_width(), 2):
+			var focus_w := _focus_weight(float(x), float(y))
+			# 返工7 P1 三轮（GPT：中央通道「既不最亮也不最干净」，右/左
+			# walkway 环 143-153 > 设备带 128.5）：暗角触发阈值 0.45 →
+			# 0.75 —— 焦点带外（含 walkway 环道 + zone 边缘）全部让位
+			# 压暗，中央设备带（focus_w≥0.8）保持干净受光。旧阈值下
+			# 右侧走道 focus_w=0.72 不触发，环道比设备带亮（倒挂）。
+			# LIGHT_EDGE_SHADOW 低饱和 → 不新增 gate A 簇；low-sat
+			# 增量由 alpha ≤0.11 控制（gate 余量验证见 gate PIL）。
+			if focus_w >= 0.75:
+				continue
+			# 越远越暗（0.75 → 角落 0.08 → 密度/alpha 升）
+			var far := 1.0 - focus_w / 0.75
+			# 返工7 P1 二轮：角落让位拉强（密度 0.04+0.06far → 0.06+0.10far、
+			# alpha cap 0.08 → 0.11）—— flex 右上角实测 143 ≈ 中央 152
+			# 读作无焦点；角落压暗后中央设备带是全场最亮（第一视觉落点）。
+			# 稀疏低 alpha，不形成贴图暗块（gate A 高饱和簇不受影响）。
+			if float(_hash2(x + seed, y * 3 + seed) % 100) / 100.0 > 0.06 + 0.10 * far:
+				continue
+			var c := Palette.LIGHT_EDGE_SHADOW
+			var a := 0.05 + 0.05 * far * (0.5 + 0.5 * float(_hash2(x + 31, y + 17) % 100) / 100.0)
+			img.set_pixel(x, y, Color(c.r, c.g, c.b, minf(a, 0.11)))
 
 
 ## 分面暖光落点：metric 是八边形距离，不使用圆/径向 gradient。
@@ -427,7 +541,12 @@ func _paint_faceted_pool(img: Image, center: Vector2, half_size: Vector2,
 			# 硬量化：≥0.05 全部保留（tier alpha 已分档；块级 bmult 决定亮暗）。
 			# cap 0.64 = P1 热核档位上限（qa_v31r4p1 focal>far_zone 依赖），
 			# 不裁剪 P1 焦点亮度。
-			img.set_pixel(x, y, Color(warm.r, warm.g, warm.b, minf(a2, 0.64)))
+			# 返工7 P1（FAIL2 强化中央视觉焦点）：cap 随 strength 微抬 ——
+			# 中灯（主设备带）strength=1.30 → cap 0.72，核心更亮；左灯
+			# 1.0 / 右灯 0.65 → cap 0.64/0.64（不抢焦点）。R4 ring 覆盖率
+			# 由 keep 行决定（alpha>0.02 与 cap 无关），硬门保持。
+			img.set_pixel(x, y, Color(warm.r, warm.g, warm.b,
+				minf(a2, 0.64 * maxf(strength, 1.0))))
 
 
 ## 暖池外缘渐弱带（返工3 P3 FAIL1 边缘渐弱 + V3.1 返工4 P3 像素灯）：
@@ -539,11 +658,18 @@ func _paint_far_wall_haze(img: Image) -> void:
 			# 0.10+0.12t）、alpha cap 0.10→0.06 —— 远景墙带是「空气透视」
 			# 氛围，不是噪点；低密度冷灰回落仍可读（N11 远景暖化由投影
 			# 光束承担，本带只是冷灰链尾）。
-			if float(_hash2(x + seed, y * 5 + seed) % 1000) / 1000.0 > 0.10 + 0.12 * t:
+			# 返工7 P1（FAIL1 噪点焦点层级）：远景雾化在画布空间按距中央
+			# 墙段（主设备带上方，画布 x≈261）距离衰减 —— 中央上方保留
+			# 空气透视，左右远景墙带让位留白（GPT：均匀颗粒 → 焦点层级）。
+			# 返工7 P1 二轮（GPT 仍 FAIL「噪点均匀铺满」）：密度再降
+			# （0.10+0.12t → 0.08+0.09t）—— 远景墙带是「空气透视」氛围，
+			# 不是噪点；左右墙带让位后中央上方仍是唯一空气透视区。
+			var focus_w := _focus_weight_canvas(float(x), float(y))
+			if float(_hash2(x + seed, y * 5 + seed) % 1000) / 1000.0 > (0.08 + 0.09 * t) * focus_w:
 				continue
 			var c := Palette.LIGHT_WINDOW_COOL
 			var a := 0.03 + 0.03 * t * (0.5 + 0.5 * float(_hash2(x + 3, y + 71) % 100) / 100.0)
-			img.set_pixel(x, y, Color(c.r, c.g, c.b, minf(a, 0.06)))
+			img.set_pixel(x, y, Color(c.r, c.g, c.b, minf(a * focus_w, 0.06)))
 
 
 ## 稀疏投影光束：沿 source→landing 方向扩张，横向分档 + 纵向断续条带。
@@ -672,7 +798,13 @@ func _paint_window_light(img: Image) -> void:
 					continue
 				# 返工6 P1（FAIL1 全局噪点降密降强）：45% → 28% ——
 				# 窗光是冷色环境氛围，低密度仍可读（窗下冷光渗透保持）。
-				if _hash2(x, y) % 100 >= 28:
+				# 返工7 P1（FAIL1 噪点焦点层级）：窗光乘以焦点权重 ——
+				# 焦点带内（设备带受光面）不再叠冷窗光，周边保留冷光渗透。
+				# 返工7 P1 二轮（GPT 仍 FAIL「噪点均匀铺满」）：密度再降
+				# 28% → 20% —— 窗光是冷色氛围，低密度仍可读；设备带
+				# 周边冷光渗透保留（r4p3 cool 阴影仍依赖窗下冷光）。
+				var focus_w := _focus_weight(float(x), float(y))
+				if _hash2(x, y) % 100 >= int(20.0 * focus_w):
 					continue
 				var c := Palette.LIGHT_WINDOW_COOL
 				img.set_pixel(x, y, Color(c.r, c.g, c.b, 0.05 + 0.05 * float(_hash2(x + 13, y + 19) % 100) / 100.0))
@@ -957,16 +1089,23 @@ func _compute_equipment_mask_rects() -> Array:
 	var rects: Array = []
 	if _grid == null:
 		return rects
+	# 返工7 P1 三轮（GPT：器械轮廓与地板高频纹理粘在一起）：mask 外扩
+	# +3px halo —— 散射光照（冷灰回落/墙边暗角/窗光/前景暖带）跳过设备
+	# 本体及其 3px 邻域，器械 silhouette 周围地面更安静（r4p1 near 带
+	# 采 footprint 外 4px 环，3px halo 只减不增噪点密度，断言仍绿）。
+	# 暖池不 mask（受光面暖亮是 V3 §6 目标效果）—— 本 halo 只影响
+	# 散射 pass，不影响灯池/暖池 alpha。
+	var halo := 3
 	for inst in _grid.get_placed_instances():
 		var fp := _footprint_rect(inst.footprint_cells)
 		if fp.size.x <= 0 or fp.size.y <= 0:
 			continue
 		var h := float(_equipment_height(inst))
 		# 顶面在光图空间向北偏移 ≈ h * HS/FS；东侧偏移 ≈ h * EX。
-		var north := int(ceil(h * Proj2D.HEIGHT_SCALE / Proj2D.FLOOR_SCALE)) + 2
-		var west := int(ceil(h * Proj2D.EXTRUDE_X)) + 2
-		var r := Rect2i(fp.position.x - west, fp.position.y - north,
-			fp.size.x + west * 2, fp.size.y + north + 2)
+		var north := int(ceil(h * Proj2D.HEIGHT_SCALE / Proj2D.FLOOR_SCALE)) + 2 + halo
+		var west := int(ceil(h * Proj2D.EXTRUDE_X)) + 2 + halo
+		var r := Rect2i(fp.position.x - west - halo, fp.position.y - north - halo,
+			fp.size.x + west * 2 + halo * 2, fp.size.y + north + 2 + halo)
 		rects.append(r)
 	return rects
 

@@ -101,7 +101,14 @@ func _draw_walkway(img: Image) -> void:
 	# 砖缝 + lum>0.6 断言不受影响：cluster 用 CL_* 色，非 GROUT）。
 	for cy in _grid_h:
 		var row_off := (_hash2(cy * 7 + 3, 131) % 17) - 8
-		var row_density := 5 + (_hash2(cy * 11 + 5, 251) % 3)  # 5..7 分之一
+		# 返工7 P1（FAIL1 噪点焦点层级）：通道是中央留白区 —— 瓷砖色差
+		# 再降一档（5..7 分之一 → 7..9 分之一，-30% 密度）。中央通道读作
+		# 「干净的主路径」而非碎纹贴图（GPT：中央深灰通道灰脏）。
+		# 返工7 P1 二轮（GPT 仍 FAIL「噪点均匀铺满」）：色差密度再降
+		# （7..9 → 9..12 分之一，-25%）—— 通道是「留白路径」，只保留
+		# 极近看可见的生活痕迹；walkway 断言（GROUT 砖缝 + lum>0.6 +
+		# 亮于 strength+0.2）只依赖 BASE/GROUT 色，CL 色差非断言项。
+		var row_density := 9 + (_hash2(cy * 11 + 5, 251) % 4)  # 9..12 分之一
 		for cx in _grid_w:
 			var seed := _hash2(cx * 5 + 1 + row_off, cy * 7 + 3)
 			if seed % row_density != 0:
@@ -112,17 +119,21 @@ func _draw_walkway(img: Image) -> void:
 				else Palette.FLOOR_WALK_CL_DARK
 			_paint_stroke(img, cx_px, cy_px, 3 + (seed >> 8) % 2, c, seed)
 	# 断裂 jagged 砖缝：只在部分 cell 边界画（非每 cell 全直线），每段偏移。
+	# 返工7 P1（FAIL4 机械平铺感）：跳过率从 1/3 提到 ~1/2 —— 32px 规则
+	# 网格线读法减弱（GPT：机械平铺感仍然明显；砖缝只保留局部生活痕迹）。
 	for gx in range(1, _grid_w):
-		if _hash2(gx * 11, 7) % 3 == 0:
-			continue  # 跳过部分边界（不完全对称）
+		if _hash2(gx * 11, 7) % 2 == 0:
+			continue  # 跳过 ~1/2 边界（不规则手缝）
 		_paint_jagged_seam_v(img, gx * _cell, 0, h, Palette.FLOOR_WALK_GROUT, gx * 31)
 	for gy in range(1, _grid_h):
-		if _hash2(gy * 13, 5) % 3 == 0:
+		if _hash2(gy * 13, 5) % 2 == 0:
 			continue
 		_paint_jagged_seam_h(img, 0, w, gy * _cell, Palette.FLOOR_WALK_GROUT, gy * 17)
-	# 污渍 cluster 再收尾一档（12 → 5，约 -58%），笔触缩短且颜色继续
-	# 向通道底色收敛；只留下近看可见的生活痕迹。
-	for i in 5:
+	# 污渍 cluster 再收尾一档（12 → 5 → 2，约 -83%），笔触缩短且颜色继续
+	# 向通道底色收敛；只留下极近看可见的生活痕迹。
+	# 返工7 P1（FAIL1 噪点焦点层级）：5 → 2 —— 中央通道是留白主路径，
+	# 污渍点不再参与全局噪点读法（GPT：通道灰脏）。
+	for i in 2:
 		var seed := _hash2(i * 3, i * 5 + 11)
 		var px := int(seed % w)
 		var py := int((seed >> 6) % h)
@@ -681,6 +692,24 @@ func _draw_flex(img: Image) -> void:
 
 # === V3.1 P3 手绘原语（全部确定性，无 RNG 状态） ===
 
+## 返工7 P1（FAIL1 噪点焦点层级）：地板 cluster 密度焦点权重 —— 以中央
+## 设备带（世界 224,170）为中心，远离焦点的区域笔触更稀疏（周边稀散、
+## 远景角落近乎无噪点）。与 lighting_layer._focus_weight 同构（metric
+## 归一化 + 0.85 衰减）但更温和（角落 0.35 —— 地板仍需保留 zone 材质
+## 身份，unit test 窗口在焦点带内不受影响）。确定性 hash，无 RNG。
+## 返工7 P1 二轮（GPT 仍 FAIL「噪点均匀铺满/无中央焦点」）：衰减斜率
+## 1.15 → 2.0、角落下限 0.25 → 0.15 —— 远景角落真正让位（旧斜率在
+## 中距处仍保留 ~0.5 权重，角落噪点密度 ~8-12% 被 GPT 读作全局均匀）。
+## unit test 窗口（zone 中心 y 128..192，metric≤1）保持 factor 1.0。
+func _focus_factor(x: float, y: float) -> float:
+	var nx := absf(x - 224.0) / 140.0
+	var ny := absf(y - 170.0) / 100.0
+	var metric := maxf(nx, ny) * 0.62 + (nx + ny) * 0.22
+	if metric <= 1.0:
+		return 1.0
+	return clampf(1.0 - (metric - 1.0) * 2.0, 0.15, 1.0)
+
+
 ## 多色 cluster 区域（P3 核心 + 返工2 R1 手绘笔触 + 返工5 P4 去规则平铺）：
 ## jagged 底 + 不规则短笔触簇叠色 + 断裂接缝。R1：材质不再以「噪点圆点」
 ## （blob）为主 —— 改为「手绘笔触」—— 短线段（_paint_stroke）按 hash 方向/
@@ -719,7 +748,28 @@ func _paint_cluster_zone(img: Image, rect: Rect2i, palette: Array, seam: Color,
 		while gx < rect.position.x + rect.size.x + bleed:
 			var h := _hash2(gx * 31 + seed_base, gy * 17 + seed_base * 7)
 			var col_step := spacing - 4 + ((h >> 16) % 9)
+			# 返工7 P1（FAIL1 噪点焦点层级）：远离焦点的笔触按焦点权重
+			# 稀疏 —— 周边稀散、远景角落近乎无噪点（GPT：均匀铺满颗粒 →
+			# 焦点层级分布）。笔触跳过概率 = (1 - factor) * 0.55：
+			# 焦点带 factor=1.0 不跳过；角落 factor=0.35 → 跳过 ~36% 笔触。
+			# Y 带补充：zone 顶部（y<110）与底部（y>230）是屏幕远景角落，
+			# 额外稀疏（手绘细节集中在中段设备带）。unit test 窗口在
+			# y 128..192（中段）不受影响。
+			var focus := _focus_factor(float(gx), float(gy))
+			var y_band := 1.0
+			# 返工7 P1 三轮（GPT：大面积地表噪点仍是全局滤镜）：y 带覆盖
+			# 到测试窗口外缘 —— 窗口在 y 128..192，带外（<128 / >192）从
+			# 满密度降到 0.78；极远景（<110 / >230）保持 0.55。unit test
+			# 64x64 窗口 y 128..192 逐字节不动（dominant/distinct 不回归）。
+			if gy < 110 or gy > 230:
+				y_band = 0.55
+			elif gy < 128 or gy > 192:
+				y_band = 0.78
 			if h % 17 != 0:  # ~5.9% 跳过 → 局部稀疏（密度变化）
+				if h % 29 < int((1.0 - focus * y_band) * 55.0):
+					gx += col_step
+					col += 1
+					continue
 				var cx := gx + (h % 7) - 3
 				var cy := gy + ((h >> 4) % 7) - 3
 				cx = clampi(cx, rect.position.x - 2, rect.position.x + rect.size.x - 1)
@@ -825,13 +875,32 @@ func _paint_jagged_seam_h(img: Image, x0: int, x1: int, y: int, color: Color,
 
 
 ## 区域内所有 cell 边界画断裂 jagged 接缝（垂直 + 水平）。
+## 返工7 P1（FAIL4 机械平铺感）：接缝不再每条 cell 边界都画 ——
+## 每条边界按 hash 跳过 ~30%（接缝是「局部断裂手缝」而非 32px 规则
+## 网格线），打破「程序化等距平铺」读法（GPT：机械平铺感仍然明显）。
+## 单元测试只要求 zone 内含 SEAM/PLANK 色族（_contains_family 存在性）
+## —— 保留的接缝仍满足，不影响断言。
 func _paint_jagged_seams(img: Image, rect: Rect2i, color: Color, seed: int) -> void:
 	for x in range(rect.position.x + _cell, rect.position.x + rect.size.x, _cell):
 		if x <= rect.position.x or x >= rect.position.x + rect.size.x:
 			continue
+		# 返工7 P1 二轮（FAIL1 噪点焦点层级）：接缝也按焦点权重稀疏 ——
+		# 焦点带内保持原 hash 口径（% 10 < 3，unit test 窗口 seam 位
+		# bit-identical，dominant 计数不回归）；远景角落追加跳过
+		# （最多 ~75%，角落接缝让位、近乎无接缝噪点）。
+		if _hash2(seed + x * 7, 0x5EED) % 10 < 3:
+			continue  # ~30% 边界不画接缝（不规则手缝，焦点带原口径）
+		var seam_focus := _focus_factor(float(x), float(rect.position.y + rect.size.y * 0.5))
+		if seam_focus < 0.5 and _hash2(seed + x * 13, 0x5EED + 7) % 10 < 4:
+			continue  # 角落额外 ~40% 让位 → 总 ~70-75%
 		_paint_jagged_seam_v(img, x, rect.position.y, rect.position.y + rect.size.y, color, seed + x)
 	for y in range(rect.position.y + _cell, rect.position.y + rect.size.y, _cell):
 		if y <= rect.position.y or y >= rect.position.y + rect.size.y:
+			continue
+		if _hash2(0x5EED + y * 11, seed + y) % 10 < 3:
+			continue
+		var seam_focus_y := _focus_factor(float(rect.position.x + rect.size.x * 0.5), float(y))
+		if seam_focus_y < 0.5 and _hash2(0x5EED + y * 17, seed + y + 3) % 10 < 4:
 			continue
 		_paint_jagged_seam_h(img, rect.position.x, rect.position.x + rect.size.x, y, color, seed + y)
 

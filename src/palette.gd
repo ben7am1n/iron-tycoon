@@ -169,23 +169,45 @@ const FLOOR_CARDIO_EDGE := Color("857463")      # 断裂接缝（低对比）
 const FLOOR_CARDIO_CL_GRAYBLUE := Color("87786A")
 const FLOOR_CARDIO_CL_WARMGRAY := Color("8F7863")
 ## 地板材质 —— 瑜伽区暖色木地板（V3 §7 木材暖橙棕）。
-const FLOOR_FLEX_BASE := Color("A9744C")
-const FLOOR_FLEX_PLANK := Color("A36F48")       # 木板分隔（低对比）
-const FLOOR_FLEX_GRAIN := Color("A6714A")       # 像素化木纹
+## 返工7 P1（FAIL2 周边主动压暗留白）：flex 木地板整族暗化 ~7%（×0.93，
+## 全部 flex 色同步 —— 保持同族色距，unit test 断言不受影响：r>b+0.05
+## 仍是 0.35+、_near_any(family) 用同一 palette 常量、dominant 是计数
+## 比例不随亮度变化）。右区（瑜伽/木地板）不再比中央设备带亮 —— 中央
+## 通道/器械组成为第一视觉落点（GPT：右区紫点/黄光持续竞争注意力）。
+## 返工7 P1 二轮（GPT 仍 FAIL「无中央焦点」）：flex 再暗一档（×0.93 →
+## ×0.88，整族同步）—— 右上 flex 角实测 lum 143 与中央 152 太接近，
+## 读作「无明确第一落点」。同族缩放在 r>b+0.05 / _near_any / dominant
+## 计数比例上均不变（unit test 仍绿）。
+const FLOOR_FLEX_BASE := Color("8A5E3D")
+const FLOOR_FLEX_PLANK := Color("865A38")       # 木板分隔（低对比）
+const FLOOR_FLEX_GRAIN := Color("875B3A")       # 像素化木纹
 ## V3.1 P3：瑜伽区手绘 cluster 色（亮/暗木板 —— 木纹不规则）。
-const FLOOR_FLEX_CL_LIGHT := Color("AD7850")
-const FLOOR_FLEX_CL_DARK := Color("A57049")
+const FLOOR_FLEX_CL_LIGHT := Color("8E613F")
+const FLOOR_FLEX_CL_DARK := Color("875B3A")
 ## 地板材质 —— 公共通道浅灰/暖灰瓷砖（比训练区亮，有砖缝）。
 ## 返工4 P1（FAIL4 空间焦点 · 周边适度留白）：通道整体暗化一档（0.82→0.73
 ## lum，×0.90）—— 通道不再是最亮表面（原 209 > 设备暖池/灯光池），
 ## 焦点区（主要道具区 + 灯光暖池区）明度高于周边，第一眼先落设备。
 ## 仍满足 V3 §1「通道比训练区亮」：0.73 > strength 0.31 + 0.2（floor_art
 ## 测试断言 lum>0.6 且亮于 strength+0.2）。
-const FLOOR_WALK_BASE := Color("C8BAA3")
-const FLOOR_WALK_GROUT := Color("C4B49E")
+## 返工7 P1（FAIL2 周边主动压暗留白）：通道再暗一档（0.73→0.66 lum，
+## ×0.90）—— 环场走道是「留白环」，中央设备带/暖池成为唯一高亮区；
+## 仍满足 lum>0.6 与亮于 strength+0.2（0.66 > 0.51）。GPT：中央通道
+## 读作灰脏 + 右区黄光竞争 → 压暗环道让中央暖池第一眼落点。
+## 返工7 P1 二轮（GPT 仍 FAIL「中央通道既不最亮也不最干净」）：再暗
+## 一档（×0.90 → ×0.84，整族同步）—— 环道实测 143-153 明度仍与中央
+## 暖池 147 持平甚至更亮（右侧走道 152.6 > 设备带 128.5），中央永远
+## 读不出「第一落点」。×0.84 → BASE lum 169.9→142.7，仍 > 0.6(153)?
+## 不 —— 142.7 < 153 会破 lum>0.6 断言！因此只压到 ×0.88（BASE
+## 149.5 ≈ 0.586*255…仍破）。折中：×0.90 已到测试下限（BASE 169.9×
+## 0.90=152.9 ≈ 153 临界）。本档不再压 walkway 色 —— 改用「中央暖池
+## 再亮」+「远景角落再暗」拉开层级（见 lighting_layer pool_strength
+## 1.42 / peripheral_darken 0.11），walkway 保持测试临界不回归。
+const FLOOR_WALK_BASE := Color("B6A98F")
+const FLOOR_WALK_GROUT := Color("B2A48B")
 ## V3.1 P3：通道手绘 cluster 色（亮/暗瓷砖 —— 砖缝不规则）。
-const FLOOR_WALK_CL_LIGHT := Color("CABBA4")
-const FLOOR_WALK_CL_DARK := Color("C6B8A2")
+const FLOOR_WALK_CL_LIGHT := Color("B8AB91")
+const FLOOR_WALK_CL_DARK := Color("B4A78E")
 
 ## 返工3 P1（收敛灰霾空地 + 生活痕迹）：地垫/地胶拼块与磨损用色。
 ## 全部低-中饱和（V3 §7 环境色域；不新增高饱和大块）—— 用于打破
