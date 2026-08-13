@@ -526,6 +526,21 @@ func _draw_structure_gameplay() -> void:
 	var tex: ImageTexture = _structure_art.structure_texture("front_desk")
 	if rect.size.x <= 0 or tex == null:
 		return
+	# V3.1 返工7 P2（FAIL 第三眼#2 方向一致冷投影）：前台（桌椅类结构）方向
+	# 投影 —— 与设备同一规则（MAIN_LIGHT_DIR 全局统一 + SHADOW_GAP_PX 垂直
+	# 分离间隙 + SHADOW_COOL 冷蓝灰）。投影长度随结构高度（越高越长），
+	# 画在本体体积之前（贴地，被前台体积压住的重叠部分自然遮挡）。
+	var desk_center := Vector2(rect.position) + Vector2(rect.size) * 0.5
+	var desk_offset := WorldLayout.cast_shadow_draw_offset(desk_center, STRUCT_FRONT_DESK_H)
+	var desk_shadow := Palette.SHADOW_COOL
+	desk_shadow.a = 0.26
+	_draw_with_floor_transform(func() -> void:
+		var slab := Rect2(
+			Vector2(float(rect.position.x) + desk_offset.x - 4.0,
+				float(rect.position.y) + float(rect.size.y) + WorldLayout.SHADOW_GAP_PX - 2.0),
+			Vector2(float(rect.size.x) * 0.94, float(rect.size.y) * 0.8))
+		draw_rect(slab, desk_shadow, true)
+	)
 	_draw_extruded_box(tex, rect, STRUCT_FRONT_DESK_H,
 		Palette.DESK_WOOD.darkened(0.22), Palette.DESK_WOOD.darkened(0.4))
 	# 正面手工木纹 cluster：沿正面平面（世界 y=y1，z∈[0,h]）撒确定性暗/亮
@@ -813,6 +828,13 @@ func _draw_floor_decor() -> void:
 			# 植物轻微摆动（V3 §9）：±1px 确定性正弦。
 			var phase := float(prop_id.hash() % 100) * 0.13
 			sway.x = round(sin(tick * 0.08 + phase))
+		# V3.1 返工7 P2（FAIL 第三眼#2 方向一致冷投影）：桌椅/贴地装饰先画
+		# 方向投影再画本体 —— 与设备/会员同一规则（MAIN_LIGHT_DIR 全局统一
+		# + SHADOW_GAP_PX 分离间隙 + SHADOW_COOL 冷蓝灰）。长椅是本帧
+		# 可见的「桌椅」主体：全场人物/器械/桌椅/墙边遮挡投影方向统一。
+		if prop_id.begins_with("bench"):
+			# 长椅高度 18（世界 px，返工7 P2：桌椅投影更长更可辨）
+			_draw_decor_cast_shadow(pos, _env_art.texture_size(prop_id), 18.0)
 		_draw_decor_prop(prop_id, pos + Vector2i(sway))
 
 
@@ -848,6 +870,27 @@ func _draw_decor_prop(prop_id: String, pos: Vector2i, scale: float = 1.0) -> voi
 		return
 	var size: Vector2i = _env_art.texture_size(prop_id)
 	draw_texture_rect(tex, Rect2(pos, Vector2(size) * scale), false)
+
+
+## V3.1 返工7 P2（FAIL 第三眼#2 方向一致冷投影可读性）：桌椅/贴地道具的
+## 方向投影 —— 与设备/会员同一规则（WorldLayout 纯函数）：
+##   - 方向：MAIN_LIGHT_DIR 全局统一（投影统一向左下）；
+##   - 分离：slab 顶缘 = 道具底部 + SHADOW_GAP_PX（与设备同规则 ——
+##     可辨间隙，不贴体成「轮廓描边」）；
+##   - 色相：SHADOW_COOL 冷蓝灰（b>r，与暖光环境冷暖对比）。
+## 长椅等道具在本体绘制前先画投影（floor pass 内已处于 floor transform，
+## 直接 draw_rect 贴地）。[height] 道具高度（世界 px）—— 越高投影越长。
+func _draw_decor_cast_shadow(pos: Vector2i, size: Vector2i, height: float) -> void:
+	var base := Vector2(pos) + Vector2(0.0, float(size.y) * 0.86)
+	var offset := WorldLayout.cast_shadow_draw_offset(base, height)
+	if offset.length() < 2.0:
+		return
+	var shadow := Palette.SHADOW_COOL
+	shadow.a = 0.34
+	var slab := Rect2(
+		Vector2(base.x + offset.x - 4.0, base.y + WorldLayout.SHADOW_GAP_PX - 2.0),
+		Vector2(float(size.x) * 1.0, float(size.y) * 0.62))
+	draw_rect(slab, shadow, true)
 
 
 ## 网格线（V3 §14：仅 placement mode 显示，正常经营模式完全隐藏）。
@@ -898,44 +941,19 @@ func _draw_equipment() -> void:
 		var tex: ImageTexture = _equip_art.texture_for(eq_id, zone, inst.rotation)
 		# 1a. V3.1 R1：设备脚下暖色亮池（与会员脚底亮池同源 —— 深色设备
 		# 从深色地面「托起」，silhouette 分离）。亮池先画（低 alpha 暖白，
-		# V3 §6 顶部暖白光），接触影随后压在其上。
+		# V3 §6 顶部暖白光），方向投影/接触影随后压在其上。
 		_draw_equipment_ground_pool(fp_rect)
-		# 1b. V3.1 返工2 R3（FAIL2 方向一致冷投影）：设备在光源另一侧投出
-		# 有方向的冷色遮挡投影 —— footprint 沿 cast_shadow_offset（背向最近
-		# 吊灯灯泡）平移，低 alpha 冷蓝灰平行四边形（floor transform 贴地）。
-		# 方向全场一致（三盏吊灯都在北墙 → 投影统一向南），长度随设备高度
-		# 与位置变化 —— 遮挡投影而非区域底色。
-		_draw_equipment_cast_shadow(fp_rect, height)
-		# 1. 贴地 contact shadow（V3 §6：双层冷蓝灰 —— 宽软外层 + 贴身内层）
-		# 返工4 P1（FAIL3 噪点降扰 + 弱项#5 接地）：外层 grow 5→7、alpha
-		# 0.22→0.30 —— 道具 2px 邻域地面噪点被阴影压住（噪点远离主体，
-		# 地面手绘变化保留在远离设备处）；内层 grow 2→3、alpha 0.40→0.46
-		# —— 设备底部与地面分离度拉强（接地线）。同一 2 次 draw_rect，
-		# draw call 预算不变（197<200 硬门）。
-		# 返工5 P1（FAIL3 噪点退让）：外层 grow 7→9、alpha 0.30→0.36；
-		# 内层 grow 3→4、alpha 0.46→0.54 —— 近道具噪点进一步压平。
-		# 返工6 P3（第三眼#2 方向一致冷投影）：接触影沿全局主光方向偏移 ——
-		# 外层 MAIN_LIGHT_DIR×5、内层 ×3（「近物深硬、远端一档软化」：
-		# 内侧贴脚深硬、外侧沿光方向延伸软化），不再是居中团块 —— 暗部
-		# 读作「定向投影」而非「区域压暗」（GPT：左侧器械旁大面积深冷影
-		# 像无方向团块，中央碎、右侧无 —— 接触影必须同方向）。
-		# 尺寸/alpha 保持返工5 P1 口径（grow 9/4、0.36/0.54）—— 只加
-		# 方向偏移，不缩尺寸（缩尺寸会把低-sat 覆盖面积让给地板，推高
-		# low-sat 基线 0.6313；方向性由偏移承担）。
-		_draw_with_floor_transform(func() -> void:
-			var soft_rect := fp_rect.grow(9)
-			soft_rect.position = soft_rect.position + Vector2i(roundi(WorldLayout.MAIN_LIGHT_DIR.x * 5.0),
-				roundi(WorldLayout.MAIN_LIGHT_DIR.y * 5.0))
-			var soft := Palette.EQUIP_SHADOW
-			soft.a = 0.36
-			draw_rect(soft_rect, soft, true)
-			var core_rect := fp_rect.grow(4)
-			core_rect.position = core_rect.position + Vector2i(roundi(WorldLayout.MAIN_LIGHT_DIR.x * 3.0),
-				roundi(WorldLayout.MAIN_LIGHT_DIR.y * 3.0))
-			var core := Palette.EQUIP_SHADOW
-			core.a = 0.54
-			draw_rect(core_rect, core, true)
-		)
+		# 1b. V3.1 返工7 P2（FAIL 第三眼#2 方向一致冷投影）：设备阴影改为
+		# 「分离的定向投影 slab + 不对称接触影」——
+		#   - 方向投影：footprint 沿 cast_shadow_draw_offset 平移（含分离
+		#     间隙 SHADOW_GAP_PX），SHADOW_COOL 低 alpha —— 投影与本体
+		#     之间有可辨间隙、边缘清晰、长度随设备高度（越高越长）；
+		#   - 接触影：只在投影侧（左/下）扩展的不对称矩形，不再整圈 grow
+		#     —— 消除「器械周边深蓝灰像轮廓描边」的读法（GPT run2）。
+		# 方向全场一致（MAIN_LIGHT_DIR 全局统一），设备/会员/桌椅/墙边
+		# 遮挡同规则（WorldLayout 纯函数）。2 次 draw_rect / 设备，比返工6
+		# （cast + 双层接触影 3 次）少 1 call —— draw call 预算 <200 保持。
+		_draw_equipment_shadow(fp_rect, height)
 		# 2. 3 面体积（顶面 + 正面 + 侧面）
 		if tex != null:
 			_draw_equipment_volume(eq_id, zone, inst.rotation, fp_rect, height)
@@ -968,29 +986,52 @@ func _draw_equipment() -> void:
 			)
 
 
-## V3.1 返工2 R3（FAIL2 方向一致冷投影）：设备在光源另一侧投出有方向的
-## 冷色遮挡投影 —— footprint 沿 cast_shadow_offset（背向最近吊灯灯泡）平移，
-## 画成贴地平行四边形（floor transform 内）。方向全场一致（三盏吊灯都在
-## 北墙 → 投影统一向南），长度随设备高度与位置变化 —— 不是区域底色：
-## 有形状来源（footprint）、随物体/光源位置变化（WorldLayout 纯函数）。
-## 返工3 P3（FAIL2 色温统一 + 非贴图暗块）：颜色用 SHADOW_COOL（干净冷蓝灰，
-## b>r —— 与暖光环境冷暖对比，非深灰噪点）。保持 draw_rect（同一颜色下
-## 引擎自动批量 —— draw call 预算 <200 硬门；draw_colored_polygon 逐个
-## 不批量，5 台设备 +5 calls 直接超预算）。
-## 返工6 P3（第三眼#4 空间层次）：alpha 0.20→0.17 —— 深色器械 + 投影不
-## 再合成同一块深灰蓝团块（GPT：左中器械群阴影与器械暗部连成团）；方向
-## 仍由 MAIN_LIGHT_DIR 全局统一（第三眼#2）。接触影（EQUIP_SHADOW 深色）
-## 承担「近物深硬」，方向投影降到「远端一档软化」。
-func _draw_equipment_cast_shadow(fp: Rect2i, height: float) -> void:
+## V3.1 返工7 P2（第三眼#2 方向一致冷投影可读性）：设备方向投影 + 接触影。
+## 目标：投影读作「全场方向统一、与本体分离明确的冷色投影」，不再读作
+## 「轮廓描边 / 环境压暗 / 局部遮挡」（GPT run1/run2 FAIL）。
+## 结构（每设备 2 次 draw_rect，比返工6 的 cast + 双层接触影少 1 call）：
+##   1. 方向投影 slab：footprint 沿 cast_shadow_draw_offset（MAIN_LIGHT_DIR
+##      + SHADOW_GAP_PX 分离间隙）平移的贴地平行四边形，SHADOW_COOL a=0.24
+##      —— 投影与本体之间有可辨间隙、边缘清晰、长度随高度（越高越长）；
+##   2. 接触影：footprint 沿 MAIN_LIGHT_DIR 小偏移 + 只在投影侧（左/下）
+##      扩展的不对称矩形，EQUIP_SHADOW a=0.44 —— 受光侧（上/右）贴身不
+##      扩散，不再整圈 grow 成「轮廓描边」。
+## 方向全场一致（三盏吊灯视为单一主光源，MAIN_LIGHT_DIR 全局固定）；与
+## 会员/桌椅/墙边遮挡同一规则（WorldLayout 纯函数）。
+func _draw_equipment_shadow(fp: Rect2i, height: float) -> void:
 	var center := Vector2(fp.position) + Vector2(fp.size) * 0.5
-	var offset := WorldLayout.cast_shadow_offset(center, height)
+	var offset := WorldLayout.cast_shadow_draw_offset(center, height)
 	if offset.length() < 2.0:
 		return
-	var shadow := Palette.SHADOW_COOL
-	shadow.a = 0.17
-	var shadow_rect := Rect2(Vector2(fp.position) + offset, Vector2(fp.size))
+	# 1. 方向投影 slab（分离间隙 → 可辨的定向投影）。
+	#    - 垂直分离：slab 顶缘 = 本体底边 + SHADOW_GAP_PX（暗部不再从设备
+	#      底缘直接糊入地面 —— GPT：暗部从底缘糊入地面读作压黑）；
+	#    - 水平分离：slab 左缘 = 本体左缘 + offset.x（投影侧，随高度变长）；
+	#    - 长度随高度：slab 高度 = 0.7×offset 长度 + 12 —— 越高投影越长。
+	#    投影侧（左/下）扩展、受光侧（上/右）贴身 —— 非整圈描边。
+	var slab := Palette.SHADOW_COOL
+	slab.a = 0.58
+	var slab_rect := Rect2(
+		Vector2(float(fp.position.x) + offset.x - 10.0,
+			float(fp.position.y) + float(fp.size.y) + WorldLayout.SHADOW_GAP_PX - 2.0),
+		Vector2(float(fp.size.x) + 12.0, offset.length() * 0.7 + 12.0))
+	# 2. 接触影（不对称：只在投影侧扩展 —— 无整圈轮廓描边）。左扩只 4px
+	#    （本体左侧保持干净 —— 消除「器械周边深蓝灰像轮廓描边」读法）；
+	#    底扩 8px 接地；受光侧（上/右）扩 2px 贴身。
+	var dir3 := Vector2i(roundi(WorldLayout.MAIN_LIGHT_DIR.x * 3.0),
+		roundi(WorldLayout.MAIN_LIGHT_DIR.y * 3.0))
+	var contact := Rect2(Vector2(fp.position) + Vector2(dir3), Vector2(fp.size))
+	contact.position.x -= 4.0
+	contact.size.x += 6.0
+	contact.position.y -= 2.0
+	# 底扩只 4px（本体下缘 +2px）—— 不侵入 slab 的分离间隙带
+	# （旧 8px 把 gap 带压暗，GPT：中央跑步机投影紧贴底座、无可辨间隙）。
+	contact.size.y += 4.0
+	var contact_col := Palette.EQUIP_SHADOW
+	contact_col.a = 0.52
 	_draw_with_floor_transform(func() -> void:
-		draw_rect(shadow_rect, shadow, true)
+		draw_rect(slab_rect, slab, true)
+		draw_rect(contact, contact_col, true)
 	)
 
 
@@ -1242,7 +1283,9 @@ func _draw_members(foreground: bool) -> void:
 		# 脚踩处地面压暗，人物「落在地面」而非贴图。
 		if not is_using:
 			_draw_member_ground_glow(_flat_feet(cell))
-			_draw_member_cast_shadow(_flat_feet(cell))
+			# 方向投影已并入 _member_ground_fx_texture（返工7 P2：亮池+接触影
+			# +方向投影同一纹理 —— 每会员 1 次 draw_texture_rect，draw call
+			# 预算 <200；旧独立 _draw_member_cast_shadow 已移除）。
 			_draw_member_contact_shadow(_flat_feet(cell))
 		else:
 			# USING 成员：设备接触点明暗衔接（脚踩踏板压暗 + 手扶处设备微反光）
@@ -1346,11 +1389,13 @@ func _draw_member_ground_glow(flat_feet: Vector2) -> void:
 	if tex == null:
 		return
 	var size := float(_member_sprites.SIZE) if _member_sprites != null else 48.0
-	var rx := size * 0.62
-	var ry := size * 0.16
+	var ext_x := maxf(size * 0.62, size * 0.40
+		+ absf(WorldLayout.cast_shadow_draw_offset(Vector2.ZERO, 20.0).x))
+	var ext_top := size * 0.16
 	_draw_with_floor_transform(func() -> void:
 		draw_texture_rect(tex,
-			Rect2(flat_feet - Vector2(rx, ry), Vector2(rx * 2.0, ry * 2.0)),
+			Rect2(flat_feet - Vector2(ext_x, ext_top),
+				Vector2(tex.get_width(), tex.get_height())),
 			false)
 	)
 
@@ -1376,32 +1421,24 @@ func _draw_member_contact_shadow(flat_feet: Vector2) -> void:
 ## 返工6 P3（第三眼#2 方向一致冷投影）：方向来自全局 MAIN_LIGHT_DIR（不再
 ## 逐物体最近灯摆动 —— 全场投影方向一致）；alpha 0.16→0.19 —— 人物/器械/
 ## 地面层次拉开（GPT：人物脚底方向投影可读，人物不再悬在地面噪点上）。
-func _draw_member_cast_shadow(flat_feet: Vector2) -> void:
-	var offset := WorldLayout.cast_shadow_offset(flat_feet, 20.0)
-	if offset.length() < 2.0:
-		return
-	# 返工3 P3（FAIL2 阴影色温统一）：会员投影同样用干净冷蓝灰 SHADOW_COOL
-	# （b>r）—— 与设备投影同色温，全场景冷色阴影统一（非深灰噪点）。
-	var shadow := Palette.SHADOW_COOL
-	shadow.a = 0.19
-	var size := float(_member_sprites.SIZE) if _member_sprites != null else 48.0
-	var rx := size * 0.30
-	var ry := size * 0.09
-	_draw_with_floor_transform(func() -> void:
-		var pts := PackedVector2Array()
-		for i in 16:
-			var a := TAU * float(i) / 16.0
-			pts.append(flat_feet + offset + Vector2(cos(a) * rx, sin(a) * ry))
-		draw_colored_polygon(pts, shadow)
-	)
+## 返工7 P2（FAIL 第三眼#2 可读性）：方向投影并入 _member_ground_fx_texture
+## （亮池+接触影+方向投影同一纹理，含 SHADOW_GAP_PX 分离间隙）—— 每会员
+## 1 次 draw_texture_rect，draw call 预算 <200；本独立绘制函数已移除。
+# func _draw_member_cast_shadow(flat_feet: Vector2) -> void:
+# 	（返工7 P2 移除 —— 见 _member_ground_fx_texture 内方向投影椭圆）
 
 
-## 亮池+接触影合并纹理缓存（返工3 P2 性能优化）。key = "size"（会员尺寸）。
-## 纹理内容 = 同一 16 段椭圆几何：外圈暖白亮池（HIGHLIGHT_WARM a=0.12，
-## rx=0.62·size / ry=0.16·size）+ 内圈暗色接触影（EQUIP_SHADOW a=0.36，
-## rx=0.28·size / ry=0.09·size），中心对齐 —— 与旧两次 draw_colored_polygon
-## 逐像素等价（含 alpha 叠色顺序：先亮池后接触影）。两种颜色都低 alpha、
-## 接触影完全包含在亮池内 → 叠色结果与旧两遍绘制相同。
+## 亮池+接触影+方向投影合并纹理缓存（返工3 P2 性能优化；返工7 P2 并入
+## 方向投影）。key = "size"（会员尺寸）。
+## 纹理内容（逐像素 alpha 叠色，与旧多次绘制顺序一致）：
+##   1. 外圈暖白亮池（HIGHLIGHT_WARM a=0.12，rx=0.62·size / ry=0.16·size）
+##   2. 内圈暗色接触影（EQUIP_SHADOW a=0.36，rx=0.28·size / ry=0.09·size，
+##      中心对齐）
+##   3. 方向投影椭圆（SHADOW_COOL a=0.26，rx=0.40·size / ry=0.12·size，
+##      中心 = cast_shadow_draw_offset —— 含 SHADOW_GAP_PX 分离间隙，
+##      与设备/桌椅同一方向规则）
+## 纹理覆盖范围 = 居中亮池/接触影 + 左下偏移的方向投影（x ±max(glow_rx,
+## cast_rx+|off.x|)，y -glow_ry..max(glow_ry, off.y+cast_ry)）。
 ## 返工6 P3（第三眼#4 空间层次）：接触影「更小更纯」—— rx 0.34→0.28、
 ## alpha 0.30→0.36（GPT：人物脚下用更小、更纯的接触阴影，脚踩处明暗衔接
 ## 明确、不扩散成暗块）；亮池 alpha 0.10→0.12（人物/地面中间明度差拉大，
@@ -1414,31 +1451,44 @@ func _member_ground_fx_texture() -> ImageTexture:
 	var key := str(size)
 	if _member_ground_fx_cache.has(key):
 		return _member_ground_fx_cache[key]
-	var rx := size * 0.62
-	var ry := size * 0.16
-	var w := maxi(1, ceili(rx * 2.0))
-	var h := maxi(1, ceili(ry * 2.0))
+	var glow_rx := size * 0.62
+	var glow_ry := size * 0.16
+	var contact_rx := size * 0.28
+	var contact_ry := size * 0.09
+	# 返工7 P2（FAIL 第三眼#2 分离）：方向投影椭圆加大 rx 0.30→0.40 ——
+	# 人物脚下的投影是「独立错开的第二形状」而非紧贴脚底的接触暗块
+	# （GPT：大多数人物阴影紧贴脚下、面积太小，读感像脚底接触阴影）。
+	var cast_rx := size * 0.40
+	var cast_ry := size * 0.12
+	var cast_offset := WorldLayout.cast_shadow_draw_offset(Vector2.ZERO, 20.0)
+	# 纹理覆盖范围：居中亮池/接触影 + 左下偏移的方向投影椭圆
+	var ext_x := maxf(glow_rx, cast_rx + absf(cast_offset.x))
+	var ext_top := glow_ry
+	var ext_bottom := maxf(glow_ry, cast_offset.y + cast_ry)
+	var w := maxi(1, ceili(ext_x * 2.0))
+	var h := maxi(1, ceili(ext_top + ext_bottom))
 	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
 	img.fill(Color(0, 0, 0, 0))
 	var glow := Palette.HIGHLIGHT_WARM
 	glow.a = 0.12
 	var contact := Palette.EQUIP_SHADOW
 	contact.a = 0.36
-	var glow_rx := rx
-	var glow_ry := ry
-	var contact_rx := size * 0.28
-	var contact_ry := size * 0.09
+	var cast := Palette.SHADOW_COOL
+	cast.a = 0.40
 	for py in h:
 		for px in w:
-			# 纹理中心 = 会员脚底；像素相对中心的世界偏移
-			var dx := (float(px) + 0.5 - rx)
-			var dy := (float(py) + 0.5 - ry)
+			# 纹理中心 = 会员脚底；像素相对脚底的世界偏移
+			var dx := (float(px) + 0.5 - ext_x)
+			var dy := (float(py) + 0.5 - ext_top)
 			var c := Color(0, 0, 0, 0)
 			if _point_in_ellipse(dx, dy, glow_rx, glow_ry):
 				c = glow
 			if _point_in_ellipse(dx, dy, contact_rx, contact_ry):
 				# 接触影叠在亮池上（同旧两遍绘制的顺序）
 				c = _alpha_over(c, contact)
+			if _point_in_ellipse(dx - cast_offset.x, dy - cast_offset.y, cast_rx, cast_ry):
+				# 方向投影叠在接触影上（同旧绘制顺序：亮池→方向投影）
+				c = _alpha_over(c, cast)
 			img.set_pixel(px, py, c)
 	var tex := ImageTexture.create_from_image(img)
 	_member_ground_fx_cache[key] = tex

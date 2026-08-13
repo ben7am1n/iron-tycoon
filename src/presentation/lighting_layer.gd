@@ -313,10 +313,26 @@ func _paint_edge_shadow(img: Image) -> void:
 			# 返工7 P1 二轮（GPT 仍 FAIL「噪点均匀铺满」）：密度再降
 			# （58+10t → 48+8t）—— 墙边暗角是「冷阴影过渡」不是噪点层；
 			# 冷色阴影像素仍存在（r4/r4p3 cool 检查依赖），低密度可读。
+			# 返工7 P2（FAIL 第三眼#2 方向一致冷投影可读性）：墙边暗角带
+			# 改为方向性 —— 主光来自东北（MAIN_LIGHT_DIR：投影统一向左下），
+			# 西/南边（投影侧）暗角更强、北/东边（受光侧）更弱 —— 墙边
+			# 遮挡与设备/会员/桌椅同一规则（同方向冷投影），不再读作
+			# 「四边等权环境压暗」（GPT：暗部更像环境压暗而非定向投影）。
+			# 角部相乘：西南角最暗（投影落点）、东北角最亮（受光面）。
 			var focus_w := _focus_weight(float(x), float(y))
-			if _hash2(x, y) % 100 >= int((48.0 + 8.0 * t) * focus_w):
+			var dir_f := 1.0
+			if x < edge:
+				dir_f *= 1.35
+			elif x >= w - edge:
+				dir_f *= 0.55
+			if y < edge:
+				dir_f *= 0.55
+			elif y >= h - edge:
+				dir_f *= 1.35
+			if _hash2(x, y) % 100 >= int((48.0 + 8.0 * t) * focus_w * dir_f):
 				continue
 			var a := 0.07 + 0.08 * t * (0.5 + 0.5 * float(_hash2(x + 31, y + 17) % 100) / 100.0)
+			a *= dir_f
 			# 角落再压一层（空间纵深，V3 §4/§6）
 			if x < edge and y < edge or x >= w - edge and y < edge \
 					or x < edge and y >= h - edge or x >= w - edge and y >= h - edge:

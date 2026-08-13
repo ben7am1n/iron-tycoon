@@ -119,7 +119,10 @@ const EQUIP_SHADOW := Color(0.13, 0.21, 0.34, 0.38)
 ## 使用干净的冷蓝灰（b>r，低饱和）—— 不是深灰噪点/贴图式暗块，与暖光
 ## 环境形成 V3 §7 冷暖对比（cool colored shadows）。比 EQUIP_SHADOW 稍亮、
 ## 蓝调更明确（投影在浅色地板上仍可读为冷色，而非纯黑压块）。
-const SHADOW_COOL := Color(0.15, 0.24, 0.38, 0.34)
+## 返工7 P2（FAIL 第三眼#2 可读性）：再压深一档蓝调 (0.15,0.24,0.38 →
+## 0.11,0.20,0.42) —— 投影叠在暖色地板（walkway/flex 木色）上不再混成
+## 褐灰（GPT：右侧暖褐区域投影与地面混合后趋于褐灰，冷暖对比不足）。
+const SHADOW_COOL := Color(0.11, 0.20, 0.42, 0.34)
 ## 放置预览合法：柔和高亮（art-bible §7）—— 半透明白/Sage tint，绝不刺眼。
 const PLACEMENT_OK_TINT := Color(0.96, 0.98, 0.94, 0.30)
 ## 放置预览非法：Dusty Rose #E0A0A0 柔和警示（art-bible §7，绝不刺眼红）——复用 ROSE 但显式声明 alpha。
