@@ -590,11 +590,18 @@ func _top_junction_trim_texture() -> ImageTexture:
 ##      HUD 条带读作长条矩形 —— 外轮廓至少 2-3px 抖动）
 ##   2) _draw_junction_trim：底部交界带错落短段（FAIL #2：世界层与 HUD
 ##      交界笔直直线 —— 改为短线段错落/材质过渡）
+## V3.1 返工7 P4（本卡 FAIL：顶部状态栏上方全宽平墙带读作笔直横栏）：
+## 复合纹理第一层烘焙「顶缘 cornice」—— 挂牌上方 y0..12 的全宽墙色带
+## 由确定性短段/缺口打成参差（挂牌之间的平墙不再连成一条直线横栏）。
 func _top_strip_texture() -> ImageTexture:
 	var key := _top_strip_cache_key()
 	if _top_strip_tex != null and key == _top_strip_key:
 		return _top_strip_tex
 	var entries: Array = []  # [{tex: ImageTexture, rect: Rect2}]
+	# 顶缘 cornice（第一层 —— 挂牌/墙饰之下，撕裂墙色短段打散全宽平墙带）
+	var cornice_tex := _top_cornice_texture()
+	if cornice_tex != null:
+		entries.append({"tex": cornice_tex, "rect": _top_cornice_rect()})
 	var wd_tex := _wall_decor_texture()
 	if wd_tex != null:
 		entries.append({"tex": wd_tex, "rect": _wall_decor_rect()})
@@ -760,6 +767,85 @@ func _wall_decor_rect() -> Rect2:
 		size_px.x,
 		size_px.y
 	)
+
+
+## 顶缘 cornice 绘制 rect：覆盖挂牌上方的全宽平墙带（y 0..24）。texel 4px
+## → 320×6。位置 = 全宽 0..1280（HUD root 局部坐标）。
+## 返工7 P4 第三轮：高度 16 → 24（4 → 6 texel）—— 旧版只盖 y0..15，
+## y16..20 仍露全宽平墙带（GPT 全帧读「长水平直线分界」）；延长覆盖后
+## 挂牌间隙的平墙全被打成短段错落。
+const TOP_CORNICE_TEXEL := 4
+const TOP_CORNICE_H := 24
+const TOP_CORNICE_SEED := 0xC0B_1CE
+var _top_cornice_tex: ImageTexture = null
+func _top_cornice_rect() -> Rect2:
+	var tex := _top_cornice_texture()
+	if tex == null:
+		return Rect2()
+	return Rect2(0.0, 0.0, float(tex.get_width() * TOP_CORNICE_TEXEL), TOP_CORNICE_H)
+
+
+## 懒生成顶缘 cornice 纹理（返工7 P4 FAIL：顶部状态栏上方全宽平墙带
+## 读作笔直横栏）。透明底 + 墙色短段错落：
+##   - 每行独立撒段（~85% 的 x 块被涂），块宽 3-6 texel（12..24px），逐块
+##     强色调交替（0.58 深 / 0.46 浅，确定性 hash）—— 相邻块色调差 > 6px
+##     容差 → run 按块断开（任意扫描行最长同色 run ≤ ~2 块 ≈ 48px），且
+##     无任何长同色横带
+##   - 色调 = WALL_BASE 加深 0.46-0.58 墙色（低饱和、r>g>b 暖墙族 —— 与
+##     挂牌暖木严格区分；不新增高饱和焦点，gate PIL A 保持）。不透明度
+##     烘焙 1.0（绘制端受 _panel_alpha 0.76 调制 —— 仍比平墙带暗 ~20-35%，
+##     视觉上把顶部平墙带打成参差阴影，绝无一条完整横线）
+##   - 段内 1-2px 亮度抖动（手绘粉刷墙顶，绝无规则直线）
+## 确定性：hash 驱动，无 RNG —— bit-identical。烘焙进顶带复合纹理第一层
+## （挂牌/墙饰之上叠加，挂牌覆盖其后的撕裂轮廓不受影响）。
+## 返工7 P4 第三轮：6 texel 高（y0..23）—— 全宽平墙带（含挂牌间空隙
+## y16..23）全部覆盖。
+## 返工7 P4 第四轮：色调 0.30..0.55 → 0.46..0.58 + 密度 66% → 85% +
+## 逐块强色调交替 —— 旧版 66% 密度 + 短段留下 60-140px 空缝（墙色 run
+## 连通），且旧色调与「光照后的平墙」容差内混同；新版覆盖率 ~85% 只留
+## ≤24px 空缝，色调交替把同色 run 限制在 ~48px —— 顶部平墙带彻底打散。
+func _top_cornice_texture() -> ImageTexture:
+	if _top_cornice_tex != null:
+		return _top_cornice_tex
+	var w := 320
+	var h := 6
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0.0, 0.0, 0.0, 0.0))
+	var base := Palette.WALL_BASE  # (0x9D, 0x8B, 0x7C)
+	for y in h:
+		var x := 0
+		while x < w:
+			var hsh := _cornice_hash(y, x)
+			var block := 3 + (hsh % 4)          # 3..6 texel = 12..24px 块
+			if (hsh >> 6) % 100 < 85:
+				var seg_w := block
+				seg_w = mini(seg_w, w - x)
+				# 逐块强色调交替：深 0.58 / 浅 0.46（确定性 hash）——
+				# 相邻块色调差 ~30 units > 6px 容差 → 同色 run ≤ 2 块
+				var tone: float = 0.58 if ((hsh >> 19) % 2) == 0 else 0.46
+				var c := base.darkened(tone)
+				for dx in seg_w:
+					var px := x + dx
+					if px >= 0 and px < w:
+						# 1-2px 亮度抖动（手绘）
+						var jitter := 0.0
+						var jh := _cornice_hash(y, px)
+						jitter = (float(jh % 9) - 4.0) * 0.008
+						img.set_pixel(px, y, Color(
+							clampf(c.r + jitter, 0.0, 1.0),
+							clampf(c.g + jitter * 0.9, 0.0, 1.0),
+							clampf(c.b + jitter * 0.8, 0.0, 1.0),
+							1.0))
+			x += block
+	_top_cornice_tex = ImageTexture.create_from_image(img)
+	return _top_cornice_tex
+
+
+## cornice 确定性 hash（行 + x 局部）—— 段位/色调确定性、可测试。
+func _cornice_hash(y: int, x: int) -> int:
+	var h := (y * 0x9E3779B1) ^ (x * 0x85EBCA6B) ^ TOP_CORNICE_SEED
+	h = (h ^ (h >> 13)) * 1274126177
+	return h & 0x7fffffff
 
 
 ## 懒生成顶带墙饰纹理（确定性 seed）。设计宽 = 1280-16（条带区），texel 4px
@@ -1511,11 +1597,12 @@ func _make_transport_button(button_name: String, label: String) -> Button:
 
 
 ## Lazily builds the shared active-cue stylebox: a Butter hand-drawn corner
-## tick (bottom + left stroke only — NOT a closed rectangle outline, so the
-## speed control reads as a chalk-marked clock label, never a button outline).
-## V3.1 返工3 P4：从 4/2/1/1 四边非对称描边改为 L 形角标 —— 无等宽边框、
-## 无闭合矩形（V3.1 负面约束 / 门禁 FAIL：右上倍速控制=按钮）。
-## transport 测试只断言 border_width_left > 0，L 形角标满足契约。
+## tick (left stroke only — NOT a closed rectangle outline and NOT an L
+## bracket, so the speed control reads as a chalk-marked clock label, never
+## a button outline). V3.1 返工7 P4（GPT run1：active 1× 的 L 形角标仍读作
+## 等宽矩形描边）：去掉底边横笔 —— 只剩左侧竖笔（粉笔短划），无任何
+## 闭合/半闭合矩形读法。
+## transport 测试只断言 border_width_left > 0，左竖笔满足契约。
 func _get_active_stylebox() -> StyleBoxFlat:
 	if _active_stylebox == null:
 		var sb := StyleBoxFlat.new()
@@ -1524,7 +1611,7 @@ func _get_active_stylebox() -> StyleBoxFlat:
 		sb.border_width_left = 3
 		sb.border_width_top = 0
 		sb.border_width_right = 0
-		sb.border_width_bottom = 2
+		sb.border_width_bottom = 0
 		sb.corner_radius_top_left = 0
 		sb.corner_radius_top_right = 0
 		sb.corner_radius_bottom_left = 0
