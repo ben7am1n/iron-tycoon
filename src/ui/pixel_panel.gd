@@ -284,7 +284,16 @@ static func plaque_texture(
 	base: Color,
 	accent: Color,
 	alpha: float = 1.0,
-	shadow_texels: int = 2
+	shadow_texels: int = 2,
+	tear_strength: float = 1.0,
+	gnaw_corner: Vector2i = Vector2i(-1, -1),
+	gnaw_texels: int = 0,
+	gnaw_corner2: Vector2i = Vector2i(-1, -1),
+	gnaw_texels2: int = 0,
+	gnaw_corner3: Vector2i = Vector2i(-1, -1),
+	gnaw_texels3: int = 0,
+	bottom_slope: int = 0,
+	top_slope: int = 0
 ) -> ImageTexture:
 	var body_h := size.y - shadow_texels
 	if body_h < 2:
@@ -298,7 +307,42 @@ static func plaque_texture(
 	body.fill(Color(base.r, base.g, base.b, alpha))
 	_base_noise(body, rng, Vector2i(size.x, body_h))
 	_texture_clusters(body, rng, Vector2i(size.x, body_h), base, Style.WOOD)
-	_torn_silhouette(body, rng, Vector2i(size.x, body_h))
+	_torn_silhouette(body, rng, Vector2i(size.x, body_h), tear_strength)
+	# 返工7 P4（目标框仍读作「近等宽矩形」）：单角深咬口 —— 把指定角切出
+	# 大三角缺口（非对称，只缺一角）—— 轮廓读作「缺角残牌」而非矩形。
+	# 逐行 ±1 texel 抖动 + 12% 缺口 —— 手撕感而非规则斜切。与 -2.2° 挂歪
+	# + 撕裂组合，全帧下轮廓绝不读作矩形。默认不启用（顶栏挂牌/标签不变）。
+	# 返工7 P4 第二轮（GPT run2：单角咬口下「顶部/底部/右侧边界仍直」）：
+	# 支持第二角咬口 —— 同侧两角（右下深 + 右上中）缺角，右侧轮廓成两段
+	# 直段 + 中间大缺口 —— 绝不读作矩形。默认不启用。
+	if gnaw_texels > 0 and gnaw_corner.x >= 0 and gnaw_corner.y >= 0:
+		_gnaw_corner(body, rng, Vector2i(size.x, body_h), gnaw_corner, gnaw_texels)
+	if gnaw_texels2 > 0 and gnaw_corner2.x >= 0 and gnaw_corner2.y >= 0:
+		_gnaw_corner(body, rng, Vector2i(size.x, body_h), gnaw_corner2, gnaw_texels2)
+	if gnaw_texels3 > 0 and gnaw_corner3.x >= 0 and gnaw_corner3.y >= 0:
+		_gnaw_corner(body, rng, Vector2i(size.x, body_h), gnaw_corner3, gnaw_texels3)
+	# 返工7 P4 第二轮（GPT run1/2：目标框仍读「长矩形面板」）：整体底缘
+	# 斜切 —— 面板成梯形/五边形（左高右低，底边是一条斜线）。上下边不再
+	# 平行，绝非四边形。斜切深度 [bottom_slope] texel（右端比左端矮）——
+	# 350px 宽面板上 8-12 texel 斜切 = 32-48px 落差，全帧肉眼可辨。
+	# 文字区在内容边距内（PANEL_PAD 10px），底缘斜切不压内容。
+	if bottom_slope > 0 and body_h > bottom_slope + 1:
+		for x in size.x:
+			var drop := int(float(bottom_slope) * float(x) / float(size.x))
+			for dy in drop:
+				var y := body_h - 1 - dy
+				if y >= 0:
+					body.set_pixel(x, y, CLEAR)
+	# 顶缘反向斜切（返工7 P4 第二轮：GPT run2 目标框仍读「矩形」）：右低
+	# 左高（与底缘同向）—— 上下边成同向斜线（楔形/五边形），任何边都不
+	# 水平。逐列沿顶行切 [top_slope]*(x/w) texel（右侧切得最深；标题在左
+	# 上，安全）。
+	if top_slope > 0 and body_h > top_slope + 1:
+		for x in size.x:
+			var cut := int(float(top_slope) * float(x) / float(size.x))
+			for dy in cut:
+				if dy < body_h:
+					body.set_pixel(x, dy, CLEAR)
 	_edge_tone_jitter(body, rng, Vector2i(size.x, body_h))
 	# 返工5 P4（FAIL #1：顶带仍读作「长条矩形+等宽边框」）：每块挂牌加
 	# 手绘框线 —— 非等宽边框 + 框线抖动。框厚逐边不同（上 1-2 / 下 3-5 /
@@ -423,38 +467,55 @@ static func shelf_texture(
 ## texel 深缺口），角部咬口加深到 3-4 texel（12-16px，四角不齐），边部
 ## 大缺口频率加倍（每 3 texel 长度 1 个）。阴影行逻辑（e8c0b8d：先清空
 ## 再写半透明投影）不受影响 —— 本函数只动主体轮廓。
-static func _torn_silhouette(img: Image, rng: RandomNumberGenerator, size: Vector2i) -> void:
-	# 上边：~55% 列 1 texel 缺口，~28% 列 2-3 texel 深缺口
+## 返工7 P4（本卡 FAIL：目标框/面板仍读作完美矩形）：新增 [tear_strength]
+## 缩放因子 —— 大面板（目标框 340×92）用 >1.0 强度把角部咬口加深到
+## 6-10 texel（24-40px）、上/下边缺口加深到 3-6 texel —— 轮廓撕裂度与
+## 面板尺寸成正比，任意尺寸都不再读作规则矩形。默认 1.0（既有挂牌
+## 撕裂度不变 —— HUD 挂牌 QA 采样点不回归）。
+static func _torn_silhouette(img: Image, rng: RandomNumberGenerator, size: Vector2i, tear_strength: float = 1.0) -> void:
+	# 上边：~55% 列 1 texel 缺口，~28% 列 2-3 texel 深缺口（strength 放大）
+	var top_d1 := int(round(1.0 * tear_strength))
+	var top_d2 := int(round((2 + rng.randi_range(0, 1)) * tear_strength))
+	var top_d3 := int(round((3 + rng.randi_range(0, 1)) * tear_strength))
 	for x in size.x:
 		var r := rng.randf()
 		if r < 0.28:
+			for dy in mini(top_d2, size.y):
+				img.set_pixel(x, dy, CLEAR)
+			if r < 0.09:
+				for dy in mini(top_d3, size.y):
+					img.set_pixel(x, dy, CLEAR)
+		elif r < 0.55:
 			img.set_pixel(x, 0, CLEAR)
-			if r < 0.18 and size.y > 1:
+			if top_d1 > 1 and size.y > 1:
 				img.set_pixel(x, 1, CLEAR)
-				if r < 0.09 and size.y > 2:
-					img.set_pixel(x, 2, CLEAR)
-		elif r < 0.55:
-			img.set_pixel(x, 0, CLEAR)
 	# 下边：同样处理 + 大块咬口
+	var bot_d2 := int(round((2 + rng.randi_range(0, 1)) * tear_strength))
+	var bot_d3 := int(round((3 + rng.randi_range(0, 1)) * tear_strength))
 	for x in size.x:
 		var r := rng.randf()
 		if r < 0.28:
-			img.set_pixel(x, size.y - 1, CLEAR)
-			if r < 0.18 and size.y > 1:
-				img.set_pixel(x, size.y - 2, CLEAR)
-				if r < 0.09 and size.y > 2:
-					img.set_pixel(x, size.y - 3, CLEAR)
+			for dy in mini(bot_d2, size.y):
+				img.set_pixel(x, size.y - 1 - dy, CLEAR)
+			if r < 0.09:
+				for dy in mini(bot_d3, size.y):
+					img.set_pixel(x, size.y - 1 - dy, CLEAR)
 		elif r < 0.55:
 			img.set_pixel(x, size.y - 1, CLEAR)
-	# 角部大块咬口：四角随机 3-4 texel 三角切除（比旧 2-3 texel 更狠 ——
-	# 四角不齐，绝不读作圆角/直角矩形）
+			if top_d1 > 1 and size.y > 1:
+				img.set_pixel(x, size.y - 2, CLEAR)
+	# 角部大块咬口：四角随机 3-4 texel 三角切除（strength 放大到 6-10 texel
+	# —— 大面板四角缺角明显，绝不读作圆角/直角矩形）
+	var corner_bite := int(round((3 + rng.randi_range(0, 1)) * tear_strength))
+	if corner_bite < 3:
+		corner_bite = 3
 	var corners: Array[Vector2i] = [
 		Vector2i(0, 0), Vector2i(size.x - 1, 0),
 		Vector2i(0, size.y - 1), Vector2i(size.x - 1, size.y - 1),
 	]
 	for corner in corners:
 		if rng.randf() < 0.95:
-			var bite := rng.randi_range(3, 4)
+			var bite := corner_bite
 			for dy in bite:
 				for dx in bite:
 					var px := corner.x + (dx if corner.x == 0 else -dx)
@@ -462,38 +523,75 @@ static func _torn_silhouette(img: Image, rng: RandomNumberGenerator, size: Vecto
 					if px >= 0 and px < size.x and py >= 0 and py < size.y:
 						if dx + dy < bite + rng.randi_range(0, 1):
 							img.set_pixel(px, py, CLEAR)
-	# 边部随机大缺口：每 3 texel 长度约 1 个 1-3 texel 深缺口（任意边）
+	# 边部随机大缺口：每 3 texel 长度约 1 个 1-3 texel 深缺口（任意边；
+	# strength 放大到 2-5 texel —— 大面板侧缘参差）
+	var bite_depth := int(round((1 + rng.randi_range(0, 2)) * tear_strength))
+	if bite_depth < 1:
+		bite_depth = 1
 	var bites := maxi(3, (size.x + size.y) / 3)
 	for i in bites:
 		match rng.randi_range(0, 3):
 			0:
 				var tx := rng.randi_range(0, size.x - 1)
-				img.set_pixel(tx, 0, CLEAR)
-				if size.y > 1 and rng.randf() < 0.7:
-					img.set_pixel(tx, 1, CLEAR)
-					if rng.randf() < 0.4 and size.y > 2:
-						img.set_pixel(tx, 2, CLEAR)
+				for d in mini(bite_depth, size.y):
+					img.set_pixel(tx, d, CLEAR)
+				if rng.randf() < 0.7:
+					for d in mini(bite_depth, size.y):
+						if tx + 1 < size.x:
+							img.set_pixel(tx + 1, d, CLEAR)
 			1:
 				var bx := rng.randi_range(0, size.x - 1)
-				img.set_pixel(bx, size.y - 1, CLEAR)
-				if size.y > 1 and rng.randf() < 0.7:
-					img.set_pixel(bx, size.y - 2, CLEAR)
-					if rng.randf() < 0.4 and size.y > 2:
-						img.set_pixel(bx, size.y - 3, CLEAR)
+				for d in mini(bite_depth, size.y):
+					img.set_pixel(bx, size.y - 1 - d, CLEAR)
+				if rng.randf() < 0.7:
+					for d in mini(bite_depth, size.y):
+						if bx + 1 < size.x:
+							img.set_pixel(bx + 1, size.y - 1 - d, CLEAR)
 			2:
 				var ly := rng.randi_range(0, size.y - 1)
-				img.set_pixel(0, ly, CLEAR)
-				if size.x > 1 and rng.randf() < 0.6:
-					img.set_pixel(1, ly, CLEAR)
-					if rng.randf() < 0.35 and size.x > 2:
-						img.set_pixel(2, ly, CLEAR)
+				for d in mini(bite_depth, size.x):
+					img.set_pixel(d, ly, CLEAR)
+				if rng.randf() < 0.6:
+					for d in mini(bite_depth, size.x):
+						if ly + 1 < size.y:
+							img.set_pixel(d, ly + 1, CLEAR)
 			3:
 				var ry := rng.randi_range(0, size.y - 1)
-				img.set_pixel(size.x - 1, ry, CLEAR)
-				if size.x > 1 and rng.randf() < 0.6:
-					img.set_pixel(size.x - 2, ry, CLEAR)
-					if rng.randf() < 0.35 and size.x > 2:
-						img.set_pixel(size.x - 3, ry, CLEAR)
+				for d in mini(bite_depth, size.x):
+					img.set_pixel(size.x - 1 - d, ry, CLEAR)
+				if rng.randf() < 0.6:
+					for d in mini(bite_depth, size.x):
+						if ry + 1 < size.y:
+							img.set_pixel(size.x - 1 - d, ry + 1, CLEAR)
+
+
+## 单角深咬口（返工7 P4：目标框仍读作「近等宽矩形」）：把指定角切出
+## 大三角缺口（非对称 —— 只缺一角，四角不再齐整）。逐行 ±1 texel 抖动
+## + ~12% 缺口 —— 手撕感而非规则斜切。咬口深度 6-8 texel（24-32px，
+## 340×92 面板上肉眼可辨的缺角）。与 _torn_silhouette 的四角小咬口叠加
+## 后，被咬角深度显著大于其他三角 —— 轮廓读作「缺角残牌」，绝非矩形。
+## [corner] 用归一化坐标：x∈{0=左,1=右}，y∈{0=上,1=下}（跨尺寸稳定）。
+static func _gnaw_corner(img: Image, rng: RandomNumberGenerator, size: Vector2i, corner: Vector2i, depth: int) -> void:
+	if depth < 2 or size.x < 4 or size.y < 4:
+		return
+	var dir_x := -1 if corner.x > 0 else 1
+	var dir_y := -1 if corner.y > 0 else 1
+	var ox := size.x - 1 if corner.x > 0 else 0
+	var oy := size.y - 1 if corner.y > 0 else 0
+	for dy in depth:
+		var y := oy + dir_y * dy
+		if y < 0 or y >= size.y:
+			break
+		var row_w := depth - dy
+		var jitter := rng.randi_range(-1, 1)
+		row_w = maxi(1, row_w + jitter)
+		for dx in row_w:
+			var x := ox + dir_x * dx
+			if x < 0 or x >= size.x:
+				break
+			if rng.randf() < 0.12:
+				continue
+			img.set_pixel(x, y, CLEAR)
 
 
 ## 手绘框线（返工5 P4 FAIL #1：顶带读作「长条矩形+等宽边框」）：

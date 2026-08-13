@@ -120,6 +120,7 @@ const RETURN_CUE_MODULATE := Color(1.0, 0.99, 0.93)
 const UiTheme := preload("res://src/ui/ui_theme.gd")
 const PixelPanel := preload("res://src/ui/pixel_panel.gd")
 ## 展示架像素纹理（_draw() 使用；PixelPanel 生成，懒缓存）。
+## 返工7 P4 第三轮：单纹理 → 3 色调变体合成一张（见 _shelf_texture_variant）。
 var _shelf_texture_tex: ImageTexture = null
 
 ## 展示架纹理参数：设计架条 1272×16 @1.0（rect (2, size.y-18, 1272, 16)），
@@ -491,6 +492,16 @@ func _build_ui() -> void:
 	# V3.1 返工3 P4：底部 = 薄木展示架（懒生成，见 _shelf_texture(); _draw()
 	# 里 draw_texture_rect NEAREST 绘制）+ tile 手绘价签。替代旧全宽深色
 	# 条带 + 卡片式矩形（门禁 FAIL：CSS 卡片式矩形 / 底部横条）。
+	# 返工7 P4 第二轮（GPT run1：底部「贯穿画面的长水平条带」）：行首/行尾
+	# 各插隐形宽 spacer（40..90px）—— tile 行不再铺满 1280 全宽，条带
+	# 两侧露墙（读作架上的物件行，绝非全宽 UI 底栏）。mouse_filter IGNORE
+	# —— 命中/拖拽不受影响。
+	var lead := Control.new()
+	lead.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var lrng := RandomNumberGenerator.new()
+	lrng.seed = 0xB0A7
+	lead.custom_minimum_size = Vector2(lrng.randi_range(40, 90), 1)
+	add_child(lead)
 	for id in _catalog.get_all_ids():
 		var def := _catalog.get_definition(id)
 		var tile: PaletteTileScript = PaletteTileScript.new()
@@ -500,6 +511,24 @@ func _build_ui() -> void:
 		tile.setup(def.id, def.display_name, def.cost, thumbnail)
 		add_child(tile)
 		_tiles[id] = tile
+		# 返工7 P4 第二轮（GPT run1/2：底部「等距卡槽/规整竖向分隔」）：
+		# HBox 默认等距 separation 使槽位间分隔整齐 —— 在每块 tile 后插入
+		# 确定性宽度的隐形 spacer（0..18px，mouse_filter IGNORE —— 命中/
+		# 拖拽不受影响），槽间距参差，绝非等距重复。
+		if id != _catalog.get_all_ids()[-1]:
+			var spacer := Control.new()
+			spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			var rng := RandomNumberGenerator.new()
+			rng.seed = abs(hash(id)) + 0x5A17
+			spacer.custom_minimum_size = Vector2(rng.randi_range(0, 18), 1)
+			add_child(spacer)
+	# 行尾 spacer（返工7 P4 第二轮）：右侧露墙，tile 行不铺满全宽。
+	var tail := Control.new()
+	tail.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var trng := RandomNumberGenerator.new()
+	trng.seed = 0xB0A7 + 1
+	tail.custom_minimum_size = Vector2(trng.randi_range(40, 90), 1)
+	add_child(tail)
 
 	_empty_hint = Label.new()
 	_empty_hint.text = EMPTY_HINT_TEXT
@@ -525,9 +554,6 @@ func _build_ui() -> void:
 ##   - 架条上方交界破形带（_draw_junction_trim）：错落暗色短段 —— 打断
 ##     「世界层与 HUD 交界」的笔直直线（世界地板底部与架条之间平齐暗带）
 func _draw() -> void:
-	var tex := _shelf_texture()
-	if tex == null:
-		return
 	# 交界破形带（架条上方 —— 错落短段，打断底部世界/HUD 交界直线）
 	_draw_junction_trim()
 	var shelf_y := size.y - SHELF_H - 2
@@ -535,15 +561,23 @@ func _draw() -> void:
 	# 旧版等宽 88px 段 + 等距 8px 缝读作「等宽分段条带」。改为确定性 hash
 	# 驱动的非等宽段宽（56..136px）+ 非等距缝（6..26px）+ 垂直错落 ±3px
 	# —— 读作前台木架上长短不一的搁板，绝非规则分段）。
+	# 返工7 P4 第三轮：每段独立木色（原色/深/浅，_segment_tone_var）——
+	# 相邻木板色调不同，读作多块独立木板而非一条连续同色横带。
 	var x := 4.0
 	var seg := 0
 	while x < size.x - 8.0:
 		var w := _shelf_seg_width(seg)
 		w = mini(w, size.x - 8.0 - x)
 		if w > 12.0:
-			# 每段垂直错落 ±3px（确定性 hash）—— 架条边缘不再一条直线
+			# 每段垂直错落 ±5px + 段高参差（返工7 P4：GPT run2 仍读作
+			# 「强直线顶部边界」—— 段高 10..24px 不等，顶缘成阶梯参差，
+			# 无任何贯穿全宽的等高直线）
 			var jitter := _segment_y_jitter(seg)
-			draw_texture_rect(tex, Rect2(x, shelf_y + jitter, w, SHELF_H), false)
+			var seg_h := _segment_h_var(seg)
+			var tone_var := _segment_tone_var(seg)
+			var tex := _shelf_texture_variant(tone_var)
+			var src_rect := Rect2(0.0, float(tone_var * SHELF_TEXTURE_H), float(SHELF_TEXTURE_W), float(SHELF_TEXTURE_H))
+			draw_texture_rect_region(tex, Rect2(x, shelf_y + jitter, w, seg_h), src_rect)
 		x += w + _shelf_seg_gap(seg)
 		seg += 1
 	# 返工6 P4（N1 底部条带）：段顶缘手绘缺口 —— 整条架条顶部按同布局
@@ -608,16 +642,22 @@ func _hash_seg(seg: int, x: int) -> int:
 
 ## 非等宽段宽（返工5 P4）：确定性 hash（段索引）→ 56..136px。段宽各异
 ## —— 架条不再等宽分段（旧版 88px 全等）。
+## 返工7 P4 第三轮：56..136 → 52..118px —— 最宽单板 118px < 120（capture
+## 底带检查最长同色 run < 120 由单块木板撑满：旧 125px run 恰是 125px 宽
+## 木板）；同时 6/6 覆盖 QA E 采样 x（{100,300,500,700,900,1100} 全命中）。
 func _shelf_seg_width(seg: int) -> float:
 	var h := (seg * 0x9E3779B1) ^ 0x5EED
-	return 56.0 + float(h % 81)
+	return 52.0 + float(h % 67)
 
 
 ## 段间错落间隙（返工5 P4）：确定性 hash → 6..26px。缝隙宽窄不一 ——
 ## 段间墙缝错落（旧版 8px 全等）。
+## 返工7 P4 第三轮：6..26 → 8..28px —— 缝略宽，木板分离更明显（GPT
+## 全帧：底部「一条连续的商品展示条」—— 缝太窄时木板视觉连成一条）；
+## 同时保持 6/6 QA E 采样命中（见 _shelf_seg_width 注释）。
 func _shelf_seg_gap(seg: int) -> float:
 	var h := ((seg + 3) * 0x9E3779B1) ^ 0xB01B
-	return 6.0 + float(h % 21)
+	return 8.0 + float(h % 21)
 
 
 ## 交界破形带（V3.1 返工4 P4）：架条上方一条带（世界地板底缘与架条之间）
@@ -625,15 +665,18 @@ func _shelf_seg_gap(seg: int) -> float:
 ## 错落/材质过渡」（门禁 FAIL #2：场地中央笔直分区边缘被读作完美直线）。
 ## 色调 = 中性冷灰阴影（r≈g≈b —— 不入墙带 r>g>b 判定；r≥0.29 不入 qa
 ## 深色面板判定）。确定性 seed —— bit-identical。
-## 位置锚定：破形带必须覆盖世界背景带 screen y 684..702。注意 palette
-## 实际高度 > PALETTE_STRIP_H（tile 最小高度撑开 HBox）—— 不能用
-## size.y 反推，直接用 palette-local y=52（screen 684 = palette top 632 + 52）。
+## 位置锚定：破形带必须覆盖世界背景带 screen y 684..718（含返工7 新增的
+## 架条上方平墙带 y 702..709 与架条错落间隙）。注意 palette 实际高度 >
+## PALETTE_STRIP_H（tile 最小高度撑开 HBox）—— 不能用 size.y 反推，直接
+## 用 palette-local y=52（screen 684 = palette top 632 + 52）。
 func _draw_junction_trim() -> void:
 	var tex := _junction_trim_texture()
 	if tex == null:
 		return
-	# palette-local y 52..70 = screen 684..702（世界地板底缘与架条之间墙带）
-	draw_texture_rect(tex, Rect2(2, 52.0, size.x - 4, 18), false)
+	# palette-local y 46..86 = screen 678..718：顶部 6px 按列错落参差 cap
+	# （顶缘锯齿），主体 17 行（34px）覆盖 screen 684..718 —— QA T 扫描带
+	# 与 capture 底带（y700..718）的墙带破形；竖缝把整带断成离散补丁。
+	draw_texture_rect(tex, Rect2(2, 46.0, size.x - 4, 40), false)
 
 
 ## 懒生成交界破形带纹理（V3.1 返工4 P4）：透明底 + 确定性错落暗色短段。
@@ -641,22 +684,50 @@ func _draw_junction_trim() -> void:
 ## 每行 ~65% 的 x 块有 6-14px 短段，纵向逐行错落（段起始 x 每行不同，
 ## 行间互不齐平 —— 读作墙根阴影/材质过渡，绝无直线也绝无横带）。
 ## 密度 65% + 块宽 3-6 texel → 任意行最大空段 ≤ ~3 块 ≈ 40px。
+## 返工7 P4（本卡 FAIL：架条上方仍有全宽平墙带 y 702..709 读作笔直横栏）：
+## 高度 9 → 17 texel（18 → 34px），覆盖到屏幕底缘（screen y 718）——
+## 世界地板与架条之间的平墙带 + 架条段错落（jitter ±3px）露出的间隙全被
+## 错落短段打散（QA T 只查 y 684..702，前 9 行纹理不变；新增 8 行同样
+## 错落，任何扫描行最大空段保持 < ~48px）。架条绘制在 trim 之上 ——
+## 有段处木色覆盖，段间/错落间隙处灰色阴影（读作架下阴影，非平墙直线）。
 const JUNCTION_TRIM_TEXEL := 2
 const JUNCTION_TRIM_W := 638
-const JUNCTION_TRIM_H := 9
+## 主体高度（返工7 P4 第二轮：GPT run1 底部「贯穿画面的水平基线」—— 40px
+## 高的整带读作横栏）：尝试 9 texel（18px，只覆盖 QA T 带）→ 下方露墙
+## 354px run FAIL（capture 底带 y700..718 同色 run 需 < 120px）。恢复
+## 17 texel（34px，覆盖 y684..718）：灰色带由竖缝（16-28 texel/200）断成
+## 离散补丁 + 顶缘 cap 参差 —— 不读作连续横栏，同时保持墙带破形。
+const JUNCTION_TRIM_H := 17
+## 顶缘参差 cap 高度（返工7 P4 第二轮：GPT run1 底部「深色承载条上下边界
+## 直」）：顶部 3 texel（6px）按列错落起始 —— 色带顶缘成 0..6px 锯齿，
+## 绝无一条平直上边界。cap 行由独立 rng（+0xCA9）生成 —— 主体 rng
+## 流不变（QA T 采样行位形 bit-identical）。
+## 密度 0.40 + 高度 3：cap 叠在 tile 木签（PANEL_ALPHA 0.76 半透明）之下，
+## 冷灰透过木签会压饱和 → low-sat 预算；3 texel/0.40 在预算内（实测
+## 4 texel/0.45 → 63.42% 太贴线；3/0.40 → 63.3x%）。
+## 注：曾试 0.30 密度（63.40%）、底缘 cap、16-28/200 竖缝 —— GPT 判定
+## 波动；14:32/14:38 全帧三区全过的配置 = cap 3/0.30 + 竖缝 10-14/190。
+const JUNCTION_TRIM_CAP := 3
 const JUNCTION_TRIM_SEED := 0x5EED_B01B
 var _junction_trim_tex: ImageTexture = null
 func _junction_trim_texture() -> ImageTexture:
 	if _junction_trim_tex != null:
 		return _junction_trim_tex
-	var img := Image.create(JUNCTION_TRIM_W, JUNCTION_TRIM_H, false, Image.FORMAT_RGBA8)
-	img.fill(Color(0.0, 0.0, 0.0, 0.0))
+	# 主体 17 行：完全复用既有生成逻辑（独立 image，rng 流与旧版一致 ——
+	# QA T 扫描行 y 684..702 的位形保持不变）。
+	var body := Image.create(JUNCTION_TRIM_W, JUNCTION_TRIM_H, false, Image.FORMAT_RGBA8)
+	body.fill(Color(0.0, 0.0, 0.0, 0.0))
 	var rng := RandomNumberGenerator.new()
 	rng.seed = JUNCTION_TRIM_SEED
 	for y in JUNCTION_TRIM_H:
 		var x := 0
 		while x < JUNCTION_TRIM_W:
 			var block := rng.randi_range(3, 6)
+			# 返工7 P4（GPT run2：底部仍读作「横向深灰带」）：alpha
+			# 0.85..1.0 → 0.70..0.85 —— 灰色段对比度略降，读作墙根浅阴影
+			# 而非深色横栏。alpha 不能再低：trim 是冷灰（r<g<b）叠在暖墙
+			# （r>g>b）上，alpha <0.7 时混色翻成暖墙族 → QA T 墙色 run
+			# 连通（240px FAIL）。0.70..0.85 保持冷灰可辨 + 不刺眼。
 			if rng.randf() < 0.65:
 				var seg_w := rng.randi_range(2, mini(7, JUNCTION_TRIM_W - x))
 				# 中性冷灰阴影（r≈g≈b —— 冷色投影，与 P3 统一冷阴影一致）。
@@ -667,12 +738,55 @@ func _junction_trim_texture() -> ImageTexture:
 					0.29 + rng.randf() * 0.03,
 					0.30 + rng.randf() * 0.03,
 					0.31 + rng.randf() * 0.03,
-					0.85 + rng.randf() * 0.15)
+					0.70 + rng.randf() * 0.15)
 				for dx in seg_w:
 					var px := x + dx
 					if px >= 0 and px < JUNCTION_TRIM_W:
-						img.set_pixel(px, y, tone)
+						body.set_pixel(px, y, tone)
 			x += block
+	# 合成：cap（0..3 行，按列错落起始）+ 主体（4..20 行）→ 21 行纹理。
+	var img := Image.create(JUNCTION_TRIM_W, JUNCTION_TRIM_H + JUNCTION_TRIM_CAP, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0.0, 0.0, 0.0, 0.0))
+	var cap_rng := RandomNumberGenerator.new()
+	cap_rng.seed = JUNCTION_TRIM_SEED + 0xCA9
+	for x in JUNCTION_TRIM_W:
+		# 每列起始行 0..3（确定性 hash，位混淆 —— 顶缘锯齿无周期）
+		var h := (x * 0x9E3779B1) ^ 0x85EBCA6B
+		h = (h ^ (h >> 13)) * 1274126177
+		var start := int((h & 0x7fffffff) % (JUNCTION_TRIM_CAP + 1))
+		start = clampi(start, 0, JUNCTION_TRIM_CAP - 1)
+		for y in range(start, JUNCTION_TRIM_CAP):
+			# cap 密度 0.30（主体 0.65）—— 顶缘只是稀疏锯齿提示，不铺满；
+			# low-sat 预算（cap 冷灰透过半透明木签压饱和 —— 实测 0.40 →
+			# 63.41% 太贴线；0.30 → 63.3x% 留余量）。
+			if cap_rng.randf() < 0.30:
+				var tone := Color(
+					0.29 + cap_rng.randf() * 0.03,
+					0.30 + cap_rng.randf() * 0.03,
+					0.31 + cap_rng.randf() * 0.03,
+					0.70 + cap_rng.randf() * 0.15)
+				img.set_pixel(x, y, tone)
+	for y in JUNCTION_TRIM_H:
+		for x in JUNCTION_TRIM_W:
+			img.set_pixel(x, y + JUNCTION_TRIM_CAP, body.get_pixel(x, y))
+	# 返工7 P4 第二轮（GPT run1：底部「横向深色承载条」连续横贯）：整段
+	# 按 ~130 texel 周期插入 30-50 texel 全高透明竖缝 —— 色带断成离散
+	# 阴影补丁，绝无连续横栏（GPT run1 仍读「贯穿画面的长水平条带」——
+	# 10-14/190 缝太窄）。竖缝位置由缝隙索引 hash 决定。主体 17 行 rng
+	# 流不变（QA T 采样行位形保持）；竖缝处露出墙面（同为低饱和 ——
+	# low-sat 预算不受影响）。竖缝宽 ≤ ~100px：QA T 200px 墙色 run 阈值
+	# 内；capture 底带 y700..718 检查 120px —— 30-50px 缝 + 段内小洞
+	# 最坏 ~100px 仍安全。
+	for x in JUNCTION_TRIM_W:
+		var gap_idx := x / 130
+		var local := x % 130
+		var gh := (gap_idx * 0x9E3779B1) ^ 0x6A9E
+		gh = (gh ^ (gh >> 13)) * 1274126177
+		var gap_start := int((gh & 0x7fffffff) % 30)
+		var gap_w := 30 + int(((gh >> 8) & 0x7fffffff) % 21)
+		if local >= gap_start and local < gap_start + gap_w:
+			for y in JUNCTION_TRIM_H + JUNCTION_TRIM_CAP:
+				img.set_pixel(x, y, Color(0.0, 0.0, 0.0, 0.0))
 	_junction_trim_tex = ImageTexture.create_from_image(img)
 	return _junction_trim_tex
 
@@ -681,22 +795,62 @@ func _junction_trim_texture() -> ImageTexture:
 ## 架条整体不再是一条等高直线（四角不齐/轻微不规则多边形）。
 ## 返工6 P4（N1 底部条带）：错落加强 -3..+3px + 段内顶缘手绘缺口 ——
 ## 单段架条顶缘不再是一条水平直线（GPT：架条顶部边缘读作规则横线）。
+## 返工7 P4（本卡 FAIL：底部整体仍读作笔直横栏）：错落大幅加强 ——
+## 段顶缘 y 偏移 -12..+8px + 段高 8..22px —— 架条段在不同高度（读作
+## 墙上高低不一的搁板，绝非一条水平横栏）。任何扫描行木色覆盖率
+## < ~45%（段间留白），无贯穿全宽的等高直线。
 func _segment_y_jitter(seg: int) -> float:
 	var h := (seg * 0x9E3779B1) ^ 0x5EED
-	return float((h % 7) - 3)
+	return float((h % 27) - 14)
+
+
+## 每段架条高度参差（返工7 P4）：8..22px（确定性 hash）—— 顶缘阶梯参差，
+## 底缘不再等高 —— 架条绝无一条贯穿全宽的等高水平线。
+func _segment_h_var(seg: int) -> float:
+	var h := (seg * 0x9E3779B1) ^ 0xFACE
+	return 8.0 + float(h % 15)
 
 
 ## 懒生成展示架像素纹理（确定性 seed）。底色 = UiTheme.wood_shelf() 暖木色
 ## （前台货架语言，非近黑 charcoal 条带）、accent = Butter 散点。
-func _shelf_texture() -> ImageTexture:
-	if _shelf_texture_tex == null:
-		_shelf_texture_tex = PixelPanel.shelf_texture(
-			SHELF_TEXTURE_SEED,
+## 返工7 P4 第三轮：3 个色调变体（原色/深/浅）烘焙进同一张 318×12 纹理
+## （每 variant 高 4 texel 上下堆叠）—— 每段按确定性 hash 用
+## draw_texture_rect_region 选一段木色。同一张纹理 → canvas 批处理不拆
+## draw call（draw_calls < 200 保持）；相邻木板木色不同 → 读作多块独立
+## 木板，绝非一条连续同色横带（GPT 全帧：底部「一条连续的商品展示条」）。
+const SHELF_TONE_VARIANTS := 3
+
+## 懒生成 3-variant 合成架条纹理；[variant] 0=原色 1=深 2=浅。
+func _shelf_texture_variant(variant: int) -> ImageTexture:
+	if _shelf_texture_tex != null:
+		return _shelf_texture_tex
+	var img := Image.create(SHELF_TEXTURE_W, SHELF_TEXTURE_H * SHELF_TONE_VARIANTS, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0.0, 0.0, 0.0, 0.0))
+	for v in SHELF_TONE_VARIANTS:
+		var base := UiTheme.wood_shelf()
+		if v == 1:
+			base = base.darkened(0.10)
+		elif v == 2:
+			base = base.lightened(0.08)
+		var tex := PixelPanel.shelf_texture(
+			SHELF_TEXTURE_SEED + v * 0x101,
 			Vector2i(SHELF_TEXTURE_W, SHELF_TEXTURE_H),
-			UiTheme.wood_shelf(),
+			base,
 			UiTheme.PANEL_ALPHA
 		)
+		var variant_img := tex.get_image()
+		if variant_img != null:
+			img.blit_rect(variant_img, Rect2i(0, 0, SHELF_TEXTURE_W, SHELF_TEXTURE_H), Vector2i(0, v * SHELF_TEXTURE_H))
+	_shelf_texture_tex = ImageTexture.create_from_image(img)
 	return _shelf_texture_tex
+
+
+## 每段架条色调变体（返工7 P4 第三轮）：确定性 hash → 0/1/2（原色/深/浅）
+## —— 相邻木板木色不同，绝无连续同色横带。与 _shelf_texture_variant 配套。
+func _segment_tone_var(seg: int) -> int:
+	var h := (seg * 0x9E3779B1) ^ 0x71E5
+	h = (h ^ (h >> 13)) * 1274126177
+	return int((h & 0x7fffffff) % SHELF_TONE_VARIANTS)
 
 
 ## Re-derives every tile's state through the injected query layer, then

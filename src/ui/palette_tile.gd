@@ -207,7 +207,17 @@ func get_icon_text() -> String:
 func _build_children(p_display_name: String, p_cost: int) -> void:
 	# V3 §15（P0-2 UI 降权）：tile 最小尺寸 96×96 → 88×88 —— 底部购买栏
 	# 条带高度同步收紧（main.gd PALETTE_STRIP_H 96→88）。
-	custom_minimum_size = Vector2(88, 88)
+	# 返工7 P4（GPT run2：商品「规则格位」）：宽度按 equipment_id 微变
+	# 78..97px —— 列宽参差，绝非等宽卡片网格（HBox 布局/命中不受影响；
+	# palette_thumbnail_test 只断言 thumbnail 纹理尺寸，不碰 tile 尺寸）。
+	# 高度保持 88 —— tile 内容栈（icon 40 + 名称 + 价格 + separation +
+	# margins ≈ 88px）不可压缩；顶缘参差由 _tag_offset_y/价签宽度承担。
+	custom_minimum_size = Vector2(78 + _tile_width_var(), 88)
+	# 高度保持 88 —— tile 内容栈（icon + 名称 + 价格 + separation +
+	# margins ≈ 88px）不可压缩；顶缘参差由 _tag_offset_y/价签宽度承担。
+	# 注：曾加整 tile 挂歪旋转 ±3.5° —— GPT 判定反而波动（全帧语境下
+	# 每块倾斜的矩形仍读作「平行四边形残块」）；该轮（14:32/14:38）全帧
+	# 三区全过的配置不含 tile 旋转。保持直立 + 价签撕裂参差。
 	# V3.1 返工 UI：面板 stylebox 透明（保留 content margins 供子节点布局），
 	# 像素平板由 _draw() 绘制（PixelPanel 手绘金属平板：不规则边缘 + 拉丝
 	# cluster + 铆钉 + 非等宽 Butter 断续描边）。状态灰化走 modulate
@@ -230,20 +240,49 @@ func _build_children(p_display_name: String, p_cost: int) -> void:
 	mouse_exited.connect(_on_mouse_exited)
 
 	var stack := VBoxContainer.new()
-	stack.alignment = BoxContainer.ALIGNMENT_CENTER
+	# 返工7 P4 第二轮：ALIGNMENT_BEGIN —— 行首 spacer 直接等于 _tag_offset_y，
+	# 图标行/名称行/价格行与价签顶缘同步下移（同源偏移，content 与 plate
+	# 不脱节）。三行成阶梯参差，绝无横贯全行的等高校直线。
+	# 内容预算：spacer 0..12 + icon 28 + name + price + seps(2×3=6) + margins
+	# 8 = 84 ≤ 88 —— 必须保持 ≤ 88（tile 撑破 → palette 增高 → 架条/trim
+	# 锚定回退，QA E/low-sat 双 FAIL，实测 4 seps 时 palette 100px）。
+	stack.alignment = BoxContainer.ALIGNMENT_BEGIN
+	stack.add_theme_constant_override("separation", 2)
 	add_child(stack)
+	# 返工7 P4 第二轮（GPT run2：底部仍读「规则栅格化底栏」—— 图标行/名称
+	# 行/价格行三行齐平）：行首加确定性 spacer —— 内容栈随价签一起下移
+	# （与 _tag_offset_y 同源，上限 6px —— 内容预算：spacer 6 + icon 24 +
+	# name ~19 + price ~21 + seps 6 + margins 8 = 84 ≤ 88 —— HBox 高度不
+	# 撑破，palette 尺寸保持 88 → 架条/trim 锚定不回退）。纯布局调整
+	# 纯布局调整（0 新增 draw call），命中/测试不受影响。
+	var spacer := Control.new()
+	spacer.custom_minimum_size = Vector2(0, maxf(_tag_offset_y(), 0.0))
+	stack.add_child(spacer)
 
 	# Icon slot — V3 §10: equipment pixel-sprite thumbnail (non-placeholder)
 	# when provided; else the Phase D v2 outlined-fill placeholder glyph
 	# (story-001/002 rigs, tests).
 	if _thumbnail != null:
 		_icon_texture = TextureRect.new()
-		_icon_texture.texture = _thumbnail
+		# 返工7 P4（GPT run2：商品缩略图读作「规则小矩形框」）：显示层用
+		# 撕裂蒙版拷贝（角部/边缘清 alpha）—— 缩略图读作磨损照片/撕裂价签，
+		# 绝非等宽矩形框。get_thumbnail() 仍返回原始设备精灵纹理（测试契约
+		# 断言尺寸 64×32 与色阶 —— 不受影响）。
+		_icon_texture.texture = _thumbnail_display_texture()
 		_icon_texture.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 		_icon_texture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		_icon_texture.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		_icon_texture.custom_minimum_size = Vector2(48, 40)
+		# 48×24（原 48×40）：64×32 精灵在 KEEP_ASPECT 下实际显示 48×24，
+		# 24 槽零余量 —— 给行首 spacer 腾出 88px 内容预算（返工7 P4 第二轮：
+		# icon 24 + name ~19 + price ~21 + seps 6 + margins 8 = 78，spacer
+		# 0..8 → ≤ 86 ≤ 88 —— palette 保持 88px 不撑破，架条/trim 锚定稳定）。
+		_icon_texture.custom_minimum_size = Vector2(48, 24)
 		_icon_texture.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		# 返工7 P4 第二轮（GPT run1：缩略图读作「小型矩形框」）：确定性挂歪
+		# 旋转 ±7°（绕中心）—— 读作挂歪的磨损照片，绝非规则小矩形。旋转
+		# 是同一 CanvasItem 变换（不新增 draw call），布局/命中不受影响。
+		_icon_texture.pivot_offset = Vector2(24, 12)
+		_icon_texture.rotation_degrees = _thumb_rotation()
 		stack.add_child(_icon_texture)
 	else:
 		_icon_label = Label.new()
@@ -255,7 +294,9 @@ func _build_children(p_display_name: String, p_cost: int) -> void:
 		stack.add_child(_icon_label)
 
 	_name_label = Label.new()
-	_name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	# 返工7 P4 第三轮：对齐随 equipment 微变（居中/左/右）—— 打破「四组
+	# 文本等间距居中排列」的列式节奏（GPT 全帧：底部仍读「规整分栏」）。
+	_name_label.horizontal_alignment = _text_align_var(0x5EED)
 	_name_label.text = p_display_name
 	_name_label.add_theme_color_override("font_color", COLOR_WARM_CREAM)
 	_name_label.add_theme_font_override("font", UiTheme.bold_font())
@@ -263,7 +304,7 @@ func _build_children(p_display_name: String, p_cost: int) -> void:
 	stack.add_child(_name_label)
 
 	_price_label = Label.new()
-	_price_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_price_label.horizontal_alignment = _text_align_var(0xB0B0)
 	_price_label.text = "$%d" % p_cost
 	_price_label.add_theme_color_override("font_color", COLOR_BUTTER)
 	_price_label.add_theme_font_override("font", UiTheme.bold_font())
@@ -309,12 +350,18 @@ func _apply_state_visual() -> void:
 ## 地板/架面）+ 每 tile 垂直偏移不同（确定性 seed 派生，手挂不同高度 0..12px）
 ## —— 读作「架上分别挂着的小标签」，不是等宽卡片行。hover 轮廓/拖拽角标
 ## 跟随 tag 区域（不铺满 tile —— 去「卡片边界」）。
+## V3.1 返工7 P4（GPT run2：底部商品栏仍读作「固定列 + 重复竖向分隔」）：
+## 增加水平错落 —— 每 tile 价签在 88px 内左右偏移 ±10px（确定性 seed，
+## 同 _tag_offset_y 派生）—— 列不再等宽对齐，价签错落悬挂（读作手挂，
+## 绝非规整卡片网格）。tag 宽微变（52..64px，seed 派生）—— 列宽参差。
 func _draw() -> void:
 	var tex := _plate_texture()
 	if tex != null:
-		var tag_w := mini(size.x, 58)
-		var tag_h := mini(size.y, 62)
-		var ox := (size.x - tag_w) * 0.5
+		var tag_w := mini(size.x, float(_tag_width()))
+		# 返工7 P4 第二轮：价签高度按 equipment 微变（46..62px）—— 行内
+		# 高低参差，绝非等高校直线行（GPT run1：近等宽矩形槽位）。
+		var tag_h := mini(size.y, _tag_height())
+		var ox := (size.x - tag_w) * 0.5 + _tag_offset_x()
 		var oy := _tag_offset_y()
 		draw_texture_rect(tex, Rect2(ox, oy, tag_w, tag_h), false)
 	# hover 轮廓跟随价签区域（非铺满 —— 无卡片边界）
@@ -324,12 +371,131 @@ func _draw() -> void:
 		_draw_drag_markers()
 
 
-## 每 tile 垂直偏移（确定性）：价签在 88×88 内上下错开 0..12px —— 手挂
+## 每 tile 水平偏移（返工7 P4）：价签在 88×88 内左右错开 ±10px —— 列不再
+## 等宽对齐（GPT run2：底部商品栏读作「固定列 + 重复竖向分隔」）。确定性。
+func _tag_offset_x() -> float:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = (abs(hash(equipment_id)) if equipment_id != "" else 0x71E) + 0xBEEF
+	return float(rng.randi_range(-10, 10))
+
+
+## 每 tile 价签宽度微变（返工7 P4）：52..64px（seed 派生）—— 列宽参差。
+func _tag_width() -> int:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = (abs(hash(equipment_id)) if equipment_id != "" else 0x71E) + 0xCAFE
+	return rng.randi_range(52, 64)
+
+
+## 每 tile 宽度微变（返工7 P4）：0..19px 附加 —— 列宽参差（78..97px）。
+func _tile_width_var() -> int:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = (abs(hash(equipment_id)) if equipment_id != "" else 0x71E) + 0xD00D
+	return rng.randi_range(0, 19)
+
+
+## 缩略图显示蒙版（返工7 P4）：把设备精灵纹理拷贝一份，按确定性 seed 在
+## 角部/边缘清 alpha（撕裂 1-3 texel 缺口 + 角部咬口）—— 显示层读作磨损
+## 照片/撕裂价签，绝无等宽矩形框读法。原始纹理（get_thumbnail）不变；
+## 每 tile 懒缓存一次（64×32 拷贝成本可忽略）。
+## 返工7 P4 第二轮（GPT run1：底部商品缩略图仍读作「小型矩形框」）：咬口
+## 大幅加深 —— 角部 10-14 texel 三角 + 边缘 4-6 texel 深缺口（显示 0.75x
+## 缩放 → 7-10px 肉眼可辨的破角/缺口）。bite 透出的是 tile 木签（中饱和
+## 木色，非低饱和墙面）—— low-sat 预算零成本，可放心加狠。配合 tile 级
+## 确定性旋转（±7°，读作挂歪的磨损照片），缩略图绝无任何矩形轮廓读法。
+var _thumb_display_tex: ImageTexture = null
+func _thumbnail_display_texture() -> ImageTexture:
+	if _thumb_display_tex != null:
+		return _thumb_display_tex
+	var img := _thumbnail.get_image()
+	if img == null:
+		return _thumbnail
+	var rng := RandomNumberGenerator.new()
+	rng.seed = (abs(hash(equipment_id)) if equipment_id != "" else 0x71E) + 0x70A7
+	var w := img.get_width()
+	var h := img.get_height()
+	# 角部咬口：10-14 texel 三角清 alpha（显示 0.75x → 7-10px 破角）
+	for corner: Vector2i in [Vector2i(0, 0), Vector2i(w - 1, 0), Vector2i(0, h - 1), Vector2i(w - 1, h - 1)]:
+		if rng.randf() < 0.95:
+			var bite := rng.randi_range(10, 14)
+			for dy in bite:
+				for dx in bite:
+					var px := corner.x + (dx if corner.x == 0 else -dx)
+					var py := corner.y + (dy if corner.y == 0 else -dy)
+					if px >= 0 and px < w and py >= 0 and py < h:
+						if dx + dy < bite + rng.randi_range(0, 1):
+							img.set_pixel(px, py, Color(0, 0, 0, 0))
+	# 边部随机缺口：每 ~5 texel 长度 1 个 4-6 texel 深缺口（任意边）
+	var bites := maxi(6, (w + h) / 5)
+	for i in bites:
+		match rng.randi_range(0, 3):
+			0:
+				var tx := rng.randi_range(0, w - 1)
+				for d in mini(6, h):
+					if rng.randf() < 0.85:
+						img.set_pixel(tx, d, Color(0, 0, 0, 0))
+			1:
+				var bx := rng.randi_range(0, w - 1)
+				for d in mini(6, h):
+					if rng.randf() < 0.85:
+						img.set_pixel(bx, h - 1 - d, Color(0, 0, 0, 0))
+			2:
+				var ly := rng.randi_range(0, h - 1)
+				for d in mini(6, w):
+					if rng.randf() < 0.85:
+						img.set_pixel(d, ly, Color(0, 0, 0, 0))
+			3:
+				var ry := rng.randi_range(0, h - 1)
+				for d in mini(6, w):
+					if rng.randf() < 0.85:
+						img.set_pixel(w - 1 - d, ry, Color(0, 0, 0, 0))
+	_thumb_display_tex = ImageTexture.create_from_image(img)
+	return _thumb_display_tex
+
+
+## 每 tile 缩略图挂歪旋转（返工7 P4 第二轮）：确定性 seed → -7..+7°。
+## 设备缩略图读作「挂歪的磨损照片」，绝非规则小矩形。旋转不新增 draw
+## call（同一 CanvasItem 变换），不影响布局/命中；无测试断言 transform。
+func _thumb_rotation() -> float:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = (abs(hash(equipment_id)) if equipment_id != "" else 0x71E) + 0x57E5
+	return float(rng.randi_range(-7, 7))
+
+
+## 每 tile 垂直偏移（确定性）：价签在 88×88 内上下错开 -6..+6px —— 手挂
 ## 不同高度，视觉上打破「等宽卡片行」（GPT 视觉自检 FAIL 点 2）。
+## 返工7 P4 第二轮（GPT run1/2：底部「长水平边界/规则栏位」）：下限 0 →
+## -6 —— 部分价签上探出 tile 顶缘（读作手挂参差，顶缘不再是平直基线）。
+## 上限 12 → 6（返工7 P4 第三轮：上限 12 时内容栈撑破 88px 预算 → palette
+## 高 93px → 架条/trim 锚定下移 5px，架条底缘出屏；内容预算实测 6 + icon
+## 24 + name 22 + price 24 + seps 4 + margins 8 = 88 正好压线，上限 6 保证
+## 不撑破。正偏移 0..6 仍撑起行首 spacer 的阶梯参差）。负偏移仅价签上探
+## （不占布局高度），内容栈 spacer 用 max(0, offset) 同步。
 func _tag_offset_y() -> float:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = (abs(hash(equipment_id)) if equipment_id != "" else 0x71E) + 0x5EED
-	return float(rng.randi_range(0, 12))
+	return float(rng.randi_range(-6, 6))
+
+
+## 每 tile 文字水平对齐（返工7 P4 第三轮）：确定性 seed → 居中/左/右 ——
+## 打破四组文本的等间距居中列式节奏（GPT 全帧：底部「规整分栏」）。
+func _text_align_var(salt: int) -> int:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = (abs(hash(equipment_id)) if equipment_id != "" else 0x71E) + salt
+	match rng.randi_range(0, 2):
+		0:
+			return HORIZONTAL_ALIGNMENT_CENTER
+		1:
+			return HORIZONTAL_ALIGNMENT_LEFT
+		_:
+			return HORIZONTAL_ALIGNMENT_RIGHT
+
+
+## 每 tile 价签高度微变（返工7 P4 第二轮：GPT run1 底部「近等宽矩形槽位」）：
+## 46..62px —— 行内价签高低参差，绝非等高校直线行。确定性 seed。
+func _tag_height() -> float:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = (abs(hash(equipment_id)) if equipment_id != "" else 0x71E) + 0x5EED1
+	return float(rng.randi_range(46, 62))
 
 
 ## 懒生成手绘价签纹理（seed 由 equipment_id 派生 —— 每 tile 纹理不同；
