@@ -308,9 +308,13 @@ static func nearest_lamp_bulb_world(pos: Vector2) -> Vector2:
 ## 压暗），而是全场统一方向：光源偏北偏西 → 投影统一向南偏西（screen 左下，
 ## GPT 建议「统一向左下偏移」）。长度仍随物体高度（越高越长）—— 方向/长度/
 ## 边缘规则全场一致，暗部读作「定向投影」。
+## 返工7 P2（FAIL 第三眼#2 可读性）：方向拉平 —— 旧方向 (-0.33,0.94) 经
+## 投影（SHEAR 0.22 右漂 + FLOOR_SCALE 0.77 压缩）后屏幕方向近乎垂直
+## （9.7° 左倾），GPT 读作「右下/无方向」。新方向 (-0.55,0.84) 屏幕方向
+## ≈29° 左倾 —— 明显向左下斜的投影，全场一致可辨。
 ## 4.7.1 注意：GDScript 常量必须是常量表达式，Vector2.normalized() 不是 ——
-## 直接内联归一化后的分量（(-0.35,1.0)/|(-0.35,1.0)|）。
-const MAIN_LIGHT_DIR := Vector2(-0.33035042472810605, 0.9438583563660174)
+## 直接内联归一化后的分量（(-0.55,1.0)/|(-0.55,1.0)| ≈ (-0.5488,0.8360)）。
+const MAIN_LIGHT_DIR := Vector2(-0.548831, 0.835933)
 
 ## 方向投影偏移（世界 px）：物体在光源另一侧投出有方向的投影。
 ##   dir = MAIN_LIGHT_DIR（全局固定 —— 全场方向一致，不随最近灯摆动）；
@@ -319,6 +323,20 @@ const MAIN_LIGHT_DIR := Vector2(-0.33035042472810605, 0.9438583563660174)
 ## 与物体高度共同决定，纯函数（headless 可断言确定性）。
 static func cast_shadow_offset(pos: Vector2, height: float) -> Vector2:
 	return MAIN_LIGHT_DIR * (height * 0.72 + 5.0)
+
+## V3.1 返工7 P2（第三眼#2 方向一致冷投影可读性）：方向投影「绘制偏移」。
+## 在 cast_shadow_offset 基础上追加 SHADOW_GAP_PX 分离间隙 —— 投影与本体
+## 之间有可辨的间隙（spec：投影与本体重分离明确、有可辨间隙），不再贴体
+## 成「轮廓描边」。方向/长度比例规则与 cast_shadow_offset 完全一致
+## （MAIN_LIGHT_DIR 全局统一、随高度变长），只是整体推远一档。
+## 设备/会员/桌椅/墙边遮挡共用此函数 —— 全场同一规则。
+static func cast_shadow_draw_offset(pos: Vector2, height: float) -> Vector2:
+	return MAIN_LIGHT_DIR * (height * 0.72 + 5.0 + SHADOW_GAP_PX)
+
+## 投影与本体的最小分离间隙（世界 px，V3.1 返工7 P2）。
+## 各物体（设备/会员/桌椅）投影都经 cast_shadow_draw_offset 推远 ——
+## 暗部读作「定向投影」而非「轮廓描边/区域压暗」。
+const SHADOW_GAP_PX := 9.0
 
 
 ## 窗口斜向自然光：从窗口底部射向地板的光锥多边形。
