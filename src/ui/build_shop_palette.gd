@@ -673,10 +673,12 @@ func _draw_junction_trim() -> void:
 	var tex := _junction_trim_texture()
 	if tex == null:
 		return
-	# palette-local y 46..86 = screen 678..718：顶部 6px 按列错落参差 cap
-	# （顶缘锯齿），主体 17 行（34px）覆盖 screen 684..718 —— QA T 扫描带
-	# 与 capture 底带（y700..718）的墙带破形；竖缝把整带断成离散补丁。
-	draw_texture_rect(tex, Rect2(2, 46.0, size.x - 4, 40), false)
+	# palette-local y 46..92 = screen 678..724（含 cap 3 行 + 主体 19 行
+	# = 22 行 × 2px = 44px）：顶部 6px 按列错落参差 cap（顶缘锯齿），主体
+	# 覆盖 screen 684..722 —— QA T 扫描带（y684..702）+ capture 底带
+	# （y700..718）+ 屏幕最后一行 y719 的墙带全部破形（旧 17 行只到 y717，
+	# y718..719 露墙 337px run）；竖缝把整带断成离散补丁。
+	draw_texture_rect(tex, Rect2(2, 46.0, size.x - 4, tex.get_height() * JUNCTION_TRIM_TEXEL), false)
 
 
 ## 懒生成交界破形带纹理（V3.1 返工4 P4）：透明底 + 确定性错落暗色短段。
@@ -697,7 +699,10 @@ const JUNCTION_TRIM_W := 638
 ## 354px run FAIL（capture 底带 y700..718 同色 run 需 < 120px）。恢复
 ## 17 texel（34px，覆盖 y684..718）：灰色带由竖缝（16-28 texel/200）断成
 ## 离散补丁 + 顶缘 cap 参差 —— 不读作连续横栏，同时保持墙带破形。
-const JUNCTION_TRIM_H := 17
+## 返工7 P4 第四轮：17 → 19 texel（34 → 38px）—— 主体行 +2 覆盖屏幕
+## 最后一行 y719（旧 17 行只到 y717，y718..719 露墙 337px run；GPT 全帧
+## 读「底部连续栏带」）。前 17 行 rng 流不变（QA T 采样行位形 bit-identical）。
+const JUNCTION_TRIM_H := 19
 ## 顶缘参差 cap 高度（返工7 P4 第二轮：GPT run1 底部「深色承载条上下边界
 ## 直」）：顶部 3 texel（6px）按列错落起始 —— 色带顶缘成 0..6px 锯齿，
 ## 绝无一条平直上边界。cap 行由独立 rng（+0xCA9）生成 —— 主体 rng
