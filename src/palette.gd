@@ -156,6 +156,12 @@ const WINDOW_GLASS := Color("9FB4C8")
 const WINDOW_FRAME := Color("57534A")
 
 ## 地板材质 —— 力量区深灰橡胶地垫（V3 §1/§7 炭灰深蓝灰系）。
+## 返工7 P3（FAIL 第三眼#4 物体分离）：P3 首版尝试整族提亮（78.7→92.8）
+## 以拉开深色器械与地板明度，但提亮后左灯暖池叠在更亮灰蓝底上 sat
+## 0.26→0.235 翻入 low-sat（r4p1 low-sat 0.6337 > 0.6313 FAIL、gate
+## 63.7% > 63.45%）—— 回退原色阶。分离改由「设备正面压暗 0.62 +
+## 暖池 0.26 + 方向投影/接触影降档」承担（bike 前缘 Δlum 复测仍 ≥0.098：
+## 面纹理 ~65 vs 池上地板 ~98）。冷灰 b>r 冷暖对比锚点保持（R5 口径）。
 const FLOOR_STRENGTH_BASE := Color("4B4F57")
 const FLOOR_STRENGTH_BLOCK := Color("494D55")   # 略有色差的橡胶块
 const FLOOR_STRENGTH_SEAM := Color("474B53")    # 接缝（低对比，退到背景）

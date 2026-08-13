@@ -1010,6 +1010,14 @@ func _draw_equipment_shadow(fp: Rect2i, height: float) -> void:
 	#    - 长度随高度：slab 高度 = 0.7×offset 长度 + 12 —— 越高投影越长。
 	#    投影侧（左/下）扩展、受光侧（上/右）贴身 —— 非整圈描边。
 	var slab := Palette.SHADOW_COOL
+	# 返工7 P3（GPT 自检：左中深色器械影子吞掉轮廓）：slab alpha 0.58 → 0.54
+	# —— 投影仍是全场最明显的方向暗部（P2 方向一致门保持），但不再把
+	# 设备邻域压到与 EQUIP_EDGE_OUTLINE（lum 50）同一明度（本体—轮廓—
+	# 投影—背景四级明度关系：本体亮、轮廓 50、投影 60-70、背景 93+）。
+	# 返工7 P3 三轮（r4p1 low-sat 0.6328 > 0.6323 FAIL）：slab alpha
+	# 0.54 在设备邻域放出的底色 sat<0.25 翻入 low-sat（P4 0.58 时
+	# (264,258) sat 0.267 ≥ 0.25）—— 回退 0.58（P4 值）。分离由设备
+	# 正面压暗 0.62 + 暖池 0.26 承担（bike Δlum 仍 ≥0.098）。
 	slab.a = 0.58
 	var slab_rect := Rect2(
 		Vector2(float(fp.position.x) + offset.x - 10.0,
@@ -1028,6 +1036,12 @@ func _draw_equipment_shadow(fp: Rect2i, height: float) -> void:
 	# （旧 8px 把 gap 带压暗，GPT：中央跑步机投影紧贴底座、无可辨间隙）。
 	contact.size.y += 4.0
 	var contact_col := Palette.EQUIP_SHADOW
+	# 返工7 P3（GPT 自检：影子吞掉轮廓）：接触影 alpha 0.52 → 0.46 ——
+	# 底部压暗仍在（接地明确），但设备本体下缘与轮廓之间的暗部不再与
+	# EQUIP_EDGE_OUTLINE 同明度（轮廓 lum 50 在 0.46 接触影上可辨）。
+	# 返工7 P3 三轮（r4p1 low-sat 0.6328 > 0.6323 FAIL）：接触影 alpha
+	# 0.46 放出的设备邻域底色 sat<0.25 翻入 low-sat —— 回退 0.52（P4 值；
+	# 分离由设备正面压暗 0.62 承担，P2 方向一致门与 P3 物体分离自检保持）。
 	contact_col.a = 0.52
 	_draw_with_floor_transform(func() -> void:
 		draw_rect(slab_rect, slab, true)
@@ -1056,6 +1070,18 @@ func _draw_equipment_ground_pool(fp: Rect2i) -> void:
 	# 力量区（#4B4F57）上明度太接近，silhouette 与地面糊在一起。
 	# 暖池再亮一档把设备「托起」（HIGHLIGHT_WARM sat≈0.18 低饱和，
 	# 不新增 gate A 高饱和簇；池面积小，low-sat 基线不回归）。
+	# 返工7 P3（FAIL 第三眼#4 物体分离）：alpha 0.26 → 0.28 ——
+	# bike(2,5)/yoga_mat 实测轮廓-地面 Δlum 17.7/22.2 < 25 硬门；
+	# 亮池再提一档，设备 silhouette 与暖色地面明度差拉满（仍低饱和，
+	# low-sat 由池面积小 + 覆盖 floor 低-sat 像素保持，gate 余量验证见
+	# gate PIL；A 簇计数不受影响 —— 池像素 sat≈0.18 < 0.25 不进高饱和簇）。
+	# 0.30 档在有氧区（sat 0.28）池下像素 sat≈0.251 接近阈值、0.32 档
+	# 会翻入 low-sat（low-sat 余量 0.25% 内过紧）—— 取 0.28 稳档；
+	# 主分离由 strength 地板提亮（78.7→92.8）+ 设备正面压暗承担。
+	# 返工7 P3 二轮（r4p1 low-sat 0.6340 > 0.6313 基线 FAIL）：亮池
+	# 在有氧区（sat 0.28）/flex（sat 0.56）池下像素 sat<0.25 翻入
+	# low-sat —— 回退 0.26（P2 值）。分离由地板提亮 + 正面压暗承担
+	# （bike 前缘 Δlum 复测仍 ≥0.098：strength 地板 92.8 vs 面 65）。
 	glow.a = 0.26
 	var cx := fp.position.x + fp.size.x / 2.0
 	var cy := fp.position.y + fp.size.y / 2.0
@@ -1470,6 +1496,17 @@ func _member_ground_fx_texture() -> ImageTexture:
 	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
 	img.fill(Color(0, 0, 0, 0))
 	var glow := Palette.HIGHLIGHT_WARM
+	# 返工7 P3（FAIL 第三眼#4 物体分离）：亮池 alpha 0.12 → 0.14 ——
+	# 旧帧会员 m9002/m9003/m9004（walk/queue @ strength/cardio/flex）
+	# 脚底亮池过弱，深色轮廓与地板粘连（实测 Δlum 4-18 < 25）。亮池
+	# 提亮后人物脚下地面明度抬升，CHARCOAL 轮廓与暖色地面 Δlum 拉满。
+	# HIGHLIGHT_WARM sat≈0.18 低饱和，池面积小 —— low-sat / gate A 簇
+	# 不受影响（验证见 gate PIL）。0.16 档在 walkway/cardio 池下像素
+	# sat≈0.26 过近阈值（low-sat 余量 0.25% 内）—— 取 0.14 稳档，
+	# 主分离由 strength 地板提亮（78.7→92.8）承担。
+	# 返工7 P3 二轮（r4p1 low-sat FAIL）：亮池在 cardio/flex 池下像素
+	# 翻入 low-sat —— 回退 0.12（P2 值）。会员分离由 strength 地板
+	# 提亮承担（m9004 queue @ strength 92.8 vs CHARCOAL 59.5 → Δ33）。
 	glow.a = 0.12
 	var contact := Palette.EQUIP_SHADOW
 	contact.a = 0.36

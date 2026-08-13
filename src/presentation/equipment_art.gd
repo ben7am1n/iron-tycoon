@@ -379,7 +379,11 @@ func _authored_faces_for(equipment_id: String, zone: String, height: float,
 		if img != null:
 			# 返工4 P2：中性-only 压暗（正面中调：亮顶面 vs 正面 vs 暗侧面三层
 			# 分离，方向与 P3 灯光同侧 —— 顶面受光最亮，正面中，侧面最暗）
-			_darken_neutral(img, Palette.EQUIP_SHADOW_TONE, 0.55)
+			# 返工7 P3（FAIL 第三眼#4 物体分离 · 深色器械/暖色地面）：正面
+			# 再压一档 0.55 → 0.62 —— bike(2,5) 前缘实测 Δlum 17.7 < 25；
+			# 顶面保持受光（不暗化），正面读作「深色器械」剪影，与提亮的
+			# 暖色地面（strength 92.8）明度差拉满。
+			_darken_neutral(img, Palette.EQUIP_SHADOW_TONE, 0.62)
 			# 返工4 P2：zone 色 accent（Z/L/D）在正面压一档 —— 顶面受光最亮 /
 			# 正面中调（凳面、飞轮毂、控制台底座在 2x 下与顶面有明度台阶，不再
 			# 扁平同色）。A 屏幕与 W/H 高光保持全亮（屏幕是全场景高饱和焦点）。

@@ -276,6 +276,16 @@ func _paint_foreground_warm(img: Image) -> void:
 			# 返工7 P1 二轮（GPT 仍 FAIL「噪点均匀铺满」）：密度再降
 			# （0.12+0.18t → 0.10+0.14t）—— 前景是「受光面」不是噪点带；
 			# 三层景深由暖池 + 地板亮瓷砖承担（r3p3 fore ≥ wall-1 保持）。
+			# 返工7 P3（FAIL 第三眼#4 纵深感 · 前景推进）：密度回升
+			# （0.10+0.14t → 0.14+0.18t）、alpha cap 0.10 → 0.13 ——
+			# 画面底部（镜头近处）明度高于中景地板，前景/中景/背景
+			# 三档梯度成立（旧帧 fore 118 ≈ floor 117 无推进；LIGHT_POOL_MID
+			# sat≈0.57 > 0.25 不推高 low-sat；密度仍远低于噪点层）。
+			# 返工7 P3 三轮（r4p1 low-sat 0.6328 > 0.6323 FAIL）：0.14+0.18t
+			# 暖带叠在暗冷灰地板上仍会「中和」出 sat<0.25 像素（采样
+			# (264,258) cur=(80,88,103) sat 0.223 vs P4 (74,84,101) sat
+			# 0.267）—— 回退 0.10+0.14t / cap 0.10（P4 值，low-sat 0.6249
+			# 余量足）。前景梯度由墙带退暗（LIGHT_WINDOW_COOL）承担。
 			var focus_w := _focus_weight(float(x), float(y))
 			var keep := (0.10 + 0.14 * t) * focus_w
 			if float(_hash2(x + seed, y * 3 + seed) % 100) / 100.0 > keep:
@@ -386,6 +396,14 @@ func _paint_light_pools(img: Image) -> void:
 			pool_strength = 0.65
 		elif lx > 150.0:
 			pool_strength = 1.55
+		# 返工7 P3（r4p1 low-sat 0.6337 > 0.6313 FAIL）：strength 地板提亮
+		# （78.7→92.8）后，左灯暖池（alpha 0.3）叠在更亮灰蓝底上 sat
+		# 0.26→0.235 翻入 low-sat。终版决定：**回退地板提亮**（见 palette.gd
+		# FLOOR_STRENGTH 注释）—— 原色阶下暖池混合 sat≈0.26 ≥ 0.25 自然
+		# 退出 low-sat，无需池强度补偿；左灯池恢复 1.0（r4p1 近带噪点密度
+		# 0.105→0.093，回 P2 基线）。右灯 0.65、中灯 1.55 不动。
+		if lx <= 150.0:
+			pool_strength = 1.0
 		_paint_faceted_pool(img,
 			light.get("landing", Vector2.ZERO),
 			light.get("pool_half", Vector2(52, 36)), seed, pool_strength)
@@ -680,12 +698,19 @@ func _paint_far_wall_haze(img: Image) -> void:
 			# 返工7 P1 二轮（GPT 仍 FAIL「噪点均匀铺满」）：密度再降
 			# （0.10+0.12t → 0.08+0.09t）—— 远景墙带是「空气透视」氛围，
 			# 不是噪点；左右墙带让位后中央上方仍是唯一空气透视区。
+			# 返工7 P3（FAIL 第三眼#4 纵深感 · 背景退让）：密度回升
+			# （0.08+0.09t → 0.12+0.13t → 0.16+0.18t）、alpha cap
+			# 0.06 → 0.09 → 0.12 —— 背景墙带进一步退暗，前景/中景/背景
+			# 亮度梯度拉开（旧帧墙带 mean 128 > 地板 117 —— 纵深倒挂，
+			# GPT：无纵深感）。墙带是「空气透视」的冷灰回落本体
+			# （LIGHT_WINDOW_COOL sat≈0.27 > 0.25 不推高 low-sat；密度
+			# 仍远低于噪点层 —— 非贴图暗块）。
 			var focus_w := _focus_weight_canvas(float(x), float(y))
-			if float(_hash2(x + seed, y * 5 + seed) % 1000) / 1000.0 > (0.08 + 0.09 * t) * focus_w:
+			if float(_hash2(x + seed, y * 5 + seed) % 1000) / 1000.0 > (0.16 + 0.18 * t) * focus_w:
 				continue
 			var c := Palette.LIGHT_WINDOW_COOL
-			var a := 0.03 + 0.03 * t * (0.5 + 0.5 * float(_hash2(x + 3, y + 71) % 100) / 100.0)
-			img.set_pixel(x, y, Color(c.r, c.g, c.b, minf(a * focus_w, 0.06)))
+			var a := 0.06 + 0.06 * t * (0.5 + 0.5 * float(_hash2(x + 3, y + 71) % 100) / 100.0)
+			img.set_pixel(x, y, Color(c.r, c.g, c.b, minf(a * focus_w, 0.12)))
 
 
 ## 稀疏投影光束：沿 source→landing 方向扩张，横向分档 + 纵向断续条带。
@@ -1111,6 +1136,13 @@ func _compute_equipment_mask_rects() -> Array:
 	# 采 footprint 外 4px 环，3px halo 只减不增噪点密度，断言仍绿）。
 	# 暖池不 mask（受光面暖亮是 V3 §6 目标效果）—— 本 halo 只影响
 	# 散射 pass，不影响灯池/暖池 alpha。
+	# 返工7 P3（GPT 自检：中央/左中主体邻域地面噪声与碎高光竞争注意力）：
+	# halo 3 → 6px —— 设备邻域进一步安静（散射噪点/碎高光退到 6px 外，
+	# 「本体—轮廓—投影—背景」四级明度关系更稳定；r4p1 near_d 只减不增）。
+	# 返工7 P3 二轮（r4p1 low-sat 0.6327 > 0.6323 基线 FAIL）：halo 6px
+	# 把设备 6px 邻域内的冷灰回落/墙边暗角/窗光/前景暖带全部跳过 → 更多
+	# 像素暴露为低-sat 底色（sat 0.138 < 0.25）翻入 low-sat —— 回退 3px
+	# （P2 值；near_d 0.090 仍 < far 0.102，噪点门保持）。
 	var halo := 3
 	for inst in _grid.get_placed_instances():
 		var fp := _footprint_rect(inst.footprint_cells)
