@@ -36,6 +36,16 @@ class_name EquipmentArt extends RefCounted
 const Palette := preload("res://src/palette.gd")
 const Proj2D := preload("res://src/presentation/oblique_projection.gd")
 
+## 方案 C 精绘资产。PNG 已包含完整正视伪 3D 造型（机身、立面和支脚），因此
+## WorldCanvas 将它们作为 camera-facing sprite 直接绘制，不再套顶面斜投影和
+## 程序挤出。映射集中在这里，设备 id 与磁盘文件名不耦合。
+const ASSET_PATHS := {
+	"treadmill": "res://assets/sprites/treadmill_v2.png",
+	"bike": "res://assets/sprites/bike_v1.png",
+	"bench_press": "res://assets/sprites/bench_v1.png",
+	"yoga_mat": "res://assets/sprites/mat_v1.png",
+}
+
 ## Art map 每个 cell 的逻辑像素数（16×16），放大到 CELL_SIZE 后每个 art px = 2 屏 px。
 ## V3 Phase 3：8→16 提升造型细节（同 32×32/cell 屏尺寸，4 倍 art 分辨率）。
 const ART_PER_CELL := 16
@@ -236,17 +246,45 @@ const FACE_MAPS := {
 ## 未知 equipment_id / zone 的兜底区域色（暖中性，避免与 Sage↔Rose 关键对撞色）。
 const FALLBACK_ZONE := Color("C9A87C")
 
-## 纹理缓存：key = "equipment_id|zone|rotation" -> ImageTexture。
+## 程序纹理缓存：key = "equipment_id|zone|rotation" -> ImageTexture。
 ## 每台设备按 (id, zone, rotation) 全量缓存 —— 运行时零重建（性能预算：纹理
 ## 建立一次，之后每帧仅 draw_texture_rect）。
 var _cache: Dictionary = {}
 
+## 精绘资产缓存。每个 id 最多查找/解码一次；缺失也会记入 _asset_lookup_done，
+## 避免每帧重复文件访问。正式导出优先走 ResourceLoader/import remap；纯
+## --script headless（不会先跑 editor import）则用 Image.load 解码源 PNG。
+var _asset_cache: Dictionary = {}
+var _asset_lookup_done: Dictionary = {}
+var _asset_paths: Dictionary = {}
+var _assets_enabled := true
 
-## 取设备精灵纹理（顶面）。R0 map 建立后按 rotation 旋转并缓存；zone 决定
-## Z/D/L 三个语义色槽（art-bible §4 区域色系，单一来源 palette.ZONE_COLORS）。
+
+## [use_assets] 只作为测试/工具的显式开关；正式游戏保持默认 true。
+## [asset_paths_override] 允许单测注入不存在的路径，验证真实的 missing-file
+## fallback，而不需要改动或删除仓库资产。
+func _init(use_assets: bool = true, asset_paths_override: Dictionary = {}) -> void:
+	_assets_enabled = use_assets
+	_asset_paths = ASSET_PATHS.duplicate()
+	if not asset_paths_override.is_empty():
+		_asset_paths = asset_paths_override.duplicate()
+
+
+## 取设备渲染纹理：精绘 PNG 优先，加载失败时回退现有程序纹理。精绘 sprite
+## 已带固定相机视角，逻辑 rotation 只改变 footprint，不旋转图片（把正视图旋转
+## 90° 会令设备横躺）；所有 zone/rotation 复用同一个已加载 Texture2D。
+func texture_for(equipment_id: String, zone: String, rotation: int) -> Texture2D:
+	var asset := _asset_texture_for(equipment_id)
+	if asset != null:
+		return asset
+	return programmatic_texture_for(equipment_id, zone, rotation)
+
+
+## 显式程序绘制入口：保留原有确定性像素断言、离线工具和资产缺失兜底。
 ## [equipment_id] 未知时返回 null（调用方兜底画剪影块，绝不崩溃）。
 ## [rotation] 非法时 push_error 并回退 R0。
-func texture_for(equipment_id: String, zone: String, rotation: int) -> ImageTexture:
+func programmatic_texture_for(equipment_id: String, zone: String,
+		rotation: int) -> ImageTexture:
 	var key := "%s|%s|%d" % [equipment_id, zone, rotation]
 	if _cache.has(key):
 		return _cache[key]
@@ -260,6 +298,60 @@ func texture_for(equipment_id: String, zone: String, rotation: int) -> ImageText
 	return tex
 
 
+## 当前 id 是否实际使用了精绘资产。首次调用会执行一次惰性加载；失败后稳定
+## 返回 false，并由 texture_for() 进入程序兜底。
+func is_using_asset(equipment_id: String) -> bool:
+	return _asset_texture_for(equipment_id) != null
+
+
+## 测试/诊断查询：返回本实例配置的映射路径，未知 id 返回空字符串。
+func asset_path_for(equipment_id: String) -> String:
+	return str(_asset_paths.get(equipment_id, ""))
+
+
+## 精绘 sprite 的接地点锚（纹理像素坐标）：不透明包围盒底边中心。
+## WorldCanvas 用它把每张 64×64 透明画布的真实支脚贴到 footprint 南缘中心，
+## 不受各文件透明留白差异影响。
+func asset_contact_anchor(equipment_id: String) -> Vector2:
+	var tex := _asset_texture_for(equipment_id)
+	if tex == null:
+		return Vector2.ZERO
+	var used := tex.get_image().get_used_rect()
+	if used.size == Vector2i.ZERO:
+		return tex.get_size() * 0.5
+	return Vector2(
+		float(used.position.x) + float(used.size.x) * 0.5,
+		float(used.end.y)
+	)
+
+
+func _asset_texture_for(equipment_id: String) -> Texture2D:
+	if not _assets_enabled:
+		return null
+	if _asset_lookup_done.has(equipment_id):
+		return _asset_cache.get(equipment_id)
+	_asset_lookup_done[equipment_id] = true
+	var path := asset_path_for(equipment_id)
+	if path == "":
+		return null
+	# 编辑器/导出包路径：尊重 Godot import remap 与平台纹理格式。
+	if ResourceLoader.exists(path, "Texture2D"):
+		var resource := ResourceLoader.load(path, "Texture2D")
+		if resource is Texture2D:
+			_asset_cache[equipment_id] = resource
+			return resource
+	# 新 checkout 的纯 headless script 尚未导入 PNG；直接解码保证测试与兜底
+	# 行为不依赖先启动编辑器。导出包通常已在上面的 ResourceLoader 分支返回。
+	if not FileAccess.file_exists(path):
+		return null
+	var image := Image.new()
+	if image.load(path) != OK or image.is_empty():
+		return null
+	var texture := ImageTexture.create_from_image(image)
+	_asset_cache[equipment_id] = texture
+	return texture
+
+
 ## 返回 [equipment_id] 的 R0 map 尺寸（art px），未知返回 Vector2i.ZERO。
 func art_size(equipment_id: String) -> Vector2i:
 	if not ART_MAPS.has(equipment_id):
@@ -270,8 +362,16 @@ func art_size(equipment_id: String) -> Vector2i:
 	return Vector2i(String(rows[0]).length(), rows.size())
 
 
-## 返回该 map 在 CELL_SIZE 下的屏幕像素尺寸（art px × ART_SCALE）。
+## 返回当前渲染纹理尺寸。资产存在时为 PNG 原生尺寸；否则为程序 map 尺寸。
 func texture_size(equipment_id: String) -> Vector2i:
+	var asset := _asset_texture_for(equipment_id)
+	if asset != null:
+		return Vector2i(asset.get_size())
+	return programmatic_texture_size(equipment_id)
+
+
+## 程序 map 在 CELL_SIZE 下的屏幕像素尺寸（art px × ART_SCALE）。
+func programmatic_texture_size(equipment_id: String) -> Vector2i:
 	return art_size(equipment_id) * ART_SCALE
 
 
@@ -323,7 +423,7 @@ func extrusion_faces_for(equipment_id: String, zone: String, rotation: int,
 			_face_cache[key] = result
 			return result
 	# 通用条带推导（非 R0 旋转 / 无手绘面的设备 / 兜底）
-	var tex := texture_for(equipment_id, zone, rotation)
+	var tex := programmatic_texture_for(equipment_id, zone, rotation)
 	if tex == null:
 		return result
 	var img := tex.get_image()

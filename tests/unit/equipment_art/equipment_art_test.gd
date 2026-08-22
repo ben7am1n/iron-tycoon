@@ -52,6 +52,8 @@ func run_all() -> Dictionary:
 	_test_rotation_variants()
 	_test_unknown_id_returns_null()
 	_test_cache_returns_same_texture()
+	_test_asset_mapping_and_load()
+	_test_missing_asset_falls_back_to_programmatic()
 
 	print("\n=== EQUIPMENT ART TEST: %d passed, %d failed ===\n" % [_pass, _fail])
 	return {"pass": _pass, "fail": _fail}
@@ -69,7 +71,7 @@ func _check(cond: bool, msg: String) -> void:
 # === 1. map 结构 ===
 
 func _test_map_structure() -> void:
-	var art = EquipmentArtScript.new()
+	var art = EquipmentArtScript.new(false)
 	for eq_id in ["treadmill", "bike", "bench_press", "yoga_mat"]:
 		var size: Vector2i = art.art_size(eq_id)
 		_check(size.x > 0 and size.y > 0, "%s has non-zero art size %s" % [eq_id, size])
@@ -90,7 +92,7 @@ func _test_map_structure() -> void:
 # === 2. 纹理尺寸 ===
 
 func _test_texture_sizes() -> void:
-	var art = EquipmentArtScript.new()
+	var art = EquipmentArtScript.new(false)
 	var expected := {
 		"treadmill": Vector2i(2, 1),  # 2×1 footprint → 64×32
 		"bike": Vector2i(1, 1),       # 1×1 → 32×32
@@ -116,7 +118,7 @@ func _test_texture_sizes() -> void:
 # === 3. 语义色（区域 accent，§14 可购买设备饱和度高） ===
 
 func _test_semantic_colors() -> void:
-	var art = EquipmentArtScript.new()
+	var art = EquipmentArtScript.new(false)
 	# 每种设备的 zone_membership[0] 对应 palette.ZONE_COLORS
 	var zone_of := {
 		"treadmill": "cardio",
@@ -138,7 +140,7 @@ func _test_semantic_colors() -> void:
 # === 4. V3 §11 机器轮廓 + §6 方向光（暖高光/冷阴影/青蓝显示灯） ===
 
 func _test_v3_machine_outline_highlight_shadow_accent() -> void:
-	var art = EquipmentArtScript.new()
+	var art = EquipmentArtScript.new(false)
 	# 机器轮廓：深蓝灰（EQUIP_OUTLINE，§11），非纯黑（§3 禁纯黑粗边）。
 	var tex := art.texture_for("treadmill", "cardio", 0)
 	var img := tex.get_image()
@@ -187,7 +189,7 @@ func _test_v3_machine_outline_highlight_shadow_accent() -> void:
 # === 5. V3 §5 3/4 top-down 朝向可辨：前端/后端结构差异 ===
 
 func _test_v3_orientation_front_back() -> void:
-	var art = EquipmentArtScript.new()
+	var art = EquipmentArtScript.new(false)
 	# treadmill 前端 = 控制面板（青蓝显示屏），后端 = 阴影面。前后区域色差
 	# 显著（display cyan 只在前端；后端是冷阴影/机身暗面）→ 朝向可辨。
 	var tex := art.texture_for("treadmill", "cardio", 0)
@@ -215,7 +217,7 @@ func _test_v3_orientation_front_back() -> void:
 ## front（南面，面向相机）与 side（东面）手绘 map。结构断言：等宽行、
 ## 已知图例字符、非空、尺寸合理（front 宽 = 顶面宽；side 宽 = 顶面高）。
 func _test_v31p2_face_maps_structure() -> void:
-	var art = EquipmentArtScript.new()
+	var art = EquipmentArtScript.new(false)
 	for eq_id in ["treadmill", "bike", "bench_press"]:
 		_check(EquipmentArtScript.FACE_MAPS.has(eq_id),
 			"V3.1P2 %s has authored FACE_MAPS (3 facing directions)" % eq_id)
@@ -261,7 +263,7 @@ func _test_v31p2_face_maps_structure() -> void:
 ## sprite 像素中找到。对每台设备 × 每个方向面（top/front/side）逐面断言
 ## 5 层都存在 —— 不是「全局有 5 种颜色」，而是「每一面都画全 5 层」。
 func _test_v31p2_five_layers_per_face() -> void:
-	var art = EquipmentArtScript.new()
+	var art = EquipmentArtScript.new(false)
 	var zone_of := {"treadmill": "cardio", "bike": "cardio", "bench_press": "strength"}
 	var layer_checks := {
 		"base": [
@@ -319,7 +321,7 @@ func _test_v31p2_five_layers_per_face() -> void:
 ##   - bench_press：杠铃片（H 金属高光）+ 长凳厚度（side 面 Z 条带 + D 端）
 ##   - bike：飞轮（H 金属盘）+ 座椅（zone 色 Z，在 side 面上）
 func _test_v31p2_components_recognizable() -> void:
-	var art = EquipmentArtScript.new()
+	var art = EquipmentArtScript.new(false)
 	# treadmill：front 面控制台显示屏（A 青蓝）存在 —— 相机可见面有真实控制台
 	var tm_raw: Dictionary = art.raw_face_images("treadmill", "cardio")
 	var tm_front: Image = tm_raw.get("front")
@@ -359,7 +361,7 @@ func _test_v31p2_components_recognizable() -> void:
 ## 支撑色（body dark / shadow tone）而非透明/空。每台机器 front/side 面的
 ## 最下两行至少含一个不透明像素，且含 shadow/支撑色（不是悬空剪影）。
 func _test_v31p2_equipment_leaves_ground() -> void:
-	var art = EquipmentArtScript.new()
+	var art = EquipmentArtScript.new(false)
 	var zone_of := {"treadmill": "cardio", "bike": "cardio", "bench_press": "strength"}
 	for eq_id in zone_of:
 		var raws: Dictionary = art.raw_face_images(eq_id, zone_of[eq_id])
@@ -388,7 +390,7 @@ func _test_v31p2_equipment_leaves_ground() -> void:
 # === 6. 旋转变体 ===
 
 func _test_rotation_variants() -> void:
-	var art = EquipmentArtScript.new()
+	var art = EquipmentArtScript.new(false)
 	var r0 := art.texture_for("treadmill", "cardio", 0).get_size()
 	var r90 := art.texture_for("treadmill", "cardio", 90).get_size()
 	var r180 := art.texture_for("treadmill", "cardio", 180).get_size()
@@ -410,7 +412,7 @@ func _test_rotation_variants() -> void:
 # === 7. 未知 id ===
 
 func _test_unknown_id_returns_null() -> void:
-	var art = EquipmentArtScript.new()
+	var art = EquipmentArtScript.new(false)
 	var tex := art.texture_for("nonexistent_equipment", "cardio", 0)
 	_check(tex == null, "unknown equipment_id returns null (no crash)")
 	_check(art.art_size("nope") == Vector2i.ZERO, "unknown art_size returns ZERO")
@@ -419,12 +421,51 @@ func _test_unknown_id_returns_null() -> void:
 # === 8. 缓存 ===
 
 func _test_cache_returns_same_texture() -> void:
-	var art = EquipmentArtScript.new()
+	var art = EquipmentArtScript.new(false)
 	var a := art.texture_for("bike", "cardio", 0)
 	var b := art.texture_for("bike", "cardio", 0)
 	_check(a == b, "same (id, zone, rotation) returns cached texture")
 	var c := art.texture_for("bike", "strength", 0)
 	_check(c != null and c != a, "different zone builds distinct texture")
+
+
+# === 9. 方案 C 精绘资产优先 + 程序兜底 ===
+
+func _test_asset_mapping_and_load() -> void:
+	var art = EquipmentArtScript.new()
+	var expected := {
+		"treadmill": "res://assets/sprites/treadmill_v2.png",
+		"bike": "res://assets/sprites/bike_v1.png",
+		"bench_press": "res://assets/sprites/bench_v1.png",
+		"yoga_mat": "res://assets/sprites/mat_v1.png",
+	}
+	for eq_id in expected:
+		_check(art.asset_path_for(eq_id) == expected[eq_id],
+			"asset map %s -> %s" % [eq_id, expected[eq_id]])
+		var tex: Texture2D = art.texture_for(eq_id, "cardio", 0)
+		_check(art.is_using_asset(eq_id), "%s loads hand-designed PNG" % eq_id)
+		_check(tex != null and tex.get_size() == Vector2(64, 64),
+			"%s asset texture is native 64x64" % eq_id)
+		_check(art.texture_size(eq_id) == Vector2i(64, 64),
+			"%s texture_size reports loaded asset size" % eq_id)
+		var reused := art.texture_for(eq_id, "strength", 270)
+		_check(reused == tex, "%s asset cache reused across zone/rotation" % eq_id)
+		var anchor := art.asset_contact_anchor(eq_id)
+		_check(anchor.x > 0.0 and anchor.y > 0.0 and anchor.y <= 64.0,
+			"%s has valid bottom contact anchor %s" % [eq_id, anchor])
+
+
+func _test_missing_asset_falls_back_to_programmatic() -> void:
+	var missing := {"bike": "res://assets/sprites/does_not_exist.png"}
+	var art = EquipmentArtScript.new(true, missing)
+	var tex: Texture2D = art.texture_for("bike", "cardio", 0)
+	_check(not art.is_using_asset("bike"), "missing PNG selects programmatic fallback")
+	_check(tex != null, "missing PNG fallback still returns a texture")
+	_check(tex is ImageTexture, "missing PNG fallback is generated ImageTexture")
+	_check(tex.get_size() == Vector2(32, 32),
+		"missing bike PNG preserves programmatic 32x32 size")
+	_check(tex == art.texture_for("bike", "cardio", 0),
+		"missing PNG lookup and generated fallback are both cached")
 
 
 # === helpers ===

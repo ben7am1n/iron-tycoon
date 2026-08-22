@@ -938,7 +938,7 @@ func _draw_equipment() -> void:
 			eq_id = str(_resolver.call(inst.instance_id))
 		var zone: String = _zone_of(eq_id)
 		var height: float = _equip_art.height_for(eq_id)
-		var tex: ImageTexture = _equip_art.texture_for(eq_id, zone, inst.rotation)
+		var tex: Texture2D = _equip_art.texture_for(eq_id, zone, inst.rotation)
 		# 1a. V3.1 R1：设备脚下暖色亮池（与会员脚底亮池同源 —— 深色设备
 		# 从深色地面「托起」，silhouette 分离）。亮池先画（低 alpha 暖白，
 		# V3 §6 顶部暖白光），方向投影/接触影随后压在其上。
@@ -955,7 +955,9 @@ func _draw_equipment() -> void:
 		# （cast + 双层接触影 3 次）少 1 call —— draw call 预算 <200 保持。
 		_draw_equipment_shadow(fp_rect, height)
 		# 2. 3 面体积（顶面 + 正面 + 侧面）
-		if tex != null:
+		if tex != null and _equip_art.is_using_asset(eq_id):
+			_draw_equipment_asset(eq_id, tex, fp_rect, is_hovered)
+		elif tex != null:
 			_draw_equipment_volume(eq_id, zone, inst.rotation, fp_rect, height)
 		else:
 			# 兜底（未知 equipment_id）：投影后的剪影盒（侧面+正面+纯色顶），
@@ -984,6 +986,23 @@ func _draw_equipment() -> void:
 				for c in inst.access_cells:
 					_draw_access_cell(c)
 			)
+
+
+## 方案 C 精绘 PNG 是完整正视伪 3D sprite，直接在投影后的屏幕空间绘制。
+## 接地点 = footprint 南缘中心，经 Proj2D 投影后与脚下 contact shadow 对齐；
+## 纹理内锚点由不透明包围盒底边计算，透明留白不会造成悬浮。hover 时本体上移
+## 2px，地面影保持原位；既有 footprint Butter 轮廓随后仍会绘制。
+func _draw_equipment_asset(eq_id: String, tex: Texture2D, fp: Rect2,
+		is_hovered: bool, modulate: Color = Color.WHITE) -> void:
+	var ground_contact := Proj2D.proj(
+		fp.position.x + fp.size.x * 0.5,
+		fp.position.y + fp.size.y,
+		0.0
+	)
+	var lift := HOVER_LIFT_PX if is_hovered else 0.0
+	var anchor: Vector2 = _equip_art.asset_contact_anchor(eq_id)
+	var rect := Rect2(ground_contact - anchor - Vector2(0.0, lift), tex.get_size())
+	draw_texture_rect(tex, rect, false, modulate)
 
 
 ## V3.1 返工7 P2（第三眼#2 方向一致冷投影可读性）：设备方向投影 + 接触影。
@@ -1134,7 +1153,7 @@ func _draw_equipment_volume(eq_id: String, zone: String, rotation: int,
 			Proj2D.proj(x1, y1, height), Proj2D.proj(x0, y1, height),
 		]), Palette.EQUIP_BODY_DARK)
 	# 顶面（z=height）：原 art 提升
-	var top_tex: ImageTexture = _equip_art.texture_for(eq_id, zone, rotation)
+	var top_tex: ImageTexture = _equip_art.programmatic_texture_for(eq_id, zone, rotation)
 	if top_tex != null:
 		draw_set_transform_matrix(_top_face_transform(height))
 		draw_texture_rect(top_tex, Rect2(fp.position, fp.size), false)
@@ -1234,11 +1253,18 @@ func _draw_placement_ghost() -> void:
 	var zone: String = _zone_of(eq_id)
 	_draw_with_floor_transform(func() -> void:
 		draw_rect(rect, tint, true)
-		# 精灵本体（半透明幽灵，让玩家看清要放什么）——先于描边，描边永远可读。
-		var tex: ImageTexture = _equip_art.texture_for(eq_id, zone, rotation)
-		if tex != null:
-			var ghost_col := Color(1, 1, 1, 0.65)
-			draw_texture_rect(tex, Rect2(rect), false, ghost_col)
+	)
+	# 精绘 PNG 已包含透视，幽灵也走直接贴图；程序兜底继续贴地投影。
+	var tex: Texture2D = _equip_art.texture_for(eq_id, zone, rotation)
+	if tex != null:
+		var ghost_col := Color(1, 1, 1, 0.65)
+		if _equip_art.is_using_asset(eq_id):
+			_draw_equipment_asset(eq_id, tex, Rect2(rect), false, ghost_col)
+		else:
+			_draw_with_floor_transform(func() -> void:
+				draw_texture_rect(tex, Rect2(rect), false, ghost_col)
+			)
+	_draw_with_floor_transform(func() -> void:
 		# 网格吸附描边（画在最上，覆盖幽灵本体）：合法 → Butter；非法 → Dusty Rose。
 		var edge: Color = Palette.BUTTER if valid else Palette.ROSE
 		edge.a = 0.9

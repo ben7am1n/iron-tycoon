@@ -174,7 +174,7 @@ func _test_thumbnail_is_pixel_sprite_non_placeholder() -> void:
 	var palette: Node = rig["palette"]
 	# treadmill 缩略图应包含机器深蓝灰轮廓像素（场景物件同源，非首字母字形）。
 	var tile: Node = palette.call("get_tile", "treadmill")
-	var thumb: ImageTexture = tile.call("get_thumbnail")
+	var thumb: Texture2D = tile.call("get_thumbnail")
 	if thumb == null:
 		_check(false, "precondition: treadmill thumbnail present")
 		return
@@ -185,8 +185,8 @@ func _test_thumbnail_is_pixel_sprite_non_placeholder() -> void:
 	# 像素精灵非纯色：≥2 独立色（机身材质 + 区域 accent / 高光）。
 	var levels := _count_levels(img, 0.08)
 	_check(levels >= 2, "treadmill thumbnail has >=2 color levels (got %d) — scene object, not glyph" % levels)
-	# 缩略图尺寸 = 设备精灵纹理尺寸（32×32/cell 整数倍）：treadmill 2×1 = 64×32。
-	_check(thumb.get_size() == Vector2(64, 32), "treadmill thumbnail 64x32 (scene-object sprite size, got %s)" % thumb.get_size())
+	# 方案 C 精绘资产使用原生 64×64 透明画布；tile 继续按 NEAREST 缩放显示。
+	_check(thumb.get_size() == Vector2(64, 64), "treadmill hand-designed thumbnail 64x64 (got %s)" % thumb.get_size())
 
 
 func _test_thumbnail_absent_keeps_placeholder() -> void:
