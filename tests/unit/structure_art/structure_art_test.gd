@@ -46,6 +46,8 @@ func run_all() -> Dictionary:
 	_test_rects_in_bounds()
 	_test_painted_by_split()
 	_test_textures_bake()
+	_test_wall_asset_pipeline()
+	_test_clean_ceiling()
 	_test_background_dimmed()
 	_test_determinism()
 
@@ -223,6 +225,66 @@ func _test_textures_bake() -> void:
 		if tex != null:
 			_check(tex.get_width() == StructureArtScript.WORLD_W and tex.get_height() == StructureArtScript.WORLD_H,
 				"%s 层尺寸 %dx%d = 世界尺寸" % [layer, tex.get_width(), tex.get_height()])
+
+
+# === 墙面 asset-first ===
+
+func _test_wall_asset_pipeline() -> void:
+	print("\n-- clean wall PNG assets + horizontal tiling + fallback --")
+	var art = StructureArtScript.new()
+	var expected := {
+		"north": "res://assets/tiles/wall_north.png",
+		"west": "res://assets/tiles/wall_side.png",
+		"east": "res://assets/tiles/wall_side.png",
+	}
+	for kind in expected:
+		_check(art.wall_asset_path_for(kind) == expected[kind],
+			"%s wall maps to %s" % [kind, expected[kind]])
+		_check(art.is_using_wall_asset(kind), "%s wall loads authored PNG" % kind)
+		_check(art.wall_asset_tile_size(kind) == Vector2i(32, 32),
+			"%s wall source tile is 32x32" % kind)
+	var north: Image = art.wall_face_texture("north").get_image()
+	_check(north.get_pixel(5, 18) == north.get_pixel(37, 18),
+		"north wall clean face repeats every 32px")
+	var east: Image = art.wall_face_texture("east").get_image()
+	_check(east.get_pixel(5, 50) == east.get_pixel(37, 50),
+		"side wall clean face repeats every 32px")
+	for path in ["res://assets/tiles/wall_north.png", "res://assets/tiles/wall_side.png"]:
+		var raw := Image.new()
+		_check(raw.load(path) == OK, "%s raw PNG decodes" % path)
+		var counts: Dictionary = {}
+		for y in raw.get_height():
+			for x in raw.get_width():
+				var key := raw.get_pixel(x, y).to_html(false)
+				counts[key] = int(counts.get(key, 0)) + 1
+		var dominant := 0
+		for key in counts:
+			dominant = maxi(dominant, int(counts[key]))
+		var ratio := 1.0 - float(dominant) / float(raw.get_width() * raw.get_height())
+		_check(ratio <= 0.15, "%s detail %.1f%% <= 15%%" % [path, ratio * 100.0])
+	var missing := {
+		"north": "res://assets/tiles/missing-wall-north.png",
+		"side": "res://assets/tiles/missing-wall-side.png",
+	}
+	var fallback = StructureArtScript.new(true, missing)
+	_check(not fallback.is_using_wall_asset("north"),
+		"missing north wall selects clean fallback")
+	_check(not fallback.is_using_wall_asset("west"),
+		"missing side wall selects clean fallback")
+	_check(fallback.wall_face_texture("north") != null \
+		and fallback.wall_face_texture("west") != null,
+		"wall fallback still bakes both wall orientations")
+
+
+func _test_clean_ceiling() -> void:
+	var img: Image = StructureArtScript.new().ceiling_texture().get_image()
+	var first := img.get_pixel(0, 0)
+	var clean := true
+	for y in range(0, img.get_height(), 17):
+		for x in range(0, img.get_width(), 17):
+			if img.get_pixel(x, y) != first:
+				clean = false
+	_check(clean, "ceiling is quiet negative space with no brush field")
 
 
 # === BACKGROUND 降对比降饱和（V3 §4） ===

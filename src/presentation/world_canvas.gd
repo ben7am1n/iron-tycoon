@@ -390,10 +390,8 @@ func _blend_ring(
 		Vector2(rect.end.x - w, rect.position.y), Vector2(w, rect.size.y)), alpha)
 
 
-## 房间盒外延展墙区（返工5 P3 N4）：西/东侧墙在视口内继续延展（世界 x 超出
-## 0..416 的部分），旧实现只铺纯色暗底（帧左右两侧各 ~140 屏 px 的平涂棕带）。
-## 改为直接在投影图上手绘墙面语言（WALL_BASE_FAR 底 + 8px 手绘笔触 +
-## 稀疏噪点）—— 与真实墙面同源（N4 纯色大面积填充：无平涂带）。
+## 房间盒外延展墙区：继续使用同一张侧墙资产的干净墙面像素，避免旧的
+## 手绘笔触/稀疏噪点让房间外框重新变脏。
 ## 经 floor_transform 逆映射：世界坐标 → 投影像素 → 判断是否落在延展矩形内。
 ## 地板/墙面随后覆盖在正确位置之上 —— 本层只填「墙外空隙」。确定性。
 func _blend_extended_walls(img: Image, vp: Rect2) -> void:
@@ -408,17 +406,11 @@ func _blend_extended_walls(img: Image, vp: Rect2) -> void:
 		_paint_extended_wall_face(img, vp, wr, int(wr.position.x) * 31 + int(wr.position.y) * 17)
 
 
-## 单个延展矩形：逆映射 + 手绘墙面填充（底 + 笔触 + 噪点）。
+## 单个延展矩形：逆映射 + clean wall tile face sampling。
 func _paint_extended_wall_face(img: Image, vp: Rect2, wr: Rect2i, seed: int) -> void:
-	var stroke_colors := [
-		Palette.WALL_BASE_FAR.darkened(0.08),
-		Palette.WALL_BASE_FAR.lightened(0.06),
-		Palette.WALL_BASE_FAR.lightened(0.12),
-	]
-	var base_colors := [
-		Palette.WALL_BASE_FAR,
-		Palette.WALL_BASE_FAR.lightened(0.04),
-	]
+	var wall_tile: Image = null
+	if _structure_art != null:
+		wall_tile = _structure_art.wall_tile_image("west")
 	# 世界坐标逐像素逆投影（floor_transform 逆：proj(x,y) = (x+y*S, y*F)）。
 	# 直接在投影空间采样 —— 对投影矩形内每个像素求逆映射到世界坐标。
 	var pmin := Proj2D.project_world(Vector2(wr.position))
@@ -438,18 +430,13 @@ func _paint_extended_wall_face(img: Image, vp: Rect2, wr: Rect2i, seed: int) -> 
 				continue
 			if world_y < wr.position.y or world_y >= wr.position.y + wr.size.y:
 				continue
-			# 墙面底：两档暖灰交替（N11 远景暖化 + N4 色阶微差 —— 非单色平涂）
-			var h := _hash2(int(world_x) + seed, int(world_y) * 3 + seed)
-			var col: Color = base_colors[(h >> 4) % base_colors.size()]
-			# 6px 手绘笔触（与 _bake_side_wall 同族；无装饰大块）
-			# 返工7 P1（FAIL1 噪点焦点层级）：笔触/噪点密度降档 —— 延展
-			# 墙面是远景背景，笔触 h%6→h%8、噪点 h%11→h%16 —— 墙面不再
-			# 与地板/设备同密度颗粒（GPT：墙面呈现相似颗粒抖动纹理）。
-			if h % 8 == 0:
-				col = stroke_colors[(h >> 8) % stroke_colors.size()]
-			# 稀疏噪点（N4 色阶微差）
-			elif h % 16 == 0:
-				col = Palette.WALL_BASE.lightened(0.10) if (h >> 12) % 2 == 0 else Palette.WALL_DARK
+			var col := Palette.WALL_BASE_FAR
+			if wall_tile != null and not wall_tile.is_empty():
+				# Sample one authored face row so the kickboard is not repeated through
+				# the infinite extension; x still follows the tile's seamless cadence.
+				var tx := posmod(int(floor(world_x)) + seed, wall_tile.get_width())
+				var ty := mini(12, wall_tile.get_height() - 1)
+				col = wall_tile.get_pixel(tx, ty)
 			var d := img.get_pixel(ix, iy)
 			img.set_pixel(ix, iy, Color(
 				lerpf(d.r, col.r, 0.94),

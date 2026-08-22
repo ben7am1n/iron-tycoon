@@ -34,6 +34,13 @@ class_name StructureArt extends RefCounted
 
 const Palette := preload("res://src/palette.gd")
 
+## Clean wall-face assets. West/east share one side-wall tile; their authored
+## anchor decor remains distinct and is baked over the shared clean surface.
+const WALL_ASSET_PATHS := {
+	"north": "res://assets/tiles/wall_north.png",
+	"side": "res://assets/tiles/wall_side.png",
+}
+
 ## 世界像素尺寸（与 main.gd / WorldLayout 对齐）。
 const WORLD_W := 416
 const WORLD_H := 320
@@ -124,6 +131,20 @@ var _structure_textures: Dictionary = {}
 ## 烘焙中的当前图层（_col() 据此决定是否降对比降饱和）。
 var _current_layer: String = LAYER_BACKGROUND
 
+var _wall_asset_images: Dictionary = {}
+var _wall_asset_lookup_done: Dictionary = {}
+var _wall_asset_paths: Dictionary = {}
+var _wall_assets_enabled := true
+
+
+## Explicit asset controls are test/tool seams. Production uses PNG assets by
+## default; missing files select the clean flat-color fallback below.
+func _init(use_wall_assets: bool = true, wall_asset_paths_override: Dictionary = {}) -> void:
+	_wall_assets_enabled = use_wall_assets
+	_wall_asset_paths = WALL_ASSET_PATHS.duplicate()
+	if not wall_asset_paths_override.is_empty():
+		_wall_asset_paths = wall_asset_paths_override.duplicate()
+
 
 # === 公共 API ===
 
@@ -196,7 +217,7 @@ func self_painted_count() -> int:
 	return n
 
 
-# === V3.1 P3：墙面粉刷纹理（手绘 cluster + jagged 边缘，替代纯色多边形） ===
+# === Clean asset-first wall faces ===
 
 ## 墙面纹理缓存：kind -> ImageTexture。
 var _wall_face_textures: Dictionary = {}
@@ -208,48 +229,22 @@ var _ceiling_texture: ImageTexture = null
 const WALL_NORTH_TEX := Vector2i(384, 24)
 ## 侧墙纹理尺寸（墙本地空间：u=沿墙世界 y × v=墙高 z，v=0 底/z=0）。
 const WALL_SIDE_TEX := Vector2i(288, 110)
-## 天花板纹理尺寸（画布背景 —— 投影边界外扩 8px，见 world_canvas
-## _draw_canvas_background()）。bounds() ≈ (-10.8,-86.9,538.8,285.3) +
-## 16px 外扩 → ceil 556×334。V3.1 P3：天花板也是大面积区域 —— 需多色
-## cluster（非纯色填充，V3.1 负面约束「纯色大面积填充」）。
+## 天花板纹理尺寸（画布背景 —— 投影边界外扩 8px，见 world_canvas）。
 const CEILING_TEX := Vector2i(556, 334)
 
-## 取天花板纹理（V3.1 P3 手绘感：WALL_BASE.darkened(0.28) 底 + 密集同族
-## cluster，非纯色大面积填充）。懒烘焙 + 缓存。
+## The ceiling is deliberate negative space. The old all-over brush field made
+## the clean wall/floor assets look dirty even when viewed outside the room box.
 func ceiling_texture() -> ImageTexture:
 	if _ceiling_texture != null:
 		return _ceiling_texture
 	var img := Image.create(CEILING_TEX.x, CEILING_TEX.y, false, Image.FORMAT_RGBA8)
 	img.fill(Palette.WALL_BASE.darkened(0.28))
-	# 大色块 cluster：~8px 间距，半径 3-6 —— 覆盖率 ~55%，任何扫描线都
-	# 不会出现长纯色段（V3.1 负面约束「纯色大面积填充」）。
-	var colors := [
-		Palette.WALL_BASE.darkened(0.24),
-		Palette.WALL_BASE.darkened(0.32),
-		Palette.WALL_BASE.darkened(0.20),
-		Palette.WALL_BASE.darkened(0.26),
-	]
-	var seed := 4081
-	for gy in range(0, CEILING_TEX.y + 8, 8):
-		for gx in range(0, CEILING_TEX.x + 8, 8):
-			var h := _hash2(gx * 31 + seed, gy * 17 + seed * 7)
-			var cx := gx + (h % 7) - 3
-			var cy := gy + ((h >> 4) % 7) - 3
-			var c: Color = colors[(h >> 12) % colors.size()]
-			# 返工2 R1：天花板也用手绘短笔触（粉刷纹理），非规则圆点。
-			_paint_wall_stroke(img, cx, cy, 5 + (h >> 8) % 5, c, h ^ seed)
 	var tex := ImageTexture.create_from_image(img)
 	_ceiling_texture = tex
 	return tex
 
-## 取墙面粉刷纹理（V3.1 P3 手绘感：不规则 cluster + jagged 墙帽/踢脚线，
-## 非纯色大面积填充）。kind: "north" | "west" | "east"。懒烘焙 + 缓存。
-## WorldCanvas 在墙变换下 draw_texture_rect 一次，替代旧的 3 个纯色多边形
-## （面 + 墙帽 + 踢脚线）—— draw call 减少（3→1）。
-## 返工3 P1：侧墙装饰（西墙镜/毛巾架、东墙管道/海报/置物架/挂钟）一并
-## 烘焙进侧墙纹理 —— 每帧 ~13 个 draw_rect → 0（draw call 预算让给叙事
-## 道具）。纹理 u 轴 = 沿墙世界 y（西墙从 y0=32 起，纹理像素 u 对应
-## 墙 u = 32 + u；东墙从 y0=0 起）。
+## Clean PNG tile first, authored wall decor second, one cached wall texture and
+## one WorldCanvas draw call. kind: "north" | "west" | "east".
 func wall_face_texture(kind: String) -> ImageTexture:
 	if _wall_face_textures.has(kind):
 		return _wall_face_textures[kind]
@@ -265,6 +260,82 @@ func wall_face_texture(kind: String) -> ImageTexture:
 	return tex
 
 
+func is_using_wall_asset(kind: String) -> bool:
+	return _wall_asset_image_for(kind) != null
+
+
+func wall_asset_path_for(kind: String) -> String:
+	var key := "north" if kind == "north" else "side"
+	return str(_wall_asset_paths.get(key, ""))
+
+
+func wall_asset_tile_size(kind: String) -> Vector2i:
+	return _wall_tile_for(kind).get_size()
+
+
+## Read-only source image access for the projected room-box extension. Callers
+## sample only the clean wall face; authored anchor decor stays in wall textures.
+func wall_tile_image(kind: String) -> Image:
+	return _wall_tile_for(kind)
+
+
+func _wall_tile_for(kind: String) -> Image:
+	var asset := _wall_asset_image_for(kind)
+	if asset != null:
+		return asset
+	var img := Image.create(32, 32, false, Image.FORMAT_RGBA8)
+	img.fill(Palette.WALL_BASE_FAR)
+	for x in 32:
+		img.set_pixel(x, 30, Palette.WALL_DARK.lightened(0.08))
+		img.set_pixel(x, 31, Palette.WALL_DARK)
+	return img
+
+
+func _wall_asset_image_for(kind: String) -> Image:
+	if not _wall_assets_enabled:
+		return null
+	var key := "north" if kind == "north" else "side"
+	if _wall_asset_lookup_done.has(key):
+		return _wall_asset_images.get(key)
+	_wall_asset_lookup_done[key] = true
+	var path := str(_wall_asset_paths.get(key, ""))
+	if path == "":
+		return null
+	if ResourceLoader.exists(path, "Texture2D"):
+		var resource := ResourceLoader.load(path, "Texture2D")
+		if resource is Texture2D:
+			var imported := (resource as Texture2D).get_image()
+			if imported != null and not imported.is_empty():
+				_wall_asset_images[key] = imported
+				return imported
+	if not FileAccess.file_exists(path):
+		return null
+	var raw := Image.new()
+	if raw.load(path) != OK or raw.is_empty():
+		return null
+	_wall_asset_images[key] = raw
+	return raw
+
+
+## North texture y runs top-to-bottom; resize the 32px authored wall profile to
+## the 24px local wall face with nearest-neighbour sampling and repeat only x.
+func _paint_north_wall_asset(img: Image, tile: Image) -> void:
+	for y in WALL_NORTH_TEX.y:
+		var sy := int(round(float(y) * float(tile.get_height() - 1) \
+			/ float(WALL_NORTH_TEX.y - 1)))
+		for x in WALL_NORTH_TEX.x:
+			img.set_pixel(x, y, tile.get_pixel(posmod(x, tile.get_width()), sy))
+
+
+## Side-wall local v runs bottom-to-top, opposite the authored PNG y axis.
+func _paint_side_wall_asset(img: Image, tile: Image) -> void:
+	for v in WALL_SIDE_TEX.y:
+		var sy := tile.get_height() - 1 - int(round(float(v) \
+			* float(tile.get_height() - 1) / float(WALL_SIDE_TEX.y - 1)))
+		for u in WALL_SIDE_TEX.x:
+			img.set_pixel(u, v, tile.get_pixel(posmod(u, tile.get_width()), sy))
+
+
 ## 北墙：WALL_BASE 面 + 稀疏同族 cluster + jagged 墙帽（WALL_TRIM）/踢脚线
 ## （WALL_DARK）。行结构（24 行）：fy 0..2 墙帽、3..21 墙面、22..23 踢脚线。
 ## 返工2 R1：墙面 cluster 改为手绘短笔触（_paint_wall_stroke）—— 不规则
@@ -272,6 +343,11 @@ func wall_face_texture(kind: String) -> ImageTexture:
 ## 而非规则噪点圆点。
 func _bake_north_wall() -> Image:
 	var img := Image.create(WALL_NORTH_TEX.x, WALL_NORTH_TEX.y, false, Image.FORMAT_RGBA8)
+	_paint_north_wall_asset(img, _wall_tile_for("north"))
+	_bake_north_wall_structure_decor(img)
+	return img
+	# Legacy brush synthesis below is intentionally unreachable. It remains for
+	# one release as a visual archaeology reference and can no longer render.
 	# V3.1 返工2 R3（三层景深）：墙面基底用 WALL_BASE_FAR（暗一档、偏冷）——
 	# 背景墙面明度低/偏冷（FAIL3 前中后景分离；P1/P3 采样容差内仍属 WALL 族）。
 	img.fill(Palette.WALL_BASE_FAR)
@@ -452,6 +528,14 @@ func _bake_north_wall_structure_decor(img: Image) -> void:
 ## 沿墙世界 y（西墙 y0=32 → 纹理 u = 墙 y - 32；东墙 y0=0 → u = 墙 y）。
 func _bake_side_wall(kind: String) -> Image:
 	var img := Image.create(WALL_SIDE_TEX.x, WALL_SIDE_TEX.y, false, Image.FORMAT_RGBA8)
+	_paint_side_wall_asset(img, _wall_tile_for(kind))
+	if kind == "west":
+		_bake_west_wall_decor(img, 32)
+	else:
+		_bake_east_wall_decor(img, 0)
+	return img
+	# Legacy brush synthesis below is intentionally unreachable. It remains for
+	# one release as a visual archaeology reference and can no longer render.
 	# V3.1 返工2 R3（三层景深）：侧墙同北墙 —— 背景墙面明度低/偏冷。
 	img.fill(Palette.WALL_BASE_FAR)
 	var colors := [
