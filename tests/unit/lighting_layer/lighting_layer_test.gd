@@ -1,27 +1,9 @@
 # tests/unit/lighting_layer/lighting_layer_test.gd
-# V3.1 P4 — LightingLayer（pixel-based lighting）单元测试
-#
-# 验证 src/presentation/lighting_layer.gd：
-#   - 初始化注入（grid / resolver / tick_provider）
-#   - 双 init 防护（push_error 不崩溃）
-#   - V3 §6 配置齐全：墙边暗角、顶部暖光池、窗口斜向光、emissive 辉光
-#   - 确定性：同 tick 同 phase（无 RNG）；不同 tick 相位变化（画面"活着"）
-#   - emissive 类型映射：青蓝/绿/暖黄 → 正确基色
-#   - 发光体配置：treadmill→青蓝、bike→绿色（V3 §6 机器显示屏青蓝/绿）
-#   - 数量克制：灯光叠加体量有限（draw 预算友好，V3 §15）
-#   - V3.1 P4：light map 烘焙像素级光照 —— 无大面积半透明圆形光斑
-#     （灯池为 hash 散射 cluster，非实心圆）；墙边冷暗像素存在；灯下暖亮
-#     像素存在；同输入同输出（确定性）。
-#
-# 不做渲染帧像素断言（与 SelectionCue / SnapPulse 同一约定：测试断言状态，
-# 不测像素；渲染帧由 evidence 捕获 + PIL 采样验证）。tick_provider 是鸭子
-# 类型（Callable），与 presentation seam 一致。
-#
-# Run standalone: godot --headless --script tests/unit/lighting_layer/lighting_layer_test.gd
+# Asset-first smooth lighting: authored warm pools, analytic shafts/vignette,
+# deterministic screen emitters, and no scatter/hash generation path.
 extends SceneTree
 
 const RUNNER_META := "gym_manager_test_runner_active"
-
 const LightingLayerScript := preload("res://src/presentation/lighting_layer.gd")
 const WorldLayout := preload("res://src/presentation/world_layout.gd")
 const PaletteScript := preload("res://src/palette.gd")
@@ -40,35 +22,33 @@ func _init() -> void:
 
 
 func run_all() -> Dictionary:
-	print("=".repeat(48))
-	print("  UNIT TEST: LightingLayer — V3.1 P4 pixel-based lighting")
-	print("=".repeat(48))
-
+	print("=".repeat(56))
+	print("  UNIT TEST: LightingLayer — asset-first smooth lighting")
+	print("=".repeat(56))
 	_test_init_and_guard()
-	_test_glow_config()
-	_test_glow_color_mapping()
-	_test_layout_anchors()
+	_test_asset_pipeline()
+	_test_glow_config_and_colors()
+	_test_layout_anchors_and_spacing()
 	_test_flicker_determinism()
 	_test_lighting_budget()
-	_test_pixel_light_map()
+	_test_smooth_light_map()
+	_test_smooth_vignette()
 	_test_projected_light_relationship()
 	_test_equipment_light_hit_direction()
 	_test_cast_shadow_direction()
-	_test_foreground_warm_band()
-
+	_test_scatter_paths_removed()
 	_free_test_nodes()
-
 	print("\n=== LIGHTING LAYER TEST: %d passed, %d failed ===\n" % [_pass, _fail])
 	return {"pass": _pass, "fail": _fail}
 
 
-func _check(cond: bool, msg: String) -> void:
-	if cond:
+func _check(condition: bool, message: String) -> void:
+	if condition:
 		_pass += 1
-		print("  PASS: " + msg)
+		print("  PASS: " + message)
 	else:
 		_fail += 1
-		print("  FAIL: " + msg)
+		print("  FAIL: " + message)
 
 
 func _make_layer(tick: int = 0) -> Node2D:
@@ -78,329 +58,284 @@ func _make_layer(tick: int = 0) -> Node2D:
 	return layer
 
 
-# === 1. init + 双 init 防护 ===
-
 func _test_init_and_guard() -> void:
 	var layer := _make_layer()
-	# 双 init 是 push_error + no-op（不崩溃、不重置）。
 	layer.call("init", null, Callable(), Callable())
 	_check(true, "double-init is a safe no-op")
-	# null grid / resolver 下直接调 _draw 不崩溃（防御性检查）。
-	layer.call("_draw")
-	_check(true, "_draw with null grid/resolver safe")
-	# light map 烘焙不依赖 grid（静态光照）。
-	layer.call("light_map_image")
-	_check(true, "light_map_image() with null grid safe")
+	_check(layer.light_map_image() != null, "light map bakes without placed-equipment state")
+	_check(layer.projected_light_map_image() != null,
+		"projected map bakes without placed-equipment state")
 
 
-# === 2. emissive 发光体配置（V3 §6） ===
-
-func _test_glow_config() -> void:
-	var cfg: Dictionary = LightingLayerScript.EQUIPMENT_GLOWS
-	_check(cfg.has("treadmill"), "treadmill configured for emissive glow")
-	_check(cfg.has("bike"), "bike configured for emissive glow")
-	if cfg.has("treadmill"):
-		_check(cfg["treadmill"]["type"] == LightingLayerScript.GLOW_CYAN,
-			"treadmill screen glow is cyan (V3 §6 青蓝)")
-	if cfg.has("bike"):
-		_check(cfg["bike"]["type"] == LightingLayerScript.GLOW_GREEN,
-			"bike display glow is green (V3 §6 绿)")
-
-
-# === 3. 发光类型 → 基色映射 ===
-
-func _test_glow_color_mapping() -> void:
+func _test_asset_pipeline() -> void:
 	var layer := _make_layer()
-	var cyan: Color = layer._glow_color(LightingLayerScript.GLOW_CYAN)
-	var green: Color = layer._glow_color(LightingLayerScript.GLOW_GREEN)
-	var warm: Color = layer._glow_color(LightingLayerScript.GLOW_WARM)
-	_check(_near(cyan, PaletteScript.EMISSIVE_CYAN, 0.01), "cyan glow maps to EMISSIVE_CYAN")
-	_check(_near(green, PaletteScript.EMISSIVE_GREEN, 0.01), "green glow maps to EMISSIVE_GREEN")
-	_check(_near(warm, PaletteScript.ACCENT_YELLOW, 0.01), "warm glow maps to ACCENT_YELLOW")
+	_check(LightingLayerScript.LIGHT_POOL_ASSET_PATH == "res://assets/tiles/light_pool.png",
+		"production path points to authored light_pool.png")
+	_check(FileAccess.file_exists(LightingLayerScript.LIGHT_POOL_ASSET_PATH),
+		"light-pool PNG exists on disk")
+	_check(layer.is_using_light_pool_asset(), "lighting layer decoded the authored PNG")
+	var source: Image = layer.light_pool_source_image()
+	_check(source.get_size() == LightingLayerScript.LIGHT_POOL_ASSET_SIZE,
+		"asset is exactly 104x72 and matches hanging-lamp spacing")
+	var min_alpha := 1.0
+	var max_alpha := 0.0
+	var single_hue := true
+	var warm: Color = LightingLayerScript.WARM_LIGHT_COLOR
+	for y in source.get_height():
+		for x in source.get_width():
+			var color := source.get_pixel(x, y)
+			min_alpha = minf(min_alpha, color.a)
+			max_alpha = maxf(max_alpha, color.a)
+			if color.a > 0.0 and not _near_rgb(color, warm, 0.012):
+				single_hue = false
+	_check(min_alpha <= 0.001, "asset edge reaches alpha 0")
+	_check(max_alpha >= 0.36 and max_alpha <= 0.39,
+		"asset center alpha is restrained (%.3f in 0.36..0.39)" % max_alpha)
+	_check(single_hue, "all non-transparent asset pixels use only #F5D97B")
+	var cy := source.get_height() / 2
+	var center := source.get_pixel(source.get_width() / 2, cy).a
+	var middle := source.get_pixel(source.get_width() * 3 / 4, cy).a
+	var edge := source.get_pixel(source.get_width() - 1, cy).a
+	_check(center > middle and middle > edge,
+		"asset alpha falls monotonically center -> middle -> edge")
+	_check(absf(source.get_pixel(20, cy).a
+		- source.get_pixel(source.get_width() - 21, cy).a) <= 0.005,
+		"elliptical falloff is horizontally symmetric")
 
 
-# === 4. V3 §6 布局锚点 ===
+func _test_glow_config_and_colors() -> void:
+	var cfg: Dictionary = LightingLayerScript.EQUIPMENT_GLOWS
+	_check(cfg.has("treadmill"), "treadmill screen emitter configured")
+	_check(cfg.has("bike"), "bike screen emitter configured")
+	_check(cfg["treadmill"]["type"] == LightingLayerScript.GLOW_CYAN,
+		"treadmill emitter remains cyan")
+	_check(cfg["bike"]["type"] == LightingLayerScript.GLOW_GREEN,
+		"bike emitter remains green")
+	var layer := _make_layer()
+	_check(_near_rgb(layer._glow_color(LightingLayerScript.GLOW_CYAN),
+		PaletteScript.EMISSIVE_CYAN, 0.01), "cyan maps to EMISSIVE_CYAN")
+	_check(_near_rgb(layer._glow_color(LightingLayerScript.GLOW_GREEN),
+		PaletteScript.EMISSIVE_GREEN, 0.01), "green maps to EMISSIVE_GREEN")
+	_check(_near_rgb(layer._glow_color(LightingLayerScript.GLOW_WARM),
+		LightingLayerScript.WARM_LIGHT_COLOR, 0.01), "warm maps to the pool's single hue")
 
-func _test_layout_anchors() -> void:
-	_check(WorldLayout.WINDOWS.size() >= 1, "window(s) exist for diagonal natural light (V3 §6)")
-	_check(WorldLayout.LIGHT_POOLS.size() >= 1, "top warm light pool(s) exist (V3 §6)")
-	_check(WorldLayout.EDGE_SHADOW_WIDTH > 0, "edge shadow band configured (墙边比中心稍暗)")
-	# 窗口光锥：从窗底向下展开的多边形（顶点数 4）
-	var cone := WorldLayout.window_light_cone(WorldLayout.WINDOWS[0])
-	_check(cone.size() == 4, "window light cone is a quad (4 points)")
+
+func _test_layout_anchors_and_spacing() -> void:
+	var layer := _make_layer()
+	_check(WorldLayout.HANGING_LIGHTS.size() == 3, "exactly three hanging lamps configured")
 	_check(WorldLayout.HANGING_LIGHTS.size() == WorldLayout.LIGHT_POOLS.size(),
-		"each warm pool has one identifiable hanging source")
+		"each hanging lamp owns one main pool")
 	for i in WorldLayout.HANGING_LIGHTS.size():
 		var light: Dictionary = WorldLayout.HANGING_LIGHTS[i]
-		_check((light.get("landing", Vector2.ZERO) as Vector2).is_equal_approx(WorldLayout.LIGHT_POOLS[i]),
-			"hanging source %d landing matches light pool" % i)
+		var landing: Vector2 = light.get("landing", Vector2.ZERO)
+		_check(landing.is_equal_approx(WorldLayout.LIGHT_POOLS[i]),
+			"lamp %d landing matches canonical pool anchor" % i)
+		_check(Vector2(layer.light_pool_rect(i).get_center()).is_equal_approx(landing),
+			"lamp %d PNG destination is centered under its fixture" % i)
+	for i in range(WorldLayout.HANGING_LIGHTS.size() - 1):
+		var left: Rect2i = layer.light_pool_rect(i)
+		var right: Rect2i = layer.light_pool_rect(i + 1)
+		_check(left.end.x <= right.position.x,
+			"main pools %d/%d do not overlap (gap %dpx)" %
+			[i, i + 1, right.position.x - left.end.x])
+	_check(WorldLayout.EDGE_SHADOW_WIDTH > 0, "smooth cool vignette width configured")
 	_check(str(WorldLayout.FLOOR_LIGHT.get("decor_id", "")) == "warm_lamp_f1",
-		"floor-light fixture is linked to placed warm_lamp_f1 decor")
+		"small smooth floor-lamp pool remains linked to its fixture")
 
-
-# === 5. 闪烁确定性（V3 §9 克制不闪烁 + 确定性） ===
 
 func _test_flicker_determinism() -> void:
-	var a := _make_layer(7)
-	var b := _make_layer(7)
-	var c := _make_layer(9)
-	var phase_a: float = 0.5 + 0.5 * sin(7 * 0.25)
-	var phase_b: float = 0.5 + 0.5 * sin(7 * 0.25)
-	var phase_c: float = 0.5 + 0.5 * sin(9 * 0.25)
-	# 同一 tick → 同相位（确定性）
-	_check(absf(a._glow_color(LightingLayerScript.GLOW_CYAN).a - 0.0) > -1.0, "glow alpha driven by phase")
-	_check(absf(phase_a - phase_b) < 0.001, "same tick → same flicker phase (deterministic)")
-	# 不同 tick → 相位可能不同（画面随时间变化，"活着"）；但 sin 也可能恰巧同值，
-	# 所以这里只断言相位在 [0,1] 且随时间推移在遍历（非恒 0.5 常量）。
-	_check(phase_a >= 0.0 and phase_a <= 1.0, "phase bounded [0,1]")
+	var phase_a := 0.5 + 0.5 * sin(7 * 0.25)
+	var phase_b := 0.5 + 0.5 * sin(7 * 0.25)
+	_check(absf(phase_a - phase_b) < 0.001, "same tick gives identical emitter phase")
+	_check(phase_a >= 0.0 and phase_a <= 1.0, "emitter phase stays in [0,1]")
 	var moving := false
-	var prev := phase_a
-	for t in range(8, 40):
-		var ph := 0.5 + 0.5 * sin(t * 0.25)
-		if absf(ph - prev) > 0.001:
+	for tick in range(8, 40):
+		if absf((0.5 + 0.5 * sin(tick * 0.25)) - phase_a) > 0.001:
 			moving = true
-		prev = ph
-	_check(moving, "flicker phase varies across ticks (screen alive, not static)")
+			break
+	_check(moving, "screen emitter breathes across ticks")
+	_check(_make_layer(7).light_map_image().get_data()
+		== _make_layer(999).light_map_image().get_data(),
+		"static pool/vignette map is independent of tick")
 
-
-# === 6. 灯光体量克制（draw 预算友好） ===
 
 func _test_lighting_budget() -> void:
-	_check(WorldLayout.LIGHT_POOLS.size() <= 4, "light pool count restrained (≤4): %d" % WorldLayout.LIGHT_POOLS.size())
-	_check(WorldLayout.WINDOWS.size() <= 3, "window count restrained (≤3): %d" % WorldLayout.WINDOWS.size())
-	_check(LightingLayerScript.EQUIPMENT_GLOWS.size() <= 8, "emissive glow types restrained (≤8)")
+	_check(WorldLayout.LIGHT_POOLS.size() <= 4, "main pool count remains restrained")
+	_check(LightingLayerScript.EQUIPMENT_GLOWS.size() <= 8,
+		"screen emitter types remain restrained")
+	_check(LightingLayerScript.LIGHT_POOL_ASSET_SIZE.x
+		< WorldLayout.LIGHT_POOLS[0].distance_to(WorldLayout.LIGHT_POOLS[1]),
+		"asset width fits the inter-lamp spacing")
 
 
-# === 7. V3.1 P4：pixel-based light map（无圆形光斑） ===
-
-func _test_pixel_light_map() -> void:
+func _test_smooth_light_map() -> void:
 	var layer := _make_layer()
 	var img: Image = layer.light_map_image()
-	_check(img != null, "light map baked (Image non-null)")
-	if img == null:
-		return
-	_check(img.get_width() == WorldLayout.WORLD_W and img.get_height() == WorldLayout.WORLD_H,
-		"light map is world-size %dx%d" % [WorldLayout.WORLD_W, WorldLayout.WORLD_H])
-
-	# 墙边暗角：近墙像素存在冷暗（alpha > 0，蓝 > 红 —— 冷色）
-	var edge_found := false
-	for y in range(2, WorldLayout.WORLD_H - 2, 3):
-		for x in range(0, WorldLayout.EDGE_SHADOW_WIDTH, 2):
-			var c: Color = img.get_pixel(x, y)
-			if c.a > 0.02 and c.b > c.r:
-				edge_found = true
-				break
-		if edge_found:
-			break
-	_check(edge_found, "wall-edge cool-dark pixels present (近墙像素变暗)")
-
-	# 灯下稍亮：每个灯池中心附近存在暖亮（alpha > 0.02，红 > 蓝 —— 暖色）
-	var all_pools_warm := true
-	for center in WorldLayout.LIGHT_POOLS:
-		var c: Vector2 = center
-		var warm_found := false
-		for dy in range(-6, 7):
-			for dx in range(-6, 7):
-				var px := int(c.x) + dx
-				var py := int(c.y) + dy
-				if px < 0 or py < 0 or px >= img.get_width() or py >= img.get_height():
-					continue
-				var col: Color = img.get_pixel(px, py)
-				if col.a > 0.02 and col.r > col.b:
-					warm_found = true
-					break
-			if warm_found:
-				break
-		if not warm_found:
-			all_pools_warm = false
-			break
-	_check(all_pools_warm, "under-lamp warm pixels present at every pool (灯下稍亮)")
-
-	# 无大面积半透明圆形光斑：灯池是 hash 散射 cluster —— 灯池半径内
-	# 有暖亮像素的区域占比 < 0.85（实心圆会 ~100% 覆盖）。采样半径内
-	# 每 2px 步进统计，既验证"不是实心圆"，也验证"不是空"。
-	var covered := 0
-	var sampled := 0
-	for center in WorldLayout.LIGHT_POOLS:
-		var c: Vector2 = center
-		var r := int(WorldLayout.LIGHT_POOL_RADIUS)
-		for dy in range(-r, r + 1, 2):
-			for dx in range(-r, r + 1, 2):
-				var px := int(c.x) + dx
-				var py := int(c.y) + dy
-				if px < 0 or py < 0 or px >= img.get_width() or py >= img.get_height():
-					continue
-				var d := Vector2(dx, dy).length()
-				if d > float(r):
-					continue
-				sampled += 1
-				if img.get_pixel(px, py).a > 0.02:
-					covered += 1
-	var ratio := float(covered) / maxi(sampled, 1)
-	_check(ratio < 0.85, "light pool is scattered cluster, not solid circle (coverage %.2f < 0.85)" % ratio)
-	_check(covered > 0, "light pool non-empty (covered %d pixels)" % covered)
-
-	# 确定性：同输入同输出（烘焙两次逐像素一致）
-	var img2: Image = layer.light_map_image()
-	var same := true
-	for y in range(0, img.get_height(), 4):
-		for x in range(0, img.get_width(), 4):
-			if img.get_pixel(x, y) != img2.get_pixel(x, y):
-				same = false
-				break
-		if not same:
-			break
-	_check(same, "light map deterministic (re-bake identical)")
-
-	# V3.1 P5：红广告牌暖红 glow（静态发光体 —— 高饱和焦点 + P4 亮色表达）
-	var ad_pos: Vector2i = WorldLayout.WALL_DECOR.get("ad_red", Vector2i(-100, -100))
-	_check(ad_pos.x >= 0, "V3.1 P5 ad_red wall decor configured (红广告牌挂墙)")
-	if ad_pos.x >= 0:
-		# glow cluster 画在 ad_pos + (8,16)（墙下地面，同 sign 机制）
-		var glow_center := Vector2(ad_pos) + Vector2(8, 16)
-		var red_found := false
-		for dy in range(-6, 7):
-			for dx in range(-6, 7):
-				var gx := int(glow_center.x) + dx
-				var gy := int(glow_center.y) + dy
-				if gx < 0 or gy < 0 or gx >= img.get_width() or gy >= img.get_height():
-					continue
-				var col: Color = img.get_pixel(gx, gy)
-				if col.a > 0.02 and col.r > col.b and col.r > col.g:
-					red_found = true
-					break
-			if red_found:
-				break
-		_check(red_found, "V3.1 P5 red ad board warm-red glow pixels present (红广告牌 glow)")
+	_check(img.get_size() == Vector2i(WorldLayout.WORLD_W, WorldLayout.WORLD_H),
+		"light map keeps world dimensions")
+	var all_centers_warm := true
+	var all_edges_clear := true
+	var no_interior_holes := true
+	var alpha_levels := {}
+	var single_pool_hue := true
+	for i in WorldLayout.HANGING_LIGHTS.size():
+		var rect: Rect2i = layer.light_pool_rect(i)
+		var center: Vector2i = rect.get_center()
+		var center_color := img.get_pixelv(center)
+		all_centers_warm = all_centers_warm \
+			and center_color.a > 0.35 \
+			and _near_rgb(center_color, LightingLayerScript.WARM_LIGHT_COLOR, 0.012)
+		all_edges_clear = all_edges_clear and img.get_pixel(rect.position.x,
+			center.y).a < 0.01
+		for y in range(rect.position.y, rect.end.y):
+			for x in range(rect.position.x, rect.end.x):
+				var nx: float = (x + 0.5 - center.x) / (rect.size.x * 0.5)
+				var ny: float = (y + 0.5 - center.y) / (rect.size.y * 0.5)
+				var radius := Vector2(nx, ny).length()
+				var color := img.get_pixel(x, y)
+				if radius < 0.72 and color.a <= 0.02:
+					no_interior_holes = false
+				if radius < 0.95 and color.a > 0.0:
+					alpha_levels[roundi(color.a * 255.0)] = true
+					if not _near_rgb(color, LightingLayerScript.WARM_LIGHT_COLOR, 0.012):
+						single_pool_hue = false
+	_check(all_centers_warm, "all three centers are clean warm-yellow maxima")
+	_check(all_edges_clear, "all three ellipse edges fade to transparent")
+	_check(no_interior_holes, "inner 72% of every pool is continuous with no scatter holes")
+	_check(alpha_levels.size() >= 60,
+		"pool uses a smooth alpha ramp (%d distinct levels)" % alpha_levels.size())
+	_check(single_pool_hue, "main pools contain no yellow/white color mixing")
+	var rect: Rect2i = layer.light_pool_rect(1)
+	var y: int = rect.get_center().y
+	var a0 := img.get_pixel(rect.get_center().x, y).a
+	var a1 := img.get_pixel(rect.get_center().x + rect.size.x / 4, y).a
+	var a2 := img.get_pixel(rect.get_center().x + rect.size.x * 2 / 5, y).a
+	_check(a0 > a1 and a1 > a2 and a2 > 0.0,
+		"baked pool falls smoothly from center toward edge")
+	var second: Image = _make_layer().light_map_image()
+	_check(img.get_data() == second.get_data(), "light map rebakes bit-identically")
 
 
-# === 8. V3.1 R4：投影空间灯泡→光束→落点连续 ===
+func _test_smooth_vignette() -> void:
+	var img: Image = _make_layer().light_map_image()
+	var y := 100
+	var a0 := img.get_pixel(0, y).a
+	var a6 := img.get_pixel(6, y).a
+	var a13 := img.get_pixel(13, y).a
+	var a20 := img.get_pixel(20, y).a
+	var a25 := img.get_pixel(25, y).a
+	_check(a0 > a6 and a6 > a13 and a13 > a20 and a20 > a25,
+		"cool edge alpha decreases smoothly inward")
+	_check(a0 <= LightingLayerScript.VIGNETTE_MAX_ALPHA + 0.005,
+		"vignette alpha remains restrained")
+	_check(img.get_pixel(40, y).a <= 0.001, "vignette reaches transparent interior")
+	_check(img.get_pixel(6, y).b > img.get_pixel(6, y).r,
+		"edge vignette remains cool blue-gray")
+	_check(img.get_pixel(6, y) == img.get_pixel(img.get_width() - 7, y),
+		"left/right vignette falloff is symmetric")
+
 
 func _test_projected_light_relationship() -> void:
 	var layer := _make_layer()
 	var img: Image = layer.projected_light_map_image()
 	var origin: Vector2 = layer.projected_light_map_origin()
-	_check(img != null, "projected light map baked (source-to-landing relationship)")
-	if img == null:
-		return
 	_check(img.get_width() > 400 and img.get_height() > 200,
-		"projected light map covers full diorama bounds")
+		"projected map covers the full diorama")
 	for i in WorldLayout.HANGING_LIGHTS.size():
 		var light: Dictionary = WorldLayout.HANGING_LIGHTS[i]
 		var rect: Rect2i = light.get("rect", Rect2i())
 		var source := Proj2D.proj(rect.position.x, rect.position.y,
-			float(light.get("height", 0.0))) + (light.get("bulb_local", Vector2.ZERO) as Vector2)
+			float(light.get("height", 0.0))) \
+			+ (light.get("bulb_local", Vector2.ZERO) as Vector2)
 		var landing := Proj2D.project_world(light.get("landing", Vector2.ZERO))
-		var source_warm := _warm_near(img, source - origin, 5)
-		var middle_warm := _warm_near(img, source.lerp(landing, 0.5) - origin, 8)
-		var landing_warm := _warm_near(img, source.lerp(landing, 0.88) - origin, 10)
-		_check(source_warm > 0, "lamp %d warm bulb core exists" % i)
-		_check(middle_warm > 0, "lamp %d directional shaft reaches middle" % i)
-		_check(landing_warm > 0, "lamp %d directional shaft reaches landing" % i)
-	# 同一输入新实例重烘焙应逐像素一致（无 RNG 状态）。
-	var layer2 := _make_layer()
-	var img2: Image = layer2.projected_light_map_image()
-	var deterministic := img.get_data() == img2.get_data()
-	_check(deterministic, "projected source/shaft map deterministic")
+		_check(_warm_near(img, source - origin, 5) > 0,
+			"lamp %d smooth warm source exists" % i)
+		_check(_warm_near(img, source.lerp(landing, 0.5) - origin, 8) > 0,
+			"lamp %d smooth shaft reaches its midpoint" % i)
+		_check(_warm_near(img, source.lerp(landing, 0.88) - origin, 10) > 0,
+			"lamp %d smooth shaft reaches its pool" % i)
+	var levels := {}
+	var single_hue := true
+	for y in range(0, img.get_height(), 2):
+		for x in range(0, img.get_width(), 2):
+			var color := img.get_pixel(x, y)
+			if color.a > 0.0:
+				levels[roundi(color.a * 255.0)] = true
+				if not _near_rgb(color, LightingLayerScript.WARM_LIGHT_COLOR, 0.012):
+					single_hue = false
+	_check(levels.size() >= 20, "projected shafts use a smooth alpha ramp")
+	_check(single_hue, "projected shafts use the same single warm hue")
+	_check(img.get_data() == _make_layer().projected_light_map_image().get_data(),
+		"projected source/shaft map is deterministic")
 
-
-# === 9. 设备亮面随最近光源位置变化 ===
 
 func _test_equipment_light_hit_direction() -> void:
 	var layer := _make_layer()
-	var left_fp := Rect2i(32, 160, 32, 32)
-	var right_fp := Rect2i(352, 160, 32, 32)
-	var left_hit: Dictionary = layer._equipment_light_hit_canvas(left_fp, "bike")
-	var right_hit: Dictionary = layer._equipment_light_hit_canvas(right_fp, "bike")
+	var left_hit: Dictionary = layer._equipment_light_hit_canvas(
+		Rect2i(32, 160, 32, 32), "bike")
+	var right_hit: Dictionary = layer._equipment_light_hit_canvas(
+		Rect2i(352, 160, 32, 32), "bike")
 	_check(bool(left_hit.get("lit", false)) and bool(right_hit.get("lit", false)),
-		"equipment under warm sources receives local material highlights")
+		"equipment under sources receives a one-pixel light edge")
 	_check((left_hit.get("point", Vector2.ZERO) as Vector2).x
 		!= (right_hit.get("point", Vector2.ZERO) as Vector2).x,
-		"equipment highlight point changes with source/placement position")
+		"equipment edge position follows nearest source")
 
 
-func _warm_near(img: Image, p: Vector2, radius: int) -> int:
+func _test_cast_shadow_direction() -> void:
+	var a := WorldLayout.cast_shadow_offset(Vector2(96, 80), 30.0)
+	var b := WorldLayout.cast_shadow_offset(Vector2(96, 80), 30.0)
+	_check(a.is_equal_approx(b), "cast-shadow direction remains deterministic")
+	var treadmill := WorldLayout.cast_shadow_offset(Vector2(96, 80), 30.0)
+	var bike := WorldLayout.cast_shadow_offset(Vector2(80, 176), 36.0)
+	var yoga := WorldLayout.cast_shadow_offset(Vector2(304, 80), 6.0)
+	_check(treadmill.y > 4.0 and bike.y > 4.0 and yoga.y > 4.0,
+		"all equipment shadows still cast south")
+	_check(bike.length() > treadmill.length(), "taller equipment casts a longer shadow")
+	_check(yoga.length() < treadmill.length(), "low equipment casts a shorter shadow")
+	_check(bike.length() < 60.0, "cast-shadow length remains bounded")
+
+
+func _test_scatter_paths_removed() -> void:
+	var layer := _make_layer()
+	for method in [
+		"_hash2",
+		"_paint_faceted_pool",
+		"_paint_pool_fade",
+		"_paint_ambient_cool_falloff",
+		"_paint_foreground_warm",
+		"_paint_glow_cluster",
+		"_draw_top_face_band",
+		"_draw_screen_cluster",
+	]:
+		_check(not layer.has_method(method), "%s scatter path is absent" % method)
+	_check(layer.has_method("_draw_screen_emitter"),
+		"small deterministic screen-emitter path remains")
+	_check(layer.has_method("_draw_equipment_light_edges"),
+		"single-pixel equipment light-edge path remains")
+
+
+func _warm_near(img: Image, point: Vector2, radius: int) -> int:
 	var found := 0
-	for y in range(maxi(int(p.y) - radius, 0), mini(int(p.y) + radius + 1, img.get_height())):
-		for x in range(maxi(int(p.x) - radius, 0), mini(int(p.x) + radius + 1, img.get_width())):
-			var c := img.get_pixel(x, y)
-			if c.a > 0.04 and c.r > c.b:
+	for y in range(maxi(int(point.y) - radius, 0),
+			mini(int(point.y) + radius + 1, img.get_height())):
+		for x in range(maxi(int(point.x) - radius, 0),
+				mini(int(point.x) + radius + 1, img.get_width())):
+			var color := img.get_pixel(x, y)
+			if color.a > 0.04 and _near_rgb(color,
+					LightingLayerScript.WARM_LIGHT_COLOR, 0.012):
 				found += 1
 	return found
 
 
-# === 10. V3.1 返工2 R3：方向一致冷投影（FAIL2） ===
-
-## 方向投影偏移（WorldLayout.cast_shadow_offset）：
-##   - 纯函数确定性（同输入同输出）
-##   - 方向：背向最近吊灯灯泡（物体在光源另一侧）
-##   - 全场一致：力量区/有氧区/瑜伽区三处设备偏移 y 均为正（远离北墙吊灯）
-##   - 长度随物体高度变化（越高投影越长）
-##   - 不引入圆形光斑（方向投影 = 平移偏移，非同心圆）
-func _test_cast_shadow_direction() -> void:
-	# 确定性
-	var a := WorldLayout.cast_shadow_offset(Vector2(96, 80), 30.0)
-	var b := WorldLayout.cast_shadow_offset(Vector2(96, 80), 30.0)
-	_check(a.is_equal_approx(b), "cast shadow offset deterministic")
-	# 方向一致：三处设备（力量/有氧/瑜伽）投影都向南（远离北墙吊灯）
-	var treadmill_off := WorldLayout.cast_shadow_offset(Vector2(96, 80), 30.0)
-	var bike_off := WorldLayout.cast_shadow_offset(Vector2(80, 176), 36.0)
-	var yoga_off := WorldLayout.cast_shadow_offset(Vector2(304, 80), 6.0)
-	_check(treadmill_off.y > 4.0 and bike_off.y > 4.0 and yoga_off.y > 4.0,
-		"shadow direction consistent across zones (all cast south, away from north lamps)")
-	# 长度随高度：bike(36) 比 treadmill(30) 长，瑜伽垫(6) 最短
-	_check(bike_off.length() > treadmill_off.length(),
-		"taller equipment casts longer shadow (bike %.1f > treadmill %.1f)" % [bike_off.length(), treadmill_off.length()])
-	_check(yoga_off.length() < treadmill_off.length(),
-		"low equipment casts shorter shadow (yoga %.1f < treadmill %.1f)" % [yoga_off.length(), treadmill_off.length()])
-	# 不引入圆：方向投影是平移偏移，不是同心环 —— 偏移长度有限且方向明确
-	_check(bike_off.length() < 60.0, "cast shadow offset bounded (no full-radius blob)")
-
-
-# === 11. V3.1 返工2 R3：前景暖光带（FAIL3 三层景深） ===
-
-## 前景暖光带（_paint_foreground_warm）：light map 底部 y 240..294 区域
-## 存在暖色散射像素（前景物体明度高/对比强 —— 与背景墙面偏冷形成梯度）；
-## 顶部（背景）没有该暖带（不破坏墙边冷暗带）。
-func _test_foreground_warm_band() -> void:
-	var layer := _make_layer()
-	var img: Image = layer.light_map_image()
-	# 前景带内：世界 (200, 265) 附近存在暖亮像素（r > b，alpha > 0.02）
-	var fore_warm := 0
-	for dy in range(-12, 13):
-		for dx in range(-12, 13):
-			var px := 200 + dx
-			var py := 265 + dy
-			if px < 0 or py < 0 or px >= img.get_width() or py >= img.get_height():
-				continue
-			var c: Color = img.get_pixel(px, py)
-			if c.a > 0.02 and c.r > c.b:
-				fore_warm += 1
-	_check(fore_warm > 0, "foreground warm band pixels present (前景受光, %d px)" % fore_warm)
-	# 顶部背景不带暖带：世界 (200, 60)（中景上方）暖像素极少（前景带只在下缘）
-	var top_warm := 0
-	for dy in range(-12, 13):
-		for dx in range(-12, 13):
-			var px := 200 + dx
-			var py := 60 + dy
-			if px < 0 or py < 0 or px >= img.get_width() or py >= img.get_height():
-				continue
-			var c: Color = img.get_pixel(px, py)
-			if c.a > 0.02 and c.r > c.b:
-				top_warm += 1
-	_check(top_warm < fore_warm, "foreground band localized to bottom (not full-frame wash)")
-
-
-# === helpers ===
-
-func _near(a: Color, b: Color, tol: float) -> bool:
+func _near_rgb(a: Color, b: Color, tolerance: float) -> bool:
 	var dr := a.r - b.r
 	var dg := a.g - b.g
 	var db := a.b - b.b
-	return sqrt(dr * dr + dg * dg + db * db) <= tol
+	return sqrt(dr * dr + dg * dg + db * db) <= tolerance
 
 
 func _free_test_nodes() -> void:
-	for n in _nodes_to_free:
-		if is_instance_valid(n):
-			n.queue_free()
+	for node in _nodes_to_free:
+		if is_instance_valid(node):
+			node.queue_free()
