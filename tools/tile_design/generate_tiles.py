@@ -75,9 +75,9 @@ def floor_walkway() -> Image.Image:
 
 
 def wall_north() -> Image.Image:
-    image, draw = canvas((122, 113, 111, 255))
-    baseboard_hi = (111, 101, 94, 255)
-    baseboard = (87, 78, 71, 255)
+    image, draw = canvas((181, 172, 163, 255))  # #B5ACA3 warm light gray
+    baseboard_hi = (148, 138, 128, 255)
+    baseboard = (116, 106, 97, 255)
     # A quiet face and a crisp two-tone kickboard at the bottom.
     draw.line((0, 30, 31, 30), fill=baseboard_hi)
     draw.line((0, 31, 31, 31), fill=baseboard)
@@ -85,9 +85,9 @@ def wall_north() -> Image.Image:
 
 
 def wall_side() -> Image.Image:
-    image, draw = canvas((112, 107, 108, 255))
-    baseboard_hi = (101, 94, 91, 255)
-    baseboard = (77, 72, 70, 255)
+    image, draw = canvas((168, 160, 154, 255))  # #A8A09A shaded warm gray
+    baseboard_hi = (138, 130, 124, 255)
+    baseboard = (106, 98, 93, 255)
     draw.line((0, 30, 31, 30), fill=baseboard_hi)
     draw.line((0, 31, 31, 31), fill=baseboard)
     return image

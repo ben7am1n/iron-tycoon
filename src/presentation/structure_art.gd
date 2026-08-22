@@ -3,7 +3,7 @@
 # V3 §3（环境资产密度）/ §4（三层空间）/ §13（密度标准）：
 #   Phase 5 已实现地板材质（FloorArt，V3 §1）与场景装饰精灵（EnvironmentArt +
 #   world_layout，V3 §12）。本工厂补充 Phase 5 未覆盖的「结构元素」—— 立柱、
-#   前台、储物柜、镜子、空调、墙钟、通风口、吊灯、管道、踢脚线、电线槽、
+#   前台、储物柜、镜子、墙钟、吊灯、管道、踢脚线、电线槽、
 #   毛巾架、门、门垫 —— 烘焙成三张图层贴图（BACKGROUND / GAMEPLAY /
 #   FOREGROUND），WorldCanvas 每层每帧只 draw 一次（共 3 draw calls）。
 #
@@ -11,19 +11,19 @@
 #   - 大型结构由多个 pixel cluster 组成，非完整矩形填充（lockers/mirror/
 #     desk/column 表面叠同族色块 + 磨损细节）
 #   - 不规则像素边缘：_fill_irregular 逐行抖动边界 ±2 —— 无完美矩形
-#   - 减少完美直线/重复规则纹理：储物柜门缝错位、通风口栅条间距抖动、
-#     空调出风栅抖动、音箱网孔不规则、门垫/海报/板片边缘 jagged
+#   - 减少完美直线/重复规则纹理：储物柜门缝错位、音箱网孔不规则、
+#     门垫/板片边缘 jagged
 #   - 局部磨损/随机细节：hash 驱动的小色块与磨损像素（确定性，无 RNG）
 #
 # 空间层级（V3 §4）：
-#   - BACKGROUND：储物柜/镜子/空调/墙钟/通风口/管道/踢脚线/电线槽/毛巾架/
+#   - BACKGROUND：储物柜/镜子/墙钟/管道/踢脚线/电线槽/毛巾架/
 #     门/门垫 —— 降对比降饱和（_col 烘焙）
 #   - GAMEPLAY：前台（主要交互对象）—— 更清楚、更鲜艳、轮廓更明确
 #   - FOREGROUND：近景立柱/吊灯 —— 允许轻微遮挡角色
 #
 # 密度标准（V3 §13）：STRUCTURES 表 = 全场景结构清单（含 Phase 5 已绘制的
 # 墙/窗/海报/植物/装饰，painted_by 标记）。density_counts() 统计整表 →
-# large 5-10 / medium 15-30 / small 30-60（测试断言区间）。本层只烘焙
+# large 5-10 / medium 12-30 / small 25-60（测试断言区间）。本层只烘焙
 # painted_by == "self" 的元素（Phase 5 的元素由 Phase 5 world_canvas 绘制，
 # 本层不重复画墙/窗/装饰，避免双画）。
 #
@@ -68,17 +68,12 @@ const STRUCTURES := [
 	{"id": "column_2", "kind": "column", "layer": LAYER_FOREGROUND, "size": "large", "rect": Rect2i(276, 16, 8, 288), "painted_by": "self"},
 	{"id": "plant_large_1", "kind": "plant", "layer": LAYER_FOREGROUND, "size": "large", "rect": Rect2i(0, 244, 32, 32), "painted_by": "phase5"},
 	{"id": "plant_large_2", "kind": "plant", "layer": LAYER_FOREGROUND, "size": "large", "rect": Rect2i(384, 244, 32, 32), "painted_by": "phase5"},
-	# === 中型结构（medium：15-30）===
+	# === 中型结构（medium：12-30）===
 	{"id": "window_1", "kind": "window", "layer": LAYER_BACKGROUND, "size": "medium", "rect": Rect2i(96, 4, 56, 18), "painted_by": "phase5"},
 	{"id": "window_2", "kind": "window", "layer": LAYER_BACKGROUND, "size": "medium", "rect": Rect2i(272, 4, 56, 18), "painted_by": "phase5"},
 	{"id": "door_entrance", "kind": "door", "layer": LAYER_BACKGROUND, "size": "medium", "rect": Rect2i(8, 0, 24, 24), "painted_by": "self"},
 	{"id": "door_exit", "kind": "door", "layer": LAYER_BACKGROUND, "size": "medium", "rect": Rect2i(402, 288, 14, 32), "painted_by": "self"},
-	{"id": "poster_1", "kind": "poster", "layer": LAYER_BACKGROUND, "size": "medium", "rect": Rect2i(168, 1, 24, 24), "painted_by": "phase5"},
-	{"id": "poster_2", "kind": "poster", "layer": LAYER_BACKGROUND, "size": "medium", "rect": Rect2i(220, 1, 24, 24), "painted_by": "phase5"},
-	{"id": "wall_clock", "kind": "wall_clock", "layer": LAYER_BACKGROUND, "size": "medium", "rect": Rect2i(200, 3, 12, 10), "painted_by": "self"},
-	{"id": "ac_unit", "kind": "ac", "layer": LAYER_BACKGROUND, "size": "medium", "rect": Rect2i(244, 2, 28, 12), "painted_by": "self"},
-	{"id": "vent_1", "kind": "vent", "layer": LAYER_BACKGROUND, "size": "medium", "rect": Rect2i(156, 4, 12, 8), "painted_by": "self"},
-	{"id": "vent_2", "kind": "vent", "layer": LAYER_BACKGROUND, "size": "medium", "rect": Rect2i(248, 4, 12, 8), "painted_by": "self"},
+	{"id": "wall_clock", "kind": "wall_clock", "layer": LAYER_BACKGROUND, "size": "medium", "rect": Rect2i(252, 3, 12, 10), "painted_by": "self"},
 	{"id": "water_fountain", "kind": "fountain", "layer": LAYER_BACKGROUND, "size": "medium", "rect": Rect2i(20, 40, 32, 32), "painted_by": "phase5"},
 	{"id": "trash_can", "kind": "trash", "layer": LAYER_BACKGROUND, "size": "medium", "rect": Rect2i(384, 30, 32, 32), "painted_by": "phase5"},
 	{"id": "towel_rack", "kind": "towel_rack", "layer": LAYER_BACKGROUND, "size": "medium", "rect": Rect2i(2, 296, 8, 6), "painted_by": "self"},
@@ -101,11 +96,6 @@ const STRUCTURES := [
 	{"id": "hanging_lamp_3", "kind": "lamp", "layer": LAYER_FOREGROUND, "size": "small", "rect": Rect2i(348, 18, 28, 36), "painted_by": "self"},
 	{"id": "door_mat_entrance", "kind": "door_mat", "layer": LAYER_BACKGROUND, "size": "small", "rect": Rect2i(10, 16, 24, 8), "painted_by": "self"},
 	{"id": "door_mat_exit", "kind": "door_mat", "layer": LAYER_BACKGROUND, "size": "small", "rect": Rect2i(360, 300, 28, 8), "painted_by": "self"},
-	{"id": "wall_hooks_1", "kind": "hooks", "layer": LAYER_BACKGROUND, "size": "small", "rect": Rect2i(2, 140, 8, 2), "painted_by": "self"},
-	{"id": "wall_hooks_2", "kind": "hooks", "layer": LAYER_BACKGROUND, "size": "small", "rect": Rect2i(2, 168, 8, 2), "painted_by": "self"},
-	{"id": "sprinkler_1", "kind": "sprinkler", "layer": LAYER_BACKGROUND, "size": "small", "rect": Rect2i(80, 2, 4, 4), "painted_by": "self"},
-	{"id": "sprinkler_2", "kind": "sprinkler", "layer": LAYER_BACKGROUND, "size": "small", "rect": Rect2i(194, 2, 4, 4), "painted_by": "self"},
-	{"id": "sprinkler_3", "kind": "sprinkler", "layer": LAYER_BACKGROUND, "size": "small", "rect": Rect2i(348, 2, 4, 4), "painted_by": "self"},
 	{"id": "dumbbell_prop", "kind": "dumbbell", "layer": LAYER_FOREGROUND, "size": "small", "rect": Rect2i(128, 232, 32, 32), "painted_by": "phase5"},
 	{"id": "kettlebell_prop", "kind": "kettlebell", "layer": LAYER_FOREGROUND, "size": "small", "rect": Rect2i(96, 252, 12, 10), "painted_by": "self"},
 	{"id": "chalk_box", "kind": "chalk_box", "layer": LAYER_FOREGROUND, "size": "small", "rect": Rect2i(118, 262, 32, 32), "painted_by": "phase5"},
@@ -157,7 +147,7 @@ func layer_texture(layer: String) -> ImageTexture:
 
 ## 密度统计（V3 §13）：{"large": N, "medium": N, "small": N}，从 STRUCTURES 表
 ## 按 size 分类计数（全场景口径，含 Phase 5 已绘制条目）—— 测试断言区间
-## large 5-10 / medium 15-30 / small 30-60。
+## large 5-10 / medium 12-30 / small 25-60。
 func density_counts() -> Dictionary:
 	var counts := {"large": 0, "medium": 0, "small": 0}
 	for s in STRUCTURES:
@@ -336,132 +326,21 @@ func _paint_side_wall_asset(img: Image, tile: Image) -> void:
 			img.set_pixel(u, v, tile.get_pixel(posmod(u, tile.get_width()), sy))
 
 
-## 北墙：WALL_BASE 面 + 稀疏同族 cluster + jagged 墙帽（WALL_TRIM）/踢脚线
-## （WALL_DARK）。行结构（24 行）：fy 0..2 墙帽、3..21 墙面、22..23 踢脚线。
-## 返工2 R1：墙面 cluster 改为手绘短笔触（_paint_wall_stroke）—— 不规则
-## 短线 + 端点抖动 + 色相微差（WALL 族亮/暗变体），像粉刷/手绘石膏纹理，
-## 而非规则噪点圆点。
+## 北墙使用 32px 资产横向平铺，再烘焙少量固定结构装饰。
 func _bake_north_wall() -> Image:
 	var img := Image.create(WALL_NORTH_TEX.x, WALL_NORTH_TEX.y, false, Image.FORMAT_RGBA8)
 	_paint_north_wall_asset(img, _wall_tile_for("north"))
 	_bake_north_wall_structure_decor(img)
 	return img
-	# Legacy brush synthesis below is intentionally unreachable. It remains for
-	# one release as a visual archaeology reference and can no longer render.
-	# V3.1 返工2 R3（三层景深）：墙面基底用 WALL_BASE_FAR（暗一档、偏冷）——
-	# 背景墙面明度低/偏冷（FAIL3 前中后景分离；P1/P3 采样容差内仍属 WALL 族）。
-	img.fill(Palette.WALL_BASE_FAR)
-	# 墙面 cluster：深/浅色块（±0.10 内，保持 WALL_BASE_FAR 可读 —— P1 证据
-	# 采样容差 0.25 兼容）。密度：~8px 间距 —— 任何 80×10 窗口都有 ≥3 色，
-	# 无长纯色段（V3.1「纯色大面积填充」约束）。全部派生自 WALL_BASE_FAR
-	# （返工2 R3：不用亮 WALL_TRIM 打碎远景暗墙 —— 背景保持低明度）。
-	var colors := [
-		Palette.WALL_BASE_FAR.darkened(0.08),
-		Palette.WALL_BASE_FAR.lightened(0.06),
-		Palette.WALL_BASE_FAR.lightened(0.12),
-	]
-	for gy in range(3, 22, 8):
-		for gx in range(0, WALL_NORTH_TEX.x, 8):
-			var h := _hash2(gx * 31 + 4001, gy * 17 + 4001 * 7)
-			var cx := gx + (h % 5) - 2
-			var cy := gy + ((h >> 4) % 5) - 2
-			_paint_wall_stroke(img, cx, cy, 4 + (h >> 8) % 4,
-				colors[(h >> 12) % colors.size()], h ^ 4001)
-	# 墙面磨损：近踢脚线少量暗点（局部磨损，P3）。
-	for i in 10:
-		var h := _hash2(4007 + i * 7, i * 13)
-		var px := int(h % WALL_NORTH_TEX.x)
-		var py := 20 + int((h >> 6) % 3)
-		img.set_pixel(px, py, Palette.WALL_BASE.darkened(0.12))
-	# 墙帽（fy 0..2）—— R3 手绘抖动：顶缘起伏 + 多色 cluster（无 200px+ 直线）。
-	#   顶缘：cap 顶行逐列在 fy=0..2 间变化（hash 驱动，~1/3 列从 fy=1/2 起
-	#   —— 顶缘非完美直线）
-	#   颜色：WALL_BASE_FAR 亮变体混合（返工2 R3：墙帽与墙面同一暗色族 ——
-	#   P1「wall face z=55 ≈ z=100 连续墙面」约束：z=100 采到墙帽，若墙帽仍
-	#   用亮 WALL_TRIM 会与暗墙面拉开 >30 色差，破坏墙面连续断言）
-	#   底缘：fy=3 处 ~1/3 列延伸 cap 色（保留既有 jagged，颜色跟随 cap 色）
-	var cap_colors := [
-		Palette.WALL_BASE_FAR.lightened(0.10),
-		Palette.WALL_BASE_FAR.lightened(0.14),
-		Palette.WALL_BASE_FAR.lightened(0.04),
-	]
-	# 返工6 P4（N1 顶部条带）：顶缘抖动加强 —— 顶行在 fy=0..4 间变化
-	# （原 0..2），且台阶段更长（8px 步进）—— 墙帽顶/天花板交界读作
-	# 手绘参差，不是一条笔直水平带（GPT：y≈54-75 深灰带上下边界笔直）。
-	var cap_x := 0
-	while cap_x < WALL_NORTH_TEX.x:
-		var h := _hash2(cap_x, 4021)
-		var run := 6 + (h % 9)  # 6..14px 台阶段
-		var top := 0
-		if h % 3 == 0:
-			top = 1
-		if h % 5 == 0:
-			top = 2
-		if h % 7 == 0:
-			top = 3
-		if h % 11 == 0:
-			top = 4
-		for x in range(cap_x, mini(cap_x + run, WALL_NORTH_TEX.x)):
-			for fy in range(top, 3):
-				img.set_pixel(x, fy, cap_colors[(h >> (4 + fy)) % cap_colors.size()])
-			if h % 3 == 0:
-				img.set_pixel(x, 3, cap_colors[(h >> 8) % cap_colors.size()])
-			if top >= 3:
-				img.set_pixel(x, 4, cap_colors[(h >> 9) % cap_colors.size()])
-		cap_x += run
-	# 踢脚线（fy 22..23）—— R3 手绘抖动：底缘起伏 + 多色 cluster。
-	#   底缘：踢脚线底行逐列在 fy=22..23 间变化（~1/3 列只到 fy=22 ——
-	#   底缘非完美直线，墙地交界断开）
-	#   颜色：WALL_DARK 与亮/暗变体混合
-	#   顶缘：fy=21 处 ~1/3 列延伸 WALL_DARK（保留既有 jagged）
-	var base_colors := [
-		Palette.WALL_DARK,
-		Palette.WALL_DARK.lightened(0.05),
-		Palette.WALL_DARK.darkened(0.08),
-	]
-	# 返工6 P4（N1）：踢脚线底缘抖动加强（0..1 → 0..2 + 台阶段）——
-	# 墙地交界同样不读作一条笔直水平线。
-	var base_x := 0
-	while base_x < WALL_NORTH_TEX.x:
-		var h := _hash2(base_x, 4031)
-		var run := 6 + (h % 9)
-		var bot := 23
-		if h % 3 == 0:
-			bot = 22
-		if h % 7 == 0:
-			bot = 21
-		for x in range(base_x, mini(base_x + run, WALL_NORTH_TEX.x)):
-			for fy in range(22, bot + 1):
-				img.set_pixel(x, fy, base_colors[(h >> (4 + fy)) % base_colors.size()])
-			if h % 3 == 0:
-				img.set_pixel(x, 21, base_colors[(h >> 8) % base_colors.size()])
-		base_x += run
-	# 返工3 P1（墙面结构装饰烘焙）：挂钟/空调/通风口/喷淋头从 runtime
-	# draw_rect 迁入墙面纹理 —— 一次烘焙替代每帧 ~25 个 draw_rect，
-	# draw call 预算让给新增叙事道具（任务 2/3/4 道具组密度）。
-	# 纹理坐标 = wall-local x - 32（纹理 Rect2(32,0,WALL_NORTH_TEX.x,24)）。
-	# 位置避开 WALL_DECOR 海报（sign 36..52 / timer 52..68 / poster_run
-	# 140..156 / ad_red 164..246 / poster_yoga 260..276 / tv 320..336）
-	# —— 挂钟/空调/通风口/喷淋落在墙面空闲区，不被海报盖住。
-	_bake_north_wall_structure_decor(img)
-	return img
 
 
-## 北墙结构装饰烘焙（返工3 P1）：挂钟/空调/通风口/喷淋头直接写入墙面
-## 纹理（纹理坐标 = wall-local x - 32；y 与 wall-local 一致）。替代
-## world_canvas._draw_north_wall_structure_decor 的逐帧 draw_rect ——
-## 视觉像素一致（同色值），draw call 从 ~25 → 0。
-## 空闲墙带（wall-local）：68..140（挂钟 284? 不 —— 276..320 留给
-## 挂钟/空调；340..416 留给通风口/喷淋）。布局：
-##   挂钟  284..296（空闲带 276..320 东端）
-##   空调  276..304（空闲带 276..320 西端，挂钟东侧）
-##   通风口 100..112 / 340..352
-##   喷淋  124..128 / 360..364 / 380..384
+## 北墙固定结构只烘焙挂钟；通风/空调格栅与喷淋头已撤除以保留墙面留白。
+## 纹理坐标 = wall-local x - 32；y 与 wall-local 一致。
 func _bake_north_wall_structure_decor(img: Image) -> void:
-	# 挂钟（wall-local 284..296，高挂 fy≈3 → 纹理 252..264）
+	# 挂钟（wall-local 252..264，置于红广告与第二扇窗之间的留白带）
 	for y in 10:
 		for x in 12:
-			var tx := 252 + x
+			var tx := 220 + x
 			var ty := 3 + y
 			if tx >= img.get_width() or ty >= img.get_height():
 				continue
@@ -471,57 +350,13 @@ func _bake_north_wall_structure_decor(img: Image) -> void:
 				img.set_pixel(tx, ty, Palette.CLOCK_FACE)
 	# 指针（偏心 —— 不完全对称）
 	for i in 5:
-		img.set_pixel(257, 5 + i, Palette.CLOCK_HAND)
+		img.set_pixel(225, 5 + i, Palette.CLOCK_HAND)
 	for i in 4:
-		img.set_pixel(257 + i, 8, Palette.CLOCK_HAND)
-	# 空调（wall-local 276..304 → 纹理 244..272）
-	for y in 12:
-		for x in 28:
-			var tx := 244 + x
-			var ty := 2 + y
-			if tx >= img.get_width() or ty >= img.get_height():
-				continue
-			var c := Palette.AC_BODY
-			if y >= 2 and y <= 4 and x >= 2 and x <= 25:
-				c = Palette.AC_VENT
-			img.set_pixel(tx, ty, c)
-	for i in 3:
-		for x in 24:
-			var tx := 246 + x
-			var ty := 4 + i * 3
-			if tx < img.get_width() and ty < img.get_height():
-				img.set_pixel(tx, ty, Palette.AC_VENT)
-	img.set_pixel(266, 3, Palette.ACCENT_YELLOW)
-	# 通风口（wall-local 100..112 → 纹理 68..80；340..352 → 308..320）
-	for vx: int in [68, 308]:
-		for y in 8:
-			for x in 12:
-				var tx: int = vx + x
-				var ty := 4 + y
-				if tx >= img.get_width() or ty >= img.get_height():
-					continue
-				img.set_pixel(tx, ty, Palette.AC_VENT.darkened(0.2))
-		for i in 5:
-			for y in 4:
-				var tx: int = vx + 2 + i * 2
-				var ty := 6 + y
-				if tx < img.get_width() and ty < img.get_height():
-					img.set_pixel(tx, ty, Palette.AC_BODY)
-	# 喷淋头（wall-local 124/360/380 → 纹理 92/328/348）
-	for sx: int in [92, 328, 348]:
-		for y in 4:
-			for x in 4:
-				var tx: int = sx + x
-				var ty := 2 + y
-				if tx >= img.get_width() or ty >= img.get_height():
-					continue
-				img.set_pixel(tx, ty, Palette.AC_VENT.darkened(0.3))
-		img.set_pixel(sx + 1, 3, Palette.CHARCOAL)
+		img.set_pixel(225 + i, 8, Palette.CLOCK_HAND)
 
 
 ## 侧墙（西/东共用底纹，装饰分侧烘焙）：u=沿墙世界 y（288 宽）v=墙高 z
-## （110 行）；行结构：v 0..5 踢脚线、6..103 墙面、104..109 墙帽 —— 与
-## _side_wall_transform 一致。返工2 R1：墙面手绘短笔触（同北墙）。
+## （110 行）；与 _side_wall_transform 一致。
 ## 返工3 P1：kind 区分西/东，装饰（镜/毛巾架/管道/海报/置物架/挂钟）
 ## 直接烘焙进对应侧墙纹理 —— 替代 world_canvas 逐帧 draw_rect（每帧
 ## ~13 个 draw_rect → 0，draw call 预算让给叙事道具）。纹理 u 轴 =
@@ -533,72 +368,6 @@ func _bake_side_wall(kind: String) -> Image:
 		_bake_west_wall_decor(img, 32)
 	else:
 		_bake_east_wall_decor(img, 0)
-	return img
-	# Legacy brush synthesis below is intentionally unreachable. It remains for
-	# one release as a visual archaeology reference and can no longer render.
-	# V3.1 返工2 R3（三层景深）：侧墙同北墙 —— 背景墙面明度低/偏冷。
-	img.fill(Palette.WALL_BASE_FAR)
-	var colors := [
-		Palette.WALL_BASE_FAR.darkened(0.08),
-		Palette.WALL_BASE_FAR.lightened(0.06),
-		Palette.WALL_BASE_FAR.lightened(0.12),
-	]
-	for gy in range(6, 104, 8):
-		for gx in range(0, WALL_SIDE_TEX.x, 8):
-			var h := _hash2(gx * 31 + 4041, gy * 17 + 4041 * 7)
-			var cx := gx + (h % 5) - 2
-			var cy := gy + ((h >> 4) % 5) - 2
-			_paint_wall_stroke(img, cx, cy, 4 + (h >> 8) % 4,
-				colors[(h >> 12) % colors.size()], h ^ 4041)
-	for i in 16:
-		var h := _hash2(4047 + i * 7, i * 13)
-		var px := int(h % WALL_SIDE_TEX.x)
-		var py := 96 + int((h >> 6) % 8)
-		img.set_pixel(px, py, Palette.WALL_BASE.darkened(0.12))
-	# 墙帽（v 104..109）—— R3 手绘抖动：顶缘起伏 + 多色 cluster。
-	#   顶缘：cap 顶行逐列在 v=104..106 间变化（非完美直线）
-	#   底缘：v=103 处 ~1/3 列延伸 cap 色（jagged）
-	#   颜色：WALL_BASE_FAR 亮变体（返工2 R3：墙帽与墙面同族，P1 连续墙面）
-	var cap_colors := [
-		Palette.WALL_BASE_FAR.lightened(0.10),
-		Palette.WALL_BASE_FAR.lightened(0.14),
-		Palette.WALL_BASE_FAR.lightened(0.04),
-	]
-	for u in WALL_SIDE_TEX.x:
-		var h := _hash2(u, 4051)
-		var top := 104
-		if h % 3 == 0:
-			top = 105
-		if h % 5 == 0:
-			top = 106
-		for v in range(top, 110):
-			img.set_pixel(u, v, cap_colors[(h >> (4 + v)) % cap_colors.size()])
-		if h % 3 == 0:
-			img.set_pixel(u, 103, cap_colors[(h >> 8) % cap_colors.size()])
-	# 踢脚线（v 0..5）—— R3 手绘抖动：底缘起伏 + 多色 cluster。
-	#   底缘：踢脚线底行逐列在 v=0..1 间变化（非完美直线）
-	#   顶缘：v=6 处 ~1/3 列延伸 WALL_DARK（jagged）
-	var base_colors := [
-		Palette.WALL_DARK,
-		Palette.WALL_DARK.lightened(0.05),
-		Palette.WALL_DARK.darkened(0.08),
-	]
-	for u in WALL_SIDE_TEX.x:
-		var h := _hash2(u, 4061)
-		var bot := 0
-		if h % 3 == 0:
-			bot = 1
-		for v in range(bot, 6):
-			img.set_pixel(u, v, base_colors[(h >> (4 + v)) % base_colors.size()])
-		if h % 3 == 0:
-			img.set_pixel(u, 6, base_colors[(h >> 8) % base_colors.size()])
-	# 返工3 P1：装饰烘焙（分侧）。纹理 u = 墙 y - y0（西 y0=32 / 东 y0=0）。
-	var offset := 0
-	if kind == "west":
-		offset = 32
-		_bake_west_wall_decor(img, offset)
-	else:
-		_bake_east_wall_decor(img, offset)
 	return img
 
 
@@ -702,14 +471,8 @@ func _paint_structure(img: Image, s: Dictionary) -> void:
 			_paint_door(img, rect)
 		"door_mat":
 			_paint_door_mat(img, rect)
-		"poster":
-			_paint_poster(img, rect)
 		"wall_clock":
 			_paint_clock(img, rect)
-		"ac":
-			_paint_ac(img, rect)
-		"vent":
-			_paint_vent(img, rect)
 		"speaker":
 			_paint_speaker(img, rect)
 		"mirror":
@@ -752,10 +515,6 @@ func _paint_structure(img: Image, s: Dictionary) -> void:
 			_paint_bottle(img, rect)
 		"cup":
 			_paint_cup(img, rect)
-		"hooks":
-			_paint_hooks(img, rect)
-		"sprinkler":
-			_paint_sprinkler(img, rect)
 		"plate":
 			_paint_plate(img, rect)
 		"towel":
@@ -822,40 +581,6 @@ func _paint_blob(img: Image, cx: int, cy: int, r: int, color: Color, seed: int) 
 			var jit := (_hash2(seed * 13 + bucket * 7, bucket * 3 + seed) % 7) - 3
 			if d <= float(r) + float(jit) * 0.5:
 				img.set_pixel(x, y, color)
-
-
-## 手绘短笔触（返工2 R1）：墙面/天花板用 —— 短线段 + 端点抖动 + 笔触宽
-## 2px。方向 8 桶 hash 抖动（多为斜/竖 —— 粉刷/石膏笔触）。确定性：
-## 同输入永远同形状。与 floor_art._paint_stroke 独立实现（各自本地空间
-## 与调用约定，避免跨脚本依赖）。
-func _paint_wall_stroke(img: Image, x: int, y: int, length: int, color: Color,
-		seed: int) -> void:
-	var angle := float((seed % 8) * 45) + float((seed >> 4) % 5) * 3.0 - 6.0
-	var rad := deg_to_rad(angle)
-	var dx := cos(rad)
-	var dy := sin(rad)
-	var x0 := x
-	var y0 := y
-	var x1 := x + int(round(dx * length))
-	var y1 := y + int(round(dy * length))
-	# 端点抖动 ±2（手绘不齐）
-	x1 += (_hash2(seed + 101, x) % 5) - 2
-	y1 += (_hash2(seed + 203, y) % 5) - 2
-	# 笔触宽 2px：垂直方向微移（刷毛宽度）
-	var steps := maxi(1, length)
-	for i in steps + 1:
-		var t := float(i) / float(steps)
-		var px := int(round(lerpf(x0, x1, t)))
-		var py := int(round(lerpf(y0, y1, t)))
-		px += (_hash2(seed + i * 7, x + y) % 3) - 1
-		py += (_hash2(seed + i * 13, y - x) % 3) - 1
-		for w in 2:
-			var ox := (_hash2(seed + i * 17 + w, px + py) % 3) - 1
-			var oy := (_hash2(seed + i * 19 + w, py - px) % 3) - 1
-			var wx := px + ox
-			var wy := py + oy
-			if wx >= 0 and wy >= 0 and wx < img.get_width() and wy < img.get_height():
-				img.set_pixel(wx, wy, color)
 
 
 ## 断裂 jagged 水平缝（P3 无完美直线）：分段 + 垂直偏移 + 随机跳过。
@@ -938,17 +663,6 @@ func _paint_door_mat(img: Image, r: Rect2i) -> void:
 	_jagged_hline(img, r.position.x, r.position.x + r.size.x, r.position.y + r.size.y - 1, _col(Palette.DOOR_MAT.darkened(0.12)), 53)
 
 
-## 海报：不规则边框（非等宽）+ 暖色 accent 主色 + 底部暗区。
-func _paint_poster(img: Image, r: Rect2i) -> void:
-	_fill_irregular(img, r, _col(Palette.WALL_DARK), 61)
-	var accents := [Palette.ACCENT_YELLOW, Palette.ACCENT_ORANGE, Palette.ACCENT_CYAN]
-	var accent: Color = accents[r.position.x % accents.size()]
-	_fill_irregular(img, Rect2i(r.position.x + 1, r.position.y + 1, r.size.x - 2, r.size.y - 2), _col(accent), 62)
-	var base_h := maxi(1, r.size.y / 3)
-	var base_y := r.position.y + r.size.y - base_h
-	_fill_irregular(img, Rect2i(r.position.x + 1, base_y, r.size.x - 2, base_h), _col(accent.darkened(0.35)), 63)
-
-
 ## 墙钟：表盘（不规则）+ 指针（偏心 —— 不完全对称）。
 func _paint_clock(img: Image, r: Rect2i) -> void:
 	_fill_irregular(img, r, _col(Palette.CLOCK_FACE), 71)
@@ -958,26 +672,6 @@ func _paint_clock(img: Image, r: Rect2i) -> void:
 		img.set_pixel(cx + int(d.x), cy + int(d.y), _col(Palette.CLOCK_HAND))
 	_jagged_vline(img, cx, r.position.y + 1, cy, _col(Palette.CLOCK_HAND), 72)
 	_jagged_hline(img, cx, cx + r.size.x / 2, cy, _col(Palette.CLOCK_HAND), 73)
-
-
-## 空调：暖白机身（不规则）+ 出风栅（间距抖动）+ 显示灯。
-func _paint_ac(img: Image, r: Rect2i) -> void:
-	_fill_irregular(img, r, _col(Palette.AC_BODY), 81)
-	var y := r.position.y + 3
-	while y < r.position.y + r.size.y - 2:
-		_jagged_hline(img, r.position.x + 1, r.position.x + r.size.x - 1, y, _col(Palette.AC_VENT), y * 5)
-		y += 2 + (_hash2(r.position.x, y) % 3)
-	img.set_pixel(r.position.x + r.size.x - 3, r.position.y + 2, _col(Palette.ACCENT_YELLOW))
-
-
-## 通风口：边框（不规则）+ 栅条（间距抖动）。
-func _paint_vent(img: Image, r: Rect2i) -> void:
-	_fill_irregular(img, r, _col(Palette.AC_VENT.darkened(0.2)), 91)
-	_jagged_hline(img, r.position.x, r.position.x + r.size.x, r.position.y, _col(Palette.WALL_DARK), 92)
-	var x := r.position.x + 1
-	while x < r.position.x + r.size.x:
-		_jagged_vline(img, x, r.position.y + 1, r.position.y + r.size.y - 1, _col(Palette.AC_BODY), x * 7)
-		x += 1 + (_hash2(x, r.position.y) % 3)
 
 
 ## 音箱：近黑箱体（不规则）+ 网孔点（不规则散布，非规则网格）。
@@ -1233,17 +927,6 @@ func _paint_bottle(img: Image, r: Rect2i) -> void:
 func _paint_cup(img: Image, r: Rect2i) -> void:
 	_fill_irregular(img, r, _col(Palette.CLOCK_FACE.darkened(0.25)), 301)
 	_jagged_hline(img, r.position.x, r.position.x + r.size.x, r.position.y, _col(Palette.CLOCK_FACE.darkened(0.1)), 302)
-
-
-## 墙钩：小金属点。
-func _paint_hooks(img: Image, r: Rect2i) -> void:
-	_fill_irregular(img, r, _col(Palette.METAL_HIGHLIGHT.darkened(0.1)), 311)
-
-
-## 喷淋头：小圆点 + 中心孔。
-func _paint_sprinkler(img: Image, r: Rect2i) -> void:
-	_fill_irregular(img, r, _col(Palette.AC_VENT.darkened(0.3)), 321)
-	img.set_pixel(r.position.x + 1, r.position.y + 1, _col(Palette.CHARCOAL))
 
 
 ## 配重片：金属圆片（不规则 blob，非同心矩形）。

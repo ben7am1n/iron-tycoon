@@ -127,11 +127,11 @@ func _test_layer_textures_via_canvas() -> void:
 
 func _test_layer_contract() -> void:
 	print("\n-- V3 §4 图层常量契约（与 _draw() 顺序一致）--")
-	# BACKGROUND 结构（储物柜/镜子/空调/墙钟/踢脚线/电线槽/管道）必须与
+	# BACKGROUND 结构（储物柜/镜子/墙钟/踢脚线/电线槽/管道）必须与
 	# 环境背景同层语义：低对比。GAMEPLAY 前台/立柱必须可遮挡或醒目。
 	var art = StructureArtScript.new()
 	var bg_ids: Array = art.structure_ids_in_layer(StructureArtScript.LAYER_BACKGROUND)
-	for must in ["lockers", "mirror", "ac_unit", "wall_clock", "baseboard_north", "cable_duct_north", "pipe_vertical"]:
+	for must in ["lockers", "mirror", "wall_clock", "baseboard_north", "cable_duct_north", "pipe_vertical"]:
 		_check(bg_ids.has(must), "BACKGROUND 层含 %s（低对比结构）" % must)
 	var gp_ids: Array = art.structure_ids_in_layer(StructureArtScript.LAYER_GAMEPLAY)
 	_check(gp_ids.has("front_desk"), "GAMEPLAY 层含 front_desk（前台原色醒目）")

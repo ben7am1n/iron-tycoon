@@ -207,22 +207,14 @@ const DECOR := {
 	"plant_fore_5": Vector2i(383, 253),
 }
 
-## 顶墙挂饰（海报/计时器/招牌/电视）：prop_id -> 墙上锚点（24px 精灵，贴墙）。
-## 返工6 P4（N1）：各挂饰 y 锚点错落（1..4）—— 手挂不同高度，底部不再
-## 对齐成一条水平直线（GPT：海报底缘 y≈144 读作整齐横梁/分区线）。
+## 顶墙挂饰：保留入口导视、计时器、电视与一个红色主视觉；其余海报撤下，
+## 让两扇窗之间和墙角保有连续留白。
 const WALL_DECOR := {
-	"poster_run": Vector2i(140, 2),
-	"poster_yoga": Vector2i(260, 4),
 	"timer_bike": Vector2i(52, 1),
 	"sign_entrance": Vector2i(36, 3),
 	"tv": Vector2i(320, 1),
-	# V3.1 R4/R5 精修：红色促销横幅占据顶墙中部，成为墙面主焦点。
+	# 红色促销横幅是北墙唯一海报类主焦点。
 	"ad_red": Vector2i(164, 1),
-	# 返工3 P1（中央通道「海报墙」）：海报墙贴在北墙空闲带 ——
-	# poster_wall_1 在 ad_red 东侧（244..260，贴 ad_red 右缘 2px 拼贴）、
-	# poster_wall_2 在 timer_bike 东侧（68..84）。等待区上方墙面叙事密集。
-	"poster_wall_1": Vector2i(244, 2),
-	"poster_wall_2": Vector2i(68, 4),
 }
 
 # === V3 §6 / V3.1 R4 灯光锚点 ===

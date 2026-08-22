@@ -9,8 +9,8 @@
 ##
 ## 绘制顺序（2.5D 空间层级，art-bible-25d §1 + V3 §4 三层空间 + Phase 4 双层会员）：
 ##   地板材质（FloorArt 烘焙贴图，V3 §1）→ 环境背景（墙/窗/海报/装饰，V3 §3/
-##   §12 BACKGROUND 低对比）→ 结构层 BACKGROUND（储物柜/镜子/空调/墙钟/
-##   通风口/门/踢脚线/电线槽/管道，V3 §3/§4 低对比，画在墙面上方）→ 网格线 →
+##   §12 BACKGROUND 低对比）→ 结构层 BACKGROUND（储物柜/镜子/墙钟/
+##   门/踢脚线/电线槽/管道，V3 §3/§4 低对比，画在墙面上方）→ 网格线 →
 ##   结构层 GAMEPLAY（前台）→ 会员中景（walk/idle/tired/satisfied）→ 设备前景 →
 ##   使用中的会员（叠加在设备上 —— V3 §8 与设备互动姿态）→ 结构层 FOREGROUND
 ##   （立柱/吊灯，V3 §4 可轻微遮挡）→ 环境前景（大植物，V3 §4 FOREGROUND 可
@@ -488,8 +488,8 @@ func _draw_floor_zones() -> void:
 ## 结构层（V3 §3/§4/§13，Phase 2 StructureArt）：单次 draw_texture_rect 烘焙
 ## 贴图。BACKGROUND 低对比（降对比降饱和）、GAMEPLAY 前台原色鲜艳、FOREGROUND
 ## 立柱/吊灯允许轻微遮挡 —— 顺序由 _draw() 控制（见文件头注释）。
-## V3.1 P1：BACKGROUND 在 floor pass 内经地板投影 —— 墙上挂饰（镜子/空调/
-## 挂钟/通风口）落在墙基附近会被随后绘制的墙面盖住（隐藏），地面结构
+## V3.1 P1：BACKGROUND 在 floor pass 内经地板投影 —— 墙上挂饰（镜子/挂钟）
+## 落在墙基附近会被随后绘制的墙面盖住（隐藏），地面结构
 ## （踢脚线/电线槽/门垫/管道/出口招牌）正确落在墙面上可见。
 func _draw_structure_layer(layer: String) -> void:
 	var tex: ImageTexture = _structure_art.layer_texture(layer)
@@ -733,13 +733,13 @@ func _draw_north_wall_decor() -> void:
 			draw_texture_rect(tex, Rect2(pos, Vector2(size) * 0.5), false)
 			if prop_id == "tv":
 				_draw_tv_screen(pos, tick)
-	# 结构元素（挂钟/空调/通风口/喷淋）—— 返工3 P1 起烘焙进北墙纹理
+	# 挂钟烘焙进北墙纹理
 	# （structure_art._bake_north_wall_structure_decor），不再逐帧 draw_rect
-	# （draw call 预算让给新增叙事道具）。
+	# （draw call 预算让给场景主体）。
 	draw_set_transform_matrix(Transform2D.IDENTITY)
 
 
-## 北墙结构装饰：挂钟/空调/通风口/喷淋头 —— 返工3 P1 起烘焙进北墙
+## 北墙结构装饰：挂钟烘焙进北墙
 ## 墙面纹理（structure_art._bake_north_wall_structure_decor，坐标同源），
 ## 不再逐帧 draw_rect（draw call 预算让给新增叙事道具）。
 

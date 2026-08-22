@@ -3,10 +3,10 @@
 #
 # 验证 src/presentation/structure_art.gd：
 #   - V3 §13 密度分类：STRUCTURES 表 size 统计落在区间
-#     large 5-10 / medium 15-30 / small 30-60（全场景口径）
+#     large 5-10 / medium 12-30 / small 25-60（减饰后的全场景口径）
 #   - 三层空间（V3 §4）：BACKGROUND / GAMEPLAY / FOREGROUND 均非空
-#   - 必需结构元素齐全（V3 §3 清单：立柱/前台/储物柜/饮水机/吊灯/海报/
-#     植物/镜子/通风口/空调/墙钟/踢脚线/电线槽/管道/门/毛巾架）
+#   - 必需结构元素齐全（V3 §3 清单：立柱/前台/储物柜/饮水机/吊灯/
+#     植物/镜子/墙钟/入口招牌/踢脚线/电线槽/管道/门/毛巾架）
 #   - 结构矩形全部在世界像素空间内（0..416 × 0..320）
 #   - painted_by 分工：self 元素非空，且与 phase5 元素不冲突（同 id 不重复）
 #   - 纹理可烘焙：三图层尺寸 = 世界尺寸，无崩溃；BACKGROUND 层降对比
@@ -67,15 +67,15 @@ func _check(cond: bool, msg: String) -> void:
 # === V3 §13 密度分类 ===
 
 func _test_density_ranges() -> void:
-	print("\n-- V3 §13 密度分类（large 5-10 / medium 15-30 / small 30-60）--")
+	print("\n-- V3 §13 减饰密度（large 5-10 / medium 12-30 / small 25-60）--")
 	var art = StructureArtScript.new()
 	var counts: Dictionary = art.density_counts()
 	_check(int(counts["large"]) >= 5 and int(counts["large"]) <= 10,
 		"large count %d in [5,10]" % int(counts["large"]))
-	_check(int(counts["medium"]) >= 15 and int(counts["medium"]) <= 30,
-		"medium count %d in [15,30]" % int(counts["medium"]))
-	_check(int(counts["small"]) >= 30 and int(counts["small"]) <= 60,
-		"small count %d in [30,60]" % int(counts["small"]))
+	_check(int(counts["medium"]) >= 12 and int(counts["medium"]) <= 30,
+		"medium count %d in [12,30]" % int(counts["medium"]))
+	_check(int(counts["small"]) >= 25 and int(counts["small"]) <= 60,
+		"small count %d in [25,60]" % int(counts["small"]))
 	var total := int(counts["large"]) + int(counts["medium"]) + int(counts["small"])
 	_check(total >= 50, "total structures %d >= 50（画面丰富）" % total)
 
@@ -112,13 +112,11 @@ func _test_required_structures() -> void:
 		"trash_can",                   # 垃圾桶
 		"towel_rack",                  # 毛巾架
 		"fire_hydrant",                # 消防栓
-		"vent_1", "vent_2",            # 通风口
 		"hanging_lamp_1", "hanging_lamp_2", "hanging_lamp_3",  # 吊灯
-		"poster_1", "poster_2",        # 海报
 		"plant_large_1", "plant_large_2",  # 植物
 		"mirror",                      # 镜子
-		"ac_unit",                     # 空调
 		"wall_clock",                  # 墙钟
+		"sign_entrance",               # 入口招牌
 		"cable_duct_north", "cable_duct_west", "cable_duct_east",  # 电线槽
 		"baseboard_north", "baseboard_west", "baseboard_east",  # 踢脚线
 		"pipe_vertical", "pipe_horizontal",  # 管道
@@ -131,6 +129,7 @@ func _test_required_structures() -> void:
 		if not ids.has(id):
 			missing.append(id)
 	_check(missing.is_empty(), "必需结构齐全（缺 %s）" % str(missing))
+	_check(WorldLayout.WALL_DECOR.has("ad_red"), "北墙保留唯一海报主焦点 ad_red")
 
 
 ## V3.1 R4：光源物件 rect 与投光布局必须是同一物件，不能各自漂移。
@@ -249,9 +248,15 @@ func _test_wall_asset_pipeline() -> void:
 	var east: Image = art.wall_face_texture("east").get_image()
 	_check(east.get_pixel(5, 50) == east.get_pixel(37, 50),
 		"side wall clean face repeats every 32px")
-	for path in ["res://assets/tiles/wall_north.png", "res://assets/tiles/wall_side.png"]:
+	var expected_base_colors := {
+		"res://assets/tiles/wall_north.png": Color8(181, 172, 163),
+		"res://assets/tiles/wall_side.png": Color8(168, 160, 154),
+	}
+	for path in expected_base_colors:
 		var raw := Image.new()
 		_check(raw.load(path) == OK, "%s raw PNG decodes" % path)
+		_check(raw.get_pixel(0, 0) == expected_base_colors[path],
+			"%s uses warm light-gray base %s" % [path, expected_base_colors[path].to_html(false)])
 		var counts: Dictionary = {}
 		for y in raw.get_height():
 			for x in raw.get_width():
