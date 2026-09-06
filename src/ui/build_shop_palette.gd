@@ -920,3 +920,16 @@ func _zone_of(eq_id: String) -> String:
 	if def == null or def.zone_membership.is_empty():
 		return ""
 	return str(def.zone_membership[0])
+
+
+## Clears unsaved drag and purchase feedback after a successful load (GA-002).
+func reset_transient_state() -> void:
+	_drag_in_flight = false
+	_drag_equipment_id = ""
+	_confirm_cue_active = false
+	_return_cue_active = false
+	_cue_time_remaining = 0.0
+	for tile in _tiles.values():
+		tile.set_drag_active(false)
+	_apply_cue_visual()
+	_refresh_all()

@@ -8,6 +8,10 @@ Accepted
 ## Date
 2026-07-21
 
+## Implementation amendment — 2026-09-06
+
+Authorized foundation repair for the community-story prototype: GridSystem placement records persist the catalog equipment ID alongside geometry and level. Derived Placement/Selection/UI mappings rebuild from this identity. Catalog-aware load preflight rejects unknown or geometrically inconsistent IDs before mutation; identity-free legacy records may recover only when exactly one definition matches, otherwise loading fails explicitly. Satisfaction must serialize pending use-start inputs because recomputing them from current congestion changes history. This extends payload fields without adding a second state owner. Save entry writes use a temporary file followed by replacement after successful write/flush; errors preserve the prior valid file. Required runtime JSON resources are checked before constructing a playable scene, and smoke failure exits nonzero.
+
 ## Engine Compatibility
 
 | Field | Value |

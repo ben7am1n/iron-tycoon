@@ -305,6 +305,7 @@ func _test_file1_store_string_failure_errors() -> void:
 	var rig := _make_rig(21)
 	var factory := MockFactory.new()
 	rig["save_load"].set("_file_access_factory", Callable(factory, "open_write"))
+	rig["save_load"].set("_file_replace_factory", func(_source: String, _destination: String) -> int: return OK)
 	# open_write() 尚未调用，handle 为 Nil —— 先创建再注入失败结果
 	factory.handle = MockHandle.new()
 	factory.handle.store_result = false  # simulate disk-full / failed write
@@ -320,6 +321,7 @@ func _test_file1_store_string_success_ok() -> void:
 	var rig := _make_rig(23)
 	var factory := MockFactory.new()
 	rig["save_load"].set("_file_access_factory", Callable(factory, "open_write"))
+	rig["save_load"].set("_file_replace_factory", func(_source: String, _destination: String) -> int: return OK)
 	var err: String = rig["save_load"].call("save_to_file", "sl004_okwrite")
 	_check(err == "", "successful mock write returns empty error (got: '%s')" % err)
 
@@ -330,6 +332,7 @@ func _test_file1_open_failure_errors() -> void:
 	var factory := MockFactory.new()
 	factory.return_null = true
 	rig["save_load"].set("_file_access_factory", Callable(factory, "open_write"))
+	rig["save_load"].set("_file_replace_factory", func(_source: String, _destination: String) -> int: return OK)
 	var err: String = rig["save_load"].call("save_to_file", "sl004_openfail")
 	_check(err != "", "open failure produces an error")
 	_check(err.find("failed to open") != -1, "error mentions the open failure (got: %s)" % err)
@@ -342,6 +345,7 @@ func _test_file2_flush_before_close_order() -> void:
 	var rig := _make_rig(31)
 	var factory := MockFactory.new()
 	rig["save_load"].set("_file_access_factory", Callable(factory, "open_write"))
+	rig["save_load"].set("_file_replace_factory", func(_source: String, _destination: String) -> int: return OK)
 	var err: String = rig["save_load"].call("save_to_file", "sl004_order")
 	_check(err == "", "mock write succeeded")
 	var order: Array = factory.handle.order
@@ -356,6 +360,7 @@ func _test_file2_close_still_called_on_write_failure() -> void:
 	var rig := _make_rig(37)
 	var factory := MockFactory.new()
 	rig["save_load"].set("_file_access_factory", Callable(factory, "open_write"))
+	rig["save_load"].set("_file_replace_factory", func(_source: String, _destination: String) -> int: return OK)
 	# open_write() 尚未调用，handle 为 Nil —— 先创建再注入失败结果
 	factory.handle = MockHandle.new()
 	factory.handle.store_result = false

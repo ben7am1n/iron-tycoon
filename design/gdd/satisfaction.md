@@ -1,5 +1,7 @@
 # Satisfaction
 
+> **2026-09-06 新模式引用**：[社区教练冒险与营业切片](gym-adventure.md)已形成设计基线，尚未实施。本文件保留原沙盒契约；新模式的阶段、名册、课程、互斥计费和持久状态覆盖范围见该GDD的Dependencies与[实施差异](../../docs/plans/2026-09-06-gym-adventure/implementation.md)。
+
 > **Status**: In Design
 > **Author**: user + agents
 > **Last Updated**: 2026-07-20

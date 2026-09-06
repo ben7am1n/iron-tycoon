@@ -376,7 +376,7 @@ func _to_placed_instance(instance_id: int) -> PlacedInstance:
 	var record: PlacementRecord = _reverse_index[instance_id]
 	var anchor := _min_offset(record.footprint_cells + record.access_cells)
 	return PlacedInstance.new(
-		instance_id, "", anchor, record.rotation,
+		instance_id, record.equipment_id, anchor, record.rotation,
 		record.footprint_cells, record.access_cells
 	)
 
@@ -676,7 +676,7 @@ func clear_access(cell: Vector2i, occupant_id: int) -> void:
 ## signal are never emitted), in release builds the engine's own packed
 ## array bounds check guards the write. The ACs do not exercise this path
 ## — commit() is only ever called with can_place()-validated cells.
-func commit(instance_id: int, footprint_cells: Array[Vector2i], access_cells: Array[Vector2i], rotation: Rotation) -> void:
+func commit(instance_id: int, footprint_cells: Array[Vector2i], access_cells: Array[Vector2i], rotation: Rotation, equipment_id: String = "") -> void:
 	if not _assert_initialized():
 		return
 	# AC-C7.7: negative ids rejected BEFORE any write (also protects the
@@ -714,7 +714,7 @@ func commit(instance_id: int, footprint_cells: Array[Vector2i], access_cells: Ar
 
 	# Reverse index — the single source of truth for serialization. The
 	# record duplicates its inputs (see placement_record.gd header).
-	var record := PlacementRecord.new(footprint_cells, access_cells, rotation)
+	var record := PlacementRecord.new(footprint_cells, access_cells, rotation, 1, equipment_id)
 	_reverse_index[instance_id] = record
 
 	# Grid mutation stamp — ONE bump per successful commit (TR-MS-007). The
@@ -844,7 +844,7 @@ func _deep_copy_for_snapshot() -> GridSystem:
 	for instance_id in _reverse_index:
 		var record: PlacementRecord = _reverse_index[instance_id]
 		copy._reverse_index[instance_id] = PlacementRecord.new(
-			record.footprint_cells, record.access_cells, record.rotation, record.level
+			record.footprint_cells, record.access_cells, record.rotation, record.level, record.equipment_id
 		)
 	return copy
 
@@ -903,6 +903,8 @@ func serialize() -> Dictionary:
 			"access_cells": ac,
 			"rotation": rec.rotation,
 		}
+		if not rec.equipment_id.is_empty():
+			serialized_record["equipment_id"] = rec.equipment_id
 		# Level 1 is implicit so pre-A2 saves and byte-identical base-grid tests
 		# keep their established shape. Upgraded instances carry the field.
 		if rec.level > 1:
@@ -1047,6 +1049,9 @@ func deserialize(data: Dictionary, buildable_snapshot: PackedByteArray, mode: St
 		if not _is_legal_rotation(rotation):
 			return DeserializeResult.fail(ERR_CORRUPTED_SAVE, "record %d has illegal rotation %d (must be 0/90/180/270)" % [i, rotation])
 
+		if record.has("equipment_id") and (not record["equipment_id"] is String or str(record["equipment_id"]).is_empty()):
+			return DeserializeResult.fail(ERR_CORRUPTED_SAVE, "record %d equipment_id must be a nonempty String" % i)
+
 		# A2 backward compatibility: legacy records omit level and load as L1.
 		# If present it must be a whole positive integer; fractional JSON values
 		# are rejected rather than silently truncated.
@@ -1121,7 +1126,7 @@ func deserialize(data: Dictionary, buildable_snapshot: PackedByteArray, mode: St
 			var instance_id := int(record["instance_id"])
 			var fp := _cells_from_variant_array(record["footprint_cells"])
 			var ac := _cells_from_variant_array(record["access_cells"])
-			_write_record(instance_id, fp, ac, int(record["rotation"]), int(record.get("level", 1)))
+			_write_record(instance_id, fp, ac, int(record["rotation"]), int(record.get("level", 1)), str(record.get("equipment_id", "")))
 			all_fp.append_array(fp)
 			all_ac.append_array(ac)
 
@@ -1192,7 +1197,8 @@ func _write_record(
 	footprint_cells: Array[Vector2i],
 	access_cells: Array[Vector2i],
 	rotation: int,
-	level: int = 1
+	level: int = 1,
+	equipment_id: String = ""
 ) -> void:
 	for fc in footprint_cells:
 		_occupant_id[flat_index(fc)] = instance_id
@@ -1203,7 +1209,7 @@ func _write_record(
 				arr.append(instance_id)
 		else:
 			_access_ids[ac] = [instance_id]
-	_reverse_index[instance_id] = PlacementRecord.new(footprint_cells, access_cells, rotation, level)
+	_reverse_index[instance_id] = PlacementRecord.new(footprint_cells, access_cells, rotation, level, equipment_id)
 
 # === Geometry Helpers ===
 

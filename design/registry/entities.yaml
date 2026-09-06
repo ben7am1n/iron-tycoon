@@ -37,7 +37,7 @@
 #   Each entry: name, status, source, referenced_by[], attributes{}, added, revised
 
 version: 1
-last_updated: 2026-07-19
+last_updated: 2026-09-06
 
 # ─── ENTITIES ────────────────────────────────────────────────────────────────
 # Named game-world objects: enemies, NPCs, characters, factions, bosses.
@@ -48,7 +48,35 @@ last_updated: 2026-07-19
 # Attribute fields: any key stats that could appear in another GDD
 #   (health, damage, drops, faction, etc.)
 
-entities: []
+entities:
+  - name: coach_cheng
+    status: active
+    source: design/gdd/gym-adventure.md
+    referenced_by: [docs/plans/2026-09-06-gym-adventure/README.md, docs/plans/2026-09-06-gym-adventure/art-direction.md]
+    attributes: {display_name: 程教练, role: player, mode: gym_adventure_slice_v1, implementation_status: design_only}
+    added: 2026-09-06
+    revised: ""
+  - name: singer_aluo
+    status: active
+    source: design/gdd/gym-adventure.md
+    referenced_by: [docs/plans/2026-09-06-gym-adventure/README.md, docs/plans/2026-09-06-gym-adventure/experience-and-content.md]
+    attributes: {display_name: 阿洛, role: story_member, mode: gym_adventure_slice_v1, implementation_status: design_only}
+    added: 2026-09-06
+    revised: ""
+  - name: boxer_qiu
+    status: active
+    source: design/gdd/gym-adventure.md
+    referenced_by: [docs/plans/2026-09-06-gym-adventure/README.md, docs/plans/2026-09-06-gym-adventure/experience-and-content.md]
+    attributes: {display_name: 老邱, role: fixed_assistant, mode: gym_adventure_slice_v1, implementation_status: design_only}
+    added: 2026-09-06
+    revised: ""
+  - name: mechanic_lin
+    status: active
+    source: design/gdd/gym-adventure.md
+    referenced_by: [docs/plans/2026-09-06-gym-adventure/README.md, docs/plans/2026-09-06-gym-adventure/experience-and-content.md]
+    attributes: {display_name: 林师傅, role: renovation, mode: gym_adventure_slice_v1, implementation_status: design_only}
+    added: 2026-09-06
+    revised: ""
 
 # Example (remove when first real entry is added):
 #
@@ -107,6 +135,16 @@ items: []
 # Optional: expression (the actual formula), notes
 
 formulas:
+  - name: gym_adventure_course_quality
+    status: active
+    source: design/gdd/gym-adventure.md
+    referenced_by: [docs/plans/2026-09-06-gym-adventure/design-tuning.json, docs/plans/2026-09-06-gym-adventure/experience-and-content.md]
+    variables: [completion_fraction, on_time_arrival_fraction, guidance_fraction]
+    output_range: [0, 100]
+    expression: "round(60*completion_fraction + 20*on_time_arrival_fraction + 20*guidance_fraction)"
+    notes: "Design only, mode gym_adventure_slice_v1. Quality affects feedback, never income. See GA-F01 for denominators."
+    added: 2026-09-06
+    revised: ""
   - name: rotation_transform
     status: active
     source: design/gdd/grid-system.md
@@ -525,6 +563,42 @@ formulas:
 # Required fields: name, status, source, referenced_by, value, unit, added
 
 constants:
+  - name: gym_adventure_starting_cash
+    status: active
+    source: design/gdd/gym-adventure.md
+    referenced_by: [docs/plans/2026-09-06-gym-adventure/design-tuning.json, docs/plans/2026-09-06-gym-adventure/README.md]
+    value: 280
+    unit: currency units (int)
+    notes: "Design only, mode gym_adventure_slice_v1; includes two borrowed fixtures, does not replace sandbox starting_capital."
+    added: 2026-09-06
+    revised: ""
+  - name: gym_adventure_service_seconds
+    status: active
+    source: design/gdd/gym-adventure.md
+    referenced_by: [docs/plans/2026-09-06-gym-adventure/design-tuning.json, docs/plans/2026-09-06-gym-adventure/experience-and-content.md]
+    value: 360
+    unit: seconds
+    notes: "Design only, mode gym_adventure_slice_v1. Fixed 1x, 3600 simulation ticks; pause freezes all gameplay timers."
+    added: 2026-09-06
+    revised: ""
+  - name: gym_adventure_course_fee
+    status: active
+    source: design/gdd/gym-adventure.md
+    referenced_by: [docs/plans/2026-09-06-gym-adventure/design-tuning.json, docs/plans/2026-09-06-gym-adventure/experience-and-content.md]
+    value: 24
+    unit: currency units per qualifying class member
+    notes: "Design only, mode gym_adventure_slice_v1; requires 30 of 40 training seconds, mutually exclusive with ordinary visit fee."
+    added: 2026-09-06
+    revised: ""
+  - name: gym_adventure_course_ids
+    status: active
+    source: design/gdd/gym-adventure.md
+    referenced_by: [docs/plans/2026-09-06-gym-adventure/design-tuning.json, docs/plans/2026-09-06-gym-adventure/experience-and-content.md]
+    value: [course_endurance_intro, course_strength_intro]
+    unit: stable identifiers
+    notes: "Design only, mode gym_adventure_slice_v1. Equipment binding and unlock rules are in GA-R04."
+    added: 2026-09-06
+    revised: ""
   - name: grid_width
     status: active
     source: design/gdd/grid-system.md
@@ -623,6 +697,7 @@ constants:
     source: design/gdd/time-system.md
     referenced_by:
       - design/gdd/time-system.md
+      - design/gdd/gym-adventure.md
     value: 10
     unit: ticks/second
     notes: >

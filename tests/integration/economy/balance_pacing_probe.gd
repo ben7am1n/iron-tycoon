@@ -95,6 +95,9 @@ func _check(condition: bool, message: String) -> void:
 ## authoritative seed/config and the same system dependency graph as the game.
 func _make_main() -> Node:
 	var main: Node = load("res://src/main.gd").new()
+	var preflight: Dictionary = load("res://src/bootstrap/resource_preflight.gd").check()
+	main.set("_preflight_data", preflight.data)
+	main.set("_catalog", preflight.catalog)
 	main.call("_assemble_systems")
 	var orchestrator: Node = main.get("_orch")
 	# Main is intentionally not added to the SceneTree in this synchronous

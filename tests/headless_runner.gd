@@ -131,6 +131,7 @@ const TEST_FILES := [
 	"tests/integration/economy/balance_pacing_probe.gd",
 	"tests/integration/gym_adventure/day_contract_test.gd",
 	"tests/integration/gym_adventure/first_day_loop_test.gd",
+	"tests/integration/gym_adventure/first_day_playable_test.gd",
 ]
 
 # === 隔离的测试文件 ===

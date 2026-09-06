@@ -61,6 +61,10 @@ signal tick_completed(tick_count: int)
 # === System fields (RefCounted, owned by this Node for the session lifetime) ===
 #
 # Tier 0 — Foundation leaf systems (no upstream dependencies):
+## Optional shared RNG source injected before topology assembly.
+var seeded_rng
+var day_cycle
+
 var equipment_catalog  # EquipmentCatalog — constructed in init() (Story 001)
 var time_system        # TimeSystem — constructed in init() (Story 002: tick
                        # accumulator / speed / pause). _process() forwards
@@ -172,9 +176,19 @@ func serialize() -> Dictionary:
 func _advance_tick() -> void:
 	if not _guard_initialized():
 		return
-	_sync_satisfaction_feedback()
-	for system in _tick_systems:
-		system.on_tick(_tick_count)  # direct call — contract: on_tick(tick_count: int) -> void
+	if day_cycle != null:
+		day_cycle.tick_begin()
+		if day_cycle.phase == "SERVICE":
+			member_sim.on_tick(_tick_count)
+			congestion.on_tick(_tick_count)
+			day_cycle.after_members()
+			satisfaction.on_tick(_tick_count)
+			economy.on_tick(_tick_count)
+			day_cycle.tick_end()
+	else:
+		_sync_satisfaction_feedback()
+		for system in _tick_systems:
+			system.on_tick(_tick_count)  # direct call — contract: on_tick(tick_count: int) -> void
 	_tick_count += 1
 	tick_completed.emit(_tick_count)
 
@@ -230,7 +244,7 @@ func _initialize_topology() -> void:
 	if equipment_catalog == null:
 		equipment_catalog = EquipmentCatalog.new()
 	time_system = TimeSystem.new()
-	time_system.init(self)  # Story 002 — injects the orchestrator back-reference
+	time_system.init(self, seeded_rng)  # Story 002 — injects the orchestrator back-reference
 	                        # (process() calls _advance_tick() per fired tick)
 	# grid_system   = GridSystem.new(); grid_system.init(width, height)  # needs LevelLoader
 	# Tier 1: placement — constructed once a grid exists (LevelLoader story

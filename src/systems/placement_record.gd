@@ -53,13 +53,18 @@ var rotation: int
 ## GridSystem.set_equipment_level().
 var level: int
 
+## Persistent catalog ID; empty only for legacy geometry-only callers.
+var equipment_id: String
+
 func _init(
 	p_footprint: Array[Vector2i],
 	p_access: Array[Vector2i],
 	p_rotation: int,
-	p_level: int = 1
+	p_level: int = 1,
+	p_equipment_id: String = ""
 ) -> void:
 	footprint_cells = p_footprint.duplicate()
 	access_cells = p_access.duplicate()
 	rotation = p_rotation
 	level = p_level
+	equipment_id = p_equipment_id

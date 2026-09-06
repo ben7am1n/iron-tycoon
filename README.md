@@ -1,3 +1,14 @@
+# GymManager — 撸铁大亨：街角健身房
+
+Godot 4.7.1 / GDScript 的健身房经营游戏。当前已有空间模拟与可玩主场景；新方向是主角参与、街区活动和晚间课程组成的社区故事模式。
+
+- [2026-09-06 设计包：玩法、美术、三天内容、实施与验收](docs/plans/2026-09-06-gym-adventure/README.md)
+- [核心玩法 GDD](design/gdd/gym-adventure.md) · [项目进度](PROGRESS.md) · [运行测试](tests/README.md)
+
+新模式目前为设计稿，尚未实现。以下保留仓库采用的工作室模板说明。
+
+---
+
 <p align="center">
   <h1 align="center">Claude Code Game Studios</h1>
   <p align="center">

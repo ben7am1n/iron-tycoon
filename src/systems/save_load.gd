@@ -683,11 +683,17 @@ func _validate_all(
 		var goal_result: Variant = _goals.deserialize(save_blob.get("goals", {}), true)
 		errors.append_array(goal_result.errors)
 
-	if _day_cycle != null and save_blob.has("day_cycle") and not save_blob["day_cycle"].is_empty():
-		var day_result: Variant = _day_cycle.deserialize(save_blob["day_cycle"], true)
-		if not day_result.ok:
-			for err in day_result.get("errors", []):
-				errors.append(str(err))
+	if _day_cycle != null:
+		if not save_blob.has("day_cycle") or save_blob["day_cycle"].is_empty():
+			errors.append("社区模式需要社区存档")
+		else:
+			var day_result: Variant = _day_cycle.deserialize(save_blob["day_cycle"], true)
+			if not day_result.ok:
+				for err in day_result.get("errors", []):
+					errors.append(str(err))
+	else:
+		if save_blob.has("day_cycle") and not save_blob["day_cycle"].is_empty():
+			errors.append("沙盒模式不能读取社区故事存档")
 
 	return errors
 

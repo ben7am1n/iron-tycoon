@@ -203,7 +203,7 @@ func _make_grid() -> RefCounted:
 		var anchor: Vector2i = item["anchor"]
 		var fp: Array[Vector2i] = [anchor]
 		var ac: Array[Vector2i] = [anchor + Vector2i(1, 0)]
-		gs.call("commit", int(item["id"]), fp, ac, R0)
+		gs.call("commit", int(item["id"]), fp, ac, R0, str(item["def_id"]))
 	return gs
 
 

@@ -130,10 +130,13 @@ func process(delta: float) -> void:
 		return
 	if paused or speed_multiplier == 0:
 		return  # early return — no accumulation, no float drift
-	tick_accumulator += delta * speed_multiplier
+	var effective_speed := 1 if _orchestrator.day_cycle != null else speed_multiplier
+	tick_accumulator += delta * effective_speed
 	var ticks_to_fire := mini(floori(tick_accumulator / TICK_DURATION_SECONDS), MAX_TICKS_PER_FRAME)
 	tick_accumulator -= ticks_to_fire * TICK_DURATION_SECONDS
 	for _i in ticks_to_fire:
+		if paused:
+			break
 		_orchestrator._advance_tick()
 
 

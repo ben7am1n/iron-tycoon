@@ -16,7 +16,7 @@ var commit_entered: bool = false
 var commit_returned: bool = false
 
 
-func commit(instance_id: int, footprint_cells: Array[Vector2i], access_cells: Array[Vector2i], rotation: Rotation) -> void:
+func commit(instance_id: int, footprint_cells: Array[Vector2i], access_cells: Array[Vector2i], rotation: Rotation, equipment_id: String = "") -> void:
 	commit_entered = true
 	commit_returned = false
 	commit_calls.append({
@@ -25,5 +25,5 @@ func commit(instance_id: int, footprint_cells: Array[Vector2i], access_cells: Ar
 		"access_cells": access_cells.duplicate(),
 		"rotation": rotation,
 	})
-	super.commit(instance_id, footprint_cells, access_cells, rotation)
+	super.commit(instance_id, footprint_cells, access_cells, rotation, equipment_id)
 	commit_returned = true

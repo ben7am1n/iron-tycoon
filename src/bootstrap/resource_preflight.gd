@@ -3,7 +3,14 @@
 extends RefCounted
 
 const CatalogLoader := preload("res://src/systems/equipment_catalog_loader.gd")
-const REQUIRED_FILES := ["equipment_catalog.json", "equipment_upgrades.json", "expansion.json", "goals.json"]
+const REQUIRED_FILES := [
+	"equipment_catalog.json",
+	"equipment_upgrades.json",
+	"expansion.json",
+	"goals.json",
+	"gym_adventure.json",
+	"gym_adventure_fixture.json",
+]
 
 ## Returns {ok, errors, data, catalog}; invalid data never enables a playable scene.
 static func check(data_root: String = "res://data") -> Dictionary:
@@ -70,6 +77,16 @@ static func check(data_root: String = "res://data") -> Dictionary:
 				for equipment_id: Variant in goal.equipment_ids:
 					if not equipment_id is String or result.catalog.get_definition(equipment_id) == null:
 						result.errors.append("goals.json：未知器械 %s" % str(equipment_id))
+	var adv: Dictionary = result.data.get("gym_adventure.json", {})
+	if adv.get("schema_version") != 1 or adv.get("mode_id") != "gym_adventure_slice_v1":
+		result.errors.append("gym_adventure.json：schema_version 或 mode_id 无效")
+	if not adv.get("gym") is Dictionary or not adv.get("day") is Dictionary or not adv.get("economy") is Dictionary:
+		result.errors.append("gym_adventure.json：缺少必要的配置小节")
+	var fixture: Dictionary = result.data.get("gym_adventure_fixture.json", {})
+	if fixture.get("schema_version") != 1 or fixture.get("mode_id") != "gym_adventure_slice_v1":
+		result.errors.append("gym_adventure_fixture.json：schema_version 或 mode_id 无效")
+	if not fixture.get("dimensions") is Array or not fixture.get("equipment") is Array:
+		result.errors.append("gym_adventure_fixture.json：缺少场地尺寸或初始设备")
 	result.ok = result.errors.is_empty()
 	return result
 

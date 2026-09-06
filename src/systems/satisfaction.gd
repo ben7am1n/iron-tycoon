@@ -580,6 +580,7 @@ func serialize() -> Dictionary:
 		"counter": counter,
 		"global_satisfaction": global_satisfaction,
 		"member_accumulators": member_accumulators.duplicate(true),
+		"pending_uses": _pending_uses.duplicate(true),
 		"rng_state": SeededRNG.int64_to_hex(_seeded_rng.get_rng(system_name()).state),
 	}
 
@@ -631,6 +632,9 @@ func deserialize(data: Dictionary, validate_only: bool = false) -> StubDeseriali
 	else:
 		_validate_accumulators(data["member_accumulators"], result)
 
+	if data.has("pending_uses"):
+		_validate_pending_uses(data["pending_uses"], result)
+
 	if not result.errors.is_empty():
 		return result  # Phase A failed — NOTHING was mutated
 
@@ -644,7 +648,30 @@ func deserialize(data: Dictionary, validate_only: bool = false) -> StubDeseriali
 	global_satisfaction = float(data["global_satisfaction"])
 	member_accumulators = _normalize_accumulators(data["member_accumulators"])
 	_rebuild_transient_state()
+	if data.has("pending_uses"):
+		_pending_uses.clear()
+		for raw_key in data["pending_uses"]:
+			var pending: Dictionary = data["pending_uses"][raw_key]
+			_pending_uses[_coerce_member_key(raw_key)] = {"instance_id": int(pending.instance_id), "congestion": float(pending.congestion)}
 	return result
+
+
+## Pending uses are historical inputs, never recomputed for current saves.
+func _validate_pending_uses(payload: Variant, result: StubDeserializeResult) -> void:
+	if not payload is Dictionary:
+		result.errors.append("Satisfaction: pending_uses must be a Dictionary")
+		return
+	for raw_key in payload:
+		var pending: Variant = payload[raw_key]
+		if _coerce_member_key(raw_key) < 0 or not pending is Dictionary:
+			result.errors.append("Satisfaction: invalid pending use member or record")
+			continue
+		var instance: Variant = pending.get("instance_id", null)
+		var congestion: Variant = pending.get("congestion", null)
+		if not _is_numeric(instance) or not is_finite(float(instance)) or float(instance) != floor(float(instance)) or float(instance) < 0:
+			result.errors.append("Satisfaction: invalid pending use instance_id")
+		if not _is_numeric(congestion) or not is_finite(float(congestion)) or float(congestion) < 0.0 or float(congestion) > 1.0:
+			result.errors.append("Satisfaction: invalid pending use congestion")
 
 
 ## Phase A: validates the member_accumulators payload with zero mutation.

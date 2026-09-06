@@ -1435,3 +1435,32 @@ requirements:
     created: 2026-07-21
     revised: ""
     status: active
+
+  - id: TR-GA-001
+    system: gym-adventure
+    gdd: design/gdd/gym-adventure.md
+    requirement: "Mode-scoped first-day PREP/OUTING/SERVICE/CLOSE cycle; coach can move outside service, explicit pause freezes all; sandbox remains isolated."
+    created: 2026-09-06
+    revised: ""
+    status: active
+  - id: TR-GA-002
+    system: gym-adventure
+    gdd: design/gdd/gym-adventure.md
+    requirement: "Real scheduled 8+4 MemberSim roster, four alternating course blocks, persistent class-level holds, actual training threshold, mutually exclusive once-only fees and zero-purchase AUTO baseline."
+    created: 2026-09-06
+    revised: ""
+    status: active
+  - id: TR-GA-003
+    system: gym-adventure
+    gdd: design/gdd/gym-adventure.md
+    requirement: "Controllable park pacing and gym coaching with stamina, score/timing rules and AUTO fallbacks; Aluo first-day event conditions remain reachable when outing is skipped."
+    created: 2026-09-06
+    revised: ""
+    status: active
+  - id: TR-GA-004
+    system: gym-adventure
+    gdd: design/gdd/gym-adventure.md
+    requirement: "Complete new-mode snapshots validate before commit and cold-restore paused during outing, course and interaction without lost identity, repeated fees or repeated story rewards."
+    created: 2026-09-06
+    revised: ""
+    status: active

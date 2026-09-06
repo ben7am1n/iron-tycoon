@@ -202,6 +202,11 @@
 ## composition root owns the values, never hardcoded per-run behaviour here.
 class_name MemberSim extends SimSystem
 
+# Community mode keeps positions/tasks in this existing member owner (ADR-0011).
+var community_mode := false
+var class_holds: Array = []
+var community_walk_speed := 1.6
+
 # === State machine (Core Rule 2) ===
 const STATE_ENTERING := "ENTERING"
 const STATE_SELECTING_TARGET := "SELECTING_TARGET"
@@ -563,7 +568,8 @@ func on_tick(tick_count: int) -> void:
 	# START of the tick so Satisfaction (running later in the fixed order)
 	# reads exactly this tick's mid-use deletion events.
 	_satisfaction_penalty_events = 0
-	_process_arrival()
+	if not community_mode:
+		_process_arrival()
 	_process_members()
 
 
@@ -606,6 +612,9 @@ func _process_members() -> void:
 ## Dispatches one member's per-tick update by state. Legacy roster entries
 ## (no "state" key) are passive — skipped, never driven, never despawned.
 func _update_member(member: Dictionary, to_remove: Array) -> void:
+	if community_mode and member.get("billing_type", "") == "course":
+		_update_course_task(member)
+		return
 	if not member.has("state"):
 		return
 	# Story 004 (AC19): blacklist entries tick down for every active member,
@@ -797,6 +806,8 @@ func _build_weighted_candidates(member: Dictionary) -> Array:
 	var out: Array = []
 	for instance_id in ids:
 		var access_cells: Array = _grid.get_access_cells(instance_id)
+		if community_mode and class_holds.has(instance_id):
+			continue
 		if access_cells.is_empty():
 			continue  # no access cell — cannot be used
 		if _fully_spoken_for(instance_id, int(member["member_id"])):
@@ -1087,6 +1098,8 @@ func _on_walking_to(member: Dictionary) -> void:
 		# release + bounded retry, identical to a blocked repath.
 		_handle_repath_failure(member)
 		return
+	if not _walk_community_edge(member, next_cell):
+		return
 	member["cell"] = next_cell
 	path.remove_at(0)
 	member["cached_path"] = path
@@ -1312,6 +1325,8 @@ func _on_leaving(member: Dictionary, to_remove: Array) -> void:
 		if _grid.is_solid(next_cell):
 			member["cached_path"] = []  # blocked mid-leave — repath next tick
 			return
+		if not _walk_community_edge(member, next_cell):
+			return
 		member["cell"] = next_cell
 		path.remove_at(0)
 		member["cached_path"] = path
@@ -1534,6 +1549,8 @@ func _fully_spoken_for(instance_id: int, member_id: int) -> bool:
 ## SELECTING_TARGET and retry — the AC3 QA edge). Iterates placed instances
 ## in ASCENDING id order — never the reservations map itself (TR-MS-006).
 func _any_fully_spoken_for() -> bool:
+	if community_mode and not class_holds.is_empty():
+		return true
 	var instances: Array = _grid.get_placed_instances()
 	var ids: Array[int] = []
 	for inst in instances:
@@ -1700,12 +1717,15 @@ func serialize() -> Dictionary:
 	var out_members: Array = []
 	for member in members:
 		out_members.append(_serialize_member_record(member))
-	return {
+	var data := {
 		"counter": counter,
 		"members": out_members,
 		"member_id_counter": _member_id_counter,
 		"rng_state": SeededRNG.int64_to_hex(_rng().state),
 	}
+	if community_mode:
+		data["class_holds"] = class_holds.duplicate()
+	return data
 
 
 ## One member record, JSON-safe: cell -> [x, y], cached_path ->
@@ -1801,6 +1821,7 @@ func deserialize(data: Dictionary, validate_only: bool = false, known_instance_i
 	counter = int(data["counter"])
 	_member_id_counter = int(data["member_id_counter"])
 	members = _normalize_members(data["members"])
+	class_holds = data.get("class_holds", []).duplicate()
 	_rng().state = SeededRNG.hex_to_int64(str(data["rng_state"]))
 	_rebuild_reservations_from_members()
 	return result
@@ -2063,3 +2084,140 @@ func _is_numeric_key(v: Variant) -> bool:
 	if _is_numeric(v):
 		return true
 	return typeof(v) == TYPE_STRING and str(v).is_valid_int()
+
+## Enables externally scheduled visits; the sandbox's stochastic path is untouched.
+func configure_community(speed: float) -> void:
+	if not _assert_initialized():
+		return
+	community_mode = true
+	community_walk_speed = speed
+	_max_concurrent_members = 16
+
+## Allocates a real visitor and returns its stable member ID, or -1 at capacity.
+func spawn_visit(visit_id: String, billing_type: String, npc_id: String = "") -> int:
+	if not _assert_initialized() or not community_mode:
+		return -1
+	var allocated := _member_id_counter
+	_spawn_member()
+	if allocated == _member_id_counter:
+		return -1
+	var member: Dictionary = members.back()
+	member["visit_id"] = visit_id
+	member["billing_type"] = billing_type
+	member["persistent_npc_id"] = npc_id
+	member["exercises_per_visit"] = 1
+	member["position_xy"] = [float(member.cell.x), float(member.cell.y)]
+	if billing_type == "course":
+		member["state"] = STATE_QUEUEING
+		member["trained_ticks"] = 0
+		member["use_ticks_remaining"] = 0
+	return allocated
+
+## Returns a copy; callers cannot alter the member owner through its public API.
+func visit_snapshot(member_id: int) -> Dictionary:
+	if not _assert_initialized():
+		return {}
+	for member in members:
+		if int(member.get("member_id", -1)) == member_id:
+			return _serialize_member_record(member)
+	return {}
+
+## Course-level holds only prevent NEW ordinary reservations; old claims drain.
+func hold_class_devices(ids: Array) -> void:
+	if _assert_initialized():
+		class_holds = ids.duplicate()
+
+## True when existing occupants and queued ordinary visitors have drained.
+func class_devices_ready(ids: Array) -> bool:
+	if not _assert_initialized():
+		return false
+	for id in ids:
+		var record := _reservation(int(id))
+		if record.occupant != null or record.next_claimant != null:
+			return false
+	return true
+
+## Gives a class visitor a real navigation task with a fixed training window.
+func set_course_task(member_id: int, destination: Vector2i, equipment: int, start_tick: int, end_tick: int) -> void:
+	if not _assert_initialized():
+		return
+	for member in members:
+		if int(member.get("member_id", -1)) != member_id:
+			continue
+		_release_reservation(member)
+		member["target_equipment_instance_id"] = equipment
+		member["course_task"] = {"destination": [destination.x, destination.y], "start": start_tick, "end": end_tick}
+		member["cached_path"] = _navigation.get_path(member.cell, destination)
+		member["cached_path_grid_version"] = _grid.get_grid_version()
+		member["state"] = STATE_WALKING_TO if member.cell != destination else STATE_QUEUEING
+		return
+
+## Clears departed visitors at a day boundary, after all receipts have committed.
+func clear_community_visits() -> void:
+	if not _assert_initialized():
+		return
+	members.clear()
+	reservations.clear()
+	class_holds.clear()
+
+## Ends the class without emitting ordinary completed-visit revenue.
+func finish_course_visits(ids: Array) -> void:
+	if not _assert_initialized():
+		return
+	for member in members:
+		if ids.has(int(member.get("member_id", -1))):
+			_release_reservation(member)
+			member["course_ended"] = true
+			_begin_leaving(member, "course_ended")
+	class_holds.clear()
+
+func _walk_community_edge(member: Dictionary, destination: Vector2i) -> bool:
+	if not community_mode:
+		return true
+	var raw: Array = member.get("position_xy", [float(member.cell.x), float(member.cell.y)])
+	var pos := Vector2(float(raw[0]), float(raw[1]))
+	pos = pos.move_toward(Vector2(destination), community_walk_speed * 0.1)
+	member["position_xy"] = [pos.x, pos.y]
+	return pos.distance_to(Vector2(destination)) < 0.00001
+
+func _update_course_task(member: Dictionary) -> void:
+	if member.get("course_ended", false):
+		var removed: Array = []
+		_on_leaving(member, removed)
+		# Course receipts retain the snapshot in DayCycle; leave physical roster clean.
+		for item in removed:
+			members.erase(item)
+		return
+	var task: Dictionary = member.get("course_task", {})
+	if task.is_empty():
+		return
+	var destination := Vector2i(int(task.destination[0]), int(task.destination[1]))
+	var path: Array = member.cached_path
+	while not path.is_empty() and path[0] == member.cell:
+		path.remove_at(0)
+	if member.cell != destination:
+		member.state = STATE_WALKING_TO
+		if path.is_empty():
+			path = _navigation.get_path(member.cell, destination)
+			while not path.is_empty() and path[0] == member.cell:
+				path.remove_at(0)
+		member.cached_path = path
+		if path.is_empty():
+			return
+		if _walk_community_edge(member, path[0]):
+			member.cell = path.pop_front()
+		return
+	var tick: int = _orchestrator.get_tick_count()
+	var equipment: int = member.target_equipment_instance_id
+	if equipment >= 0 and tick >= int(task.start) and tick < int(task.end):
+		var record := _reservation(equipment)
+		if record.occupant == null or record.occupant == member.member_id:
+			record.occupant = member.member_id
+			record.next_claimant = null
+			member.state = STATE_USING
+			member["trained_ticks"] = int(member.trained_ticks) + 1
+			member.use_ticks_remaining = int(task.end) - tick
+		return
+	if member.state == STATE_USING:
+		_release_reservation(member)
+	member.state = STATE_QUEUEING

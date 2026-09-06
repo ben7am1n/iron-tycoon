@@ -121,9 +121,9 @@ class GridChangedCounter extends RefCounted:
 class CommitSpyGrid extends GridSystem:
 	var commit_count: int = 0
 
-	func commit(instance_id: int, footprint_cells: Array[Vector2i], access_cells: Array[Vector2i], rotation: Rotation) -> void:
+	func commit(instance_id: int, footprint_cells: Array[Vector2i], access_cells: Array[Vector2i], rotation: Rotation, equipment_id: String = "") -> void:
 		commit_count += 1
-		super(instance_id, footprint_cells, access_cells, rotation)
+		super(instance_id, footprint_cells, access_cells, rotation, equipment_id)
 
 
 # === Fixtures ===

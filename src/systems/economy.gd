@@ -92,6 +92,9 @@ var counter: int = 0
 ## GDD Core Rule 1 — no drift/rounding across ticks and saves). Floor 0,
 ## no ceiling. Starts at STARTING_CAPITAL (AC11).
 var balance: int = STARTING_CAPITAL
+var community_mode := false
+var community_receipts: Dictionary = {}
+var _community_pending: Array = []
 
 ## Per-visit flat fee — configurable via config["r_visit"], defaults to the
 ## GDD anchor.
@@ -151,6 +154,12 @@ func on_tick(tick_count: int) -> void:
 	if not _assert_initialized():
 		return
 	counter += 1
+	for transaction in _community_pending:
+		var key: String = transaction.key
+		if not community_receipts.has(key):
+			community_receipts[key] = int(transaction.amount)
+			credit(int(transaction.amount), key)
+	_community_pending.clear()
 
 
 ## S5 handler — revenue accrual (TR-ECON-002, AC8/AC9/AC13).
@@ -162,6 +171,11 @@ func on_tick(tick_count: int) -> void:
 ## on one tick produce exactly N × R_visit with no fold order (AC9).
 func on_member_completed_visit(member_id: int) -> void:
 	if not _assert_initialized():
+		return
+	if community_mode:
+		var visit: Dictionary = _orchestrator.member_sim.visit_snapshot(member_id)
+		if visit.get("billing_type", "") == "ordinary":
+			queue_community_revenue("ordinary:" + str(visit.visit_id), _r_visit)
 		return
 	var revenue := _r_visit
 	if _upgrade_reader != null \
@@ -268,9 +282,13 @@ func credit(amount: int, reason: String) -> bool:
 func serialize() -> Dictionary:
 	if not _assert_initialized():
 		return {}
-	return {
+	var data := {
 		"balance": balance,
 	}
+	if community_mode:
+		data["community_receipts"] = community_receipts.duplicate(true)
+		data["community_pending"] = _community_pending.duplicate(true)
+	return data
 
 
 ## Two-phase deserialize (TR-SL-005, ADR-0002).
@@ -297,6 +315,15 @@ func deserialize(data: Dictionary, validate_only: bool = false) -> StubDeseriali
 	# --- Phase A: validate (zero mutation) ---
 	if not data.has("balance") or not _is_valid_balance(data["balance"]):
 		result.errors.append("Economy: missing or invalid 'balance'")
+	if community_mode:
+		if not data.get("community_receipts") is Dictionary or not data.get("community_pending") is Array:
+			result.errors.append("Economy: missing community ledger")
+		else:
+			for amount in data.community_receipts.values():
+				if not _is_valid_balance(amount):
+					result.errors.append("Economy: invalid community receipt")
+			if not data.community_pending.is_empty():
+				result.errors.append("Economy: uncommitted transactions at save boundary")
 
 	if not result.errors.is_empty():
 		return result  # Phase A failed — NOTHING was mutated
@@ -307,7 +334,30 @@ func deserialize(data: Dictionary, validate_only: bool = false) -> StubDeseriali
 
 	# --- Phase B: commit (only if all valid) ---
 	balance = int(data["balance"])
+	if community_mode:
+		community_receipts = data.community_receipts.duplicate(true)
+		_community_pending.clear()
 	return result
+
+
+## Sets scoped initial values only once, before community play starts.
+func configure_community(starting_cash: int, visit_fee: int) -> void:
+	if not _assert_initialized() or community_mode:
+		return
+	community_mode = true
+	var delta := starting_cash - balance
+	balance = starting_cash
+	_r_visit = visit_fee
+	balance_changed.emit(balance, delta)
+
+
+## Accepts a completion fact; only the Economy tick applies its once-only credit.
+func queue_community_revenue(key: String, amount: int) -> void:
+	if not _assert_initialized() or not community_mode or amount <= 0:
+		return
+	if community_receipts.has(key):
+		return
+	_community_pending.append({"key": key, "amount": amount})
 
 
 ## True when [v] is a valid balance: an int, or a float that is finite and

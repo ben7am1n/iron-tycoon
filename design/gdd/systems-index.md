@@ -2,7 +2,7 @@
 
 > **Status**: Draft
 > **Created**: 2026-07-15
-> **Last Updated**: 2026-07-21
+> **Last Updated**: 2026-09-06（新增社区故事设计；旧行状态保留其历史审查口径）
 > **Source Concept**: design/gdd/game-concept.md
 > **Boundary Review**: TD-SYSTEM-BOUNDARY (technical-director, adversarial) — REJECT resolved; all findings adopted 2026-07-15.
 > **Design Reviews**: 每个 GDD 的评审史见 `design/gdd/reviews/[system]-review-log.md`。GridSystem 已过**两轮** full-mode 对抗式评审（2026-07-16 首评 5 位专家 + creative-director；2026-07-17 复审 **APPROVED**）。2026-07-20/21 批量评审 #2/#13/#14/#15/#16 — 5 份 GDD 同时评审，blocking 全部当场修订。
@@ -16,6 +16,8 @@
 ---
 
 ## Overview
+
+2026-09-06新增[社区教练冒险与营业切片](gym-adventure.md)，编号23，状态Designed，尚未实施。它定义DayCycle／Course／Coach／Outing／Relationship这组新模式模块的共同产品契约，复用既有空间和模拟系统。[设计包](../../docs/plans/2026-09-06-gym-adventure/README.md)为当前方向入口；以下22系统和旧进度表是原沙盒设计基线。
 
 《撸铁大亨》是一款治愈系桌面健身房经营游戏，核心是**空间优化**：玩家在网格上拖放器械，会员寻路使用器械，布局质量驱动拥挤/动线，进而驱动满意度与收入（支柱1"空间即玩法"、支柱2"松弛不紧绷"、支柱3"一眼看懂"、支柱4"看得见的蜕变"）。系统的关键设计原则来自对抗式边界审查：**空间真相归属 GridSystem 占用状态**（而非输入驱动的 Placement）；模拟由**固定顺序的编排器 + 种子 RNG** 驱动以保证存档可复现；寻路用 **AStarGrid2D**；"流动"通过 **Congestion(t-1) → 路由(t)** 的一帧延迟反馈成为真正的机制而非装饰。MVP 的目标是尽早验证"调布局让人流顺畅本身就好玩"，因此设计顺序把好玩验证垂直切片前置到第 8 步。
 
@@ -47,6 +49,9 @@
 | 20 | Onboarding / Tutorial (inferred) | Meta | Vertical Slice | Not Started | — | core MVP systems |
 | 21 | Audio (music + SFX) (inferred) | Audio | Vertical Slice | Not Started | — | event/signal bus |
 | 22 | Settings & Accessibility (colorblind/contrast) (inferred) | Meta | Vertical Slice | Not Started | — | UI |
+| 23 | Gym Adventure（DayCycle / Course / Coach / Outing / Relationship） | Cross-system | New-mode slice | Designed — 数值待试玩，未实施 | [gym-adventure.md](gym-adventure.md) · [体验与UI稿](../../docs/plans/2026-09-06-gym-adventure/experience-and-content.md) | Grid / Placement / Navigation / MemberSim / Time / Economy / SaveLoad |
+
+> 新模式UI在正式stories前需形成逐屏UX规格；当前体验稿已定义操作与可见结果，尚未宣称完成UX生产门禁。
 
 > **Deferred (Tier 2 — Full Vision, not indexed as active work):** 多店连锁 Chain, 半挂机产出 IdleProduction, 城区人群差异, 场馆美化"出片"系统. Revisit after MVP fun-validation.
 
@@ -171,6 +176,8 @@ Effort: S = 1 session, M = 2-3 sessions, L = 4+ sessions.
 
 ## Progress Tracker
 
+2026-09-06增量：注册条目22→23（新增一组切片契约），设计文档started 16→17；新增文档为Designed，正式Approved计数不增加。既有22条记录的历史状态未重新审计，下表保留原2026-07-21统计口径。
+
 | Metric | Count |
 |--------|-------|
 | Total systems identified | 22 (+ 4 deferred Tier-2) |
@@ -190,6 +197,8 @@ Effort: S = 1 session, M = 2-3 sessions, L = 4+ sessions.
 ---
 
 ## Next Steps
+
+当前新模式顺序：[M0存档／资源与计费正确性 → M1首日灰盒 → M2美术样板 → M3三日内容 → M4试玩](../../docs/plans/2026-09-06-gym-adventure/implementation.md)。下列清单为原沙盒的历史设计顺序，不应直接当作今日任务。
 
 - [ ] Design MVP-tier systems in order (use `/design-system GridSystem` first)
 - [ ] Run `/design-review design/gdd/[system].md` on each completed GDD

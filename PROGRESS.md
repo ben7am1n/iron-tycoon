@@ -2,9 +2,9 @@
 
 ## 当前更新 — 2026-09-06
 
-**M0 基础与存读档契约完成，GA-003 首日模拟循环打通**：全量测试 115 文件、**6,261 断言全部通过、0 失败**。GA-003 7 项验收标准经 [first_day_loop_test.gd](tests/integration/gym_adventure/first_day_loop_test.gd)（29/29）与 [day_contract_test.gd](tests/integration/gym_adventure/day_contract_test.gd)（27/27）全绿验证，覆盖开局器械防售卖、公园移动与配速体力消耗、排程上课与计费互斥、亲自指导以及打烊结算进入 Day 2 的全闭环。
+**GA-004 首日灰盒主场景、控制与世界渲染组装完成**：全量测试 116 文件、**6,306 断言全部通过、0 失败**。GA-004 7 项验收标准经 [first_day_playable_test.gd](tests/integration/gym_adventure/first_day_playable_test.gd)（45/45）全绿验证，包含主场景模式切换与无串存隔离、备店/外出/营业/打烊四阶段控制、2.5D 程教练与公园跑道视口渲染、布置模式营业门禁与隔离存档冷恢复，4 阶段真实视口截图证据已固化至 `production/qa/evidence/`。
 
-当前推进重点进入 **GA-004 首日灰盒可玩控制、HUD 联动与主场景组装**。
+当前推进重点进入 **GA-005 首日美术样板（Visual Sample）**。
 
 下文为截至2026-08-02的历史进度快照，不作为当前待办或实现状态。
 

@@ -1,14 +1,18 @@
 # Control Manifest
 
 > **Engine**: Godot 4.7.1
-> **Last Updated**: 2026-07-23
-> **Manifest Version**: 2026-07-23
+> **Last Updated**: 2026-09-06
+> **Manifest Version**: 2026-09-06
 > **ADRs Covered**: ADR-0001, ADR-0002, ADR-0003, ADR-0004, ADR-0005, ADR-0006, ADR-0007
 > **Status**: Active — regenerate with `/create-control-manifest update` when ADRs change
 
 This manifest is a programmer's quick-reference extracted from all Accepted ADRs,
 technical preferences, and engine reference docs. For the reasoning behind each
 rule, see the referenced ADR.
+
+## Community prototype amendment (ADR-0011, 2026-09-06)
+
+The optional community branch uses DayCycle's command/read facade and phase-aware fixed tick dispatch. MemberSim still owns every gym member's movement/reservation; Economy owns cash and deduplicated community billing; SaveLoad validates mode-scoped complete payloads before commit. UI owns no business state. Existing rules below continue to govern the sandbox. Required resource preflight and persistent equipment identity follow the storage ADR addendum. GA-001/002 began under the unchanged 2026-07-23 foundation rules; this additive branch applies to GA-003 onward.
 
 ---
 

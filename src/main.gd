@@ -64,7 +64,14 @@ const EnvironmentArtScript := preload("res://src/presentation/environment_art.gd
 const StructureArtScript := preload("res://src/presentation/structure_art.gd")
 const LightingLayerScript := preload("res://src/presentation/lighting_layer.gd")
 const AmbientFxScript := preload("res://src/presentation/ambient_fx.gd")
+const SaveLoadScript := preload("res://src/systems/save_load.gd")
+const ResourcePreflight := preload("res://src/bootstrap/resource_preflight.gd")
+const SaveEntryPanelScript := preload("res://src/ui/save_entry_panel.gd")
 const Palette := preload("res://src/palette.gd")
+const DayCycleSystemScript := preload("res://src/systems/day_cycle_system.gd")
+const CommunityHudScript := preload("res://src/ui/community_hud.gd")
+const CoachLayerScript := preload("res://src/presentation/coach_layer.gd")
+const ParkViewScript := preload("res://src/presentation/park_view.gd")
 
 # === 场景级常量（组装参数，非玩法数值） ===
 const GRID_W := 13
@@ -136,6 +143,19 @@ var _upgrades
 var _expansion
 var _goals
 var _zone_rules
+var _save_load
+var _save_entry
+var _preflight_data: Dictionary = {}
+var _preflight_root := "res://data"
+var _startup_failed := false
+var _save_name := "manual"
+var _community_mode := false
+var _day_cycle = null
+var _community_hud = null
+var _coach_layer = null
+var _park_view = null
+var _mode_btn = null
+var _is_building := false
 
 # === UI / presentation 引用 ===
 var _hud
@@ -178,6 +198,12 @@ var _last_snap_cell := Vector2i(-999, -999)
 
 func _ready() -> void:
 	_parse_args()
+	var preflight := ResourcePreflight.check(_preflight_root)
+	if not preflight.ok:
+		_show_startup_failure(preflight.errors)
+		return
+	_preflight_data = preflight.data
+	_catalog = preflight.catalog
 	_assemble_systems()
 	_assemble_presentation()
 	_assemble_ui()
@@ -191,6 +217,12 @@ func _parse_args() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg == "--smoke":
 			_smoke = true
+		elif arg == "--community" or arg == "--mode=community":
+			_community_mode = true
+		elif arg == "--sandbox" or arg == "--mode=sandbox":
+			_community_mode = false
+		elif arg.begins_with("--preflight-root="):
+			_preflight_root = arg.trim_prefix("--preflight-root=")
 
 
 # === 第 1 层：模拟系统（数据源 + orchestrator composition root + tick 系统） ===
@@ -206,10 +238,6 @@ func _assemble_systems() -> void:
 			_grid.set_buildable(Vector2i(x, y), true)
 	_grid.freeze_buildable()
 
-	var load_result = EquipmentCatalogLoaderScript.load_from_file(CATALOG_PATH, true)
-	if not load_result.ok:
-		push_error("main.gd: catalog load failed — %s" % [str(load_result.errors)])
-	_catalog = load_result.catalog
 
 	_nav = NavigationScript.new()
 	_nav.init(_grid)
@@ -217,6 +245,7 @@ func _assemble_systems() -> void:
 
 	# --- composition root：预注入依赖后 add_child 触发 init() ---
 	_orch = SimulationOrchestratorScript.new()
+	_orch.seeded_rng = _srg
 	_orch.equipment_catalog = _catalog
 	_orch.grid_system = _grid
 	_orch.navigation = _nav
@@ -224,7 +253,7 @@ func _assemble_systems() -> void:
 	# A2 upgrade service owns formulas/transactions; per-instance levels remain
 	# in GridSystem placement records and therefore use the existing save path.
 	_upgrades = EquipmentUpgradeSystemScript.new()
-	_upgrades.init(_grid, EquipmentUpgradeSystemScript.config_from_file(UPGRADE_CONFIG_PATH))
+	_upgrades.init(_grid, _preflight_data["equipment_upgrades.json"])
 	_orch.equipment_upgrade_system = _upgrades
 
 	# 4 个 tick 系统需要 orchestrator 引用，故在 add_child 前构造；
@@ -243,13 +272,13 @@ func _assemble_systems() -> void:
 	# 本次只接逻辑核心 —— 没有 UI 触发点，所以可玩构建里网格尺寸不会变化；
 	# 扩建的视觉表现（新房间地板/墙体/摄像机范围）是后续独立任务。
 	_expansion = ExpansionSystemScript.new()
-	_expansion.init(_grid, ExpansionSystemScript.config_from_file(EXPANSION_CONFIG_PATH), _sat)
+	_expansion.init(_grid, _preflight_data["expansion.json"], _sat)
 	_orch.expansion_system = _expansion
 
 	# A4 goals poll deterministic system state and route claimed rewards back
 	# through Economy/ExpansionSystem. Definitions live in data/goals.json.
 	_goals = GoalSystemScript.new()
-	_goals.init(GoalSystemScript.config_from_file(GOALS_CONFIG_PATH), _grid, _sat,
+	_goals.init(_preflight_data["goals.json"], _grid, _sat,
 		_econ, _expansion, _resolver())
 	_orch.goal_system = _goals
 
@@ -273,6 +302,17 @@ func _assemble_systems() -> void:
 
 	# ZoneRules 纯函数对象（实例方法 evaluate，见类头）。
 	_zone_rules = ZoneRulesScript.new()
+
+	if _community_mode:
+		if _save_name == "manual":
+			_save_name = "gym-adventure"
+		_day_cycle = DayCycleSystemScript.new()
+		_day_cycle.init(_preflight_data["gym_adventure.json"], _preflight_data["gym_adventure_fixture.json"], _orch)
+		_day_cycle.phase_changed.connect(_on_community_phase_changed)
+
+	_save_load = SaveLoadScript.new()
+	_save_load.init(_orch)
+	_save_load._post_init()
 
 
 ## MemberSim 组装配置（到达率/容量；use_duration 由 catalog def 提供，
@@ -299,11 +339,13 @@ func _member_config() -> Dictionary:
 	}
 
 
-## instance_id -> equipment_id 解析器（TR-MS-009）。数据源是 main.gd 的
-## _instance_defs，由 placement_committed 信号增量维护（见 _on_placed）。
+## Resolves authoritative GridSystem identities live, including during load commit.
 func _resolver() -> Callable:
 	return func(instance_id: int) -> String:
-		return str(_instance_defs.get(instance_id, ""))
+		for placed in _grid.get_placed_instances():
+			if placed.instance_id == instance_id:
+				return placed.equipment_id
+		return ""
 
 
 ## zone_total_reader（Satisfaction 依赖）：经 ZoneRules 纯函数评分当前
@@ -414,6 +456,25 @@ func _assemble_presentation() -> void:
 	_snap_pulse = SnapPulseScript.new()
 	_world_root.add_child(_snap_pulse)
 
+	# GA-004：社区故事主角层与公园视图
+	_coach_layer = CoachLayerScript.new()
+	_coach_layer.name = "CoachLayer"
+	_coach_layer.z_index = 3
+	_coach_layer.init(func() -> Dictionary:
+		return _day_cycle.get_view_state() if _day_cycle != null else {}
+	, CELL_SIZE)
+	_coach_layer.visible = _community_mode
+	_world_root.add_child(_coach_layer)
+
+	_park_view = ParkViewScript.new()
+	_park_view.name = "ParkView"
+	_park_view.z_index = 0
+	_park_view.init(func() -> Dictionary:
+		return _day_cycle.get_view_state() if _day_cycle != null else {}
+	, _preflight_data.get("gym_adventure.json", {}))
+	_park_view.visible = false
+	_world_root.add_child(_park_view)
+
 	# 世界显示：TextureRect 以 NEAREST 滤镜把 426×240 视口贴图放大到 1280×720。
 	# 像素 stair-step 由此产生（真实低分辨率像素，非高清抗锯齿 —— V3 §2）。
 	_world_display = TextureRect.new()
@@ -484,6 +545,13 @@ func _assemble_ui() -> void:
 	_goal_tracker.set_size(Vector2(340, 92))
 	_ui_canvas.add_child(_goal_tracker)
 
+	_save_entry = SaveEntryPanelScript.new()
+	_save_entry.position = Vector2(20, 76)
+	_save_entry.size = Vector2(340, 84)
+	_save_entry.save_requested.connect(save_game)
+	_save_entry.load_requested.connect(load_game)
+	_ui_canvas.add_child(_save_entry)
+
 	# 世界锚定 UI 注入屏幕空间网格参数（V3 §2 世界→屏幕换算）：cell_size 改为
 	# 屏幕空间 float（≈72.11px），grid_origin 为世界 (0,0) 的屏幕坐标 ——
 	# toolbar/cue 的 footprint 矩形由此精确对齐低分辨率世界的像素格。
@@ -532,13 +600,44 @@ func _assemble_ui() -> void:
 	_orch.get_node("PlacementInputBridge").set_screen_to_world(_screen_to_world)
 	sel_bridge.set_screen_to_world(_screen_to_world)
 
+	# GA-004：社区故事 HUD 与红绿灯重绘
+	_orch.tick_completed.connect(
+		func(_tick: int) -> void:
+			if _coach_layer != null and _coach_layer.visible:
+				_coach_layer.queue_redraw())
+	_orch.tick_completed.connect(
+		func(_tick: int) -> void:
+			if _park_view != null and _park_view.visible:
+				_park_view.queue_redraw())
+
+	_community_hud = CommunityHudScript.new()
+	_community_hud.init(func() -> Dictionary:
+		return _day_cycle.get_view_state() if _day_cycle != null else {}
+	)
+	_community_hud.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	_community_hud.set_position(Vector2.ZERO)
+	_community_hud.set_size(Vector2(UI_VIEWPORT_W, UI_VIEWPORT_H))
+	_community_hud.action_requested.connect(_on_community_action)
+	_ui_canvas.add_child(_community_hud)
+
+	_mode_btn = Button.new()
+	_mode_btn.name = "ModeSwitchButton"
+	_mode_btn.text = tr("模式：社区故事") if _community_mode else tr("模式：自由沙盒")
+	_mode_btn.custom_minimum_size = Vector2(130, 34)
+	_mode_btn.pressed.connect(_on_mode_switch_pressed)
+	_ui_canvas.add_child(_mode_btn)
+
+	_update_mode_ui()
+
 
 # === 初始布局：空房开局，让玩家亲手完成首次购买与放置 ===
 
 func _initial_layout() -> void:
 	var placement = _orch.placement_system
 	placement.placement_committed.connect(_on_placed)
-	# 世界绘制已迁至 WorldCanvas；grid_changed 信号驱动其重绘（见 _assemble_ui）。
+	if _community_mode:
+		for placed in _grid.get_placed_instances():
+			_instance_defs[placed.instance_id] = placed.equipment_id
 
 
 ## preview_validity_changed handler（S 扩展，Phase B v2）：
@@ -583,7 +682,11 @@ func _on_placed(instance_id: int, equipment_id: String, _footprint_cells: Array)
 
 ## --smoke 运行驱动（headless 冒烟验证）：跑满 SMOKE_FRAMES 后打印报告退出。
 func _process(_delta: float) -> void:
-	if _smoke:
+	if _community_mode and _day_cycle != null:
+		var is_outing: bool = _day_cycle.phase == "OUTING"
+		if _park_view != null and _park_view.visible != is_outing:
+			_update_scene_visibility()
+	if _smoke and not _startup_failed:
 		_smoke_frame += 1
 		if _smoke_frame >= SMOKE_FRAMES:
 			_smoke_report()
@@ -638,3 +741,215 @@ func _smoke_report() -> void:
 	])
 	print("  RESULT: PASS (no crash over %d frames)" % SMOKE_FRAMES)
 	print("=".repeat(56))
+
+
+## Saves at the current tick boundary, including when time was already paused.
+func save_game() -> bool:
+	if _save_load == null:
+		return false
+	_orch.placement_system.on_cancel()
+	_shop.notify_silent_cancel()
+	_palette.reset_transient_state()
+	var was_paused: bool = _orch.time_system.is_paused()
+	_orch.time_system.pause()
+	var error: String = _save_load.save_to_file(_save_name)
+	if not was_paused:
+		_orch.time_system.resume()
+	_save_entry.show_result(tr("保存成功 · 可随时读档") if error.is_empty() else tr("保存失败：") + error, error.is_empty())
+	return error.is_empty()
+
+
+## Loads using the existing coordinator; invalid files leave live game state unchanged.
+func load_game() -> bool:
+	if _save_load == null:
+		return false
+	var snapshot := PackedByteArray()
+	var dimensions: Vector2i = _grid.get_dimensions()
+	for y in dimensions.y:
+		for x in dimensions.x:
+			snapshot.append(1 if _grid.get_buildable(Vector2i(x, y)) else 0)
+	var result: Variant = _save_load.load_save(_save_name, snapshot)
+	if not result.ok:
+		_save_entry.show_result(tr("读档失败：") + str(result.errors), false)
+		return false
+	_instance_defs.clear()
+	for placed in _grid.get_placed_instances():
+		_instance_defs[placed.instance_id] = placed.equipment_id
+	_orch.selection_system.clear_selection()
+	_orch.placement_system.on_cancel()
+	_tooltip.dismiss()
+	_shop.notify_silent_cancel()
+	_palette.reset_transient_state()
+	_last_snap_cell = Vector2i(-999, -999)
+	_world_canvas.queue_redraw()
+	_hud.refresh_all()
+	if _community_hud != null:
+		_community_hud.clear_held_input()
+	_update_scene_visibility()
+	_save_entry.show_result(tr("读档成功 · 已暂停，按空格继续"), true)
+	return true
+
+
+## 切换或设置社区故事模式。
+func set_community_mode(enabled: bool) -> void:
+	_community_mode = enabled
+	_save_name = "gym-adventure" if _community_mode else "manual"
+	if is_inside_tree() and not _preflight_data.is_empty():
+		switch_mode(enabled)
+
+
+func switch_mode(to_community: bool) -> void:
+	_community_mode = to_community
+	_save_name = "gym-adventure" if _community_mode else "manual"
+	if _community_mode:
+		if _day_cycle == null and _preflight_data.has("gym_adventure.json"):
+			_day_cycle = DayCycleSystemScript.new()
+			_day_cycle.init(_preflight_data["gym_adventure.json"], _preflight_data["gym_adventure_fixture.json"], _orch)
+			_day_cycle.phase_changed.connect(_on_community_phase_changed)
+			if _save_load != null:
+				_save_load.set("_day_cycle", _day_cycle)
+		elif _day_cycle != null:
+			_day_cycle._restore_layout()
+		if _grid != null:
+			_instance_defs.clear()
+			for placed in _grid.get_placed_instances():
+				_instance_defs[placed.instance_id] = placed.equipment_id
+	else:
+		if _save_load != null:
+			_save_load.set("_day_cycle", null)
+		if _orch != null:
+			_orch.day_cycle = null
+			if _orch.selection_system != null:
+				_orch.selection_system.protected_instances = []
+	_update_mode_ui()
+	if _save_entry != null and _mode_btn != null:
+		_save_entry.show_result(tr("已切换至：%s") % (_mode_btn.text), true)
+
+
+func _on_mode_switch_pressed() -> void:
+	switch_mode(not _community_mode)
+
+
+func _update_mode_ui() -> void:
+	if _hud != null:
+		_hud.visible = not _community_mode
+	if _goal_tracker != null:
+		_goal_tracker.visible = not _community_mode
+	if _community_hud != null:
+		_community_hud.visible = _community_mode
+	if _palette != null:
+		_palette.visible = not _community_mode or _is_building
+	if _save_entry != null:
+		_save_entry.position = Vector2(UI_VIEWPORT_W - 360, 14) if _community_mode else Vector2(20, 76)
+	if _mode_btn != null:
+		_mode_btn.text = tr("模式：社区故事") if _community_mode else tr("模式：自由沙盒")
+		_mode_btn.position = Vector2(UI_VIEWPORT_W - 510, 14) if _community_mode else Vector2(20, 168)
+	_update_scene_visibility()
+
+
+func _update_scene_visibility() -> void:
+	var is_outing: bool = _community_mode and _day_cycle != null and _day_cycle.phase == "OUTING"
+	if _park_view != null:
+		_park_view.visible = is_outing
+		if is_outing:
+			_park_view.queue_redraw()
+	if _world_canvas != null:
+		_world_canvas.visible = not is_outing
+		if not is_outing:
+			_world_canvas.queue_redraw()
+	if _coach_layer != null:
+		_coach_layer.visible = not is_outing and _community_mode
+		if _coach_layer.visible:
+			_coach_layer.queue_redraw()
+	if _lighting != null:
+		_lighting.visible = not is_outing
+	if _ambient_fx != null:
+		_ambient_fx.visible = not is_outing
+
+
+func _toggle_community_build() -> void:
+	if _day_cycle == null or _day_cycle.phase != "PREP":
+		if _community_hud != null:
+			_community_hud.show_feedback(tr("营业与外出期间不能布置"))
+		return
+	_is_building = not _is_building
+	if _community_hud != null:
+		_community_hud.set_building(_is_building)
+	if _palette != null:
+		_palette.visible = _is_building
+	if not _is_building:
+		_orch.placement_system.on_cancel()
+		_shop.notify_silent_cancel()
+		_palette.reset_transient_state()
+
+
+func _on_community_action(action: String, payload: Dictionary) -> void:
+	if not _community_mode or _day_cycle == null:
+		return
+	match action:
+		"toggle_build":
+			_toggle_community_build()
+		"toggle_pause":
+			if _orch.time_system.is_paused():
+				_orch.time_system.resume()
+			else:
+				_orch.time_system.pause()
+		"pause":
+			_orch.time_system.pause()
+		"toggle_heatmap":
+			if _heatmap != null:
+				_heatmap.visible = not _heatmap.visible
+		"restore_layout":
+			var res: Dictionary = _day_cycle.command("restore_layout", {"confirm": true})
+			if res.ok:
+				_instance_defs.clear()
+				for placed in _grid.get_placed_instances():
+					_instance_defs[placed.instance_id] = placed.equipment_id
+				_world_canvas.queue_redraw()
+				if _community_hud != null:
+					_community_hud.show_feedback(tr("已恢复基础布局，借用设备已就位"))
+			elif _community_hud != null and not res.errors.is_empty():
+				_community_hud.show_feedback(str(res.errors[0]))
+		_:
+			var res: Dictionary = _day_cycle.command(action, payload)
+			if not res.ok and not res.errors.is_empty():
+				if _community_hud != null:
+					_community_hud.show_feedback(str(res.errors[0]))
+			elif _community_hud != null:
+				var view: Dictionary = _day_cycle.get_view_state()
+				var fb: Array = view.get("story", {}).get("feedback", [])
+				if not fb.is_empty():
+					_community_hud.show_feedback(str(fb.back()))
+			if action in ["depart", "return_to_gym", "next_day"]:
+				_update_scene_visibility()
+
+
+func _on_community_phase_changed(phase: String) -> void:
+	_update_scene_visibility()
+	if _is_building:
+		_is_building = false
+		if _community_hud != null:
+			_community_hud.set_building(false)
+		if _palette != null:
+			_palette.visible = false
+	if _save_load != null:
+		_save_load.save_to_file(_save_name)
+
+
+func _show_startup_failure(errors: Array) -> void:
+	_startup_failed = true
+	var message := "启动失败：必要游戏资源缺失或无效\n" + "\n".join(errors)
+	var label := Label.new()
+	label.name = "StartupFailure"
+	label.position = Vector2(48, 80)
+	label.size = Vector2(1180, 560)
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.add_theme_font_override("font", preload("res://src/ui/ui_theme.gd").cjk_bold_font())
+	label.add_theme_font_size_override("font_size", 24)
+	label.add_theme_color_override("font_color", Color("a33030"))
+	label.text = message
+	add_child(label)
+	push_error(message)
+	if _smoke:
+		print("PLAYABLE BUILD SMOKE RESULT: FAIL (resource preflight)")
+		get_tree().quit(1)

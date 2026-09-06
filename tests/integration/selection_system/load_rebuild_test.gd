@@ -225,6 +225,7 @@ func _make_rig(master_seed: int) -> Dictionary:
 	orch.set("economy", econ)
 
 	var catalog := _make_catalog()
+	orch.set("equipment_catalog", catalog)
 
 	var placement: RefCounted = (load(PLACEMENT_SCRIPT) as Script).new()
 	placement.call("init", gs, catalog)
