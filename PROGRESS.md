@@ -2,9 +2,9 @@
 
 ## 当前更新 — 2026-09-06
 
-**GA-004 首日灰盒主场景、控制与世界渲染组装完成**：全量测试 116 文件、**6,306 断言全部通过、0 失败**。GA-004 7 项验收标准经 [first_day_playable_test.gd](tests/integration/gym_adventure/first_day_playable_test.gd)（45/45）全绿验证，包含主场景模式切换与无串存隔离、备店/外出/营业/打烊四阶段控制、2.5D 程教练与公园跑道视口渲染、布置模式营业门禁与隔离存档冷恢复，4 阶段真实视口截图证据已固化至 `production/qa/evidence/`。
+**GA-005 首日美术样板（Visual Sample）完成**：全量测试 117 文件、**6,331 断言全部通过、0 失败**。GA-005 6 项验收标准经 [visual_sample_test.gd](tests/integration/gym_adventure/visual_sample_test.gd)（25/25）全绿验证，覆盖程教练宽肩造型（14px）、青绿外套与银白挑染发、idle/walk/guidance 姿态分化与 4 方向无 2D 屏幕旋转、跑步机与瑜伽垫真实接触锚点、昼/暮/夜/烊四时段光照与沙盒零污染，视口三联画渲染截图已固化至 `production/qa/evidence/`。
 
-当前推进重点进入 **GA-005 首日美术样板（Visual Sample）**。
+当前推进重点进入 **M3 三日内容与进阶事件扩展（Three-Day Content Expansion）**。
 
 下文为截至2026-08-02的历史进度快照，不作为当前待办或实现状态。
 

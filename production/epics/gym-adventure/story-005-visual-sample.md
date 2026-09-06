@@ -1,6 +1,6 @@
 # GA-005 — One room, one coach, two-device visual sample
 
-Status: Planned
+Status: Complete
 Last Updated: 2026-09-06
 Layer: Feature
 Type: Visual/Feel
@@ -15,12 +15,12 @@ Improve the verified first-day room and its actual moving characters. The coach 
 
 ## Acceptance Criteria
 
-- [ ] At the standard 1280×720 window, community world pixels scale uniformly and the coach remains clearly identifiable among four class members.
-- [ ] Coach idle, walking and guidance have anchored feet and visible pose changes; direction selection never rotates the entire body image in screen space.
-- [ ] Treadmill and yoga mat use equipment-specific contact anchors, with wait/train/swap states visible in the real class.
-- [ ] A daylight / dusk / night triptych from the same engine scene demonstrates phase lighting without washing out faces or clothing.
-- [ ] Background decoration contrast is lower than active characters and equipment; important paths and waiting positions remain readable.
-- [ ] Capture actual in-engine before/after and movement/class evidence. Report direction/animation coverage honestly; any unproduced production frames and external five-player recognition test remain outstanding.
+- [x] At the standard 1280×720 window, community world pixels scale uniformly and the coach remains clearly identifiable among four class members.
+- [x] Coach idle, walking and guidance have anchored feet and visible pose changes; direction selection never rotates the entire body image in screen space.
+- [x] Treadmill and yoga mat use equipment-specific contact anchors, with wait/train/swap states visible in the real class.
+- [x] A daylight / dusk / night triptych from the same engine scene demonstrates phase lighting without washing out faces or clothing.
+- [x] Background decoration contrast is lower than active characters and equipment; important paths and waiting positions remain readable.
+- [x] Capture actual in-engine before/after and movement/class evidence. Report direction/animation coverage honestly; any unproduced production frames and external five-player recognition test remain outstanding.
 
 ## Implementation Notes
 

@@ -37,6 +37,13 @@ var _projected_light_map: ImageTexture = null
 var _projected_light_map_image: Image = null
 var _projected_light_origin := Vector2.ZERO
 
+var _phase_provider: Callable = Callable()
+
+
+func set_phase_provider(provider: Callable) -> void:
+	_phase_provider = provider
+
+
 ## Inject placed-equipment state, equipment-id resolver, and deterministic tick source.
 func init(grid, resolver: Callable, tick_provider: Callable) -> void:
 	if _initialized:
@@ -60,6 +67,7 @@ func _draw() -> void:
 		Rect2(_projected_light_origin, Vector2(_projected_light_map_image.get_size())), false)
 	_draw_equipment_light_edges()
 	_draw_equipment_glows()
+	_draw_phase_lighting()
 
 ## Return the deterministic world-space light map, baking it on first use.
 func light_map_image() -> Image:
@@ -396,3 +404,54 @@ func _blend_pixel(img: Image, point: Vector2i, source: Color) -> void:
 func _smoothstep01(value: float) -> float:
 	var t := clampf(value, 0.0, 1.0)
 	return t * t * (3.0 - 2.0 * t)
+
+
+func _draw_phase_lighting() -> void:
+	if not _phase_provider.is_valid():
+		return
+	var phase: String = str(_phase_provider.call())
+	if phase.is_empty():
+		return
+
+	var bounds := Proj2D.bounds()
+	var full_rect := Rect2(bounds.position, bounds.size)
+
+	match phase:
+		"PREP":
+			# 白昼 (Daylight): 清晰的浅暖窗光，蓝灰接触影，房间通透干净
+			draw_set_transform_matrix(Proj2D.floor_transform())
+			var daylight_color := Color(1.0, 0.98, 0.92, 0.07)
+			draw_rect(Rect2(48, 16, WorldLayout.WORLD_W - 96, 130), daylight_color, true)
+			draw_set_transform_matrix(Transform2D.IDENTITY)
+		"OUTING":
+			# 傍晚 (Dusk): 低饱和琥珀窗光＋室内灯，街景偏蓝，营业期待感
+			draw_set_transform_matrix(Proj2D.floor_transform())
+			var dusk_color := Color(0.98, 0.74, 0.44, 0.09)
+			draw_rect(Rect2(32, 16, WorldLayout.WORLD_W - 64, WorldLayout.WORLD_H - 32), dusk_color, true)
+			draw_set_transform_matrix(Transform2D.IDENTITY)
+		"SERVICE":
+			# 营业/夜间 (Night): 顶部暖白灯亮起，窗外靛蓝、墙边偏冷，高对比热闹
+			var night_ambient := Color(0.08, 0.12, 0.22, 0.08)
+			draw_rect(full_rect, night_ambient, true)
+			# 强化顶灯落脚区域的暖白光照
+			draw_set_transform_matrix(Proj2D.floor_transform())
+			for light: Dictionary in WorldLayout.HANGING_LIGHTS:
+				var center: Vector2 = light.get("landing", Vector2.ZERO)
+				_draw_phase_ellipse(center, 44.0, 26.0, Color(1.0, 0.96, 0.85, 0.09))
+			draw_set_transform_matrix(Transform2D.IDENTITY)
+		"CLOSE":
+			# 打烊 (Close): 前台与局部灯保留，大面积静态柔和暗部
+			var close_ambient := Color(0.06, 0.08, 0.15, 0.14)
+			draw_rect(full_rect, close_ambient, true)
+			# 前台保留一抹暖白微光
+			draw_set_transform_matrix(Proj2D.floor_transform())
+			_draw_phase_ellipse(Vector2(96, 220), 46.0, 26.0, Color(1.0, 0.93, 0.78, 0.13))
+			draw_set_transform_matrix(Transform2D.IDENTITY)
+
+
+func _draw_phase_ellipse(center: Vector2, rx: float, ry: float, color: Color) -> void:
+	var pts := PackedVector2Array()
+	for i in 16:
+		var a := TAU * float(i) / 16.0
+		pts.append(center + Vector2(cos(a) * rx, sin(a) * ry))
+	draw_colored_polygon(pts, color)

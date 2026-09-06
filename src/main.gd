@@ -419,6 +419,9 @@ func _assemble_presentation() -> void:
 	_lighting.z_index = 1
 	_lighting.init(_grid, _resolver(),
 		func() -> int: return _orch.get_tick_count())
+	_lighting.set_phase_provider(func() -> String:
+		return _day_cycle.phase if _community_mode and _day_cycle != null else ""
+	)
 	_world_root.add_child(_lighting)
 
 	# Phase 5：V3 §9 微型动态（光尘/汗滴/传送带/飞轮/杯闪）—— 克制数量。
@@ -462,7 +465,7 @@ func _assemble_presentation() -> void:
 	_coach_layer.z_index = 3
 	_coach_layer.init(func() -> Dictionary:
 		return _day_cycle.get_view_state() if _day_cycle != null else {}
-	, CELL_SIZE)
+	, CELL_SIZE, func() -> int: return _orch.get_tick_count() if _orch != null else 0)
 	_coach_layer.visible = _community_mode
 	_world_root.add_child(_coach_layer)
 
