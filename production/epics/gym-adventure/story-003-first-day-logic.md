@@ -1,6 +1,6 @@
 # GA-003 — First playable community day: simulation
 
-Status: In Progress
+Status: Complete
 Last Updated: 2026-09-06
 Layer: Core
 Type: Integration
@@ -11,13 +11,13 @@ Dependencies: GA-001 and GA-002 foundation gate.
 
 ## Acceptance Criteria
 
-- [ ] Community mode starts PREP with 280 and movable, unsellable borrowed treadmill/yoga mat, separate from the sandbox.
-- [ ] Shared fixed clock drives PREP/OUTING/SERVICE/CLOSE with pause/focus correctness and fixed service 1x; running service ends at 360 seconds after final settlement.
-- [ ] Park route supports legal movement, three pace choices, stamina, 180-second formal attempt, 28-bin scoring, practice and return; result and unfinished attempt survive load.
-- [ ] Eight ordinary arrivals and four class members use real MemberSim positions/navigation. Four blocks reserve two devices; no-purchase AUTO baseline opens by 220 seconds and every seat trains at least 30 seconds.
-- [ ] Ordinary 12 and class 24 fees are mutually exclusive and once-only; course quality follows GDD. Guidance selection/timing and automatic fallback work without blocking closing.
-- [ ] First-day Aluo meeting/class/closing exchange has a skip-park route; next day and save continuation retain events and avoid duplicate rewards.
-- [ ] Complete mode data validates before load mutation; cold disk restore during all active activities is deterministic and resumes paused. Invalid/cross-mode data fails safely.
+- [x] Community mode starts PREP with 280 and movable, unsellable borrowed treadmill/yoga mat, separate from the sandbox.
+- [x] Shared fixed clock drives PREP/OUTING/SERVICE/CLOSE with pause/focus correctness and fixed service 1x; running service ends at 360 seconds after final settlement.
+- [x] Park route supports legal movement, three pace choices, stamina, 180-second formal attempt, 28-bin scoring, practice and return; result and unfinished attempt survive load.
+- [x] Eight ordinary arrivals and four class members use real MemberSim positions/navigation. Four blocks reserve two devices; no-purchase AUTO baseline opens by 220 seconds and every seat trains at least 30 seconds.
+- [x] Ordinary 12 and class 24 fees are mutually exclusive and once-only; course quality follows GDD. Guidance selection/timing and automatic fallback work without blocking closing.
+- [x] First-day Aluo meeting/class/closing exchange has a skip-park route; next day and save continuation retain events and avoid duplicate rewards.
+- [x] Complete mode data validates before load mutation; cold disk restore during all active activities is deterministic and resumes paused. Invalid/cross-mode data fails safely.
 
 ## Implementation Notes
 

@@ -343,6 +343,13 @@ func get_selected_instance_id() -> int:
 	return _selected_instance_id
 
 
+## Public entry to select an instance by ID.
+func select(instance_id: int) -> void:
+	if not _assert_initialized():
+		return
+	_select_instance(instance_id)
+
+
 # === Selection resolution internals ===
 
 ## Resolves [instance_id] through the local mapping and emits the select
