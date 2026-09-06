@@ -91,6 +91,44 @@ var _member_last_cell: Dictionary = {}
 
 var _initialized: bool = false
 
+const PROP_ASSET_PATHS := {
+	"sign_neon_lin": "res://assets/sprites/props/sign_neon_lin.png",
+	"front_desk": "res://assets/sprites/props/front_desk.png",
+	"water_towel_station": "res://assets/sprites/props/water_towel_station.png",
+	"dumbbell_rack": "res://assets/sprites/props/dumbbell_rack.png",
+}
+
+var _prop_textures: Dictionary = {}
+var _renovation_provider: Callable = Callable()
+
+
+func set_renovation_provider(provider: Callable) -> void:
+	_renovation_provider = provider
+
+
+func is_renovated() -> bool:
+	return _renovation_provider.is_valid() and bool(_renovation_provider.call())
+
+
+func prop_texture(prop_name: String) -> Texture2D:
+	if _prop_textures.has(prop_name):
+		return _prop_textures[prop_name]
+	var path: String = str(PROP_ASSET_PATHS.get(prop_name, ""))
+	if path == "":
+		return null
+	var tex: Texture2D = null
+	if ResourceLoader.exists(path, "Texture2D"):
+		var res = ResourceLoader.load(path, "Texture2D")
+		if res is Texture2D:
+			tex = res
+	if tex == null and FileAccess.file_exists(path):
+		var img := Image.new()
+		if img.load(path) == OK:
+			tex = ImageTexture.create_from_image(img)
+	_prop_textures[prop_name] = tex
+	return tex
+
+
 
 ## 两阶段 init：注入世界绘制依赖并订阅重绘信号（grid_changed S1 /
 ## tick_completed S2 / preview_validity_changed —— 与旧 main.gd 的 BUILD-03/04
@@ -533,6 +571,10 @@ func _draw_structure_gameplay() -> void:
 	# 正面手工木纹 cluster：沿正面平面（世界 y=y1，z∈[0,h]）撒确定性暗/亮
 	# 小色块 —— 正面不再 200px+ 单色直线（P3 手绘感）。
 	_draw_desk_front_clusters(rect, STRUCT_FRONT_DESK_H)
+	var desk_prop: Texture2D = prop_texture("front_desk")
+	if desk_prop != null:
+		var desk_top_pos := Proj2D.proj(rect.position.x + 28, rect.position.y, STRUCT_FRONT_DESK_H)
+		draw_texture_rect(desk_prop, Rect2(desk_top_pos, Vector2(48, 24)), false)
 
 
 ## 前台正面手工 cluster（V3.1 R3 / P3）：沿正面平面确定性撒 20 个 2-3px
@@ -613,6 +655,15 @@ func _draw_structure_foreground() -> void:
 				continue
 			draw_texture_rect(tex, Rect2(rect.position, rect.size), false)
 	)
+	var station_tex: Texture2D = prop_texture("water_towel_station")
+	if station_tex != null:
+		var st_pos := Proj2D.proj(16, 256, 0.0)
+		draw_texture_rect(station_tex, Rect2(st_pos, Vector2(24, 32)), false)
+	var rack_tex: Texture2D = prop_texture("dumbbell_rack")
+	if rack_tex != null:
+		var rack_pos := Proj2D.proj(154, 252, 0.0)
+		draw_texture_rect(rack_tex, Rect2(rack_pos, Vector2(32, 24)), false)
+
 
 
 ## V3.1 R4 落地灯物件：使用 EnvironmentArt 的手绘灯体，但在投影后空间
@@ -733,6 +784,10 @@ func _draw_north_wall_decor() -> void:
 			draw_texture_rect(tex, Rect2(pos, Vector2(size) * 0.5), false)
 			if prop_id == "tv":
 				_draw_tv_screen(pos, tick)
+	if is_renovated():
+		var neon_tex: Texture2D = prop_texture("sign_neon_lin")
+		if neon_tex != null:
+			draw_texture_rect(neon_tex, Rect2(Vector2(20, 2), Vector2(48, 20)), false)
 	# 挂钟烘焙进北墙纹理
 	# （structure_art._bake_north_wall_structure_decor），不再逐帧 draw_rect
 	# （draw call 预算让给场景主体）。

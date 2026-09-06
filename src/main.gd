@@ -409,6 +409,12 @@ func _assemble_presentation() -> void:
 			return -1
 		return _grid.get_occupant_id(cell)
 	)
+	_world_canvas.set_renovation_provider(func() -> bool:
+		if _community_mode and _day_cycle != null:
+			var view: Dictionary = _day_cycle.get_view_state()
+			return bool(view.get("gym_renovated", false))
+		return false
+	)
 	_world_root.add_child(_world_canvas)
 
 	# Phase 5：V3 §6 方向光 + 氛围层（世界像素空间，画在 WorldCanvas 之上）。

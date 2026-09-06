@@ -4,17 +4,29 @@ extends Control
 signal action_requested(action: String, payload: Dictionary)
 const UiTheme := preload("res://src/ui/ui_theme.gd")
 const Palette := preload("res://src/palette.gd")
+
+const PORTRAIT_PATHS := {
+	"coach": "res://assets/sprites/portraits/portrait_cheng.png",
+	"aluo": "res://assets/sprites/portraits/portrait_aluo.png",
+	"qiu": "res://assets/sprites/portraits/portrait_qiu.png",
+	"lin": "res://assets/sprites/portraits/portrait_lin.png",
+}
+
 var _provider: Callable
 var _title: Label
 var _objective: Label
 var _details: Label
 var _feedback: Label
+var _portrait: TextureRect
+var _speaker_label: Label
 var _actions: HBoxContainer
 var _buttons: Dictionary = {}
 var _held: Dictionary = {}
 var _view: Dictionary = {}
 var _building := false
 var _last_phase := ""
+var _portrait_textures: Dictionary = {}
+var _active_speaker_id: String = ""
 
 ## Injects a deep read-view provider. No simulation state is retained as mutable UI data.
 func init(provider: Callable) -> void:
@@ -28,6 +40,21 @@ func _ready() -> void:
 	_objective = _label("Objective", Vector2(26, 49), Vector2(850, 28), 18)
 	_details = _label("Context", Vector2(26, 542), Vector2(1228, 42), 18)
 	_feedback = _label("Feedback", Vector2(26, 584), Vector2(1228, 28), 16)
+	_portrait = TextureRect.new()
+	_portrait.name = "SpeakerPortrait"
+	_portrait.position = Vector2(26, 524)
+	_portrait.size = Vector2(52, 52)
+	_portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_portrait.texture_filter = Control.TEXTURE_FILTER_NEAREST
+	_portrait.visible = false
+	_portrait.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_portrait)
+
+	_speaker_label = _label("SpeakerName", Vector2(88, 524), Vector2(300, 22), 16)
+	_speaker_label.visible = false
+	_speaker_label.add_theme_color_override("font_color", Palette.CHARCOAL)
+
 	_actions = HBoxContainer.new()
 	_actions.name = "Actions"
 	_actions.position = Vector2(26, 621)
@@ -64,6 +91,33 @@ func _ready() -> void:
 		_actions.add_child(button)
 		_buttons[choice] = button
 	_refresh()
+
+func get_active_portrait_character() -> String:
+	return _active_speaker_id
+
+func is_portrait_visible() -> bool:
+	return _portrait != null and _portrait.visible
+
+func get_speaker_name() -> String:
+	return _speaker_label.text if _speaker_label != null else ""
+
+func _get_portrait_texture(character_id: String) -> Texture2D:
+	if _portrait_textures.has(character_id):
+		return _portrait_textures[character_id]
+	var path: String = str(PORTRAIT_PATHS.get(character_id, ""))
+	if path == "":
+		return null
+	var tex: Texture2D = null
+	if ResourceLoader.exists(path, "Texture2D"):
+		var res = ResourceLoader.load(path, "Texture2D")
+		if res is Texture2D:
+			tex = res
+	if tex == null and FileAccess.file_exists(path):
+		var img := Image.new()
+		if img.load(path) == OK:
+			tex = ImageTexture.create_from_image(img)
+	_portrait_textures[character_id] = tex
+	return tex
 
 func _label(node_name: String, pos: Vector2, extent: Vector2, font_size: int) -> Label:
 	var label := Label.new()
@@ -112,18 +166,67 @@ func _refresh() -> void:
 	var guidance: bool = bool(course.get("guidance_open", false)) or str(request.get("stage", "")) == "CHOICE"
 	var timing: bool = str(request.get("stage", "")) == "TIMING"
 	var details := "WASD / 方向键移动 · E 交流 · F5 保存 · F9 读档"
+	var speaker_id := ""
+	var speaker_name := ""
 	if phase == "OUTING":
 		details = "1 走路 / 2 慢跑 / 3 冲刺 · 体力 %.0f · 路程 %.1f 米 · 剩余 %.0f 秒" % [float(outing.get("stamina", 100)), float(outing.get("distance_m", 0)), float(outing.get("remaining_seconds", 180))]
+		if not active_run:
+			speaker_id = "aluo"
+			speaker_name = "阿洛 · 公园"
 	elif phase == "SERVICE":
 		details = "营业剩余 %d 秒 · %s · E 指导会员 · H 热图" % [maxi(0, 360 - int(_view.get("service_seconds", 0))), str(course.get("label", course.get("status", "等待课程")))]
 		if int(course.get("block", 0)) > 0:
 			details += " · 第 %d / 4 段" % int(course.block)
 	elif phase == "CLOSE":
-		details = str(_view.get("story", {}).get("dialogue", "今天辛苦了。明天继续。"))
+		var story: Dictionary = _view.get("story", {})
+		var close_dlg: String = str(story.get("dialogue", story.get("closing_text", "今天辛苦了。明天继续。")))
+		details = close_dlg
+		if close_dlg.begins_with("阿洛：") or close_dlg.contains("阿洛："):
+			speaker_id = "aluo"
+			speaker_name = "阿洛"
+		elif close_dlg.begins_with("老邱：") or close_dlg.contains("老邱："):
+			speaker_id = "qiu"
+			speaker_name = "老邱"
+		elif close_dlg.begins_with("林师傅：") or close_dlg.contains("林师傅："):
+			speaker_id = "lin"
+			speaker_name = "林师傅"
+		elif close_dlg.begins_with("程教练：") or close_dlg.contains("程教练："):
+			speaker_id = "coach"
+			speaker_name = "程教练"
+	elif phase == "PREP":
+		if int(_view.get("day", 1)) >= 2 and not bool(_view.get("gym_renovated", false)):
+			speaker_id = "lin"
+			speaker_name = "林师傅 · 改造建议"
+		else:
+			speaker_id = "coach"
+			speaker_name = "程教练"
 	if guidance:
 		details = str(request.get("prompt", course.get("guidance_prompt", "保持 / 放缓 / 休息，选一个节奏。")))
+		speaker_id = "coach"
+		speaker_name = "程教练 · 指导"
 	elif timing:
 		details = "按 E 或点击踩准节奏 · 观察会员呼吸"
+		speaker_id = "coach"
+		speaker_name = "程教练 · 节奏"
+
+	_active_speaker_id = speaker_id
+	var tex: Texture2D = _get_portrait_texture(speaker_id) if speaker_id != "" else null
+	var show_portrait: bool = tex != null and (phase in ["CLOSE", "OUTING"] or guidance or timing or (phase == "PREP" and int(_view.get("day", 1)) >= 2 and not bool(_view.get("gym_renovated", false))))
+	if show_portrait:
+		_portrait.texture = tex
+		_portrait.visible = true
+		_speaker_label.text = speaker_name
+		_speaker_label.visible = true
+		var py: float = 486.0 if _building else 524.0
+		_portrait.position = Vector2(26, py)
+		_speaker_label.position = Vector2(88, py)
+		_details.position = Vector2(88, py + 22.0)
+		_details.size = Vector2(1166, 36)
+	else:
+		_portrait.visible = false
+		_speaker_label.visible = false
+		_details.position = Vector2(26, 503 if _building else 542)
+		_details.size = Vector2(1228, 42)
 	_details.text = details
 	for button: Button in _buttons.values():
 		button.visible = false
