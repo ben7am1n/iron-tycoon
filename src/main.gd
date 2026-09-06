@@ -72,6 +72,7 @@ const DayCycleSystemScript := preload("res://src/systems/day_cycle_system.gd")
 const CommunityHudScript := preload("res://src/ui/community_hud.gd")
 const CoachLayerScript := preload("res://src/presentation/coach_layer.gd")
 const ParkViewScript := preload("res://src/presentation/park_view.gd")
+const AudioManagerScript := preload("res://src/audio/audio_manager.gd")
 
 # === 场景级常量（组装参数，非玩法数值） ===
 const GRID_W := 13
@@ -178,6 +179,7 @@ var _env_art
 var _structure_art
 var _lighting
 var _ambient_fx
+var _audio_manager = null
 
 # === V3 §2 低分辨率世界管线引用 ===
 var _world_viewport   # SubViewport：低分辨率世界画布（426×240）
@@ -207,6 +209,7 @@ func _ready() -> void:
 	_assemble_systems()
 	_assemble_presentation()
 	_assemble_ui()
+	_assemble_audio()
 	_initial_layout()
 	if _smoke:
 		_orch.time_system.resume()  # 让 tick 循环跑起来以便 smoke 观察
@@ -645,6 +648,32 @@ func _assemble_ui() -> void:
 	_update_mode_ui()
 
 
+# === 第 4 层：音频系统（AudioManager —— 音效池、环境白噪、BGM与事件绑定） ===
+
+func _assemble_audio() -> void:
+	_audio_manager = AudioManagerScript.new()
+	_audio_manager.name = "AudioManager"
+	add_child(_audio_manager)
+
+	if _orch != null:
+		_audio_manager.connect_placement_system(_orch.placement_system)
+		_audio_manager.connect_economy(_orch.economy)
+		var sel_bridge = _orch.get_node_or_null("SelectionInputBridge")
+		if sel_bridge != null:
+			_audio_manager.connect_selection_bridge(sel_bridge)
+	if _day_cycle != null:
+		_audio_manager.connect_day_cycle(_day_cycle)
+	if _community_hud != null:
+		_audio_manager.connect_community_hud(_community_hud)
+
+	_audio_manager.play_ambient("gym_ambient")
+	_audio_manager.play_bgm("cozy_gym_groove")
+
+
+func get_audio_manager() -> Node:
+	return _audio_manager
+
+
 # === 初始布局：空房开局，让玩家亲手完成首次购买与放置 ===
 
 func _initial_layout() -> void:
@@ -770,6 +799,8 @@ func save_game() -> bool:
 	var error: String = _save_load.save_to_file(_save_name)
 	if not was_paused:
 		_orch.time_system.resume()
+	if error.is_empty() and _audio_manager != null:
+		_audio_manager.notify_save_completed()
 	_save_entry.show_result(tr("保存成功 · 可随时读档") if error.is_empty() else tr("保存失败：") + error, error.is_empty())
 	return error.is_empty()
 
@@ -949,6 +980,8 @@ func _on_community_phase_changed(phase: String) -> void:
 			_palette.visible = false
 	if _save_load != null:
 		_save_load.save_to_file(_save_name)
+		if _audio_manager != null:
+			_audio_manager.notify_save_completed()
 
 
 func _show_startup_failure(errors: Array) -> void:

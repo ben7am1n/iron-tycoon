@@ -136,6 +136,7 @@ const TEST_FILES := [
 	"tests/integration/gym_adventure/three_day_progression_test.gd",
 	"tests/integration/gym_adventure/three_day_playable_test.gd",
 	"tests/unit/art_assets/character_portraits_and_props_test.gd",
+	"tests/unit/audio/audio_system_test.gd",
 ]
 
 # === 隔离的测试文件 ===
