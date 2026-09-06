@@ -38,10 +38,19 @@ var _projected_light_map_image: Image = null
 var _projected_light_origin := Vector2.ZERO
 
 var _phase_provider: Callable = Callable()
+var _renovation_provider: Callable = Callable()
 
 
 func set_phase_provider(provider: Callable) -> void:
 	_phase_provider = provider
+
+
+func set_renovation_provider(provider: Callable) -> void:
+	_renovation_provider = provider
+
+
+func is_renovated() -> bool:
+	return _renovation_provider.is_valid() and bool(_renovation_provider.call())
 
 
 ## Inject placed-equipment state, equipment-id resolver, and deterministic tick source.
@@ -447,6 +456,13 @@ func _draw_phase_lighting() -> void:
 			draw_set_transform_matrix(Proj2D.floor_transform())
 			_draw_phase_ellipse(Vector2(96, 220), 46.0, 26.0, Color(1.0, 0.93, 0.78, 0.13))
 			draw_set_transform_matrix(Transform2D.IDENTITY)
+
+	if is_renovated():
+		# 林师傅改造后的门头招牌霓虹微光与升级前台光斑
+		draw_set_transform_matrix(Proj2D.floor_transform())
+		_draw_phase_ellipse(Vector2(56, 28), 38.0, 20.0, Color(0.18, 0.85, 0.95, 0.16))
+		_draw_phase_ellipse(Vector2(96, 220), 52.0, 28.0, Color(1.0, 0.94, 0.78, 0.12))
+		draw_set_transform_matrix(Transform2D.IDENTITY)
 
 
 func _draw_phase_ellipse(center: Vector2, rx: float, ry: float, color: Color) -> void:

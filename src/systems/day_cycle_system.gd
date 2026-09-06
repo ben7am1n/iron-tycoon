@@ -22,7 +22,8 @@ func init(config: Dictionary, fixture: Dictionary, orchestrator: SimulationOrche
 		"coach": fixture.coach_spawn.duplicate(), "outing": {}, "formal_result": {},
 		"course": {}, "request": {}, "events": [], "feedback": [], "stored": [],
 		"ordinary_index": 0, "request_index": 0, "class_spawned": false,
-		"closing_text": "林师傅：灯能亮。先给大家留一条舒服的路。"}
+		"closing_text": "林师傅：灯能亮。先给大家留一条舒服的路。",
+		"selected_course_id": "course_endurance_intro", "last_course_arrivals": -1}
 	_initialized = true
 	_orch.day_cycle = self
 	_orch.member_sim.configure_community(float(config.gym.member_walk_cells_per_second))
@@ -46,7 +47,7 @@ func command(action: String, payload: Dictionary = {}) -> Dictionary:
 			if not issues.is_empty(): return {"ok": false, "errors": issues}
 			_change_phase("OUTING")
 			_orch.time_system.resume()
-		"return_to_gym":
+		"return_to_gym", "open_service":
 			if not phase in ["PREP", "OUTING"]: return _error("现在不能开始营业")
 			if phase == "OUTING" and _state.outing.active:
 				if not payload.get("confirm", false): return _error("先结束挑战，再返回健身房")
@@ -74,7 +75,12 @@ func command(action: String, payload: Dictionary = {}) -> Dictionary:
 		"interact":
 			if phase == "OUTING":
 				_event("aluo_met")
-				_feedback("阿洛：唱副歌时，我总比鼓手先结束。今晚我来试试！")
+				if int(_state.day) == 2:
+					_feedback("阿洛：今天我换了段慢歌的副歌，感觉能跟上呼吸了。")
+				elif int(_state.day) >= 3:
+					_feedback("阿洛：今晚我们乐队四个人来包场，我都跟他们交代好了！")
+				else:
+					_feedback("阿洛：唱副歌时，我总比鼓手先结束。今晚我来试试！")
 			elif phase == "SERVICE":
 				var request: Dictionary = _state.request
 				if request.is_empty(): return _error("目前没有需要指导的会员")
@@ -131,7 +137,28 @@ func command(action: String, payload: Dictionary = {}) -> Dictionary:
 			if phase != "PREP": return _error("请在准备时取回收纳")
 			_restore_stored()
 		"select_course":
-			if phase != "PREP" or payload.get("course_id") != "course_endurance_intro": return _error("首日原型提供新手耐力循环")
+			if phase != "PREP": return _error("请在开店准备时选择课程")
+			var course_id := str(payload.get("course_id", "course_endurance_intro"))
+			if not course_id in ["course_endurance_intro", "course_strength_intro"]:
+				return _error("未知课程：" + course_id)
+			var devs := _find_course_devices(course_id)
+			if devs.size() < 2:
+				if course_id == "course_strength_intro":
+					return _error("需要先购买并摆放卧推架")
+				else:
+					return _error("需要先摆放跑步机或单车")
+			_state.selected_course_id = course_id
+			_state.course.devices = devs
+			_state.course.course_id = course_id
+			_feedback("已选择课程：" + ("基础力量循环" if course_id == "course_strength_intro" else "新手耐力循环"))
+		"renovate_gym":
+			if not phase in ["PREP", "CLOSE"]: return _error("请在开店准备或打烊时进行场馆改造")
+			if _state.events.has("gym_renovated"): return _error("场馆已经改造过了")
+			var cost := int(_config.economy.get("renovation_cost", 120))
+			if _orch.economy.balance < cost: return _error("现金不足 %d 元，暂时无法改造" % cost)
+			if not _orch.economy.spend(cost): return _error("扣除改造费用失败")
+			_event("gym_renovated")
+			_feedback("林师傅：招牌和前台修好了！整条街都能看到我们的新光彩。")
 		_:
 			return _error("未知操作：" + action)
 	return {"ok": true, "errors": []}
@@ -151,8 +178,10 @@ func tick_begin() -> void:
 		_state.ordinary_index += 1
 	if not _state.class_spawned and tick >= _ticks(_config.day.course_arrival_seconds):
 		_state.class_spawned = true
+		var is_band: bool = bool(_state.course.get("is_band_event", false))
+		var band_roster := ["singer_aluo", "band_bass_aming", "band_guitar_dawei", "band_drum_xiaokai"]
 		for i in int(_config.day.course_seats):
-			var npc := "singer_aluo" if i == 0 and _state.events.has("aluo_met") else ""
+			var npc: String = band_roster[i] if is_band else ("singer_aluo" if i == 0 and _state.events.has("aluo_met") else "")
 			var id: int = _orch.member_sim.spawn_visit("D%d:C%d" % [_state.day, i], "course", npc)
 			_state.course.members.append(id)
 			_orch.member_sim.set_course_task(id, _cell(_fixture.waiting_cells[i]), -1, 0, 0)
@@ -162,6 +191,8 @@ func tick_begin() -> void:
 		if _class_ready():
 			_state.course.status = "running"
 			_state.course.start_tick = tick
+			if bool(_state.course.get("is_band_event", false)):
+				_event("band_event_attended")
 			_open_block(0)
 		elif tick >= _ticks(_config.day.course_latest_start_seconds):
 			_state.course.status = "canceled"
@@ -201,7 +232,22 @@ func tick_end() -> void:
 	if int(_state.service_tick) >= _ticks(_config.day.service_seconds):
 		_state.request = {}
 		_event("aluo_met")
-		_state.closing_text = "阿洛：原来坚持到最后，不一定要一直拼命。明天还想来。" if _state.events.has("aluo_first_class") else "阿洛：今天认识了这家小馆。明天给我留一席吧。"
+		var day: int = int(_state.day)
+		if day == 1:
+			_state.closing_text = "阿洛：原来坚持到最后，不一定要一直拼命。明天还想来。" if _state.events.has("aluo_first_class") else "阿洛：今天认识了这家小馆。明天给我留一席吧。"
+		elif day == 2:
+			if _state.events.has("aluo_first_class"):
+				_event("band_invitation")
+				_state.closing_text = "阿洛：他们说想来试试。四个人，不带音箱……先不带。\n林师傅：我修好了招牌，它现在认识晚上了。"
+				_feedback("阿洛发出了乐队包场邀请！林师傅也提出了场馆改造建议。")
+			else:
+				_state.closing_text = "老邱：每个人有自己的节奏。明天继续找感觉。"
+		else:
+			if _state.events.has("band_event_complete"):
+				_state.closing_text = "程教练：明天还来？\n阿洛：我把鼓手也带上。\n老邱：他不是今天来了吗？\n阿洛：今天来的是吉他手。鼓手还在找停车位。"
+				_feedback("三天故事切片圆满达成！")
+			else:
+				_state.closing_text = "老邱：明天再约一次。乐队的配合会越来越好。"
 		_change_phase("CLOSE")
 		_orch.time_system.pause()
 
@@ -215,12 +261,21 @@ func get_view_state() -> Dictionary:
 	outing["result"] = _state.formal_result.duplicate(true)
 	outing["position"] = _route_position(float(outing.progress_m))
 	outing["target_mps"] = _target_speed(float(outing.progress_m))
-	var objectives := {"PREP": "准备两件器械与一条通道，然后去公园认识阿洛。", "OUTING": "沿步道走、慢跑与冲刺，找到呼吸的节奏。", "SERVICE": "给四位会员留出换站通道，靠近需要帮助的人。", "CLOSE": "今天的训练结束了，听听阿洛怎么说。"}
+	var day: int = int(_state.day)
+	var objectives := {
+		"PREP": "准备两件器械与一条通道，然后去公园认识阿洛。" if day == 1 else ("今晚是乐队包场！检查器械通道，准备迎接四位乐手伙伴。" if (day >= 3 and _state.events.has("band_invitation") and not _state.events.has("band_event_complete")) else ("昨天换站动线稍显仓促。今天可调整布局，或购买卧推架开启力量课。" if int(_state.get("last_course_arrivals", 8)) < 8 else "昨天换站节奏很棒！今天可购买卧推架开启力量课，或继续耐力循环。")),
+		"OUTING": "沿步道走、慢跑与冲刺，找到呼吸的节奏。" if day == 1 else ("在公园与阿洛交流新歌，或继续配速练习。" if day == 2 else "阿洛在公园热身，去和他聊聊今晚的包场。"),
+		"SERVICE": "乐队包场进行中！确保四位乐手顺利换站完成训练。" if bool(_state.course.get("is_band_event", false)) else "给四位会员留出换站通道，靠近需要帮助的人。",
+		"CLOSE": "今天的训练结束了，听听阿洛怎么说。" if day == 1 else ("阿洛提出了乐队包场！也可以向林师傅咨询场馆改造。" if day == 2 and _state.events.has("band_invitation") else ("三天体验切片达成！听听大家的合影与告别感言。" if _state.events.has("band_event_complete") else "今天的训练结束了，听听大家的反馈。"))
+	}
 	return {"phase": phase, "day": _state.day, "service_seconds": float(_state.service_tick) * _dt(),
 		"balance": _orch.economy.balance, "build_allowed": phase == "PREP", "paused": _orch.time_system.is_paused(),
-		"objective": objectives[phase], "coach": {"position": _state.coach.duplicate(), "scene": "park" if phase == "OUTING" else "gym", "direction": _state.move.duplicate()},
+		"objective": objectives.get(phase, ""), "coach": {"position": _state.coach.duplicate(), "scene": "park" if phase == "OUTING" else "gym", "direction": _state.move.duplicate()},
 		"outing": outing, "course": course, "request": _state.request.duplicate(true),
 		"stored_count": _state.stored.size(),
+		"selected_course_id": _state.get("selected_course_id", "course_endurance_intro"),
+		"gym_renovated": _state.events.has("gym_renovated"),
+		"is_band_event": bool(_state.course.get("is_band_event", false)),
 		"story": {"events": _state.events.duplicate(), "closing_text": _state.closing_text, "feedback": _state.feedback.duplicate()}}
 
 ## Complete session payload, independent of frame/UI state. Held keys never restore.
@@ -234,10 +289,17 @@ func serialize() -> Dictionary:
 func deserialize(data: Dictionary, validate_only: bool = false) -> Dictionary:
 	if not _initialized: return _error("DayCycle not initialized")
 	if data.get("mode_id") != _config.mode_id or not data.get("phase", "") in ["PREP", "OUTING", "SERVICE", "CLOSE"]: return _error("存档模式或阶段不匹配")
+	if not data.has("selected_course_id"):
+		data["selected_course_id"] = "course_endurance_intro"
+	if not data.has("last_course_arrivals"):
+		data["last_course_arrivals"] = -1
 	for key in _state.keys():
-		if not data.has(key) or typeof(data[key]) != typeof(_state[key]):
-			# JSON normalization accepts integral-valued floats for these scalars.
-			if not (key in ["day", "service_tick", "ordinary_index", "request_index"] and data.get(key) is int):
+		if not data.has(key):
+			return _error("社区存档缺少或损坏字段：" + key)
+		var match_type := typeof(data[key]) == typeof(_state[key])
+		if not match_type:
+			var int_like: bool = key in ["day", "service_tick", "ordinary_index", "request_index", "last_course_arrivals"] and (data.get(key) is int or (data.get(key) is float and is_finite(float(data[key])) and floorf(float(data[key])) == float(data[key])))
+			if not int_like:
 				return _error("社区存档缺少或损坏字段：" + key)
 	if int(data.day) < 1 or int(data.service_tick) < 0 or int(data.service_tick) > _ticks(_config.day.service_seconds): return _error("社区时间无效")
 	if not _pair(data.coach) or not _pair(data.move): return _error("主角位置无效")
@@ -254,6 +316,12 @@ func deserialize(data: Dictionary, validate_only: bool = false) -> Dictionary:
 		_state = data.duplicate(true)
 		_state.erase("mode_id")
 		_state.move = [0.0, 0.0]
+		_state.day = int(_state.day)
+		_state.service_tick = int(_state.service_tick)
+		_state.ordinary_index = int(_state.ordinary_index)
+		_state.request_index = int(_state.request_index)
+		_state.last_course_arrivals = int(_state.get("last_course_arrivals", -1))
+		_state.selected_course_id = str(_state.get("selected_course_id", "course_endurance_intro"))
 		if _state.has("outing") and _state.outing is Dictionary:
 			_state.outing.seconds = float(_state.outing.get("seconds", 0.0))
 			_state.outing.progress_m = float(_state.outing.get("progress_m", 0.0))
@@ -270,12 +338,49 @@ func deserialize(data: Dictionary, validate_only: bool = false) -> Dictionary:
 	return {"ok": true, "errors": []}
 
 func _new_course() -> void:
+	var course_id: String = str(_state.get("selected_course_id", "course_endurance_intro"))
+	var devs := _find_course_devices(course_id)
+	if devs.size() < 2:
+		course_id = "course_endurance_intro"
+		devs = _find_course_devices(course_id)
+		if devs.size() < 2:
+			devs = [0, 1]
+	_state.selected_course_id = course_id
+	var is_band: bool = _state.events.has("band_invitation") and not _state.events.has("band_event_complete")
 	_state.course = {"status": "scheduled", "start_tick": -1, "block": -1, "members": [],
-		"devices": [0, 1], "training_seconds": [0.0, 0.0, 0.0, 0.0], "arrivals": 0,
-		"guidance": {}, "guidance_scores": [0.5, 0.5], "quality": 0}
+		"devices": devs, "training_seconds": [0.0, 0.0, 0.0, 0.0], "arrivals": 0,
+		"guidance": {}, "guidance_scores": [0.5, 0.5], "quality": 0,
+		"course_id": course_id, "is_band_event": is_band}
+
+func _find_course_devices(course_id: String) -> Array:
+	var primary_types: Array = []
+	var secondary_type := "yoga_mat"
+	if course_id == "course_strength_intro":
+		primary_types = ["bench_press"]
+	else:
+		primary_types = ["treadmill", "bike"]
+	var primary_id := -1
+	var secondary_id := -1
+	for placed in _orch.grid_system.get_placed_instances():
+		if primary_id == -1 and primary_types.has(placed.equipment_id):
+			primary_id = placed.instance_id
+		elif secondary_id == -1 and placed.equipment_id == secondary_type:
+			secondary_id = placed.instance_id
+	if primary_id != -1 and secondary_id != -1:
+		return [primary_id, secondary_id]
+	return []
 
 func _opening_errors() -> Array:
 	var errors: Array = []
+	var course_id: String = str(_state.get("selected_course_id", "course_endurance_intro"))
+	var devs := _find_course_devices(course_id)
+	if devs.size() < 2:
+		if course_id == "course_strength_intro":
+			errors.append("力量课程需要摆放卧推架与瑜伽垫")
+		else:
+			errors.append("请恢复借用器械并保持入口到器械可达")
+		return errors
+	_state.course.devices = devs
 	for id in _state.course.devices:
 		var cells: Array = _orch.grid_system.get_access_cells(int(id))
 		if cells.is_empty() or _orch.navigation.get_path(_cell(_fixture.entrance), cells[0]).is_empty(): errors.append("请恢复借用器械并保持入口到器械可达")
@@ -315,16 +420,26 @@ func _finish_course() -> void:
 	course.status = "completed"
 	course.guidance = {}
 	var completed := 0.0
+	var min_fraction: float = float(_config.economy.course_fee_min_training_fraction)
+	var threshold: float = float(_config.day.course_training_seconds_per_person) * min_fraction
+	var band_complete := true
 	for i in 4:
 		var trained: float = course.training_seconds[i]
 		completed += trained / float(_config.day.course_training_seconds_per_person)
-		if trained >= float(_config.day.course_training_seconds_per_person) * float(_config.economy.course_fee_min_training_fraction):
+		if trained >= threshold:
 			_orch.economy.queue_community_revenue("course:D%d:C%d" % [_state.day, i], int(_config.economy.course_fee))
 			var member: Dictionary = _orch.member_sim.visit_snapshot(int(course.members[i]))
 			if member.get("persistent_npc_id", "") == "singer_aluo": _event("aluo_first_class")
+		else:
+			band_complete = false
 	course.quality = roundi(float(_config.quality.completion_weight) * completed / 4.0 + float(_config.quality.layout_weight) * int(course.arrivals) / 8.0 + float(_config.quality.guidance_weight) * (float(course.guidance_scores[0]) + float(course.guidance_scores[1])) / 2.0)
+	_state.last_course_arrivals = int(course.arrivals)
+	if bool(course.get("is_band_event", false)) and band_complete:
+		_event("band_event_complete")
+		_feedback("乐队包场大成功！四人全部达标，阿洛在器械旁唱出完整的高音。")
+	else:
+		_feedback("新手课程完成 · 质量 %d · 看看大家的进步" % course.quality)
 	_orch.member_sim.finish_course_visits(course.members)
-	_feedback("新手课程完成 · 质量 %d · 看看大家的进步" % course.quality)
 
 func _tick_guidance() -> void:
 	var course: Dictionary = _state.course
@@ -433,6 +548,10 @@ func _restore_layout() -> void:
 	_reserve_stored_ids()
 	_orch.selection_system.rebuild_mapping()
 	_state.coach = _fixture.coach_spawn.duplicate()
+	_state.selected_course_id = "course_endurance_intro"
+	if _state.has("course") and _state.course is Dictionary:
+		_state.course.devices = [0, 1]
+		_state.course.course_id = "course_endurance_intro"
 	_apply_protection()
 
 func _restore_stored() -> void:

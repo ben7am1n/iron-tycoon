@@ -204,6 +204,21 @@
       "id": "mechanic_lin",
       "name": "林师傅",
       "role": "renovation"
+    },
+    {
+      "id": "band_bass_aming",
+      "name": "阿明",
+      "role": "band_member"
+    },
+    {
+      "id": "band_guitar_dawei",
+      "name": "大伟",
+      "role": "band_member"
+    },
+    {
+      "id": "band_drum_xiaokai",
+      "name": "小凯",
+      "role": "band_member"
     }
   ],
   "story_event_ids": [
@@ -222,6 +237,7 @@
     "character_frame_height": 40
   },
   "implemented_course_ids": [
-    "course_endurance_intro"
+    "course_endurance_intro",
+    "course_strength_intro"
   ]
 }

@@ -422,6 +422,12 @@ func _assemble_presentation() -> void:
 	_lighting.set_phase_provider(func() -> String:
 		return _day_cycle.phase if _community_mode and _day_cycle != null else ""
 	)
+	_lighting.set_renovation_provider(func() -> bool:
+		if _community_mode and _day_cycle != null:
+			var view: Dictionary = _day_cycle.get_view_state()
+			return bool(view.get("gym_renovated", false))
+		return false
+	)
 	_world_root.add_child(_lighting)
 
 	# Phase 5：V3 §9 微型动态（光尘/汗滴/传送带/飞轮/杯闪）—— 克制数量。

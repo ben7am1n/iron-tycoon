@@ -38,13 +38,21 @@ func _ready() -> void:
 		["practice", "练习跑步"], ["finish_challenge", "结束挑战"], ["return_to_gym", "回馆营业"],
 		["interact", "交流 / 指导 · E"], ["confirm_timing", "踩准节奏 · E"],
 		["next_day", "保存并迎接明天"], ["toggle_build", "布置 · B"],
-		["restore_layout", "恢复基础布局"], ["toggle_pause", "暂停 · Space"]]:
+		["restore_layout", "恢复基础布局"], ["toggle_pause", "暂停 · Space"],
+		["select_course", "课程选择"], ["renovate_gym", "场馆改造 · ¥120"]]:
 		var action: String = item[0]
 		var button := Button.new()
 		button.name = action
 		button.text = tr(item[1])
 		button.custom_minimum_size = Vector2(112, 38)
-		button.pressed.connect(func() -> void: action_requested.emit(action, {}))
+		if action == "select_course":
+			button.pressed.connect(func() -> void:
+				var cur: String = str(_view.get("selected_course_id", "course_endurance_intro"))
+				var next: String = "course_strength_intro" if cur == "course_endurance_intro" else "course_endurance_intro"
+				action_requested.emit("select_course", {"course_id": next})
+			)
+		else:
+			button.pressed.connect(func() -> void: action_requested.emit(action, {}))
 		_actions.add_child(button)
 		_buttons[action] = button
 	for choice: String in ["maintain", "slow", "rest"]:
@@ -128,8 +136,12 @@ func _refresh() -> void:
 	elif timing:
 		_buttons.confirm_timing.visible = true
 	elif phase == "PREP":
-		for action: String in ["depart", "open_service", "toggle_build", "restore_layout"]:
+		for action: String in ["depart", "open_service", "toggle_build", "restore_layout", "select_course"]:
 			_buttons[action].visible = true
+		var cur_course: String = str(_view.get("selected_course_id", "course_endurance_intro"))
+		_buttons.select_course.text = tr("选力量课" if cur_course == "course_endurance_intro" else "选耐力课")
+		if not bool(_view.get("gym_renovated", false)) and int(_view.get("day", 1)) >= 2:
+			_buttons.renovate_gym.visible = true
 		_buttons.toggle_build.text = tr("结束布置 · B") if _building else tr("布置 · B")
 	elif phase == "OUTING":
 		for action: String in (["finish_challenge"] if active_run else ["start_challenge", "practice", "interact", "return_to_gym"]):
@@ -139,6 +151,8 @@ func _refresh() -> void:
 	elif phase == "CLOSE":
 		_buttons.interact.visible = true
 		_buttons.next_day.visible = true
+		if not bool(_view.get("gym_renovated", false)) and int(_view.get("day", 1)) >= 2:
+			_buttons.renovate_gym.visible = true
 	if _building:
 		_actions.position.y = 574
 		_details.position.y = 503
