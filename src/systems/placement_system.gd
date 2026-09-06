@@ -531,7 +531,7 @@ func on_drop() -> void:
 	var transformed: TransformedFootprint = _grid.get_transformed_cells(
 		_drag_def.footprint_cells, _drag_def.access_cells, _anchor, _rotation
 	)
-	_grid.commit(instance_id, transformed.footprint_cells, transformed.access_cells, _rotation)
+	_grid.commit(instance_id, transformed.footprint_cells, transformed.access_cells, _rotation, _drag_def.id)
 	_next_instance_id += 1  # consumed ONLY on a successful commit (Core Rule 7)
 	# PL-005: record instance → equipment so a later begin_relocate(N) can
 	# recover the def (GridSystem stores no equipment type — TR-GS).
@@ -577,7 +577,7 @@ func _resolve_relocate_drop() -> void:
 		_drag_def.footprint_cells, _drag_def.access_cells, _anchor, _rotation
 	)
 	var relocate_id := _relocate_id
-	_grid.commit(relocate_id, transformed.footprint_cells, transformed.access_cells, _rotation)
+	_grid.commit(relocate_id, transformed.footprint_cells, transformed.access_cells, _rotation, _drag_def.id)
 	_grid.set_equipment_level(relocate_id, _relocate_level0)
 	# Counter NOT incremented — re-commit reuses N (AC25e). Map stays in sync.
 	_instance_equipment[relocate_id] = _drag_def.id
@@ -599,7 +599,7 @@ func _restore_relocate() -> void:
 	var transformed: TransformedFootprint = _grid.get_transformed_cells(
 		_drag_def.footprint_cells, _drag_def.access_cells, _relocate_anchor0, _relocate_rotation0
 	)
-	_grid.commit(_relocate_id, transformed.footprint_cells, transformed.access_cells, _relocate_rotation0)
+	_grid.commit(_relocate_id, transformed.footprint_cells, transformed.access_cells, _relocate_rotation0, _drag_def.id)
 	_grid.set_equipment_level(_relocate_id, _relocate_level0)
 	_clear_drag()
 
@@ -737,6 +737,11 @@ func rederive_counter() -> void:
 	if _grid == null:
 		push_error("PlacementSystem: rederive_counter() called with no grid injected.")
 		return
+	_clear_drag()
+	_instance_equipment.clear()
+	for placed in _grid.get_placed_instances():
+		if not placed.equipment_id.is_empty():
+			_instance_equipment[placed.instance_id] = placed.equipment_id
 	var dims: Vector2i = _grid.get_dimensions()
 	var max_occupant_id: int = -1  # -1 = "no occupants found yet" sentinel
 	for y in dims.y:
@@ -748,6 +753,15 @@ func rederive_counter() -> void:
 				max_occupant_id = occupant_id
 	# Explicit empty-set branch: max() over ∅ is undefined (GDD formula).
 	_next_instance_id = 0 if max_occupant_id == -1 else max_occupant_id + 1
+
+
+## Reserves a set of instance IDs (e.g. from stored equipment in inventory)
+## so that future placement never collides with these IDs.
+func reserve_instance_ids(ids: Array) -> void:
+	for id_val in ids:
+		var id: int = int(id_val)
+		if id >= _next_instance_id:
+			_next_instance_id = id + 1
 
 
 ## WHITE-BOX TEST SEAM (Story 004 / AC13 precondition, PL-004) — test-only.

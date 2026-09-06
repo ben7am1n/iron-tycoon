@@ -1,0 +1,94 @@
+{
+  "schema_version": 1,
+  "status": "design_only_not_loaded_by_game",
+  "mode_id": "gym_adventure_slice_v1",
+  "date": "2026-09-06",
+  "gym": {"width_cells": 13, "height_cells": 10, "member_walk_cells_per_second": 1.6, "coach_walk_cells_per_second": 1.8},
+  "day": {
+    "tick_seconds": 0.1,
+    "service_seconds": 360,
+    "service_speed": 1,
+    "walk_in_schedule_seconds": [0, 30, 60, 90, 120, 150, 180, 210],
+    "walk_in_exercise_quota": 1,
+    "course_arrival_seconds": 150,
+    "course_reservation_seconds": 160,
+    "course_start_seconds": 180,
+    "course_latest_start_seconds": 220,
+    "course_block_seconds": 30,
+    "course_setup_seconds": 10,
+    "course_block_groups": ["A", "B", "A", "B"],
+    "course_guidance_blocks": [2, 4],
+    "course_guidance_window_seconds": 10,
+    "course_seats": 4,
+    "course_station_arrival_opportunities": 8,
+    "course_training_seconds_per_person": 40
+  },
+  "economy": {
+    "starting_cash": 280,
+    "walk_in_fee": 12,
+    "course_fee": 24,
+    "course_fee_min_training_fraction": 0.75,
+    "renovation_cost": 120,
+    "owned_equipment_refund_rate": 0.5,
+    "upgrade_multiplier_in_slice": 1,
+    "borrowed_equipment": [
+      {"asset_id": "loan_treadmill_01", "equipment_id": "treadmill"},
+      {"asset_id": "loan_yoga_mat_01", "equipment_id": "yoga_mat"}
+    ],
+    "catalog_prices_reference_only": {"treadmill": 200, "bike": 220, "bench_press": 240, "yoga_mat": 240}
+  },
+  "quality": {
+    "completion_weight": 60,
+    "layout_weight": 20,
+    "guidance_weight": 20,
+    "correct_guidance": 1,
+    "auto_guidance": 0.5,
+    "wrong_guidance": 0,
+    "good_threshold": 75,
+    "excellent_threshold": 90
+  },
+  "coaching": {
+    "request_schedule_seconds": [45, 110, 330],
+    "request_limit_per_night": 3,
+    "request_lifetime_seconds": 25,
+    "interaction_radius_cells": 1.25,
+    "interaction_max_seconds": 8,
+    "choice_max_seconds": 2,
+    "timing_seconds": 6,
+    "timing_centers_seconds": [1, 3, 5],
+    "timing_half_window_seconds": 0.4,
+    "choice_weight": 70,
+    "timing_weight": 30,
+    "assisted_timing_score": 0.5,
+    "auto_feedback": 50,
+    "priority_states": ["fatigued", "too_fast", "hesitant"],
+    "state_answers": {"fatigued": "rest", "too_fast": "slow", "hesitant": "maintain"}
+  },
+  "outing": {
+    "formal_attempts_per_day": 1,
+    "duration_seconds": 180,
+    "world_pixels_per_meter": 32,
+    "stamina_initial": 100,
+    "stamina_max": 100,
+    "sprint_restart_stamina": 20,
+    "speed_mps": {"walk": 1.2, "jog": 2.0, "sprint": 3.2},
+    "stamina_rate_per_second": {"idle": 10, "walk": 10, "jog": 1, "sprint": -8},
+    "segment_length_meters": [36, 60, 72],
+    "segment_target_mps": [1.2, 2.0, 2.4],
+    "scoring_bin_meters": 6,
+    "scoring_bin_count": 28,
+    "stable_rhythm_threshold": 80
+  },
+  "courses": [
+    {"id": "course_endurance_intro", "name": "新手耐力循环", "primary_equipment_any": ["treadmill", "bike"], "secondary_equipment": "yoga_mat", "unlock": "initial"},
+    {"id": "course_strength_intro", "name": "基础力量循环", "primary_equipment_any": ["bench_press"], "secondary_equipment": "yoga_mat", "unlock": "placed_bench_press"}
+  ],
+  "characters": [
+    {"id": "coach_cheng", "name": "程教练", "role": "player"},
+    {"id": "singer_aluo", "name": "阿洛", "role": "story_member"},
+    {"id": "boxer_qiu", "name": "老邱", "role": "fixed_assistant"},
+    {"id": "mechanic_lin", "name": "林师傅", "role": "renovation"}
+  ],
+  "story_event_ids": ["aluo_met", "aluo_first_class", "band_invitation", "band_event_attended", "band_event_complete", "gym_renovated"],
+  "visual": {"sample_viewport_width": 426, "sample_viewport_height": 240, "integer_display_scale": 3, "character_frame_width": 32, "character_frame_height": 40}
+}

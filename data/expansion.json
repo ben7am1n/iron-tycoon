@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "satisfaction_threshold": 0.6,
+  "regions": [
+    {
+      "id": "group_class_room",
+      "display_name": "团课室",
+      "cost": 600,
+      "add_width": 5,
+      "add_height": 0,
+      "satisfaction_threshold": 0.6
+    },
+    {
+      "id": "protein_bar",
+      "display_name": "蛋白吧",
+      "cost": 900,
+      "add_width": 4,
+      "add_height": 0,
+      "satisfaction_threshold": 0.7
+    }
+  ]
+}

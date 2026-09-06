@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "mode_id": "gym_adventure_slice_v1",
+  "dimensions": [
+    13,
+    10
+  ],
+  "entrance": [
+    0,
+    0
+  ],
+  "exit": [
+    12,
+    9
+  ],
+  "coach_spawn": [
+    5,
+    5
+  ],
+  "coaching_point": [
+    5,
+    5
+  ],
+  "waiting_cells": [
+    [
+      4,
+      6
+    ],
+    [
+      5,
+      6
+    ],
+    [
+      6,
+      6
+    ],
+    [
+      7,
+      6
+    ]
+  ],
+  "equipment": [
+    {
+      "instance_id": 0,
+      "asset_id": "loan_treadmill_01",
+      "equipment_id": "treadmill",
+      "anchor": [
+        3,
+        3
+      ],
+      "rotation": 0,
+      "ownership": "borrowed"
+    },
+    {
+      "instance_id": 1,
+      "asset_id": "loan_yoga_mat_01",
+      "equipment_id": "yoga_mat",
+      "anchor": [
+        7,
+        3
+      ],
+      "rotation": 0,
+      "ownership": "borrowed"
+    }
+  ]
+}

@@ -1,5 +1,15 @@
 # 撸铁大亨 (Iron Tycoon) — 项目进度速览
 
+## 当前更新 — 2026-09-06
+
+**M0 基础与存读档契约完成**：全量测试 114 文件、**6232 断言全部通过、0 失败**。已解决 `DayCycleSystem` 静态类型推断与浮点累积漂移（`snappedf`）、补齐 `PlacementSystem.reserve_instance_ids()`（防库存 ID 冲突）与 `SelectionSystem.protected_instances`（借用器械防售卖保护），并实现 `SaveLoad` 对 Adventure 模式的无缝两阶段持久化同时严格保持原沙盒 10-key 契约。首日契约测试 [day_contract_test.gd](tests/integration/gym_adventure/day_contract_test.gd)（27/27 全绿）已合并入 Headless Runner。
+
+用户已委托“《潜水员戴夫》的健身房运营版本”详细设计。[设计包 v1](docs/plans/2026-09-06-gym-adventure/README.md)已包含阶段循环、课程与费用规则、原创人物、三天内容、像素美术样板及实施门禁；[新 GDD](design/gdd/gym-adventure.md)状态为Designed。当前推进重点已由 M0 转入 **M1 首日灰盒 UI 串联与主场景组装**。
+
+下文为截至2026-08-02的历史进度快照，不作为当前待办或实现状态。
+
+---
+
 > 治愈系桌面健身房经营游戏（Godot 4.7.1 / GDScript / macOS 桌面）。
 > 这份文件是项目自身的进度速览；工作室模板说明见 `README.md`。
 

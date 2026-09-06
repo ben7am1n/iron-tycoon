@@ -16,6 +16,8 @@ const RUNNER_META := "gym_manager_test_runner_active"
 # 添加新测试文件时在此数组中追加即可
 
 const TEST_FILES := [
+	"tests/integration/save_load/foundation_restore_test.gd",
+	"tests/integration/save_load/main_entry_process_test.gd",
 	"tests/unit/navigation/diagonal_corner_rules_test.gd",
 	"tests/unit/navigation/path_query_edge_cases_test.gd",
 	"tests/unit/grid_system/grid_core_cell_data_test.gd",
@@ -127,6 +129,7 @@ const TEST_FILES := [
 	"tests/integration/satisfaction/recovery_loop_test.gd",
 	"tests/integration/core_loop/core_loop_test.gd",
 	"tests/integration/economy/balance_pacing_probe.gd",
+	"tests/integration/gym_adventure/day_contract_test.gd",
 ]
 
 # === 隔离的测试文件 ===

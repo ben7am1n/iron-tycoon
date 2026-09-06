@@ -112,6 +112,9 @@ var _catalog: EquipmentCatalog
 ## null (wiring error — a selection without sell support).
 var _economy: Economy
 
+## Instances protected from selling (e.g. borrowed equipment in adventure mode).
+var protected_instances: Array = []
+
 
 ## Current selection; -1 = none (GridSystem's empty sentinel convention).
 ## 0 is a fully legal selected instance_id — comparisons must be explicit
@@ -263,6 +266,9 @@ func sell_selected() -> bool:
 	if _selected_instance_id == -1:
 		return false  # nothing selected — nothing to sell (silent no-op)
 	var instance_id: int = _selected_instance_id
+	if instance_id in protected_instances:
+		push_error("SelectionSystem.sell_selected() — instance %d is protected and cannot be sold." % instance_id)
+		return false
 	if not _mapping.has(instance_id):
 		push_error("SelectionSystem.sell_selected() — selected instance_id %d has no mapping entry (sold already?)." % instance_id)
 		return false
@@ -383,6 +389,10 @@ func _clear_selection() -> void:
 func _on_placement_committed(instance_id: int, equipment_id: String, footprint_cells: Array[Vector2i]) -> void:
 	if not _assert_initialized():
 		return
+	for placed in _grid.get_placed_instances():
+		if placed.instance_id == instance_id and not placed.equipment_id.is_empty():
+			_mapping[instance_id] = {"equipment_id": equipment_id, "anchor": placed.anchor, "rotation": placed.rotation, "footprint_cells": placed.footprint_cells.duplicate()}
+			return
 	var derived := _derive_entry(equipment_id, footprint_cells)
 	if derived.is_empty():
 		return  # catalog miss already push_error'd — record nothing
@@ -416,6 +426,9 @@ func _on_grid_changed(footprint_cells_changed: Array[Vector2i], access_cells_cha
 				continue
 			if _cells_contain(_mapping[instance_id]["footprint_cells"], cell):
 				removed.append(instance_id)
+	for placed in _grid.get_placed_instances():
+		if not placed.equipment_id.is_empty():
+			_mapping[placed.instance_id] = {"equipment_id": placed.equipment_id, "anchor": placed.anchor, "rotation": placed.rotation, "footprint_cells": placed.footprint_cells.duplicate()}
 	for instance_id in removed:
 		_mapping.erase(instance_id)
 		if instance_id == _selected_instance_id:
@@ -504,6 +517,9 @@ func rebuild_mapping() -> void:
 ## Determinism: catalog id order (get_all_ids = file order) — the FIRST
 ## match wins, so identical-footprint defs resolve deterministically.
 func _match_equipment_id(placed: PlacedInstance) -> String:
+	if not placed.equipment_id.is_empty():
+		return placed.equipment_id if _catalog.has_definition(placed.equipment_id) else ""
+	var matched_id := ""
 	var observed: Array[Vector2i] = placed.footprint_cells
 	for equipment_id in _catalog.get_all_ids():
 		var def: EquipmentDef = _catalog.get_definition(equipment_id)
@@ -519,7 +535,11 @@ func _match_equipment_id(placed: PlacedInstance) -> String:
 			continue  # wrong cardinality — cannot match
 		var placement_anchor: Vector2i = _min_offset(observed) - _min_offset(rotated_offsets)
 		if _footprint_matches(def.footprint_cells, observed, placed.rotation, w, h, placement_anchor):
-			return equipment_id
+			if not matched_id.is_empty():
+				return ""  # ambiguous legacy identity must never choose the first item
+			matched_id = equipment_id
+	if not matched_id.is_empty():
+		return matched_id
 	# No def reproduces this footprint — data inconsistency (shouldn't
 	# happen: the piece predates the catalog or the catalog changed).
 	# NOTE: %s with a typed Array RHS is treated as an args list — str() wrap.

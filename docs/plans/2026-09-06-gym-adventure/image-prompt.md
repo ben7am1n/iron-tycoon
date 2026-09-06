@@ -1,0 +1,16 @@
+# 美术概念图生成记录
+
+日期：2026-09-06。用途：社区健身房目标场景概念，不是引擎截图或可直接导入的游戏资产。
+
+已通过内置图像生成工具尝试两次，两次均返回网络请求错误，未获得图片。本包不包含已生成的概念图；以下保留第二次尝试的原始提示词，可在服务恢复后重用。角色、镜头和资产规格以[美术方向](art-direction.md)为准。
+
+```text
+Use case: ui-mockup
+Asset type: art direction concept for an ORIGINAL pixel-art gym management adventure game; a target gameplay scene, not a claim of an actual screenshot.
+Primary request: Create one beautiful widescreen 16:9 art-direction frame for a neighborhood gym adventure with the richness, expressive pixel characters, and atmospheric depth associated with Dave the Diver. All characters, gym design, branding and setting are original. Scene must feel like a playable game with intentional pixel clusters and clear readable walking spaces.
+Scene: a modest converted corner-shop community gym on an urban waterfront street at early evening. Fixed three-quarter elevated camera, relatively shallow angle allowing expressive bodies and actual exercise poses. Cutaway near walls. Large back windows show a quiet orange dusk fading into cool blue street. Warm ivory plaster, muted oak, charcoal rubber floor under weights, small real-life props concentrated at walls: posters without readable text, towels, cubbies, water dispenser. Rich environment with empty circulation paths rather than clutter.
+Subjects: One grounded stocky coach protagonist with silver streak in dark swept hair, teal zip track jacket with rolled sleeves and orange whistle, gesturing encouragement to a lean amateur singer with auburn tied hair on an exercise bike. A broad elderly former boxer with white crew cut and maroon tracksuit does a calm standing stretch on a yoga mat. A wiry mechanic with navy overalls and mustard cap stands by reception holding a toolkit. One additional ordinary member uses a treadmill. Exactly one treadmill, one stationary bike, one bench press with barbell/supports, one yoga mat; equipment must read as substantial correctly oriented objects, not icons. Strong silhouettes, expressive articulated limbs, characters visibly large enough to read poses. All exercise anatomy aligned with equipment seats/pedals/handles.
+Style: polished authored pixel art, clear square stair-step edges, large clean clusters, limited intentional highlight/shadow ramps per object, layered 2.5D volume. Background quiet; midground player and members sharp; dark foreground planter and doorframe give depth without occluding action. Warm task lights, cool contact shadows, restrained window light; no blurry wash, no bloom haze.
+Composition: gym fills most of the frame; human interaction is central focal point. Minimal small charcoal HUD at upper edge with only a coin symbol and '280', a small sun/moon clock glyph and '18:30'; lower left tiny contextual key badge 'E'. No dashboards, no build palette, no dialog windows, no large titles. Lower center walking lane visually open. Native image can be high resolution but appearance must be coherent low-resolution pixel art, not smooth illustration with a pixel filter.
+Constraints: no ocean creatures, no diving gear, no sushi restaurant, no existing Dave characters, no big floating icons, no pure-color development grid, no neon cyberpunk, no voxel blocks, no perspective-inconsistent equipment, no tiny dot people, no illegible paragraphs. This is aspirational concept art, not an engine render.
+```

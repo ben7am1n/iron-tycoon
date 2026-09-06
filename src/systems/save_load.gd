@@ -143,7 +143,7 @@ const CONTRIBUTING_KEYS := [
 	"expansion", "goals",
 ]
 
-## Keys that a save file is allowed to OMIT (A3/A4). Every blob this build writes
+## Keys that a save file is allowed to OMIT (A3/A4/Adventure). Every blob this build writes
 ## contains them, but a save written before the key existed is still valid —
 ## the owning system loads its documented empty state instead (ExpansionSystem:
 ## "no regions unlocked", i.e. the base grid).
@@ -152,7 +152,7 @@ const CONTRIBUTING_KEYS := [
 ## load error" rule, and it is deliberately NOT a general migration mechanism
 ## (ADR-0002 keeps the exact-match version policy): it works only because the
 ## absent state is representable and unambiguous.
-const OPTIONAL_KEYS := ["expansion", "goals"]
+const OPTIONAL_KEYS := ["expansion", "goals", "day_cycle"]
 
 ## Systems that deliberately contribute NOTHING (TR-SL-008): ZoneRules is a
 ## stateless pure function; Navigation/PlacementSystem/SelectionSystem are
@@ -187,6 +187,7 @@ var _navigation        # Navigation — null until its story lands
 # saved expansion tier before GridSystem replays its records.
 var _expansion         # ExpansionSystem — null in rigs that predate A3
 var _goals             # GoalSystem — null in rigs that predate A4
+var _day_cycle         # DayCycleSystem — null in rigs without adventure mode
 
 var _save_pending: bool = false
 var _initialized: bool = false
@@ -199,6 +200,8 @@ var _initialized: bool = false
 ## MockHandle whose store_string() returns false (AC-FILE-1) and whose call
 ## order is recorded (AC-FILE-2 flush-before-close).
 var _file_access_factory: Callable = Callable()
+## Test seam for the final atomic rename; receives temporary and final paths.
+var _file_replace_factory: Callable = Callable()
 
 
 ## Two-phase init (ADR-0001). Captures the coordinated systems from the
@@ -221,6 +224,7 @@ func init(orchestrator: SimulationOrchestrator) -> void:
 	_navigation = orchestrator.navigation
 	_expansion = orchestrator.expansion_system
 	_goals = orchestrator.goal_system
+	_day_cycle = orchestrator.day_cycle
 	_initialized = true
 
 
@@ -275,7 +279,7 @@ func _perform_save() -> Dictionary:
 	# Serialize TimeSystem exactly ONCE (AC1: one serialize() call per system
 	# per save request) and reuse the dict for the redundant top-level seed.
 	var time_data: Dictionary = _time_system.serialize()
-	return {
+	var blob: Dictionary = {
 		"version": SAVE_FORMAT_VERSION,
 		"master_seed": time_data.get("master_seed", ""),
 		"time_system": time_data,
@@ -287,6 +291,9 @@ func _perform_save() -> Dictionary:
 		"expansion": _serialize_or_empty(_expansion),
 		"goals": _serialize_or_empty(_goals),
 	}
+	if _day_cycle != null:
+		blob["day_cycle"] = _serialize_or_empty(_day_cycle)
+	return blob
 
 
 ## Serializes one coordinated system, treating a not-yet-landed (null) system
@@ -319,7 +326,7 @@ func _validate_blob_keys(blob: Dictionary) -> Array[String]:
 	# No extra keys — the set is fixed (guardrail: extra key = load error).
 	# EXCLUDED_SYSTEMS get the specific "should not serialize" message.
 	for key in blob.keys():
-		if key in CONTRIBUTING_KEYS:
+		if key in CONTRIBUTING_KEYS or key in OPTIONAL_KEYS:
 			continue
 		if key in EXCLUDED_SYSTEMS:
 			errors.append("SaveLoad: unexpected key '%s' in save blob — this system should not serialize" % key)
@@ -374,6 +381,13 @@ func load(save_blob: Dictionary, buildable_snapshot: PackedByteArray) -> SaveLoa
 	if not phase_a_errors.is_empty():
 		result.errors.append_array(phase_a_errors)
 		return result  # all-or-nothing: NOTHING was mutated
+	# Work on a private copy: legacy recovery must neither alter the caller's
+	# archive nor mutate any live system before all catalog checks pass.
+	save_blob = save_blob.duplicate(true)
+	var identity_errors := _prepare_equipment_identity(save_blob, effective_snapshot, target_dimensions)
+	if not identity_errors.is_empty():
+		result.errors.append_array(identity_errors)
+		return result
 
 	# --- Phase B: commit (all validations passed) ---
 	# Order is load-bearing — see class header / TR-SL-003.
@@ -460,8 +474,67 @@ func load(save_blob: Dictionary, buildable_snapshot: PackedByteArray) -> SaveLoa
 			result.errors.append("FATAL: GoalSystem Phase B failed after Phase A passed")
 			return result
 
+	# 10. DayCycleSystem — optional adventure mode session state
+	if _day_cycle != null and save_blob.has("day_cycle") and not save_blob["day_cycle"].is_empty():
+		var day_result: Variant = _day_cycle.deserialize(save_blob["day_cycle"], false)
+		if not day_result.ok:
+			result.errors.append("FATAL: DayCycle Phase B failed after Phase A passed")
+			return result
+
 	result.ok = true
 	return result
+
+
+## Catalog-aware preflight for GA-001. Legacy recovery is allowed only for
+## one exact footprint AND access match at the stored rotation. Geometry-only
+## test rigs without a catalog keep their existing GridSystem-only contract.
+func _prepare_equipment_identity(blob: Dictionary, snapshot: PackedByteArray, dimensions: Vector2i) -> Array[String]:
+	var errors: Array[String] = []
+	var catalog: EquipmentCatalog = _orchestrator.equipment_catalog
+	# Pre-wiring unit rigs have no authored catalog. Production bootstrap
+	# rejects an empty catalog before constructing SaveLoad.
+	if catalog == null or catalog.get_all_ids().is_empty():
+		return errors
+	var scratch := GridSystem.new()
+	scratch.init(dimensions.x, dimensions.y)
+	var grid_data: Dictionary = blob["grid_system"]
+	var loaded := scratch.deserialize(grid_data, snapshot, "commit")
+	if not loaded.success:
+		errors.append("SaveLoad: identity geometry preflight failed")
+		return errors
+	var identities: Dictionary = {}
+	for placed in scratch.get_placed_instances():
+		var candidates: Array[String] = []
+		if not placed.equipment_id.is_empty():
+			if not catalog.has_definition(placed.equipment_id):
+				errors.append("SaveLoad: unknown equipment_id '%s' for instance %d" % [placed.equipment_id, placed.instance_id])
+				continue
+			candidates.append(placed.equipment_id)
+		else:
+			candidates = catalog.get_all_ids()
+		var matches: Array[String] = []
+		for equipment_id in candidates:
+			var definition := catalog.get_definition(equipment_id)
+			var transformed := scratch.get_transformed_cells(definition.footprint_cells, definition.access_cells, placed.anchor, placed.rotation as GridSystem.Rotation)
+			if _same_cells(transformed.footprint_cells, placed.footprint_cells) and _same_cells(transformed.access_cells, placed.access_cells):
+				matches.append(equipment_id)
+		if matches.size() != 1:
+			errors.append("SaveLoad: instance %d equipment identity is inconsistent or ambiguous (%d exact catalog matches)" % [placed.instance_id, matches.size()])
+		else:
+			identities[placed.instance_id] = matches[0]
+	if errors.is_empty():
+		for record in grid_data["records"]:
+			record["equipment_id"] = identities[int(record["instance_id"])]
+	return errors
+
+
+func _same_cells(a: Array[Vector2i], b: Array[Vector2i]) -> bool:
+	if a.size() != b.size():
+		return false
+	for cell in a:
+		if a.count(cell) != b.count(cell):
+			return false
+	return true
 
 
 ## Phase A validation — collects ALL errors, NEVER mutates (TR-SL-004/005).
@@ -594,6 +667,14 @@ func _validate_all(
 
 	var sat_result: Variant = _satisfaction.deserialize(save_blob["satisfaction"], true)
 	errors.append_array(sat_result.errors)
+	# Real catalog sessions cannot reconstruct historical congestion from a
+	# current buffer. Reject legacy active exercises instead of changing history.
+	var catalog: EquipmentCatalog = _orchestrator.equipment_catalog
+	if catalog != null and not catalog.get_all_ids().is_empty() and not save_blob["satisfaction"].has("pending_uses"):
+		for member in save_blob["member_sim"].get("members", []):
+			if member is Dictionary and str(member.get("state", "")) == "USING":
+				errors.append("SaveLoad: active exercise is missing historical pending_uses; legacy save cannot be restored deterministically")
+				break
 
 	var econ_result: Variant = _economy.deserialize(save_blob["economy"], true)
 	errors.append_array(econ_result.errors)
@@ -601,6 +682,12 @@ func _validate_all(
 	if _goals != null:
 		var goal_result: Variant = _goals.deserialize(save_blob.get("goals", {}), true)
 		errors.append_array(goal_result.errors)
+
+	if _day_cycle != null and save_blob.has("day_cycle") and not save_blob["day_cycle"].is_empty():
+		var day_result: Variant = _day_cycle.deserialize(save_blob["day_cycle"], true)
+		if not day_result.ok:
+			for err in day_result.get("errors", []):
+				errors.append(str(err))
 
 	return errors
 
@@ -701,7 +788,8 @@ func save_to_file(save_name: String) -> String:
 
 	# Write to file — via the factory seam when a mock is injected, else the
 	# real FileAccess (AC-FILE-1/2 mock tests).
-	var f: Object = _open_write(file_path)
+	var temporary_path := file_path + ".tmp"
+	var f: Object = _open_write(temporary_path)
 	if f == null:
 		if _file_access_factory.is_valid():
 			return "SaveLoad: failed to open '%s' for writing (factory returned null)" % file_path
@@ -711,12 +799,21 @@ func save_to_file(save_name: String) -> String:
 	# return means the write failed silently in older versions, now it's explicit.
 	if not f.store_string(json_string):
 		f.close()
+		DirAccess.remove_absolute(temporary_path)
 		return "SaveLoad: failed to write save data to '%s'" % file_path
 
 	# flush() before close() — ensures OS-level write buffers are committed
 	# (AC-FILE-2). flush() returns void in 4.7.1 (deviation #3).
 	f.flush()
+	if f is FileAccess and f.get_error() != OK:
+		f.close()
+		DirAccess.remove_absolute(temporary_path)
+		return "SaveLoad: failed to flush save data to '%s'" % file_path
 	f.close()
+	var replace_error: int = _file_replace_factory.call(temporary_path, file_path) if _file_replace_factory.is_valid() else DirAccess.rename_absolute(temporary_path, file_path)
+	if replace_error != OK:
+		DirAccess.remove_absolute(temporary_path)
+		return "SaveLoad: failed to replace save '%s' (error %d); previous save preserved" % [file_path, replace_error]
 
 	return ""  # success
 
