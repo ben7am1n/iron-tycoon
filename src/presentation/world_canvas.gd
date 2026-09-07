@@ -701,6 +701,49 @@ func _draw_structure_foreground() -> void:
 		var rack_pos := Proj2D.proj(154, 252, 0.0)
 		draw_texture_rect(rack_tex, Rect2(rack_pos, Vector2(32, 24)), false)
 
+	if is_renovated():
+		# 改造后绿植角：陶土盆栽龟背竹（东北角 x=392, y=56），增添有机温馨感
+		var plant_pos := Proj2D.proj(392, 56, 0.0)
+		_draw_indoor_potted_plant(plant_pos)
+
+
+## 改造后室内常绿盆栽（Dave the Diver 式生活细节）：
+## 陶土红花盆、泥土质感与挺立三片阔叶+叶脉高光
+func _draw_indoor_potted_plant(pos: Vector2) -> void:
+	# 贴地接触影
+	draw_colored_polygon(PackedVector2Array([
+		pos + Vector2(-9, 0), pos + Vector2(9, 0),
+		pos + Vector2(6, 4), pos + Vector2(-6, 4)
+	]), Color(0.1, 0.12, 0.16, 0.3))
+	# 陶土花盆
+	draw_colored_polygon(PackedVector2Array([
+		pos + Vector2(-5, 0), pos + Vector2(5, 0),
+		pos + Vector2(7, -10), pos + Vector2(-7, -10)
+	]), Color("c2410c"))
+	# 花盆盆沿
+	draw_rect(Rect2(pos.x - 8, pos.y - 12, 16, 3), Color("ea580c"))
+	# 泥土
+	draw_line(pos + Vector2(-6, -11), pos + Vector2(6, -11), Color("451a03"), 2.0)
+	# 龟背竹阔叶（深绿底色 + 浅绿高光）
+	# 叶 1（左展）
+	draw_colored_polygon(PackedVector2Array([
+		pos + Vector2(0, -11), pos + Vector2(-10, -16),
+		pos + Vector2(-8, -22), pos + Vector2(-2, -18)
+	]), Color("15803d"))
+	draw_line(pos + Vector2(0, -11), pos + Vector2(-8, -21), Color("4ade80"), 1.0)
+	# 叶 2（右展）
+	draw_colored_polygon(PackedVector2Array([
+		pos + Vector2(0, -11), pos + Vector2(10, -15),
+		pos + Vector2(9, -21), pos + Vector2(2, -17)
+	]), Color("16a34a"))
+	draw_line(pos + Vector2(0, -11), pos + Vector2(8, -20), Color("4ade80"), 1.0)
+	# 叶 3（顶端挺立）
+	draw_colored_polygon(PackedVector2Array([
+		pos + Vector2(-2, -12), pos + Vector2(-4, -22),
+		pos + Vector2(0, -28), pos + Vector2(4, -22), pos + Vector2(2, -12)
+	]), Color("15803d"))
+	draw_line(pos + Vector2(0, -12), pos + Vector2(0, -26), Color("86efac"), 1.0)
+
 
 
 ## V3.1 R4 落地灯物件：使用 EnvironmentArt 的手绘灯体，但在投影后空间
