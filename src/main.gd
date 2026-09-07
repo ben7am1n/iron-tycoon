@@ -847,6 +847,10 @@ func set_community_mode(enabled: bool) -> void:
 func switch_mode(to_community: bool) -> void:
 	_community_mode = to_community
 	_save_name = "gym-adventure" if _community_mode else "manual"
+	if _member != null:
+		_member.community_mode = _community_mode
+	if _econ != null:
+		_econ.community_mode = _community_mode
 	if _community_mode:
 		if _day_cycle == null and _preflight_data.has("gym_adventure.json"):
 			_day_cycle = DayCycleSystemScript.new()
@@ -855,7 +859,12 @@ func switch_mode(to_community: bool) -> void:
 			if _save_load != null:
 				_save_load.set("_day_cycle", _day_cycle)
 		elif _day_cycle != null:
+			if _orch != null:
+				_orch.day_cycle = _day_cycle
 			_day_cycle._restore_layout()
+		if _orch != null and _day_cycle != null:
+			_orch.day_cycle = _day_cycle
+			_day_cycle._apply_protection()
 		if _grid != null:
 			_instance_defs.clear()
 			for placed in _grid.get_placed_instances():
@@ -979,8 +988,8 @@ func _on_community_phase_changed(phase: String) -> void:
 		if _palette != null:
 			_palette.visible = false
 	if _save_load != null:
-		_save_load.save_to_file(_save_name)
-		if _audio_manager != null:
+		var save_err: String = _save_load.save_to_file(_save_name)
+		if save_err.is_empty() and _audio_manager != null:
 			_audio_manager.notify_save_completed()
 
 

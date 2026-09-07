@@ -235,13 +235,12 @@ func tick_end() -> void:
 		var day: int = int(_state.day)
 		if day == 1:
 			_state.closing_text = "阿洛：原来坚持到最后，不一定要一直拼命。明天还想来。" if _state.events.has("aluo_first_class") else "阿洛：今天认识了这家小馆。明天给我留一席吧。"
-		elif day == 2:
-			if _state.events.has("aluo_first_class"):
-				_event("band_invitation")
-				_state.closing_text = "阿洛：他们说想来试试。四个人，不带音箱……先不带。\n林师傅：我修好了招牌，它现在认识晚上了。"
-				_feedback("阿洛发出了乐队包场邀请！林师傅也提出了场馆改造建议。")
-			else:
-				_state.closing_text = "老邱：每个人有自己的节奏。明天继续找感觉。"
+		elif day >= 2 and not _state.events.has("band_invitation") and _state.events.has("aluo_first_class"):
+			_event("band_invitation")
+			_state.closing_text = "阿洛：他们说想来试试。四个人，不带音箱……先不带。\n林师傅：我修好了招牌，它现在认识晚上了。"
+			_feedback("阿洛发出了乐队包场邀请！林师傅也提出了场馆改造建议。")
+		elif day == 2 and not _state.events.has("aluo_first_class"):
+			_state.closing_text = "老邱：每个人有自己的节奏。明天继续找感觉。"
 		else:
 			if _state.events.has("band_event_complete"):
 				_state.closing_text = "程教练：明天还来？\n阿洛：我把鼓手也带上。\n老邱：他不是今天来了吗？\n阿洛：今天来的是吉他手。鼓手还在找停车位。"
@@ -308,10 +307,17 @@ func deserialize(data: Dictionary, validate_only: bool = false) -> Dictionary:
 		if not _number(outing.get(key)): return _error("公园状态无效：" + key)
 	if float(outing.seconds) < 0 or float(outing.seconds) > float(_config.outing.duration_seconds) + _dt() or float(outing.progress_m) < 0 or float(outing.progress_m) > _route_length() or float(outing.stamina) < 0 or float(outing.stamina) > 100: return _error("公园状态超出范围")
 	if not outing.get("pace", "") in ["walk", "jog", "sprint"] or not outing.get("scores") is Array: return _error("配速记录无效")
-	if not data.course.get("status", "") in ["scheduled", "running", "completed", "canceled"] or not data.course.get("members") is Array or not data.course.get("training_seconds") is Array: return _error("课程状态无效")
+	if not data.course.get("status", "") in ["scheduled", "running", "completed", "canceled"] or not data.course.get("members") is Array or not data.course.get("training_seconds") is Array or not data.course.get("devices") is Array: return _error("课程状态无效")
 	if data.course.training_seconds.size() != 4: return _error("课程席位无效")
 	for trained in data.course.training_seconds:
 		if not _number(trained) or float(trained) < 0 or float(trained) > 40: return _error("课程训练量无效")
+	if not data.get("request") is Dictionary: return _error("指导请求无效")
+	if not data.request.is_empty():
+		for req_key: String in ["member_id", "state", "status", "seconds", "timing_seconds", "correct_choice", "correct"]:
+			if not data.request.has(req_key):
+				return _error("指导请求字段缺失或损坏：" + req_key)
+		if not data.request.status in ["waiting", "choice", "timing"]:
+			return _error("指导请求状态无效")
 	if not validate_only:
 		_state = data.duplicate(true)
 		_state.erase("mode_id")
@@ -539,7 +545,12 @@ func _move_coach() -> void:
 func _restore_layout() -> void:
 	_orch.placement_system.on_cancel()
 	for placed in _orch.grid_system.get_placed_instances():
-		if not [0, 1].has(placed.instance_id):
+		var is_fixture := false
+		for fixture in _fixture.equipment:
+			if placed.instance_id == int(fixture.instance_id) and placed.equipment_id == str(fixture.equipment_id):
+				is_fixture = true
+				break
+		if not is_fixture:
 			_state.stored.append({"id": placed.instance_id, "equipment_id": placed.equipment_id, "anchor": [placed.anchor.x, placed.anchor.y], "rotation": placed.rotation, "level": _orch.grid_system.get_equipment_level(placed.instance_id)})
 		_orch.grid_system.clear(placed.instance_id)
 	for fixture in _fixture.equipment:
@@ -558,8 +569,7 @@ func _restore_stored() -> void:
 	var remaining: Array = []
 	for stored in _state.stored:
 		var definition = _orch.equipment_catalog.get_definition(str(stored.equipment_id))
-		var shape = _orch.grid_system.get_transformed_cells(definition.footprint_cells, definition.access_cells, _cell(stored.anchor), int(stored.rotation))
-		var check = _orch.grid_system.can_place(shape.footprint_cells, shape.access_cells)
+		var check = _orch.grid_system.can_place(definition.footprint_cells, definition.access_cells, _cell(stored.anchor), int(stored.rotation))
 		if check.valid:
 			_place_record(int(stored.id), str(stored.equipment_id), _cell(stored.anchor), int(stored.rotation), int(stored.level))
 		else:

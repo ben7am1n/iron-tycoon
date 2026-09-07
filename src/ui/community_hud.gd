@@ -66,7 +66,8 @@ func _ready() -> void:
 		["interact", "交流 / 指导 · E"], ["confirm_timing", "踩准节奏 · E"],
 		["next_day", "保存并迎接明天"], ["toggle_build", "布置 · B"],
 		["restore_layout", "恢复基础布局"], ["toggle_pause", "暂停 · Space"],
-		["select_course", "课程选择"], ["renovate_gym", "场馆改造 · ¥120"]]:
+		["select_course", "课程选择"], ["renovate_gym", "场馆改造 · ¥120"],
+		["restore_stored", "取回库存设备"]]:
 		var action: String = item[0]
 		var button := Button.new()
 		button.name = action
@@ -163,13 +164,18 @@ func _refresh() -> void:
 	var outing: Dictionary = _view.get("outing", {})
 	var request: Dictionary = _view.get("request", {})
 	var active_run: bool = bool(outing.get("active", false))
-	var guidance: bool = bool(course.get("guidance_open", false)) or str(request.get("stage", "")) == "CHOICE"
-	var timing: bool = str(request.get("stage", "")) == "TIMING"
+	var req_stage: String = str(request.get("status", request.get("stage", ""))).to_upper()
+	var has_guidance_dict: bool = course.has("guidance") and course.guidance is Dictionary and not course.guidance.is_empty()
+	var guidance: bool = bool(course.get("guidance_open", false)) or has_guidance_dict or req_stage == "CHOICE"
+	var timing: bool = req_stage == "TIMING"
 	var details := "WASD / 方向键移动 · E 交流 · F5 保存 · F9 读档"
 	var speaker_id := ""
 	var speaker_name := ""
 	if phase == "OUTING":
-		details = "1 走路 / 2 慢跑 / 3 冲刺 · 体力 %.0f · 路程 %.1f 米 · 剩余 %.0f 秒" % [float(outing.get("stamina", 100)), float(outing.get("distance_m", 0)), float(outing.get("remaining_seconds", 180))]
+		var progress: float = float(outing.get("progress_m", outing.get("distance_m", 0.0)))
+		var used_sec: float = float(outing.get("seconds", 0.0))
+		var rem_sec: float = float(outing.get("remaining_seconds", maxf(0.0, 180.0 - used_sec)))
+		details = "1 走路 / 2 慢跑 / 3 冲刺 · 体力 %.0f · 路程 %.1f 米 · 剩余 %.0f 秒" % [float(outing.get("stamina", 100)), progress, rem_sec]
 		if not active_run:
 			speaker_id = "aluo"
 			speaker_name = "阿洛 · 公园"
@@ -243,6 +249,9 @@ func _refresh() -> void:
 			_buttons[action].visible = true
 		var cur_course: String = str(_view.get("selected_course_id", "course_endurance_intro"))
 		_buttons.select_course.text = tr("选力量课" if cur_course == "course_endurance_intro" else "选耐力课")
+		if int(_view.get("stored_count", 0)) > 0:
+			_buttons.restore_stored.visible = true
+			_buttons.restore_stored.text = tr("取回库存(%d)") % int(_view.get("stored_count", 0))
 		if not bool(_view.get("gym_renovated", false)) and int(_view.get("day", 1)) >= 2:
 			_buttons.renovate_gym.visible = true
 		_buttons.toggle_build.text = tr("结束布置 · B") if _building else tr("布置 · B")
@@ -254,6 +263,9 @@ func _refresh() -> void:
 	elif phase == "CLOSE":
 		_buttons.interact.visible = true
 		_buttons.next_day.visible = true
+		if int(_view.get("stored_count", 0)) > 0:
+			_buttons.restore_stored.visible = true
+			_buttons.restore_stored.text = tr("取回库存(%d)") % int(_view.get("stored_count", 0))
 		if not bool(_view.get("gym_renovated", false)) and int(_view.get("day", 1)) >= 2:
 			_buttons.renovate_gym.visible = true
 	if _building:

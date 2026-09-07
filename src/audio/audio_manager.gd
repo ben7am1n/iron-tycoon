@@ -406,13 +406,15 @@ func connect_day_cycle(day_cycle: Object) -> void:
 
 func _on_phase_changed(phase: String) -> void:
 	match phase:
-		"day_prep":
+		"day_prep", "PREP":
 			play_ambient("gym_ambient")
 			play_bgm("cozy_gym_groove")
-		"day_service":
+		"day_service", "SERVICE":
 			play_ambient("gym_ambient")
 			play_bgm("cozy_gym_groove")
-		"day_close":
+		"OUTING":
+			stop_ambient()
+		"day_close", "CLOSE":
 			play_sfx("satisfaction_chime")
 		_:
 			pass
