@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://capture60s01"]
+
+[ext_resource type="Script" path="res://production/qa/evidence/2026-09-07-latest-review/capture_60s_gameplay.gd" id="1_c60s"]
+
+[node name="Capture60sGameplay" type="Node"]
+script = ExtResource("1_c60s")

@@ -136,6 +136,7 @@ const TEST_FILES := [
 	"tests/integration/gym_adventure/three_day_progression_test.gd",
 	"tests/integration/gym_adventure/three_day_playable_test.gd",
 	"tests/integration/gym_adventure/step_b_character_cycle_test.gd",
+	"tests/integration/gym_adventure/step_e_sixty_second_showcase_test.gd",
 	"tests/unit/art_assets/character_portraits_and_props_test.gd",
 	"tests/unit/art_assets/community_character_art_test.gd",
 	"tests/unit/art_assets/feedback_sequence_test.gd",
