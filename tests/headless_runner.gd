@@ -140,6 +140,7 @@ const TEST_FILES := [
 	"tests/unit/art_assets/character_portraits_and_props_test.gd",
 	"tests/unit/art_assets/community_character_art_test.gd",
 	"tests/unit/art_assets/feedback_sequence_test.gd",
+	"tests/unit/art_assets/park_view_remaster_test.gd",
 	"tests/unit/audio/audio_system_test.gd",
 
 

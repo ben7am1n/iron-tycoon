@@ -260,6 +260,10 @@ func clear_held_input() -> void:
 	_held.clear()
 	action_requested.emit("move", {"x": 0.0, "y": 0.0})
 
+## Returns true if bottom dialog card is collapsed into a compact bottom bar.
+func is_hud_collapsed() -> bool:
+	return _is_collapsed
+
 func _process(_delta: float) -> void:
 	_refresh()
 
@@ -348,7 +352,7 @@ func _refresh() -> void:
 	var show_portrait: bool = tex != null
 
 	var needs_expanded: bool = (
-		phase != "SERVICE"
+		(phase != "SERVICE" and not (phase == "OUTING" and active_run))
 		or guidance
 		or timing
 		or is_fb_active
