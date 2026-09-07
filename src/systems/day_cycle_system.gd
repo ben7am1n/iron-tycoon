@@ -2,6 +2,7 @@
 ## ADR-0011; all UI writes enter through command(), all state is JSON-safe.
 extends RefCounted
 signal phase_changed(phase: String)
+signal feedback_sequence_started(seq: Dictionary)
 var _config: Dictionary
 var _fixture: Dictionary
 var _orch: SimulationOrchestrator
@@ -23,7 +24,8 @@ func init(config: Dictionary, fixture: Dictionary, orchestrator: SimulationOrche
 		"course": {}, "request": {}, "events": [], "feedback": [], "stored": [],
 		"ordinary_index": 0, "request_index": 0, "class_spawned": false,
 		"closing_text": "林师傅：灯能亮。先给大家留一条舒服的路。",
-		"selected_course_id": "course_endurance_intro", "last_course_arrivals": -1}
+		"selected_course_id": "course_endurance_intro", "last_course_arrivals": -1,
+		"feedback_sequence": {}}
 	_initialized = true
 	_orch.day_cycle = self
 	_orch.member_sim.configure_community(float(config.gym.member_walk_cells_per_second))
@@ -114,6 +116,9 @@ func command(action: String, payload: Dictionary = {}) -> Dictionary:
 		"confirm_timing":
 			if _state.request.is_empty() or _state.request.status != "timing": return _error("先选择指导方式")
 			_confirm_timing()
+		"skip_feedback":
+			if _state.get("feedback_sequence", {}).get("active", false):
+				_state.feedback_sequence["active"] = false
 		"next_day":
 			if phase != "CLOSE": return _error("打烊后才能进入下一天")
 			_orch.member_sim.clear_community_visits()
@@ -227,7 +232,13 @@ func after_members() -> void:
 
 ## Runs after Economy, so closing observes already committed receipts.
 func tick_end() -> void:
-	if not _initialized or phase != "SERVICE": return
+	if not _initialized: return
+	if _state.get("feedback_sequence", {}).get("active", false):
+		var seq: Dictionary = _state.feedback_sequence
+		seq.elapsed = snappedf(float(seq.get("elapsed", 0.0)) + _dt(), 0.0001)
+		if float(seq.elapsed) >= float(seq.get("duration", 2.5)):
+			seq.active = false
+	if phase != "SERVICE": return
 	_state.service_tick += 1
 	if int(_state.service_tick) >= _ticks(_config.day.service_seconds):
 		_state.request = {}
@@ -275,7 +286,8 @@ func get_view_state() -> Dictionary:
 		"selected_course_id": _state.get("selected_course_id", "course_endurance_intro"),
 		"gym_renovated": _state.events.has("gym_renovated"),
 		"is_band_event": bool(_state.course.get("is_band_event", false)),
-		"story": {"events": _state.events.duplicate(), "closing_text": _state.closing_text, "feedback": _state.feedback.duplicate()}}
+		"feedback_sequence": _state.get("feedback_sequence", {}).duplicate(true),
+		"story": {"events": _state.events.duplicate(), "closing_text": _state.closing_text, "feedback": _state.feedback.duplicate(), "success_feedback": bool(_state.get("feedback_sequence", {}).get("active", false))}}
 
 ## Complete session payload, independent of frame/UI state. Held keys never restore.
 func serialize() -> Dictionary:
@@ -292,6 +304,8 @@ func deserialize(data: Dictionary, validate_only: bool = false) -> Dictionary:
 		data["selected_course_id"] = "course_endurance_intro"
 	if not data.has("last_course_arrivals"):
 		data["last_course_arrivals"] = -1
+	if not data.has("feedback_sequence"):
+		data["feedback_sequence"] = {}
 	for key in _state.keys():
 		if not data.has(key):
 			return _error("社区存档缺少或损坏字段：" + key)
@@ -340,6 +354,8 @@ func deserialize(data: Dictionary, validate_only: bool = false) -> Dictionary:
 			_state.course.training_seconds = typed_training
 		if _state.has("coach") and _state.coach is Array and _state.coach.size() >= 2:
 			_state.coach = [float(_state.coach[0]), float(_state.coach[1])]
+		if _state.has("feedback_sequence") and _state.feedback_sequence is Dictionary:
+			_state.feedback_sequence = _state.feedback_sequence.duplicate(true)
 		_apply_protection()
 	return {"ok": true, "errors": []}
 
@@ -488,7 +504,21 @@ func _confirm_timing() -> void:
 	var timing := clampf(1.0 - distance / float(_config.coaching.timing_half_window_seconds), 0, 1)
 	var score := roundi(float(_config.coaching.choice_weight) * float(request.correct) + float(_config.coaching.timing_weight) * timing)
 	_feedback("亲自指导 · %d 分：会员向你点点头。" % score)
+	var member_id_val: int = int(request.get("member_id", -1))
+	var npc_id: String = "singer_aluo" if member_id_val == 0 else ""
+	trigger_feedback_sequence(member_id_val, npc_id, score)
 	_state.request = {}
+
+func trigger_feedback_sequence(member_id: int, npc_id: String = "singer_aluo", score: int = 100) -> void:
+	_state.feedback_sequence = {
+		"active": true,
+		"elapsed": 0.0,
+		"duration": 2.5,
+		"member_id": member_id,
+		"npc_id": npc_id,
+		"score": score
+	}
+	emit_signal("feedback_sequence_started", _state.feedback_sequence)
 
 func _reset_outing(practice: bool) -> void:
 	_state.outing = {"active": false, "practice": practice, "seconds": 0.0, "progress_m": 0.0, "pace": "walk", "stamina": float(_config.outing.stamina_initial), "sprint_locked": false, "bin_start": 0.0, "bin_index": 0, "scores": [], "score": 0, "finished": false}

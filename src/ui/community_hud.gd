@@ -8,7 +8,10 @@ const Palette := preload("res://src/palette.gd")
 const PORTRAIT_PATHS := {
 	"coach": "res://assets/sprites/portraits/portrait_cheng.png",
 	"aluo": "res://assets/sprites/portraits/portrait_aluo.png",
+	"aluo_smile": "res://assets/sprites/portraits/portrait_aluo_smile.png",
+	"aluo_tired": "res://assets/sprites/portraits/portrait_aluo_tired.png",
 	"qiu": "res://assets/sprites/portraits/portrait_qiu.png",
+	"qiu_nod": "res://assets/sprites/portraits/portrait_qiu_nod.png",
 	"lin": "res://assets/sprites/portraits/portrait_lin.png",
 }
 
@@ -83,7 +86,7 @@ func _ready() -> void:
 		["next_day", "保存并迎接明天"], ["toggle_build", "布置 · B"],
 		["restore_layout", "恢复基础布局"], ["toggle_pause", "暂停 · Space"],
 		["select_course", "课程选择"], ["renovate_gym", "场馆改造 · ¥120"],
-		["restore_stored", "取回库存设备"]]:
+		["restore_stored", "取回库存设备"], ["skip_feedback", "跳过演出 · Space"]]:
 		var action: String = item[0]
 		var button := Button.new()
 		button.name = action
@@ -210,6 +213,9 @@ func is_portrait_visible() -> bool:
 func get_speaker_name() -> String:
 	return _speaker_label.text if _speaker_label != null else ""
 
+func is_button_visible(action: String) -> bool:
+	return _buttons.has(action) and bool(_buttons[action].visible)
+
 func _get_portrait_texture(character_id: String) -> Texture2D:
 	if _portrait_textures.has(character_id):
 		return _portrait_textures[character_id]
@@ -316,7 +322,19 @@ func _refresh() -> void:
 		else:
 			speaker_id = "coach"
 			speaker_name = "程教练"
-	if guidance:
+	var fb_seq: Dictionary = _view.get("feedback_sequence", {})
+	var is_fb_active: bool = bool(fb_seq.get("active", false))
+	if is_fb_active:
+		var fb_elapsed: float = float(fb_seq.get("elapsed", 0.0))
+		if fb_elapsed < 1.0:
+			speaker_id = "coach"
+			speaker_name = "程教练 · 节奏指导"
+			details = "程教练：跟上拍子！核心收紧，保持呼吸稳住！"
+		else:
+			speaker_id = "qiu_nod"
+			speaker_name = "老邱 · 赞许"
+			details = "老邱：好节奏！动作稳住了，配合得越来越有默契。"
+	elif guidance:
 		details = str(request.get("prompt", course.get("guidance_prompt", "保持 / 放缓 / 休息，选一个节奏。")))
 		speaker_id = "coach"
 		speaker_name = "程教练 · 指导"
@@ -333,6 +351,7 @@ func _refresh() -> void:
 		phase != "SERVICE"
 		or guidance
 		or timing
+		or is_fb_active
 		or _building
 		or bool(_view.get("paused", false))
 		or (_active_speaker_id != "" and _active_speaker_id != "coach")
@@ -374,7 +393,9 @@ func _refresh() -> void:
 	for action: String in ["toggle_pause"]:
 		_buttons[action].visible = true
 	_buttons.toggle_pause.text = tr("继续 · Space") if bool(_view.get("paused", false)) else tr("暂停 · Space")
-	if guidance:
+	if is_fb_active:
+		_buttons.skip_feedback.visible = true
+	elif guidance:
 		for choice: String in ["maintain", "slow", "rest"]:
 			_buttons[choice].visible = true
 	elif timing:
@@ -412,6 +433,11 @@ func _input(event: InputEvent) -> void:
 
 func _unhandled_key_input(event: InputEvent) -> void:
 	if not event is InputEventKey or not event.pressed or event.echo:
+		return
+	var fb_seq: Dictionary = _view.get("feedback_sequence", {})
+	if bool(fb_seq.get("active", false)) and event.keycode in [KEY_SPACE, KEY_E]:
+		action_requested.emit("skip_feedback", {})
+		get_viewport().set_input_as_handled()
 		return
 	if event.keycode in [KEY_W, KEY_A, KEY_S, KEY_D, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT] and not _building:
 		_held[event.keycode] = true

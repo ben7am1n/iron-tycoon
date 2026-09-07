@@ -103,10 +103,15 @@ const PROP_ASSET_PATHS := {
 
 var _prop_textures: Dictionary = {}
 var _renovation_provider: Callable = Callable()
+var _feedback_sequence_provider: Callable = Callable()
 
 
 func set_renovation_provider(provider: Callable) -> void:
 	_renovation_provider = provider
+
+
+func set_feedback_sequence_provider(provider: Callable) -> void:
+	_feedback_sequence_provider = provider
 
 
 func is_renovated() -> bool:
@@ -1430,6 +1435,8 @@ func _draw_members(foreground: bool) -> void:
 					var p := Proj2D.proj(feet.x, feet.y, 0.0)
 					c_draw_pos = p - Vector2(16.0, 38.0)
 				draw_texture(c_tex, c_draw_pos)
+				if bool(ctx.get("feedback_sequence_active", false)):
+					_draw_member_feedback_fx(c_draw_pos, float(ctx.get("feedback_sequence_elapsed", 0.0)))
 			else:
 				draw_texture(tex, draw_pos)
 		else:
@@ -1781,7 +1788,37 @@ func _member_ctx(m: Dictionary, state: String) -> Dictionary:
 			ctx["use_ticks_remaining"] = int(m["use_ticks_remaining"])
 	if state == "LEAVING":
 		ctx["leaving_reason"] = str(m.get("leaving_reason", ""))
+	if _feedback_sequence_provider.is_valid():
+		var fb: Variant = _feedback_sequence_provider.call()
+		if fb is Dictionary and bool((fb as Dictionary).get("active", false)):
+			var target_mid: int = int((fb as Dictionary).get("member_id", -1))
+			if target_mid == -1 or target_mid == int(m.get("member_id", -1)):
+				ctx["feedback_sequence_active"] = true
+				ctx["feedback_sequence_elapsed"] = float((fb as Dictionary).get("elapsed", 0.0))
 	return ctx
+
+
+func _draw_member_feedback_fx(c_draw_pos: Vector2, elapsed: float) -> void:
+	if elapsed < 1.0:
+		# 喘气阶段：额头甩出两滴汗水
+		var blue := Color("38BDF8")
+		var white := Color("FFFFFF")
+		var anim: float = fmod(elapsed * 2.5, 1.0)
+		var drop1 := Vector2(c_draw_pos.x + 6.0 - anim * 6.0, c_draw_pos.y + 12.0 + anim * 6.0)
+		var drop2 := Vector2(c_draw_pos.x + 24.0 + anim * 6.0, c_draw_pos.y + 14.0 + anim * 5.0)
+		draw_rect(Rect2(drop1.x, drop1.y, 2, 2), blue)
+		draw_rect(Rect2(drop1.x, drop1.y, 1, 1), white)
+		draw_rect(Rect2(drop2.x, drop2.y, 2, 2), blue)
+		draw_rect(Rect2(drop2.x, drop2.y, 1, 1), white)
+	else:
+		# 释然微笑阶段：头顶泛起金色欣慰音符/星芒
+		var gold := Color("F5D97B")
+		var white := Color("FFFFFF")
+		var anim: float = fmod((elapsed - 1.0) * 3.0, 1.0)
+		var note_pos := Vector2(c_draw_pos.x + 22.0, c_draw_pos.y + 4.0 - anim * 6.0)
+		var alpha: float = clampf(1.0 - anim, 0.0, 1.0)
+		draw_rect(Rect2(note_pos.x - 1, note_pos.y - 1, 3, 3), Color(gold.r, gold.g, gold.b, alpha))
+		draw_rect(Rect2(note_pos.x, note_pos.y, 1, 1), Color(white.r, white.g, white.b, alpha))
 
 
 ## 由 cell 移动推断朝向（presentation 层，纯绘制用；横向位移为 0 时保持上次

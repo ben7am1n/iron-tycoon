@@ -135,7 +135,19 @@ func get_member_texture(npc_id: String, state: String, tick: int, facing_left: b
 		var row := 0
 		var equip_id: String = str(ctx.get("equipment_id", ""))
 
-		if state == "USING":
+		var is_fb: bool = bool(ctx.get("feedback_sequence_active", false))
+		var fb_elapsed: float = float(ctx.get("feedback_sequence_elapsed", 0.0))
+
+		if is_fb:
+			if fb_elapsed < 1.0:
+				# Panting / tired recovery pose (row 2, col 0..1)
+				col = (tick / 3) % 2
+				row = 2
+			else:
+				# Relieved, beaming happy smile (row 2, col 2..3)
+				col = 2 + ((tick / 3) % 2)
+				row = 2
+		elif state == "USING":
 			if equip_id == "treadmill":
 				# Running on treadmill (4 phases @ 10Hz)
 				col = tick % 4

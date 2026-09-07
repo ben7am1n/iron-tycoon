@@ -107,10 +107,20 @@ func update_state() -> void:
 		else:
 			_last_dir = DIR_LEFT if dx < 0.0 else DIR_RIGHT
 
+	var fb_seq: Dictionary = view.get("feedback_sequence", {})
+	var is_fb_active: bool = bool(fb_seq.get("active", false))
+	var fb_elapsed: float = float(fb_seq.get("elapsed", 0.0))
+
 	var req: Dictionary = view.get("request", {})
 	var is_guiding: bool = (not req.is_empty() and str(req.get("status", "")) in ["waiting", "choice", "timing"])
-	var is_success: bool = (not req.is_empty() and str(req.get("status", "")) == "success") or bool(view.get("story", {}).get("success_feedback", false))
-	if is_success:
+	var is_success: bool = is_fb_active or (not req.is_empty() and str(req.get("status", "")) == "success") or bool(view.get("story", {}).get("success_feedback", false))
+
+	if is_fb_active:
+		if fb_elapsed < 1.0:
+			_current_pose = POSE_GUIDANCE
+		else:
+			_current_pose = POSE_SUCCESS
+	elif is_success:
 		_current_pose = POSE_SUCCESS
 	elif is_guiding:
 		_current_pose = POSE_GUIDANCE
@@ -173,6 +183,24 @@ func _draw() -> void:
 		draw_rect(bubble_rect, Color("DCA83D"), false, 1.0)
 		if _font != null:
 			draw_string(_font, Vector2(bubble_rect.position.x + 2, bubble_rect.position.y + 9), tip, HORIZONTAL_ALIGNMENT_CENTER, -1, 9, Color("FFF8ED"))
+
+	var fb_seq: Dictionary = view.get("feedback_sequence", {})
+	if bool(fb_seq.get("active", false)):
+		_draw_feedback_particles(base_p, float(fb_seq.get("elapsed", 0.0)))
+
+
+func _draw_feedback_particles(base_p: Vector2, elapsed: float) -> void:
+	var gold := Color("F5D97B")
+	var white := Color("FFFFFF")
+	var anim: float = fmod(elapsed * 3.5, 1.0)
+	var offset_y: float = -44.0 - anim * 8.0
+	var alpha: float = clampf(1.0 - anim, 0.0, 1.0)
+	var left_pt := Vector2(base_p.x - 12.0, base_p.y + offset_y)
+	draw_rect(Rect2(left_pt.x - 1, left_pt.y - 1, 3, 3), Color(gold.r, gold.g, gold.b, alpha))
+	draw_rect(Rect2(left_pt.x, left_pt.y, 1, 1), Color(white.r, white.g, white.b, alpha))
+	var right_pt := Vector2(base_p.x + 12.0, base_p.y + offset_y - 2.0)
+	draw_rect(Rect2(right_pt.x - 1, right_pt.y - 1, 3, 3), Color(gold.r, gold.g, gold.b, alpha))
+	draw_rect(Rect2(right_pt.x, right_pt.y, 1, 1), Color(white.r, white.g, white.b, alpha))
 
 
 func _draw_procedural_coach(base_p: Vector2, flat_pos: Vector2, tick: int, view: Dictionary) -> void:

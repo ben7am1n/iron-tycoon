@@ -418,6 +418,12 @@ func _assemble_presentation() -> void:
 			return bool(view.get("gym_renovated", false))
 		return false
 	)
+	_world_canvas.set_feedback_sequence_provider(func() -> Dictionary:
+		if _community_mode and _day_cycle != null:
+			var view: Dictionary = _day_cycle.get_view_state()
+			return view.get("feedback_sequence", {})
+		return {}
+	)
 	_world_root.add_child(_world_canvas)
 
 	# Phase 5：V3 §6 方向光 + 氛围层（世界像素空间，画在 WorldCanvas 之上）。

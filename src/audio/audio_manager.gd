@@ -402,6 +402,13 @@ func connect_day_cycle(day_cycle: Object) -> void:
 	if day_cycle.has_signal("phase_changed"):
 		if not day_cycle.is_connected("phase_changed", _on_phase_changed):
 			day_cycle.connect("phase_changed", _on_phase_changed)
+	if day_cycle.has_signal("feedback_sequence_started"):
+		if not day_cycle.is_connected("feedback_sequence_started", _on_feedback_sequence_started):
+			day_cycle.connect("feedback_sequence_started", _on_feedback_sequence_started)
+
+
+func _on_feedback_sequence_started(_seq: Dictionary) -> void:
+	play_sfx("satisfaction_chime")
 
 
 func _on_phase_changed(phase: String) -> void:
