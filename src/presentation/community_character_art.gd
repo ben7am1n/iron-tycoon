@@ -11,10 +11,12 @@ const CHEST_ANCHOR := Vector2(16.0, 20.0)
 const PATH_COACH_SHEET := "res://assets/sprites/characters/coach_cheng_sheet.png"
 const PATH_ALUO_SHEET := "res://assets/sprites/characters/member_aluo_sheet.png"
 const PATH_GENERIC_SHEET := "res://assets/sprites/characters/member_generic_sheet.png"
+const PATH_EQUIP_WORKOUT_SHEET := "res://assets/sprites/characters/member_equipment_workout_sheet.png"
 
 var _coach_tex: Texture2D = null
 var _aluo_tex: Texture2D = null
 var _generic_tex: Texture2D = null
+var _equip_workout_tex: Texture2D = null
 
 var _frame_cache: Dictionary = {}
 
@@ -42,6 +44,13 @@ func _load_sheets() -> void:
 		var img := Image.new()
 		if img.load(PATH_GENERIC_SHEET) == OK:
 			_generic_tex = ImageTexture.create_from_image(img)
+
+	if ResourceLoader.exists(PATH_EQUIP_WORKOUT_SHEET):
+		_equip_workout_tex = load(PATH_EQUIP_WORKOUT_SHEET)
+	elif FileAccess.file_exists(PATH_EQUIP_WORKOUT_SHEET):
+		var img := Image.new()
+		if img.load(PATH_EQUIP_WORKOUT_SHEET) == OK:
+			_equip_workout_tex = ImageTexture.create_from_image(img)
 
 func get_frame_size() -> Vector2i:
 	return Vector2i(FRAME_W, FRAME_H)
@@ -152,8 +161,26 @@ func get_member_texture(npc_id: String, state: String, tick: int, facing_left: b
 				# Running on treadmill (4 phases @ 10Hz)
 				col = tick % 4
 				row = 1
+			elif equip_id == "bike":
+				if _equip_workout_tex == null:
+					_load_sheets()
+				if _equip_workout_tex != null:
+					return _get_atlas_subtexture(_equip_workout_tex, (tick / 2) % 2, 0, facing_left)
+				col = tick % 4
+				row = 1
+			elif equip_id == "bench_press":
+				if _equip_workout_tex == null:
+					_load_sheets()
+				if _equip_workout_tex != null:
+					return _get_atlas_subtexture(_equip_workout_tex, 2 + ((tick / 4) % 2), 0, false)
+				col = tick % 4
+				row = 1
 			elif equip_id == "yoga_mat":
-				# Seated yoga stretch
+				if _equip_workout_tex == null:
+					_load_sheets()
+				if _equip_workout_tex != null:
+					return _get_atlas_subtexture(_equip_workout_tex, 4 + ((tick / 4) % 2), 0, facing_left)
+				# Fallback to Aluo sheet yoga (row 1, col 4..5)
 				col = 4 + ((tick / 4) % 2)
 				row = 1
 			else:
@@ -190,8 +217,29 @@ func get_member_texture(npc_id: String, state: String, tick: int, facing_left: b
 	var col := 0
 	var row := variant # 4 rows, one per variant
 
-	if state == "USING" and equip_id == "treadmill":
-		col = 4 + (tick % 2)
+	if state == "USING":
+		if equip_id == "bike":
+			if _equip_workout_tex == null:
+				_load_sheets()
+			if _equip_workout_tex != null:
+				return _get_atlas_subtexture(_equip_workout_tex, (tick / 2) % 2, 1 + variant, facing_left)
+			col = 4 + (tick % 2)
+		elif equip_id == "bench_press":
+			if _equip_workout_tex == null:
+				_load_sheets()
+			if _equip_workout_tex != null:
+				return _get_atlas_subtexture(_equip_workout_tex, 2 + ((tick / 4) % 2), 1 + variant, false)
+			col = 4 + (tick % 2)
+		elif equip_id == "yoga_mat":
+			if _equip_workout_tex == null:
+				_load_sheets()
+			if _equip_workout_tex != null:
+				return _get_atlas_subtexture(_equip_workout_tex, 4 + ((tick / 4) % 2), 1 + variant, facing_left)
+			col = 4 + (tick % 2)
+		elif equip_id == "treadmill":
+			col = 4 + (tick % 2)
+		else:
+			col = 4 + (tick % 2)
 	elif state in ["WALKING_TO", "ENTERING", "LEAVING"]:
 		col = 2 + (tick % 2)
 	else:

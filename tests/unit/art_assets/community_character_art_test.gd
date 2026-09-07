@@ -41,6 +41,7 @@ func _test_sheet_files_exist_and_format() -> void:
 		{"path": "res://assets/sprites/characters/coach_cheng_sheet.png", "w": 192, "h": 120, "name": "Coach Cheng"},
 		{"path": "res://assets/sprites/characters/member_aluo_sheet.png", "w": 192, "h": 120, "name": "Singer Aluo"},
 		{"path": "res://assets/sprites/characters/member_generic_sheet.png", "w": 192, "h": 160, "name": "Generic Members"},
+		{"path": "res://assets/sprites/characters/member_equipment_workout_sheet.png", "w": 192, "h": 200, "name": "Equipment Workouts"},
 	]
 	for s in sheets:
 		_check(FileAccess.file_exists(s.path), "%s sheet exists on disk" % s.name)
@@ -80,9 +81,20 @@ func _test_aluo_and_member_textures() -> void:
 	_check(tex_run != null, "Aluo treadmill running frame returned")
 	_check(tex_run.get_width() == 32 and tex_run.get_height() == 40, "Aluo treadmill running frame is 32x40")
 
+	# Aluo cycling on stationary bike
+	var tex_bike := art.get_member_texture("singer_aluo", "USING", 0, false, {"equipment_id": "bike"})
+	_check(tex_bike != null, "Aluo stationary bike cycling frame returned")
+	_check(tex_bike.get_width() == 32 and tex_bike.get_height() == 40, "Aluo bike frame is 32x40")
+
+	# Aluo bench press
+	var tex_bench := art.get_member_texture("singer_aluo", "USING", 0, false, {"equipment_id": "bench_press"})
+	_check(tex_bench != null, "Aluo bench press workout frame returned")
+	_check(tex_bench.get_width() == 32 and tex_bench.get_height() == 40, "Aluo bench frame is 32x40")
+
 	# Aluo seated yoga
 	var tex_yoga := art.get_member_texture("singer_aluo", "USING", 0, false, {"equipment_id": "yoga_mat"})
 	_check(tex_yoga != null, "Aluo yoga seated stretch frame returned")
+	_check(tex_yoga.get_width() == 32 and tex_yoga.get_height() == 40, "Aluo yoga frame is 32x40")
 
 	# Aluo tired
 	var tex_tired := art.get_member_texture("singer_aluo", "QUEUEING", 0, false)
@@ -96,6 +108,19 @@ func _test_aluo_and_member_textures() -> void:
 	for var_id in 4:
 		var g_tex := art.get_member_texture("", "WALKING_TO", 0, false, {"member_id": var_id})
 		_check(g_tex != null, "Generic member variant %d returned" % var_id)
+		
+		# Test all 4 equipment types for generic member
+		var g_treadmill := art.get_member_texture("", "USING", 0, false, {"member_id": var_id, "equipment_id": "treadmill"})
+		_check(g_treadmill != null, "Generic member variant %d treadmill workout frame returned" % var_id)
+		
+		var g_bike := art.get_member_texture("", "USING", 0, false, {"member_id": var_id, "equipment_id": "bike"})
+		_check(g_bike != null, "Generic member variant %d bike workout frame returned" % var_id)
+		
+		var g_bench := art.get_member_texture("", "USING", 0, false, {"member_id": var_id, "equipment_id": "bench_press"})
+		_check(g_bench != null, "Generic member variant %d bench press frame returned" % var_id)
+		
+		var g_yoga := art.get_member_texture("", "USING", 0, false, {"member_id": var_id, "equipment_id": "yoga_mat"})
+		_check(g_yoga != null, "Generic member variant %d yoga frame returned" % var_id)
 
 func _test_aluo_dialogue_portraits() -> void:
 	print("\n[Aluo Dialogue Portraits] 3 emotional expressions")
