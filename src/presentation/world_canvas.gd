@@ -1385,7 +1385,17 @@ func _draw_members(foreground: bool) -> void:
 			# USING 成员：设备接触点明暗衔接（脚踩踏板压暗 + 手扶处设备微反光）
 			_draw_using_equipment_junction(
 				str(ctx.get("equipment_id", "")), _footprint_of_using(m), draw_pos)
-		draw_texture(tex, draw_pos)
+		if _member != null and ("community_mode" in _member) and bool(_member.community_mode):
+			# 社区模式：将 48×48 会员等比缩放为 ~34×34，脚底对齐地面，与程教练（14px 肩宽、~28px 身高）视觉比例统一和谐
+			var scale_factor := 0.72
+			var scaled_w := 48.0 * scale_factor
+			var scaled_pos := Vector2(
+				draw_pos.x + 24.0 * (1.0 - scale_factor),
+				draw_pos.y + 44.0 * (1.0 - scale_factor)
+			)
+			draw_texture_rect(tex, Rect2(scaled_pos, Vector2(scaled_w, scaled_w)), false)
+		else:
+			draw_texture(tex, draw_pos)
 	# 清理已离场成员的朝向缓存（防止字典无限增长）
 	for member_id in _member_facing.keys():
 		if not alive.has(member_id):

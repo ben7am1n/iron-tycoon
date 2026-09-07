@@ -28,6 +28,11 @@ var _last_phase := ""
 var _portrait_textures: Dictionary = {}
 var _active_speaker_id: String = ""
 
+var _card_sb: StyleBoxFlat
+var _shadow_sb: StyleBoxFlat
+var _portrait_sb: StyleBoxFlat
+var _dave_btn_theme: Theme
+
 ## Injects a deep read-view provider. No simulation state is retained as mutable UI data.
 func init(provider: Callable) -> void:
 	_provider = provider
@@ -35,15 +40,25 @@ func init(provider: Callable) -> void:
 func _ready() -> void:
 	name = "CommunityHud"
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	theme = UiTheme.button_theme()
-	_title = _label("PhaseTitle", Vector2(26, 14), Vector2(920, 32), 25)
-	_objective = _label("Objective", Vector2(26, 49), Vector2(850, 28), 18)
-	_details = _label("Context", Vector2(26, 542), Vector2(1228, 42), 18)
-	_feedback = _label("Feedback", Vector2(26, 584), Vector2(1228, 28), 16)
+	_init_dave_styles()
+	theme = _dave_btn_theme
+
+	_title = _label("PhaseTitle", Vector2(36, 16), Vector2(920, 30), 22)
+	_title.add_theme_color_override("font_color", Color(1.0, 0.88, 0.48))
+
+	_objective = _label("Objective", Vector2(36, 48), Vector2(850, 26), 15)
+	_objective.add_theme_color_override("font_color", Color(0.92, 0.90, 0.84))
+
+	_details = _label("Context", Vector2(106, 548), Vector2(1130, 36), 16)
+	_details.add_theme_color_override("font_color", Color(0.98, 0.96, 0.92))
+
+	_feedback = _label("Feedback", Vector2(106, 584), Vector2(1130, 24), 14)
+	_feedback.add_theme_color_override("font_color", Color(0.98, 0.78, 0.40))
+
 	_portrait = TextureRect.new()
 	_portrait.name = "SpeakerPortrait"
-	_portrait.position = Vector2(26, 524)
-	_portrait.size = Vector2(52, 52)
+	_portrait.position = Vector2(38, 526)
+	_portrait.size = Vector2(56, 56)
 	_portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	_portrait.texture_filter = Control.TEXTURE_FILTER_NEAREST
@@ -51,14 +66,14 @@ func _ready() -> void:
 	_portrait.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_portrait)
 
-	_speaker_label = _label("SpeakerName", Vector2(88, 524), Vector2(300, 22), 16)
+	_speaker_label = _label("SpeakerName", Vector2(106, 524), Vector2(300, 22), 16)
 	_speaker_label.visible = false
-	_speaker_label.add_theme_color_override("font_color", Palette.CHARCOAL)
+	_speaker_label.add_theme_color_override("font_color", Color(1.0, 0.84, 0.36))
 
 	_actions = HBoxContainer.new()
 	_actions.name = "Actions"
-	_actions.position = Vector2(26, 621)
-	_actions.add_theme_constant_override("separation", 8)
+	_actions.position = Vector2(38, 622)
+	_actions.add_theme_constant_override("separation", 10)
 	add_child(_actions)
 	for item: Array in [
 		["depart", "去公园"], ["open_service", "开始营业"], ["start_challenge", "正式挑战"],
@@ -72,7 +87,8 @@ func _ready() -> void:
 		var button := Button.new()
 		button.name = action
 		button.text = tr(item[1])
-		button.custom_minimum_size = Vector2(112, 38)
+		button.custom_minimum_size = Vector2(116, 38)
+		button.theme = _dave_btn_theme
 		if action == "select_course":
 			button.pressed.connect(func() -> void:
 				var cur: String = str(_view.get("selected_course_id", "course_endurance_intro"))
@@ -87,11 +103,102 @@ func _ready() -> void:
 		var button := Button.new()
 		button.name = choice
 		button.text = tr({"maintain": "1 保持", "slow": "2 放缓", "rest": "3 休息"}[choice])
-		button.custom_minimum_size = Vector2(105, 38)
+		button.custom_minimum_size = Vector2(108, 38)
+		button.theme = _dave_btn_theme
 		button.pressed.connect(func() -> void: action_requested.emit("choose_guidance", {"choice": choice}))
 		_actions.add_child(button)
 		_buttons[choice] = button
 	_refresh()
+
+func _init_dave_styles() -> void:
+	_card_sb = StyleBoxFlat.new()
+	_card_sb.bg_color = Color(0.07, 0.10, 0.16, 0.95)
+	_card_sb.border_color = Color(0.86, 0.66, 0.24, 1.0)
+	_card_sb.set_border_width_all(2)
+	_card_sb.set_corner_radius_all(8)
+
+	_shadow_sb = StyleBoxFlat.new()
+	_shadow_sb.bg_color = Color(0.02, 0.03, 0.06, 0.50)
+	_shadow_sb.set_corner_radius_all(10)
+
+	_portrait_sb = StyleBoxFlat.new()
+	_portrait_sb.bg_color = Color(0.12, 0.16, 0.24, 1.0)
+	_portrait_sb.border_color = Color(0.86, 0.66, 0.24, 1.0)
+	_portrait_sb.set_border_width_all(2)
+	_portrait_sb.set_corner_radius_all(6)
+
+	_dave_btn_theme = Theme.new()
+	var normal_sb := StyleBoxFlat.new()
+	normal_sb.bg_color = Color(0.13, 0.18, 0.28, 0.96)
+	normal_sb.border_color = Color(0.82, 0.62, 0.22, 1.0)
+	normal_sb.set_border_width_all(2)
+	normal_sb.set_corner_radius_all(6)
+	normal_sb.content_margin_left = 12.0
+	normal_sb.content_margin_right = 12.0
+	normal_sb.content_margin_top = 6.0
+	normal_sb.content_margin_bottom = 6.0
+
+	var hover_sb := StyleBoxFlat.new()
+	hover_sb.bg_color = Color(0.19, 0.26, 0.40, 1.0)
+	hover_sb.border_color = Color(1.0, 0.86, 0.38, 1.0)
+	hover_sb.set_border_width_all(2)
+	hover_sb.set_corner_radius_all(6)
+	hover_sb.content_margin_left = 12.0
+	hover_sb.content_margin_right = 12.0
+	hover_sb.content_margin_top = 6.0
+	hover_sb.content_margin_bottom = 6.0
+
+	var pressed_sb := StyleBoxFlat.new()
+	pressed_sb.bg_color = Color(0.08, 0.11, 0.18, 1.0)
+	pressed_sb.border_color = Color(0.68, 0.50, 0.16, 1.0)
+	pressed_sb.set_border_width_all(2)
+	pressed_sb.set_corner_radius_all(6)
+	pressed_sb.content_margin_left = 12.0
+	pressed_sb.content_margin_right = 12.0
+	pressed_sb.content_margin_top = 6.0
+	pressed_sb.content_margin_bottom = 6.0
+
+	_dave_btn_theme.set_stylebox("normal", "Button", normal_sb)
+	_dave_btn_theme.set_stylebox("hover", "Button", hover_sb)
+	_dave_btn_theme.set_stylebox("pressed", "Button", pressed_sb)
+	_dave_btn_theme.set_stylebox("focus", "Button", hover_sb)
+	_dave_btn_theme.set_color("font_color", "Button", Color(0.96, 0.94, 0.88))
+	_dave_btn_theme.set_color("font_hover_color", "Button", Color(1.0, 1.0, 1.0))
+	_dave_btn_theme.set_color("font_pressed_color", "Button", Color(0.85, 0.83, 0.78))
+	_dave_btn_theme.set_font("font", "Button", UiTheme.cjk_bold_font())
+	_dave_btn_theme.set_font_size("font_size", "Button", 15)
+
+func _draw() -> void:
+	# 1. Top status banner card (Dave the Diver diegetic card)
+	var top_rect := Rect2(20, 10, 1240, 72)
+	_draw_dave_card(top_rect)
+
+	# 2. Bottom dialogue and action deck card
+	var py: float = 480.0 if _building else 514.0
+	var ph: float = 230.0 if _building else 196.0
+	var bottom_rect := Rect2(20, py, 1240, ph)
+	_draw_dave_card(bottom_rect)
+
+	# 3. Speaker portrait frame
+	if _portrait != null and _portrait.visible:
+		var pf := Rect2(_portrait.position - Vector2(4, 4), _portrait.size + Vector2(8, 8))
+		if _portrait_sb != null:
+			draw_style_box(_portrait_sb, pf)
+
+func _draw_dave_card(rect: Rect2) -> void:
+	if _shadow_sb != null:
+		draw_style_box(_shadow_sb, Rect2(rect.position + Vector2(0, 4), rect.size))
+	if _card_sb != null:
+		draw_style_box(_card_sb, rect)
+	# 4 Corner brass rivets
+	_draw_brass_rivet(rect.position + Vector2(8, 8))
+	_draw_brass_rivet(Vector2(rect.end.x - 8, rect.position.y + 8))
+	_draw_brass_rivet(Vector2(rect.position.x + 8, rect.end.y - 8))
+	_draw_brass_rivet(rect.end - Vector2(8, 8))
+
+func _draw_brass_rivet(pos: Vector2) -> void:
+	draw_circle(pos, 2.5, Color(1.0, 0.86, 0.40))
+	draw_circle(pos + Vector2(-0.5, -0.5), 1.2, Color(1.0, 0.96, 0.72))
 
 func get_active_portrait_character() -> String:
 	return _active_speaker_id
@@ -128,7 +235,7 @@ func _label(node_name: String, pos: Vector2, extent: Vector2, font_size: int) ->
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	UiTheme.style_cjk_label(label, font_size)
-	label.add_theme_color_override("font_color", Palette.CHARCOAL)
+	label.add_theme_color_override("font_color", Color(0.96, 0.94, 0.88))
 	add_child(label)
 	return label
 
@@ -180,6 +287,8 @@ func _refresh() -> void:
 			speaker_id = "aluo"
 			speaker_name = "阿洛 · 公园"
 	elif phase == "SERVICE":
+		speaker_id = "coach"
+		speaker_name = "程教练 · 晚间营业"
 		details = "营业剩余 %d 秒 · %s · E 指导会员 · H 热图" % [maxi(0, 360 - int(_view.get("service_seconds", 0))), str(course.get("label", course.get("status", "等待课程")))]
 		if int(course.get("block", 0)) > 0:
 			details += " · 第 %d / 4 段" % int(course.block)
@@ -217,22 +326,25 @@ func _refresh() -> void:
 
 	_active_speaker_id = speaker_id
 	var tex: Texture2D = _get_portrait_texture(speaker_id) if speaker_id != "" else null
-	var show_portrait: bool = tex != null and (phase in ["CLOSE", "OUTING"] or guidance or timing or (phase == "PREP" and int(_view.get("day", 1)) >= 2 and not bool(_view.get("gym_renovated", false))))
+	var show_portrait: bool = tex != null
+	var base_py: float = 480.0 if _building else 514.0
 	if show_portrait:
 		_portrait.texture = tex
 		_portrait.visible = true
 		_speaker_label.text = speaker_name
 		_speaker_label.visible = true
-		var py: float = 486.0 if _building else 524.0
-		_portrait.position = Vector2(26, py)
-		_speaker_label.position = Vector2(88, py)
-		_details.position = Vector2(88, py + 22.0)
-		_details.size = Vector2(1166, 36)
+		_portrait.position = Vector2(38, base_py + 12.0)
+		_portrait.size = Vector2(56, 56)
+		_speaker_label.position = Vector2(108, base_py + 10.0)
+		_details.position = Vector2(108, base_py + 34.0)
+		_details.size = Vector2(1130, 36)
+		_feedback.position = Vector2(108, base_py + 70.0)
 	else:
 		_portrait.visible = false
 		_speaker_label.visible = false
-		_details.position = Vector2(26, 503 if _building else 542)
-		_details.size = Vector2(1228, 42)
+		_details.position = Vector2(38, base_py + 18.0)
+		_details.size = Vector2(1200, 42)
+		_feedback.position = Vector2(38, base_py + 64.0)
 	_details.text = details
 	for button: Button in _buttons.values():
 		button.visible = false
@@ -268,14 +380,8 @@ func _refresh() -> void:
 			_buttons.restore_stored.text = tr("取回库存(%d)") % int(_view.get("stored_count", 0))
 		if not bool(_view.get("gym_renovated", false)) and int(_view.get("day", 1)) >= 2:
 			_buttons.renovate_gym.visible = true
-	if _building:
-		_actions.position.y = 574
-		_details.position.y = 503
-		_feedback.position.y = 544
-	else:
-		_actions.position.y = 621
-		_details.position.y = 542
-		_feedback.position.y = 584
+	_actions.position = Vector2(38, base_py + 104.0)
+	queue_redraw()
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventKey and not event.pressed and _held.has(event.keycode):

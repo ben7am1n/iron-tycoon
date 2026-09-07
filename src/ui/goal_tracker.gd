@@ -20,6 +20,14 @@ const UiTheme := preload("res://src/ui/ui_theme.gd")
 const PixelPanel := preload("res://src/ui/pixel_panel.gd")
 const Palette := preload("res://src/palette.gd")
 
+var enabled: bool = true:
+	set(val):
+		enabled = val
+		if not enabled:
+			visible = false
+		else:
+			_refresh()
+
 ## 木牌纹理 texel（与 HUD PLAQUE_TEXEL 一致 —— 高分辨率 UI 层 4px/texel）。
 const PANEL_TEXEL := 4
 ## 木牌确定性 seed（固定 seed → 每次运行生成相同纹理，证据复算稳定）。
@@ -289,6 +297,9 @@ func _on_claim_pressed() -> void:
 
 
 func _refresh() -> void:
+	if not enabled:
+		visible = false
+		return
 	if _goals == null or not (_goals as Object).has_method("get_current_goal"):
 		visible = false
 		return

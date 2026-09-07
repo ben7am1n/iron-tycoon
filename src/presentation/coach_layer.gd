@@ -39,6 +39,8 @@ const COLOR_SKIN := Color("dfa77e")            # 健康暖肤色
 const COLOR_HAIR := Color("221a18")            # 深黑发
 const COLOR_SILVER_STREAK := Color("e2e8f0")   # 标志性银白挑染发丝
 
+const COLOR_OUTLINE := Color("141820")        # 角色深色轮廓勾边（强化剪影与对比度）
+
 var _view_provider: Callable
 var _cell_size: int = 32
 var _tick_provider: Callable
@@ -129,10 +131,11 @@ func _draw() -> void:
 	if _tick_provider.is_valid():
 		tick = _tick_provider.call()
 
-	# 3. 脚底贴地接触影与微光池（贴地 Transform，确保锚点对齐）
+	# 3. 脚底贴地深色接触影与微光池（潜水员戴夫沉浸接地风格）
 	draw_set_transform_matrix(Proj2D.floor_transform())
-	_draw_ellipse_pts(flat_pos, 7.5, 4.2, Color(1.0, 0.95, 0.8, 0.18))
-	_draw_ellipse_pts(flat_pos, 5.5, 3.2, Color(0.08, 0.1, 0.12, 0.55))
+	_draw_ellipse_pts(flat_pos, 9.5, 5.0, Color(1.0, 0.90, 0.70, 0.15))
+	_draw_ellipse_pts(flat_pos, 7.5, 4.0, Color(0.04, 0.06, 0.12, 0.45))
+	_draw_ellipse_pts(flat_pos, 5.5, 2.8, Color(0.02, 0.03, 0.07, 0.70))
 	draw_set_transform_matrix(Transform2D.IDENTITY)
 
 	# 4. 角色基准高度与投影锚点
@@ -145,8 +148,10 @@ func _draw() -> void:
 	var walk_phase: int = (tick / 3) % 2 if _current_pose == POSE_WALK else 0
 	var step_offset: float = 2.0 if (walk_phase == 1) else -2.0
 
-	# 6. 腿与鞋子（宽站位，宽肩体型）
+	# 6. 腿与鞋子（深色轮廓 + 宽站位）
 	if _current_pose == POSE_WALK:
+		# 行走轮廓底衬
+		draw_rect(Rect2(base_p.x - 6.0, base_p.y - 12.0, 13.0, 12.0), COLOR_OUTLINE)
 		# 行走：两腿前后迈动，底部紧扣地面基准
 		draw_rect(Rect2(base_p.x - 5.0, base_p.y - 11.0, 4.0, 9.0), COLOR_PANTS)
 		draw_rect(Rect2(base_p.x + 1.0, base_p.y - 11.0, 4.0, 9.0), COLOR_PANTS)
@@ -155,7 +160,8 @@ func _draw() -> void:
 		draw_rect(Rect2(base_p.x - 5.0 + step_offset, base_p.y - 1.0, 4.0, 1.0), COLOR_SHOE_TRIM)
 		draw_rect(Rect2(base_p.x + 1.0 - step_offset, base_p.y - 1.0, 4.0, 1.0), COLOR_SHOE_TRIM)
 	else:
-		# 待机与指导：稳固肩宽立地
+		# 待机与指导：稳固肩宽立地，先画轮廓底衬
+		draw_rect(Rect2(base_p.x - 6.5, base_p.y - 12.0, 13.0, 12.0), COLOR_OUTLINE)
 		draw_rect(Rect2(base_p.x - 5.0, base_p.y - 11.0, 4.0, 9.0), COLOR_PANTS)
 		draw_rect(Rect2(base_p.x + 1.0, base_p.y - 11.0, 4.0, 9.0), COLOR_PANTS)
 		draw_rect(Rect2(base_p.x - 5.5, base_p.y - 2.0, 4.5, 2.0), COLOR_SHOES)
@@ -163,8 +169,9 @@ func _draw() -> void:
 		draw_rect(Rect2(base_p.x - 5.5, base_p.y - 1.0, 4.5, 1.0), COLOR_SHOE_TRIM)
 		draw_rect(Rect2(base_p.x + 1.0, base_p.y - 1.0, 4.5, 1.0), COLOR_SHOE_TRIM)
 
-	# 7. 宽肩青绿外套（宽14px，普通会员仅10px）
+	# 7. 宽肩青绿外套（深色 1px 轮廓边框）
 	var sw: float = get_shoulder_width()
+	draw_rect(Rect2(torso_p.x - sw * 0.5 - 1.0, torso_p.y - 12.0, sw + 2.0, 13.0), COLOR_OUTLINE)
 	var sh_rect := Rect2(torso_p.x - sw * 0.5, torso_p.y - 11.0, sw, 11.0)
 	draw_rect(sh_rect, COLOR_JACKET_MAIN)
 
@@ -190,26 +197,33 @@ func _draw() -> void:
 	# 8. 手臂与姿态手势
 	if _current_pose == POSE_GUIDANCE:
 		# 指导手势：前手臂扬起指示节奏或握拳鼓励
+		draw_rect(Rect2(torso_p.x - sw * 0.5 - 2.5, torso_p.y - 8.5, 3.5, 8.0), COLOR_OUTLINE)
 		draw_rect(Rect2(torso_p.x - sw * 0.5 - 2.0, torso_p.y - 8.0, 2.5, 7.0), COLOR_JACKET_DARK)
-		# 扬起的右手手臂与拳头
+		# 扬起的右手手臂与拳头（带深色描边）
+		draw_rect(Rect2(torso_p.x + sw * 0.5 - 1.5, torso_p.y - 16.0, 4.5, 11.0), COLOR_OUTLINE)
 		draw_rect(Rect2(torso_p.x + sw * 0.5 - 1.0, torso_p.y - 13.0, 3.0, 7.0), COLOR_JACKET_MAIN)
 		draw_rect(Rect2(torso_p.x + sw * 0.5 - 0.5, torso_p.y - 15.0, 2.5, 3.0), COLOR_SKIN)
 	elif _current_pose == POSE_WALK:
 		# 行走摆臂
 		var arm_l := -step_offset * 1.5
 		var arm_r := step_offset * 1.5
+		draw_rect(Rect2(torso_p.x - sw * 0.5 - 2.0, torso_p.y - 8.5 + arm_l, 3.0, 8.0), COLOR_OUTLINE)
+		draw_rect(Rect2(torso_p.x + sw * 0.5 - 1.0, torso_p.y - 8.5 + arm_r, 3.0, 8.0), COLOR_OUTLINE)
 		draw_rect(Rect2(torso_p.x - sw * 0.5 - 1.5, torso_p.y - 8.0 + arm_l, 2.0, 7.0), COLOR_JACKET_DARK)
 		draw_rect(Rect2(torso_p.x + sw * 0.5 - 0.5, torso_p.y - 8.0 + arm_r, 2.0, 7.0), COLOR_JACKET_DARK)
 	else:
 		# 待机手臂自然下垂
+		draw_rect(Rect2(torso_p.x - sw * 0.5 - 2.0, torso_p.y - 8.5, 3.0, 10.5), COLOR_OUTLINE)
+		draw_rect(Rect2(torso_p.x + sw * 0.5 - 1.0, torso_p.y - 8.5, 3.0, 10.5), COLOR_OUTLINE)
 		draw_rect(Rect2(torso_p.x - sw * 0.5 - 1.5, torso_p.y - 8.0, 2.0, 7.5), COLOR_JACKET_DARK)
 		draw_rect(Rect2(torso_p.x + sw * 0.5 - 0.5, torso_p.y - 8.0, 2.0, 7.5), COLOR_JACKET_DARK)
 		draw_rect(Rect2(torso_p.x - sw * 0.5 - 1.5, torso_p.y - 0.5, 2.0, 2.0), COLOR_SKIN)
 		draw_rect(Rect2(torso_p.x + sw * 0.5 - 0.5, torso_p.y - 0.5, 2.0, 2.0), COLOR_SKIN)
 
-	# 9. 头部、面部与标志性银白挑染发
+	# 9. 头部、面部与标志性银白挑染发（带深色头部轮廓）
 	var head_w: float = 8.0
 	var head_h: float = 8.0
+	draw_rect(Rect2(head_p.x - head_w * 0.5 - 1.0, head_p.y - head_h - 1.5, head_w + 2.0, head_h + 2.5), COLOR_OUTLINE)
 	var head_rect := Rect2(head_p.x - head_w * 0.5, head_p.y - head_h, head_w, head_h)
 
 	if _last_dir == DIR_UP:
@@ -237,14 +251,14 @@ func _draw() -> void:
 		draw_rect(Rect2(head_p.x + 1.5, head_p.y - 8.5, 2.5, 2.0), COLOR_SILVER_STREAK)
 		draw_rect(Rect2(head_p.x + 3.0, head_p.y - 6.5, 1.5, 2.0), COLOR_SILVER_STREAK)
 
-	# 10. 指导阶段悬浮提示气泡
+	# 10. 指导阶段悬浮提示气泡（深色金边底板，高对比）
 	var req: Dictionary = view.get("request", {})
 	if _current_pose == POSE_GUIDANCE and not req.is_empty():
 		var stage: String = str(req.get("status", ""))
 		var tip := "E 指导" if stage == "waiting" else ("1/2/3 选择" if stage == "choice" else "E 踩节奏")
-		var bubble_w := 42.0
-		var bubble_rect := Rect2(head_p.x - bubble_w * 0.5, head_p.y - 21.0, bubble_w, 11.0)
-		draw_rect(bubble_rect, Color(0.1, 0.14, 0.18, 0.90), true)
-		draw_rect(bubble_rect, COLOR_JACKET_LIGHT, false, 1.0)
+		var bubble_w := 46.0
+		var bubble_rect := Rect2(head_p.x - bubble_w * 0.5, head_p.y - 23.0, bubble_w, 13.0)
+		draw_rect(bubble_rect, Color(0.07, 0.10, 0.15, 0.95), true)
+		draw_rect(bubble_rect, Color("DCA83D"), false, 1.0)
 		if _font != null:
-			draw_string(_font, Vector2(bubble_rect.position.x + 2, bubble_rect.position.y + 8), tip, HORIZONTAL_ALIGNMENT_CENTER, -1, 8, Color("ffffff"))
+			draw_string(_font, Vector2(bubble_rect.position.x + 2, bubble_rect.position.y + 9), tip, HORIZONTAL_ALIGNMENT_CENTER, -1, 9, Color("FFF8ED"))

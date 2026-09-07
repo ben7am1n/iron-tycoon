@@ -439,22 +439,27 @@ func _draw_phase_lighting() -> void:
 			draw_rect(Rect2(32, 16, WorldLayout.WORLD_W - 64, WorldLayout.WORLD_H - 32), dusk_color, true)
 			draw_set_transform_matrix(Transform2D.IDENTITY)
 		"SERVICE":
-			# 营业/夜间 (Night): 顶部暖白灯亮起，窗外靛蓝、墙边偏冷，高对比热闹
-			var night_ambient := Color(0.08, 0.12, 0.22, 0.08)
+			# 营业/夜间 (Night): 潜水员戴夫/班桥风格，深靛蓝暗部包围 + 暖琥珀/钨丝灯聚光落点
+			var night_ambient := Color(0.05, 0.08, 0.16, 0.12)
 			draw_rect(full_rect, night_ambient, true)
-			# 强化顶灯落脚区域的暖白光照
+			# 顶灯聚光池（外圈柔和落光 + 中圈琥珀亮区 + 内圈钨丝灯高光核心）
 			draw_set_transform_matrix(Proj2D.floor_transform())
 			for light: Dictionary in WorldLayout.HANGING_LIGHTS:
 				var center: Vector2 = light.get("landing", Vector2.ZERO)
-				_draw_phase_ellipse(center, 44.0, 26.0, Color(1.0, 0.96, 0.85, 0.09))
+				_draw_phase_ellipse(center, 54.0, 32.0, Color(1.0, 0.82, 0.44, 0.08))
+				_draw_phase_ellipse(center, 38.0, 22.0, Color(1.0, 0.88, 0.54, 0.13))
+				_draw_phase_ellipse(center, 22.0, 13.0, Color(1.0, 0.95, 0.72, 0.16))
+			var floor_center: Vector2 = WorldLayout.FLOOR_LIGHT.get("landing", Vector2.ZERO)
+			_draw_phase_ellipse(floor_center, 28.0, 17.0, Color(1.0, 0.86, 0.50, 0.12))
 			draw_set_transform_matrix(Transform2D.IDENTITY)
 		"CLOSE":
-			# 打烊 (Close): 前台与局部灯保留，大面积静态柔和暗部
-			var close_ambient := Color(0.06, 0.08, 0.15, 0.14)
+			# 打烊 (Close): 前台与局部灯保留，深邃宁静氛围
+			var close_ambient := Color(0.04, 0.07, 0.14, 0.16)
 			draw_rect(full_rect, close_ambient, true)
-			# 前台保留一抹暖白微光
+			# 前台保留一抹暖金微光
 			draw_set_transform_matrix(Proj2D.floor_transform())
-			_draw_phase_ellipse(Vector2(96, 220), 46.0, 26.0, Color(1.0, 0.93, 0.78, 0.13))
+			_draw_phase_ellipse(Vector2(96, 220), 48.0, 28.0, Color(1.0, 0.90, 0.65, 0.16))
+			_draw_phase_ellipse(Vector2(96, 220), 24.0, 14.0, Color(1.0, 0.96, 0.80, 0.22))
 			draw_set_transform_matrix(Transform2D.IDENTITY)
 
 	if is_renovated():

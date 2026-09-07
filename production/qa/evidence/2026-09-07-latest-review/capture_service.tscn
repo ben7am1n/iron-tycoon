@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://csrvtest001"]
+
+[ext_resource type="Script" path="res://production/qa/evidence/2026-09-07-latest-review/capture_service.gd" id="1_csrv"]
+
+[node name="CaptureService" type="Node"]
+script = ExtResource("1_csrv")

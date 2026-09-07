@@ -468,9 +468,15 @@ func _test_file4_creates_save_dir() -> void:
 	var save_dir := OS.get_user_data_dir().path_join("saves")
 	# Remove the dir if present so we prove creation (safe: only our sl004_ files live there from this run).
 	if DirAccess.dir_exists_absolute(save_dir):
-		for leftover in _created_files:
-			if FileAccess.file_exists(leftover):
-				DirAccess.remove_absolute(leftover)
+		var dir := DirAccess.open(save_dir)
+		if dir != null:
+			dir.list_dir_begin()
+			var fn := dir.get_next()
+			while fn != "":
+				if not dir.current_is_dir():
+					DirAccess.remove_absolute(save_dir.path_join(fn))
+				fn = dir.get_next()
+			dir.list_dir_end()
 		_created_files.clear()
 		DirAccess.remove_absolute(save_dir)
 	_check(not DirAccess.dir_exists_absolute(save_dir), "save dir absent before save")

@@ -889,6 +889,7 @@ func _update_mode_ui() -> void:
 	if _hud != null:
 		_hud.visible = not _community_mode
 	if _goal_tracker != null:
+		_goal_tracker.enabled = not _community_mode
 		_goal_tracker.visible = not _community_mode
 	if _community_hud != null:
 		_community_hud.visible = _community_mode
