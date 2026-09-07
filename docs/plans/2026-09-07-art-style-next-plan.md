@@ -90,10 +90,24 @@
   - 全流程录像自动化验证：`tests/integration/gym_adventure/step_e_sixty_second_showcase_test.gd`（11 断言全绿）
   - 全量回归测试：124 套测试、6,666 项断言全部通过（100% 通过率）
 
-## 后续扩展规划（阶段二）
+## 后续扩展规划（阶段二）✅ 全部完成
 
-核心 60 秒营业动态美术样板已彻底打通并验收通过。后续可循此美术规格与调性扩展：
-1. **器械扩展**：卧推架（Bench Press）与动感单车（Bike）的高品质像素图集与上下机/锻炼循环动画。
-2. **场景扩展**：公园（Park）探索场景的美术分层、暮色光影与探索物件重构。
-3. **角色扩展**：老邱与林师傅的世界地图行走与交互动画、更多学员体型差变体。
-4. **装修与环境**：更多可解锁升级物（绿植水吧、荣誉墙、更衣室隔断）的视觉表现。
+核心 60 秒营业动态美术样板已彻底打通并验收通过，阶段二四大拓展已全部实现并提交：
+1. **器械扩展 ✅ 已完成（Commit `f98de7f`）**：
+   - 制作四大器械专用图集 `assets/sprites/characters/member_equipment_workout_sheet.png`（192×200 RGBA，5行×6列，含阿洛与4种通用会员体型变体）。
+   - 包含动感单车（Stationary Bike 俯身踏板交替）、卧推架（Bench Press 卧姿推举横杠与配重片）、瑜伽垫（Yoga Mat 盘坐合十呼吸伸展）和跑步机（Treadmill 步频跑动）。
+   - 单元测试 `tests/unit/art_assets/community_character_art_test.gd` 扩充并通过（70 断言全绿）。
+2. **场景扩展 ✅ 已完成（Commit `c07ca14`）**：
+   - 公园场景全面重构：暮色天空渐变、多层次手绘树冠、带石质界石的防滑塑胶跑道、斑马终点线、发光维多利亚铸铁双路灯与地面径向暖光池。
+   - 场景生活小物件：木条休憩长椅、阿洛靠椅原声吉他与运动水壶。
+   - HUD 自动避让：在公园慢跑开始时 HUD 自动折叠，跑道全景与人物动作无遮挡呈现。
+   - 交付对比图与测试：`park-before-after.png`，`tests/unit/art_assets/park_view_remaster_test.gd`（14 断言全绿）。
+3. **角色扩展 ✅ 已完成（Commit `476f867`）**：
+   - 老邱（Boxer Qiu）：原生 32×40 像素图集 `assets/sprites/characters/npc_qiu_sheet.png`（192×120 RGBA），白平头、低重心宽背、酒红运动背心、擦汗毛巾、前台倚靠、行走与指导点赞。
+   - 林师傅（Mechanic Lin）：原生 32×40 像素图集 `assets/sprites/characters/npc_lin_sheet.png`（192×120 RGBA），芥末黄安全帽、额头护目镜、钴蓝工装背带裤、提工具箱快走、扳手拧紧检修与竖大拇指点赞。
+   - 场景互动集成：老邱值守前台迎宾接待，林师傅在改造完成后现身点赞。
+   - 单元测试扩充至 90 项断言全绿。
+4. **装修与环境 ✅ 已完成（Commit `8a6bc60`）**：
+   - 改造后新增陶土盆栽龟背竹生活细节（东北角贴地投影与叶脉高光），呼应《潜水员戴夫》室内温馨生活质感。
+   - 交付全员同框实机渲染样板：[gym-full-roster-equipment.png](production/qa/evidence/2026-09-07-latest-review/gym-full-roster-equipment.png)。
+   - 全量回归测试：125 套测试套件、**6,725 项断言全部通过，0 失败（100% 通过率）**。
