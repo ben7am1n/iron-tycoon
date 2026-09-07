@@ -23,6 +23,7 @@ func run_all() -> Dictionary:
 	_test_art_api_contracts()
 	_test_coach_cheng_textures()
 	_test_aluo_and_member_textures()
+	_test_qiu_and_lin_npc_textures()
 	_test_aluo_dialogue_portraits()
 	print("\n=== COMMUNITY CHARACTER ART TEST: %d passed, %d failed ===\n" % [_pass, _fail])
 	return {"pass": _pass, "fail": _fail}
@@ -42,6 +43,8 @@ func _test_sheet_files_exist_and_format() -> void:
 		{"path": "res://assets/sprites/characters/member_aluo_sheet.png", "w": 192, "h": 120, "name": "Singer Aluo"},
 		{"path": "res://assets/sprites/characters/member_generic_sheet.png", "w": 192, "h": 160, "name": "Generic Members"},
 		{"path": "res://assets/sprites/characters/member_equipment_workout_sheet.png", "w": 192, "h": 200, "name": "Equipment Workouts"},
+		{"path": "res://assets/sprites/characters/npc_qiu_sheet.png", "w": 192, "h": 120, "name": "Boxer Qiu (老邱)"},
+		{"path": "res://assets/sprites/characters/npc_lin_sheet.png", "w": 192, "h": 120, "name": "Mechanic Lin (林师傅)"},
 	]
 	for s in sheets:
 		_check(FileAccess.file_exists(s.path), "%s sheet exists on disk" % s.name)
@@ -121,6 +124,46 @@ func _test_aluo_and_member_textures() -> void:
 		
 		var g_yoga := art.get_member_texture("", "USING", 0, false, {"member_id": var_id, "equipment_id": "yoga_mat"})
 		_check(g_yoga != null, "Generic member variant %d yoga frame returned" % var_id)
+
+func _test_qiu_and_lin_npc_textures() -> void:
+	print("\n[NPCs] Boxer Qiu and Mechanic Lin animations")
+	var art = CommunityCharacterArtScript.new()
+
+	# Boxer Qiu (老邱)
+	var qiu_idle := art.get_qiu_texture("idle", 0)
+	_check(qiu_idle != null, "Boxer Qiu idle frame returned")
+	_check(qiu_idle.get_width() == 32 and qiu_idle.get_height() == 40, "Boxer Qiu idle frame is 32x40")
+
+	var qiu_walk := art.get_qiu_texture("walk", 0)
+	_check(qiu_walk != null, "Boxer Qiu walk frame returned")
+
+	var qiu_counter := art.get_qiu_texture("front_desk", 0)
+	_check(qiu_counter != null, "Boxer Qiu front desk counter lean frame returned")
+
+	var qiu_nod := art.get_qiu_texture("nod", 0)
+	_check(qiu_nod != null, "Boxer Qiu nod/thumbs up frame returned")
+
+	# Boxer Qiu via get_member_texture
+	var qiu_member_tex := art.get_member_texture("boxer_qiu", "FRONT_DESK", 0, false)
+	_check(qiu_member_tex != null, "Boxer Qiu dispatched via get_member_texture")
+
+	# Mechanic Lin (林师傅)
+	var lin_idle := art.get_lin_texture("idle", 0)
+	_check(lin_idle != null, "Mechanic Lin idle frame returned")
+	_check(lin_idle.get_width() == 32 and lin_idle.get_height() == 40, "Mechanic Lin idle frame is 32x40")
+
+	var lin_walk := art.get_lin_texture("walk", 0)
+	_check(lin_walk != null, "Mechanic Lin walk frame returned")
+
+	var lin_repair := art.get_lin_texture("repair", 0)
+	_check(lin_repair != null, "Mechanic Lin wrench repair frame returned")
+
+	var lin_thumbs := art.get_lin_texture("thumbs_up", 0)
+	_check(lin_thumbs != null, "Mechanic Lin thumbs up frame returned")
+
+	# Mechanic Lin via get_member_texture
+	var lin_member_tex := art.get_member_texture("mechanic_lin", "RENOVATING", 0, false)
+	_check(lin_member_tex != null, "Mechanic Lin dispatched via get_member_texture")
 
 func _test_aluo_dialogue_portraits() -> void:
 	print("\n[Aluo Dialogue Portraits] 3 emotional expressions")

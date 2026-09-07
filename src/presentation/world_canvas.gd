@@ -576,6 +576,16 @@ func _draw_structure_gameplay() -> void:
 			Vector2(float(rect.size.x) * 0.94, float(rect.size.y) * 0.8))
 		draw_rect(slab, desk_shadow, true)
 	)
+
+	# 社区模式：老邱（固定前台助理）值守前台（站于柜台后，上半身靠台面迎宾）
+	var is_comm_mode: bool = (_member != null and ("community_mode" in _member) and bool(_member.community_mode))
+	if is_comm_mode and _community_char_art != null:
+		var qiu_pos := Proj2D.proj(rect.position.x + 36, rect.position.y - 2, 0.0) - Vector2(16.0, 38.0)
+		var tick: int = int(_tick_provider.call()) if _tick_provider.is_valid() else 0
+		var qiu_tex: Texture2D = _community_char_art.get_qiu_texture("front_desk", tick, false)
+		if qiu_tex != null:
+			draw_texture(qiu_tex, qiu_pos)
+
 	_draw_extruded_box(tex, rect, STRUCT_FRONT_DESK_H,
 		Palette.DESK_WOOD.darkened(0.22), Palette.DESK_WOOD.darkened(0.4))
 	# 正面手工木纹 cluster：沿正面平面（世界 y=y1，z∈[0,h]）撒确定性暗/亮
@@ -589,6 +599,14 @@ func _draw_structure_gameplay() -> void:
 			# 改造后前台升级：黄铜边缘包条与电子迎宾签到屏
 			draw_rect(Rect2(desk_top_pos.x + 4, desk_top_pos.y + 2, 40, 2), Color("F5D97B"))
 			draw_rect(Rect2(desk_top_pos.x + 32, desk_top_pos.y + 6, 8, 6), Color("38BDF8"))
+
+	if is_comm_mode and _community_char_art != null and is_renovated():
+		# 改造后：林师傅在前台右侧驻足巡检并点赞完工
+		var lin_pos := Proj2D.proj(rect.position.x + rect.size.x + 8, rect.position.y + 12, 0.0) - Vector2(16.0, 38.0)
+		var tick: int = int(_tick_provider.call()) if _tick_provider.is_valid() else 0
+		var lin_tex: Texture2D = _community_char_art.get_lin_texture("thumbs_up", tick, true)
+		if lin_tex != null:
+			draw_texture(lin_tex, lin_pos)
 
 
 

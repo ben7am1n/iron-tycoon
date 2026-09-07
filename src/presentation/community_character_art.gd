@@ -12,11 +12,15 @@ const PATH_COACH_SHEET := "res://assets/sprites/characters/coach_cheng_sheet.png
 const PATH_ALUO_SHEET := "res://assets/sprites/characters/member_aluo_sheet.png"
 const PATH_GENERIC_SHEET := "res://assets/sprites/characters/member_generic_sheet.png"
 const PATH_EQUIP_WORKOUT_SHEET := "res://assets/sprites/characters/member_equipment_workout_sheet.png"
+const PATH_QIU_SHEET := "res://assets/sprites/characters/npc_qiu_sheet.png"
+const PATH_LIN_SHEET := "res://assets/sprites/characters/npc_lin_sheet.png"
 
 var _coach_tex: Texture2D = null
 var _aluo_tex: Texture2D = null
 var _generic_tex: Texture2D = null
 var _equip_workout_tex: Texture2D = null
+var _qiu_tex: Texture2D = null
+var _lin_tex: Texture2D = null
 
 var _frame_cache: Dictionary = {}
 
@@ -51,6 +55,20 @@ func _load_sheets() -> void:
 		var img := Image.new()
 		if img.load(PATH_EQUIP_WORKOUT_SHEET) == OK:
 			_equip_workout_tex = ImageTexture.create_from_image(img)
+
+	if ResourceLoader.exists(PATH_QIU_SHEET):
+		_qiu_tex = load(PATH_QIU_SHEET)
+	elif FileAccess.file_exists(PATH_QIU_SHEET):
+		var img := Image.new()
+		if img.load(PATH_QIU_SHEET) == OK:
+			_qiu_tex = ImageTexture.create_from_image(img)
+
+	if ResourceLoader.exists(PATH_LIN_SHEET):
+		_lin_tex = load(PATH_LIN_SHEET)
+	elif FileAccess.file_exists(PATH_LIN_SHEET):
+		var img := Image.new()
+		if img.load(PATH_LIN_SHEET) == OK:
+			_lin_tex = ImageTexture.create_from_image(img)
 
 func get_frame_size() -> Vector2i:
 	return Vector2i(FRAME_W, FRAME_H)
@@ -128,12 +146,95 @@ func get_coach_texture(pose: String, phase: int, direction: String) -> Texture2D
 
 	return _get_atlas_subtexture(_coach_tex, col, row, false)
 
+## Returns 32x40 pixel sprite for Boxer Qiu (老邱)
+## Sheet layout (Cols: 6, Rows: 3):
+## Row 0: Idle 0..1, Towel 0..1, Counter Lean 0..1
+## Row 1: Walk 0..3, Idle Look 0..1
+## Row 2: Nod / Thumbs 0..1, Assist 0..1, Arms Crossed 0..1
+func get_qiu_texture(pose_or_state: String, tick_or_phase: int, facing_left: bool = false, _ctx: Dictionary = {}) -> Texture2D:
+	if _qiu_tex == null:
+		_load_sheets()
+	if _qiu_tex == null:
+		return null
+
+	var col := 0
+	var row := 0
+
+	match pose_or_state:
+		"walk", "WALKING_TO", "ENTERING", "LEAVING":
+			col = tick_or_phase % 4
+			row = 1
+		"counter_lean", "front_desk", "COUNTER_LEAN", "FRONT_DESK":
+			col = 4 + ((tick_or_phase / 4) % 2)
+			row = 0
+		"towel", "wipe":
+			col = 2 + ((tick_or_phase / 4) % 2)
+			row = 0
+		"nod", "thumbs_up", "NOD", "SUCCESS":
+			col = (tick_or_phase / 3) % 2
+			row = 2
+		"assist", "guidance", "USING", "GUIDANCE":
+			col = 2 + ((tick_or_phase / 3) % 2)
+			row = 2
+		"arms_crossed", "proud":
+			col = 4 + ((tick_or_phase / 4) % 2)
+			row = 2
+		_: # "idle"
+			col = (tick_or_phase / 3) % 2
+			row = 0
+
+	return _get_atlas_subtexture(_qiu_tex, col, row, facing_left)
+
+## Returns 32x40 pixel sprite for Mechanic Lin (林师傅)
+## Sheet layout (Cols: 6, Rows: 3):
+## Row 0: Idle 0..1, Scratch Head 0..1, Wipe Brow 0..1
+## Row 1: Walk 0..3, Side Look 0..1
+## Row 2: Repair 0..1, Hammer 0..1, Thumbs Up 0..1
+func get_lin_texture(pose_or_state: String, tick_or_phase: int, facing_left: bool = false, _ctx: Dictionary = {}) -> Texture2D:
+	if _lin_tex == null:
+		_load_sheets()
+	if _lin_tex == null:
+		return null
+
+	var col := 0
+	var row := 0
+
+	match pose_or_state:
+		"walk", "WALKING_TO", "ENTERING", "LEAVING":
+			col = tick_or_phase % 4
+			row = 1
+		"repair", "renovate", "REPAIR", "REPAIRING", "USING", "RENOVATING":
+			col = (tick_or_phase / 3) % 2
+			row = 2
+		"hammer", "hammering", "HAMMER", "HAMMERING":
+			col = 2 + ((tick_or_phase / 3) % 2)
+			row = 2
+		"thumbs_up", "success", "THUMBS_UP", "SUCCESS":
+			col = 4 + ((tick_or_phase / 3) % 2)
+			row = 2
+		"scratch_head":
+			col = 2 + ((tick_or_phase / 4) % 2)
+			row = 0
+		"wipe_brow":
+			col = 4 + ((tick_or_phase / 4) % 2)
+			row = 0
+		_: # "idle"
+			col = (tick_or_phase / 3) % 2
+			row = 0
+
+	return _get_atlas_subtexture(_lin_tex, col, row, facing_left)
+
 ## Returns 32x40 pixel sprite for Member (Aluo or Generic)
 ## Aluo Sheet (Cols: 6, Rows: 3):
 ## Row 0: Idle 0..1, Walk 0..3
 ## Row 1: Treadmill Run 0..3, Yoga 0..1
 ## Row 2: Tired 0..1, Success 0..1, Idle Side 0..1
 func get_member_texture(npc_id: String, state: String, tick: int, facing_left: bool, ctx: Dictionary = {}) -> Texture2D:
+	if npc_id == "boxer_qiu":
+		return get_qiu_texture(state, tick, facing_left, ctx)
+	if npc_id == "mechanic_lin":
+		return get_lin_texture(state, tick, facing_left, ctx)
+
 	if npc_id == "singer_aluo":
 		if _aluo_tex == null:
 			_load_sheets()
