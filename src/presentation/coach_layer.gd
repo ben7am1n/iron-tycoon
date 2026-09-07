@@ -20,9 +20,12 @@ extends Node2D
 const Proj2D := preload("res://src/presentation/oblique_projection.gd")
 const UiTheme := preload("res://src/ui/ui_theme.gd")
 
+const CommunityCharacterArtScript := preload("res://src/presentation/community_character_art.gd")
+
 const POSE_IDLE := "idle"
 const POSE_WALK := "walk"
 const POSE_GUIDANCE := "guidance"
+const POSE_SUCCESS := "success"
 
 const DIR_DOWN := "down"
 const DIR_UP := "up"
@@ -45,6 +48,7 @@ var _view_provider: Callable
 var _cell_size: int = 32
 var _tick_provider: Callable
 var _font: Font
+var _char_art = null
 
 var _last_dir: String = DIR_DOWN
 var _current_pose: String = POSE_IDLE
@@ -55,6 +59,7 @@ func init(view_provider: Callable, cell_size: int = 32, tick_provider: Callable 
 	_cell_size = cell_size
 	_tick_provider = tick_provider
 	_font = UiTheme.cjk_bold_font()
+	_char_art = CommunityCharacterArtScript.new()
 
 
 func get_current_pose() -> String:
@@ -104,7 +109,10 @@ func update_state() -> void:
 
 	var req: Dictionary = view.get("request", {})
 	var is_guiding: bool = (not req.is_empty() and str(req.get("status", "")) in ["waiting", "choice", "timing"])
-	if is_guiding:
+	var is_success: bool = (not req.is_empty() and str(req.get("status", "")) == "success") or bool(view.get("story", {}).get("success_feedback", false))
+	if is_success:
+		_current_pose = POSE_SUCCESS
+	elif is_guiding:
 		_current_pose = POSE_GUIDANCE
 	elif is_moving:
 		_current_pose = POSE_WALK
@@ -140,9 +148,38 @@ func _draw() -> void:
 
 	# 4. 角色基准高度与投影锚点
 	var base_p := Proj2D.proj(flat_pos.x, flat_pos.y, 0.0)
+
+	# 5. 优先使用统一 32x40 像素图集渲染，保持潜水员戴夫高辨识度
+	var tex: Texture2D = null
+	if _char_art != null:
+		var phase: int = (tick / 3) % 4 if _current_pose == POSE_WALK else ((tick / 4) % 2)
+		tex = _char_art.get_coach_texture(_current_pose, phase, _last_dir)
+
+	if tex != null:
+		var sprite_origin := Vector2(base_p.x - 16.0, base_p.y - 38.0)
+		draw_texture(tex, sprite_origin)
+	else:
+		# 程序化几何兜底
+		_draw_procedural_coach(base_p, flat_pos, tick, view)
+
+	# 10. 指导阶段悬浮提示气泡（深色金边底板，高对比）
+	var req: Dictionary = view.get("request", {})
+	if _current_pose == POSE_GUIDANCE and not req.is_empty():
+		var stage: String = str(req.get("status", ""))
+		var tip := "E 指导" if stage == "waiting" else ("1/2/3 选择" if stage == "choice" else "E 踩节奏")
+		var bubble_w := 46.0
+		var bubble_rect := Rect2(base_p.x - bubble_w * 0.5, base_p.y - 48.0, bubble_w, 13.0)
+		draw_rect(bubble_rect, Color(0.07, 0.10, 0.15, 0.95), true)
+		draw_rect(bubble_rect, Color("DCA83D"), false, 1.0)
+		if _font != null:
+			draw_string(_font, Vector2(bubble_rect.position.x + 2, bubble_rect.position.y + 9), tip, HORIZONTAL_ALIGNMENT_CENTER, -1, 9, Color("FFF8ED"))
+
+
+func _draw_procedural_coach(base_p: Vector2, flat_pos: Vector2, tick: int, view: Dictionary) -> void:
 	var breath_offset: float = (sin(float(tick) * 0.2) * 0.6) if _current_pose == POSE_IDLE else 0.0
 	var torso_p := Proj2D.proj(flat_pos.x, flat_pos.y, 11.0 + breath_offset)
 	var head_p := Proj2D.proj(flat_pos.x, flat_pos.y, 25.0 + breath_offset)
+
 
 	# 5. 姿态与步态参数
 	var walk_phase: int = (tick / 3) % 2 if _current_pose == POSE_WALK else 0
@@ -251,14 +288,3 @@ func _draw() -> void:
 		draw_rect(Rect2(head_p.x + 1.5, head_p.y - 8.5, 2.5, 2.0), COLOR_SILVER_STREAK)
 		draw_rect(Rect2(head_p.x + 3.0, head_p.y - 6.5, 1.5, 2.0), COLOR_SILVER_STREAK)
 
-	# 10. 指导阶段悬浮提示气泡（深色金边底板，高对比）
-	var req: Dictionary = view.get("request", {})
-	if _current_pose == POSE_GUIDANCE and not req.is_empty():
-		var stage: String = str(req.get("status", ""))
-		var tip := "E 指导" if stage == "waiting" else ("1/2/3 选择" if stage == "choice" else "E 踩节奏")
-		var bubble_w := 46.0
-		var bubble_rect := Rect2(head_p.x - bubble_w * 0.5, head_p.y - 23.0, bubble_w, 13.0)
-		draw_rect(bubble_rect, Color(0.07, 0.10, 0.15, 0.95), true)
-		draw_rect(bubble_rect, Color("DCA83D"), false, 1.0)
-		if _font != null:
-			draw_string(_font, Vector2(bubble_rect.position.x + 2, bubble_rect.position.y + 9), tip, HORIZONTAL_ALIGNMENT_CENTER, -1, 9, Color("FFF8ED"))

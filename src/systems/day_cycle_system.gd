@@ -463,9 +463,13 @@ func _tick_guidance() -> void:
 				var state: String = _config.coaching.priority_states[index]
 				_state.request = {"member_id": member.member_id, "state": state, "status": "waiting", "seconds": 0.0, "timing_seconds": 0.0, "correct_choice": _config.coaching.state_answers[state], "correct": false}
 				break
-	if _state.request.is_empty(): return
 	var request: Dictionary = _state.request
-	var member: Dictionary = _orch.member_sim.visit_snapshot(int(request.member_id))
+	var member_id_val := int(request.get("member_id", -1))
+	if member_id_val < 0:
+		_state.request = {}
+		return
+	var member: Dictionary = _orch.member_sim.visit_snapshot(member_id_val)
+
 	if member.is_empty() or member.state != "USING":
 		_state.request = {}
 		return

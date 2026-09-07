@@ -72,6 +72,9 @@ var _cell_size: int = 32
 var _floor_art = null         # FloorArt：V3 §1 地板材质烘焙贴图（Phase 5，可空）
 var _env_art = null           # EnvironmentArt：V3 §12 环境装饰精灵工厂（Phase 5，可空）
 var _structure_art = null     # StructureArt：V3 §3/§4/§13 结构层（Phase 2，可空）
+const CommunityCharacterArtScript := preload("res://src/presentation/community_character_art.gd")
+var _community_char_art = null # 社区模式原生 32x40 像素角色图集
+
 
 ## V3 §14 hover：当前被鼠标悬停的设备 instance_id（-1 = 无）。
 ## presentation 层状态（纯绘制用），由 _hover_provider 轮询维护 —— 与
@@ -175,7 +178,9 @@ func init(
 	_floor_art = floor_art
 	_env_art = env_art
 	_structure_art = structure_art
+	_community_char_art = CommunityCharacterArtScript.new()
 	_grid_visible = DEFAULT_GRID_VISIBLE
+
 
 	# 信号驱动重绘（typed connections only，Control Manifest Presentation 规则）：
 	#   - grid_changed（place=commit / remove=sell）→ 设备上屏/下屏
@@ -1385,17 +1390,31 @@ func _draw_members(foreground: bool) -> void:
 			# USING 成员：设备接触点明暗衔接（脚踩踏板压暗 + 手扶处设备微反光）
 			_draw_using_equipment_junction(
 				str(ctx.get("equipment_id", "")), _footprint_of_using(m), draw_pos)
-		if _member != null and ("community_mode" in _member) and bool(_member.community_mode):
-			# 社区模式：将 48×48 会员等比缩放为 ~34×34，脚底对齐地面，与程教练（14px 肩宽、~28px 身高）视觉比例统一和谐
-			var scale_factor := 0.72
-			var scaled_w := 48.0 * scale_factor
-			var scaled_pos := Vector2(
-				draw_pos.x + 24.0 * (1.0 - scale_factor),
-				draw_pos.y + 44.0 * (1.0 - scale_factor)
-			)
-			draw_texture_rect(tex, Rect2(scaled_pos, Vector2(scaled_w, scaled_w)), false)
+		var is_comm_mode: bool = (_member != null and ("community_mode" in _member) and bool(_member.community_mode))
+		if is_comm_mode and _community_char_art != null:
+			var npc_id: String = str(m.get("persistent_npc_id", ""))
+			var c_tex: Texture2D = _community_char_art.get_member_texture(npc_id, state, tick, facing_left, ctx)
+			if c_tex != null:
+				var c_draw_pos: Vector2
+				if is_using:
+					var anchor: Vector2 = equip_anchors.get(
+						int(m.get("target_equipment_instance_id", -1)), Vector2.INF)
+					if anchor != Vector2.INF:
+						c_draw_pos = anchor + Vector2(8.0, 10.0)
+					else:
+						var feet := _flat_feet(cell)
+						var p := Proj2D.proj(feet.x, feet.y, 0.0)
+						c_draw_pos = p - Vector2(16.0, 38.0)
+				else:
+					var feet := _flat_feet(cell)
+					var p := Proj2D.proj(feet.x, feet.y, 0.0)
+					c_draw_pos = p - Vector2(16.0, 38.0)
+				draw_texture(c_tex, c_draw_pos)
+			else:
+				draw_texture(tex, draw_pos)
 		else:
 			draw_texture(tex, draw_pos)
+
 	# 清理已离场成员的朝向缓存（防止字典无限增长）
 	for member_id in _member_facing.keys():
 		if not alive.has(member_id):
@@ -1728,6 +1747,9 @@ func _member_ctx(m: Dictionary, state: String) -> Dictionary:
 	var ctx := {
 		"member_id": int(m.get("member_id", -1)),
 	}
+	if m.has("persistent_npc_id"):
+		ctx["persistent_npc_id"] = str(m.get("persistent_npc_id", ""))
+
 	var profile: Variant = m.get("preference_profile", {})
 	if profile is Dictionary and not (profile as Dictionary).is_empty():
 		ctx["preference_profile"] = (profile as Dictionary).duplicate(true)
