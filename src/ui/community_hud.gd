@@ -27,6 +27,7 @@ var _building := false
 var _last_phase := ""
 var _portrait_textures: Dictionary = {}
 var _active_speaker_id: String = ""
+var _is_collapsed: bool = false
 
 var _card_sb: StyleBoxFlat
 var _shadow_sb: StyleBoxFlat
@@ -174,8 +175,8 @@ func _draw() -> void:
 	_draw_dave_card(top_rect)
 
 	# 2. Bottom dialogue and action deck card
-	var py: float = 480.0 if _building else 514.0
-	var ph: float = 230.0 if _building else 196.0
+	var py: float = 658.0 if _is_collapsed else (480.0 if _building else 514.0)
+	var ph: float = 50.0 if _is_collapsed else (230.0 if _building else 196.0)
 	var bottom_rect := Rect2(20, py, 1240, ph)
 	_draw_dave_card(bottom_rect)
 
@@ -327,24 +328,46 @@ func _refresh() -> void:
 	_active_speaker_id = speaker_id
 	var tex: Texture2D = _get_portrait_texture(speaker_id) if speaker_id != "" else null
 	var show_portrait: bool = tex != null
-	var base_py: float = 480.0 if _building else 514.0
-	if show_portrait:
-		_portrait.texture = tex
-		_portrait.visible = true
-		_speaker_label.text = speaker_name
-		_speaker_label.visible = true
-		_portrait.position = Vector2(38, base_py + 12.0)
-		_portrait.size = Vector2(56, 56)
-		_speaker_label.position = Vector2(108, base_py + 10.0)
-		_details.position = Vector2(108, base_py + 34.0)
-		_details.size = Vector2(1130, 36)
-		_feedback.position = Vector2(108, base_py + 70.0)
-	else:
+
+	var needs_expanded: bool = (
+		phase != "SERVICE"
+		or guidance
+		or timing
+		or _building
+		or bool(_view.get("paused", false))
+		or (_active_speaker_id != "" and _active_speaker_id != "coach")
+	)
+	_is_collapsed = not needs_expanded
+
+	var base_py: float
+	if _is_collapsed:
+		base_py = 658.0
 		_portrait.visible = false
 		_speaker_label.visible = false
-		_details.position = Vector2(38, base_py + 18.0)
-		_details.size = Vector2(1200, 42)
-		_feedback.position = Vector2(38, base_py + 64.0)
+		_details.position = Vector2(36, base_py + 12.0)
+		_details.size = Vector2(820, 26)
+		_feedback.position = Vector2(36, base_py + 12.0)
+		_actions.position = Vector2(880, base_py + 6.0)
+	else:
+		base_py = 480.0 if _building else 514.0
+		if show_portrait:
+			_portrait.texture = tex
+			_portrait.visible = true
+			_speaker_label.text = speaker_name
+			_speaker_label.visible = true
+			_portrait.position = Vector2(38, base_py + 12.0)
+			_portrait.size = Vector2(56, 56)
+			_speaker_label.position = Vector2(108, base_py + 10.0)
+			_details.position = Vector2(108, base_py + 34.0)
+			_details.size = Vector2(1130, 36)
+			_feedback.position = Vector2(108, base_py + 70.0)
+		else:
+			_portrait.visible = false
+			_speaker_label.visible = false
+			_details.position = Vector2(38, base_py + 18.0)
+			_details.size = Vector2(1200, 42)
+			_feedback.position = Vector2(38, base_py + 64.0)
+		_actions.position = Vector2(38, base_py + 104.0)
 	_details.text = details
 	for button: Button in _buttons.values():
 		button.visible = false
@@ -380,7 +403,6 @@ func _refresh() -> void:
 			_buttons.restore_stored.text = tr("取回库存(%d)") % int(_view.get("stored_count", 0))
 		if not bool(_view.get("gym_renovated", false)) and int(_view.get("day", 1)) >= 2:
 			_buttons.renovate_gym.visible = true
-	_actions.position = Vector2(38, base_py + 104.0)
 	queue_redraw()
 
 func _input(event: InputEvent) -> void:

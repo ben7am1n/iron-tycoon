@@ -71,26 +71,61 @@ const PROJECTED_MAX := Vector2(
 	WORLD_H * FLOOR_SCALE)
 const PROJECTED_SIZE := PROJECTED_MAX - PROJECTED_MIN
 
+static var _custom_enabled: bool = false
+static var _custom_floor_scale: float = FLOOR_SCALE
+static var _custom_height_scale: float = HEIGHT_SCALE
+static var _custom_shear: float = SHEAR
+static var _custom_extrude_x: float = EXTRUDE_X
+
+static func enable_shallow_profile(enabled: bool) -> void:
+	_custom_enabled = enabled
+	if enabled:
+		_custom_floor_scale = 0.52
+		_custom_height_scale = 0.85
+		_custom_shear = 0.14
+		_custom_extrude_x = 0.08
+	else:
+		_custom_floor_scale = FLOOR_SCALE
+		_custom_height_scale = HEIGHT_SCALE
+		_custom_shear = SHEAR
+		_custom_extrude_x = EXTRUDE_X
+
+static func get_floor_scale() -> float:
+	return _custom_floor_scale if _custom_enabled else FLOOR_SCALE
+
+static func get_height_scale() -> float:
+	return _custom_height_scale if _custom_enabled else HEIGHT_SCALE
+
+static func get_shear() -> float:
+	return _custom_shear if _custom_enabled else SHEAR
+
+static func get_extrude_x() -> float:
+	return _custom_extrude_x if _custom_enabled else EXTRUDE_X
+
 # === 世界像素空间 → 投影后画布空间 ===
 
 ## 3D 投影：(x, y) 扁平地面坐标 + z 高度 → 画布（世界）坐标。
 static func proj(x: float, y: float, z: float) -> Vector2:
 	return Vector2(
-		x + y * SHEAR - z * EXTRUDE_X,
-		y * FLOOR_SCALE - z * HEIGHT_SCALE
+		x + y * get_shear() - z * get_extrude_x(),
+		y * get_floor_scale() - z * get_height_scale()
 	)
 
 ## 地板仿射变换（z=0 时的 proj）：扁平坐标 → 投影后坐标。
 ## 贴地绘制用 draw_set_transform_matrix(floor_transform()) 包裹。
 static func floor_transform() -> Transform2D:
-	return Transform2D(Vector2(1, 0), Vector2(SHEAR, FLOOR_SCALE), Vector2.ZERO)
+	return Transform2D(Vector2(1, 0), Vector2(get_shear(), get_floor_scale()), Vector2.ZERO)
 
 ## 投影后画布边界（含墙面向上的挤出）。main.gd 的 SubViewport 尺寸/偏移、
 ## evidence 采样、canvas 背景填充都用它。精确计算（无外扩）：
-## camera fix 后约为 (-3.2,-40.96)..(486.4,246.4)：地板占据主要高度，
-## 64px 墙体只在投影边缘立起。
 static func bounds() -> Rect2:
-	return Rect2(PROJECTED_MIN, PROJECTED_SIZE)
+	var s := get_shear()
+	var fs := get_floor_scale()
+	var hs := get_height_scale()
+	var ex := get_extrude_x()
+	var p_min := Vector2(s * CELL - ex * WALL_HEIGHT, -hs * WALL_HEIGHT)
+	var p_max := Vector2(WORLD_W + WORLD_H * s, WORLD_H * fs)
+	return Rect2(p_min, p_max - p_min)
 
 ## WorldRoot 在 SubViewport 中的偏移：把投影后画布 bounds() 在 viewport 内
 ## 居中（bounds 含负坐标 —— 墙顶在 y<0，偏移必须把这些部分拉回屏幕内）。
@@ -121,8 +156,8 @@ static func screen_to_world(
 	)
 	var projected := (vp - viewport_offset) / world_scale
 	# 逆 floor_transform：y = py / FLOOR_SCALE；x = px - y * SHEAR
-	var y := projected.y / FLOOR_SCALE
-	var x := projected.x - y * SHEAR
+	var y := projected.y / get_floor_scale()
+	var x := projected.x - y * get_shear()
 	return Vector2(x, y)
 
 ## 扁平世界坐标 → 屏幕坐标（世界锚定 UI / evidence 采样）。
