@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://capturestepc01"]
+
+[ext_resource type="Script" path="res://production/qa/evidence/2026-09-07-latest-review/capture_step_c_lighting.gd" id="1_stepc"]
+
+[node name="CaptureStepC" type="Node"]
+script = ExtResource("1_stepc")

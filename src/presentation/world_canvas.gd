@@ -580,6 +580,11 @@ func _draw_structure_gameplay() -> void:
 	if desk_prop != null:
 		var desk_top_pos := Proj2D.proj(rect.position.x + 28, rect.position.y, STRUCT_FRONT_DESK_H)
 		draw_texture_rect(desk_prop, Rect2(desk_top_pos, Vector2(48, 24)), false)
+		if is_renovated():
+			# 改造后前台升级：黄铜边缘包条与电子迎宾签到屏
+			draw_rect(Rect2(desk_top_pos.x + 4, desk_top_pos.y + 2, 40, 2), Color("F5D97B"))
+			draw_rect(Rect2(desk_top_pos.x + 32, desk_top_pos.y + 6, 8, 6), Color("38BDF8"))
+
 
 
 ## 前台正面手工 cluster（V3.1 R3 / P3）：沿正面平面确定性撒 20 个 2-3px
@@ -652,6 +657,9 @@ func _draw_structure_foreground() -> void:
 	_draw_floor_light_fixture()
 	# 小道具（壶铃/配重片/纸杯/毛巾 —— 贴地，floor transform）
 	_draw_with_floor_transform(func() -> void:
+		var is_comm: bool = bool(_member != null and ("community_mode" in _member) and bool(_member.community_mode))
+		if is_comm:
+			return # 社区模式走廊留白，避免地面碎屑杂物
 		for id in ["kettlebell_prop", "plate_prop_1", "plate_prop_2",
 				"paper_cup_1", "paper_cup_2", "towels_1", "towels_2"]:
 			var rect: Rect2i = _structure_art.structure_rect(id)
@@ -660,6 +668,7 @@ func _draw_structure_foreground() -> void:
 				continue
 			draw_texture_rect(tex, Rect2(rect.position, rect.size), false)
 	)
+
 	var station_tex: Texture2D = prop_texture("water_towel_station")
 	if station_tex != null:
 		var st_pos := Proj2D.proj(16, 256, 0.0)
@@ -793,6 +802,11 @@ func _draw_north_wall_decor() -> void:
 		var neon_tex: Texture2D = prop_texture("sign_neon_lin")
 		if neon_tex != null:
 			draw_texture_rect(neon_tex, Rect2(Vector2(20, 2), Vector2(48, 20)), false)
+		# 改造后北墙升级：新挂金边认证教练牌匾
+		draw_rect(Rect2(Vector2(78, 4), Vector2(18, 14)), Color("DCA83D"), false, 1.0)
+		draw_rect(Rect2(Vector2(79, 5), Vector2(16, 12)), Color("2A2016"), true)
+		draw_rect(Rect2(Vector2(82, 8), Vector2(10, 6)), Color("E2B08B"), true)
+
 	# 挂钟烘焙进北墙纹理
 	# （structure_art._bake_north_wall_structure_decor），不再逐帧 draw_rect
 	# （draw call 预算让给场景主体）。
@@ -865,11 +879,17 @@ func _draw_floor_decor() -> void:
 	var tick: int = 0
 	if _tick_provider.is_valid():
 		tick = _tick_provider.call()
+	var is_comm: bool = bool(_member != null and ("community_mode" in _member) and bool(_member.community_mode))
 	for prop_id: String in WorldLayout.DECOR:
 		# 暖色落地灯需保持竖直 silhouette，在 foreground billboard pass 绘制。
 		if prop_id == str(WorldLayout.FLOOR_LIGHT.get("decor_id", "")):
 			continue
+		if is_comm:
+			# 社区模式：过滤杂乱地面噪点小色块，仅保留生活气息明确的叙事物件与植物，通道保持连续留白
+			if not prop_id in ["plant_f1", "plant_f2", "warm_lamp_f1", "fan_b1", "towel_t1", "water_bottle_t1"]:
+				continue
 		var pos: Vector2i = WorldLayout.DECOR[prop_id]
+
 		var sway := Vector2.ZERO
 		if prop_id.begins_with("plant"):
 			# 植物轻微摆动（V3 §9）：±1px 确定性正弦。
