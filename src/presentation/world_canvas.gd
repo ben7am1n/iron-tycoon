@@ -105,6 +105,7 @@ const PROP_ASSET_PATHS := {
 var _prop_textures: Dictionary = {}
 var _renovation_provider: Callable = Callable()
 var _feedback_sequence_provider: Callable = Callable()
+var _phase_provider: Callable = Callable()
 
 
 func set_renovation_provider(provider: Callable) -> void:
@@ -113,6 +114,10 @@ func set_renovation_provider(provider: Callable) -> void:
 
 func set_feedback_sequence_provider(provider: Callable) -> void:
 	_feedback_sequence_provider = provider
+
+
+func set_phase_provider(provider: Callable) -> void:
+	_phase_provider = provider
 
 
 func is_renovated() -> bool:
@@ -842,15 +847,26 @@ func _north_wall_transform() -> Transform2D:
 func _draw_north_wall_decor() -> void:
 	draw_set_transform_matrix(_north_wall_transform())
 	# 窗户（V3 §6 窗口斜向自然光载体）：窗框 + 冷青灰玻璃 + 斜高光
+	var is_night: bool = (_phase_provider.is_valid() and str(_phase_provider.call()) in ["SERVICE", "CLOSE"])
 	for window_rect in WorldLayout.WINDOWS:
 		var wr: Rect2i = window_rect
 		draw_rect(wr, Palette.WINDOW_FRAME, true)
 		var glass: Rect2i = wr.grow(-2)
-		draw_rect(glass, Palette.WINDOW_GLASS, true)
-		draw_line(
-			Vector2(glass.position.x + 4, glass.position.y + 2),
-			Vector2(glass.position.x + 14, glass.position.y + glass.size.y - 2),
-			Palette.METAL_HIGHLIGHT, 2.0 * WorldScale.STROKE_COMPENSATION)
+		if is_night:
+			# 夜间营业：窗外深冷靛蓝夜色，强烈对比衬托室内钨丝暖光
+			draw_rect(glass, Color("162032"), true)
+			draw_line(
+				Vector2(glass.position.x + 3, glass.position.y + 2),
+				Vector2(glass.position.x + 10, glass.position.y + glass.size.y - 2),
+				Color("344868", 0.7), 1.5 * WorldScale.STROKE_COMPENSATION)
+			draw_rect(Rect2(glass.position.x + glass.size.x - 7, glass.position.y + 5, 2, 2), Color("E2B08B", 0.65))
+		else:
+			# 白昼/沙盒：通透自然天光
+			draw_rect(glass, Palette.WINDOW_GLASS, true)
+			draw_line(
+				Vector2(glass.position.x + 4, glass.position.y + 2),
+				Vector2(glass.position.x + 14, glass.position.y + glass.size.y - 2),
+				Palette.METAL_HIGHLIGHT, 2.0 * WorldScale.STROKE_COMPENSATION)
 	# 墙上挂饰（海报/计时器/招牌/电视）：0.5x 贴墙（同旧 _draw_wall_decor）
 	if _env_art != null:
 		var tick: int = 0
@@ -1493,7 +1509,17 @@ func _draw_members(foreground: bool) -> void:
 					var target_inst_id: int = int(m.get("target_equipment_instance_id", -1))
 					var c_anchor: Vector2 = comm_equip_anchors.get(target_inst_id, Vector2.INF)
 					if c_anchor != Vector2.INF:
-						c_draw_pos = c_anchor
+						var ground_p := Proj2D.proj(feet.x, feet.y, 0.0) - Vector2(16.0, 38.0)
+						var trained: int = int(m.get("trained_ticks", 999))
+						var remaining: int = int(m.get("use_ticks_remaining", 999))
+						if trained < 4:
+							var t_mount := clampf(float(trained) / 4.0, 0.0, 1.0)
+							c_draw_pos = ground_p.lerp(c_anchor, t_mount)
+						elif remaining <= 4 and remaining > 0:
+							var t_dismount := clampf(float(remaining) / 4.0, 0.0, 1.0)
+							c_draw_pos = ground_p.lerp(c_anchor, t_dismount)
+						else:
+							c_draw_pos = c_anchor
 					else:
 						var p := Proj2D.proj(feet.x, feet.y, 0.0)
 						c_draw_pos = p - Vector2(16.0, 38.0)

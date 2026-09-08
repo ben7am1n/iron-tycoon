@@ -425,6 +425,9 @@ func _assemble_presentation() -> void:
 			return view.get("feedback_sequence", {})
 		return {}
 	)
+	_world_canvas.set_phase_provider(func() -> String:
+		return _day_cycle.phase if _community_mode and _day_cycle != null else ""
+	)
 	_world_root.add_child(_world_canvas)
 
 	# Phase 5：V3 §6 方向光 + 氛围层（世界像素空间，画在 WorldCanvas 之上）。
