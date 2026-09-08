@@ -125,7 +125,7 @@ func _test_visual_contract() -> void:
 	coach_layer.update_state()
 	_check(coach_layer.get_current_pose() == "idle", "stopping movement returns to idle pose")
 
-	# 3. 验证两器械接触锚点 (Treadmill 与 Yoga Mat)
+	# 3. 验证两器械接触锚点 (Treadmill 与 Yoga Mat) 及全四类器械社区专用锚点
 	var canvas = _main._world_canvas
 	_check(canvas != null, "world canvas initialized")
 	var dummy_rect := Rect2i(64, 64, 32, 64)
@@ -134,6 +134,33 @@ func _test_visual_contract() -> void:
 	_check(tm_anchor != Vector2.ZERO and tm_anchor.is_finite(), "treadmill contact anchor computed")
 	_check(ym_anchor != Vector2.ZERO and ym_anchor.is_finite(), "yoga mat contact anchor computed")
 	_check(tm_anchor != ym_anchor, "distinct contact anchor offsets per equipment geometry")
+
+	# 3b. 验证社区 32×40 四类器械全朝向接触锚点
+	for eq in ["treadmill", "bike", "bench_press", "yoga_mat"]:
+		for r in [0, 90, 180, 270]:
+			var c_anchor: Vector2 = canvas._community_equipment_anchor(eq, dummy_rect, r)
+			_check(c_anchor.is_finite() and c_anchor != Vector2.ZERO, "community anchor finite for %s R%d" % [eq, r])
+
+	# 3c. 验证亚格连续脚底坐标计算 (Sub-tile float coordinates)
+	var m_discrete := {"cell": Vector2i(3, 4)}
+	var feet_discrete: Vector2 = canvas._get_member_feet(m_discrete, Vector2i(3, 4))
+	var m_continuous := {"cell": Vector2i(3, 4), "position_xy": [3.45, 4.2]}
+	var feet_continuous: Vector2 = canvas._get_member_feet(m_continuous, Vector2i(3, 4))
+	_check(feet_discrete != feet_continuous, "sub-tile position produces smooth continuous feet coordinates")
+	_check(absf(feet_continuous.x - (3.45 * 32.0 + 16.0)) < 0.001, "feet x maps accurately from position_xy")
+	_check(absf(feet_continuous.y - (4.2 * 32.0 + 32.0)) < 0.001, "feet y maps accurately from position_xy")
+
+	# 3d. 验证连续位移朝向推断
+	var f_right: bool = canvas._update_facing_continuous(999, 5.2, Vector2i(5, 5))
+	var f_left: bool = canvas._update_facing_continuous(999, 5.1, Vector2i(5, 5))
+	_check(!f_right, "moving right faces right (facing_left=false)")
+	_check(f_left, "moving left within same cell immediately faces left (facing_left=true)")
+
+	# 3e. 验证社区 HUD 文案本地化，绝无 scheduled/running 等程序英文
+	var comm_hud = _main._community_hud
+	_check(comm_hud != null, "community hud exists")
+	var hud_text: String = comm_hud._details.text
+	_check(!hud_text.contains("scheduled") and !hud_text.contains("running"), "hud avoids raw programmer strings")
 
 	# 4. 验证昼 / 暮 / 夜 / 烊四时段光照切换 (Daylight / Dusk / Night / Close)
 	var lighting: LightingLayer = _main._lighting

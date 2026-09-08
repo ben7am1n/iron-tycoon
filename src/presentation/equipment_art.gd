@@ -411,7 +411,7 @@ func height_for(equipment_id: String) -> float:
 ## 未知设备返回空字典（调用方画实色面兜底，绝不崩溃）。
 func extrusion_faces_for(equipment_id: String, zone: String, rotation: int,
 		height: float) -> Dictionary:
-	var face_h := maxi(2, int(round(height * FACE_HEIGHT_SCALE)))
+	var face_h := maxi(2, int(round(height * Proj2D.get_height_scale())))
 	var key := "%s|%s|%d|%d" % [equipment_id, zone, rotation, face_h]
 	if _face_cache.has(key):
 		return _face_cache[key]

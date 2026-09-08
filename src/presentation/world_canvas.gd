@@ -91,6 +91,7 @@ var _grid_visible: bool = DEFAULT_GRID_VISIBLE
 ## 推断 facing，纯绘制用）。member_id -> bool（true = 朝左）。
 var _member_facing: Dictionary = {}
 var _member_last_cell: Dictionary = {}
+var _member_last_pos_x: Dictionary = {}
 
 var _initialized: bool = false
 
@@ -472,8 +473,8 @@ func _paint_extended_wall_face(img: Image, vp: Rect2, wr: Rect2i, seed: int) -> 
 			var proj_x := vp.position.x + ix
 			var proj_y := vp.position.y + iy
 			# 逆 floor_transform
-			var world_y := proj_y / Proj2D.FLOOR_SCALE
-			var world_x := proj_x - world_y * Proj2D.SHEAR
+			var world_y := proj_y / Proj2D.get_floor_scale()
+			var world_x := proj_x - world_y * Proj2D.get_shear()
 			if world_x < wr.position.x or world_x >= wr.position.x + wr.size.x:
 				continue
 			if world_y < wr.position.y or world_y >= wr.position.y + wr.size.y:
@@ -793,7 +794,7 @@ func _draw_extruded_box(tex: ImageTexture, rect: Rect2i, height: float,
 func _top_face_transform(height: float) -> Transform2D:
 	var f := Proj2D.floor_transform()
 	return Transform2D(f.x, f.y,
-		f.origin + Vector2(-height * Proj2D.EXTRUDE_X, -height * Proj2D.HEIGHT_SCALE))
+		f.origin + Vector2(-height * Proj2D.get_extrude_x(), -height * Proj2D.get_height_scale()))
 
 
 # === V3.1 P1 体积墙（diorama 房间盒） ===
@@ -829,11 +830,11 @@ func _draw_north_wall() -> void:
 ## 到墙高：fy=24（墙基）→ z=0，fy=0（墙顶）→ z=WALL_HEIGHT）。墙饰按扁平
 ## 坐标绘制即自动贴在斜墙面上。
 func _north_wall_transform() -> Transform2D:
-	var kex := Proj2D.WALL_HEIGHT * Proj2D.EXTRUDE_X / 24.0
-	var khe := Proj2D.WALL_HEIGHT * Proj2D.HEIGHT_SCALE / 24.0
+	var kex := Proj2D.WALL_HEIGHT * Proj2D.get_extrude_x() / 24.0
+	var khe := Proj2D.WALL_HEIGHT * Proj2D.get_height_scale() / 24.0
 	return Transform2D(Vector2(1, 0), Vector2(kex, khe),
-		Vector2(24.0 * Proj2D.SHEAR - 24.0 * kex,
-			24.0 * Proj2D.FLOOR_SCALE - 24.0 * khe))
+		Vector2(24.0 * Proj2D.get_shear() - 24.0 * kex,
+			24.0 * Proj2D.get_floor_scale() - 24.0 * khe))
 
 
 ## 北墙装饰（V3 §3/§6/§12）：窗户（玻璃 + 斜高光）+ 海报/计时器/招牌/电视
@@ -914,8 +915,8 @@ func _side_wall_transform(x_in: float) -> Transform2D:
 	# 调墙高不需要破坏 structure_art 中已烘焙的镜子/管道/海报像素。
 	var height_ratio := Proj2D.WALL_HEIGHT / float(StructureArt.WALL_SIDE_TEX.y)
 	return Transform2D(
-		Vector2(Proj2D.SHEAR, Proj2D.FLOOR_SCALE),
-		Vector2(-Proj2D.EXTRUDE_X, -Proj2D.HEIGHT_SCALE) * height_ratio,
+		Vector2(Proj2D.get_shear(), Proj2D.get_floor_scale()),
+		Vector2(-Proj2D.get_extrude_x(), -Proj2D.get_height_scale()) * height_ratio,
 		Vector2(x_in, 0.0))
 
 
@@ -1295,24 +1296,24 @@ func _draw_equipment_volume(eq_id: String, zone: String, rotation: int,
 
 ## 挤出面高度（屏幕 px）：height × HEIGHT_SCALE（与 EquipmentArt 同值）。
 func _face_h(height: float) -> float:
-	return height * Proj2D.HEIGHT_SCALE
+	return height * Proj2D.get_height_scale()
 
 
 ## 正面（南边）仿射变换：纹理坐标 (u∈[0,w], v∈[0,face_h]) → 投影后屏幕。
 ## v 对应 z（v = z*HEIGHT_SCALE）—— 正面平行四边形贴合顶面南边。
 func _front_face_transform(x0: float, y1: float, height: float) -> Transform2D:
-	var kx := Proj2D.EXTRUDE_X / Proj2D.HEIGHT_SCALE
+	var kx := Proj2D.get_extrude_x() / Proj2D.get_height_scale()
 	return Transform2D(Vector2(1, 0), Vector2(-kx, -1.0),
-		Vector2(x0 + y1 * Proj2D.SHEAR, y1 * Proj2D.FLOOR_SCALE))
+		Vector2(x0 + y1 * Proj2D.get_shear(), y1 * Proj2D.get_floor_scale()))
 
 
 ## 东侧面仿射变换：纹理坐标 (u∈[0,d], v∈[0,face_h]) → 投影后屏幕。
 ## u 对应沿墙深度（y 方向）—— 侧面平行四边形贴合顶面东边。
 func _side_face_transform(x1: float, y0: float, height: float) -> Transform2D:
-	var kx := Proj2D.EXTRUDE_X / Proj2D.HEIGHT_SCALE
-	return Transform2D(Vector2(Proj2D.SHEAR, Proj2D.FLOOR_SCALE),
+	var kx := Proj2D.get_extrude_x() / Proj2D.get_height_scale()
+	return Transform2D(Vector2(Proj2D.get_shear(), Proj2D.get_floor_scale()),
 		Vector2(-kx, -1.0),
-		Vector2(x1 + y0 * Proj2D.SHEAR, y0 * Proj2D.FLOOR_SCALE))
+		Vector2(x1 + y0 * Proj2D.get_shear(), y0 * Proj2D.get_floor_scale()))
 
 
 ## hover 黄色轮廓：沿投影后的 footprint 平行四边形描边（V3 §14）。画在
@@ -1432,8 +1433,10 @@ func _draw_members(foreground: bool) -> void:
 	var alive: Dictionary = {}
 	# USING 成员 → 设备 footprint 锚点查找表（本帧构建一次，O(placed)）。
 	var equip_anchors: Dictionary = {}
+	var comm_equip_anchors: Dictionary = {}
 	if foreground:
 		equip_anchors = _build_equipment_anchors()
+		comm_equip_anchors = _build_community_equipment_anchors()
 	for m in _member.members:
 		if not (m is Dictionary) or not m.has("cell") or not m.has("state"):
 			continue
@@ -1447,7 +1450,11 @@ func _draw_members(foreground: bool) -> void:
 		if is_using != foreground:
 			continue  # 双层各画一半
 		var cell: Vector2i = m["cell"]
+		var feet := _get_member_feet(m, cell)
+		var raw_pos: Array = m.get("position_xy", [])
 		var facing_left := _update_facing(member_id, cell)
+		if raw_pos.size() >= 2:
+			facing_left = _update_facing_continuous(member_id, float(raw_pos[0]), cell)
 		var ctx := _member_ctx(m, state)
 		var tex: ImageTexture = _member_sprites.texture_for(state, tick, facing_left, ctx)
 		var draw_pos: Vector2
@@ -1456,10 +1463,10 @@ func _draw_members(foreground: bool) -> void:
 			var anchor: Vector2 = equip_anchors.get(
 				int(m.get("target_equipment_instance_id", -1)), Vector2.INF)
 			if anchor == Vector2.INF:
-				anchor = _cell_anchor(cell)  # 设备丢失兜底：锚定自身 cell
+				anchor = _cell_anchor_feet(feet)  # 设备丢失兜底：锚定自身位置
 			draw_pos = anchor
 		else:
-			draw_pos = _cell_anchor(cell)
+			draw_pos = _cell_anchor_feet(feet)
 		# V3 §15（P0-3 人物视觉权重）：脚底亮池 —— 半透明暖白椭圆垫在脚下，
 		# 把深色轮廓人物从深灰力量区地面「托起」（远景轮廓可读性）。亮池只
 		# 在中景成员绘制（非 USING 叠加在设备上时会被设备盖住，不额外画）。
@@ -1467,11 +1474,11 @@ func _draw_members(foreground: bool) -> void:
 		# 返工2 R1（人物-环境互动可读性）：亮池之上加紧凑暗色接触影 ——
 		# 脚踩处地面压暗，人物「落在地面」而非贴图。
 		if not is_using:
-			_draw_member_ground_glow(_flat_feet(cell))
+			_draw_member_ground_glow(feet)
 			# 方向投影已并入 _member_ground_fx_texture（返工7 P2：亮池+接触影
 			# +方向投影同一纹理 —— 每会员 1 次 draw_texture_rect，draw call
 			# 预算 <200；旧独立 _draw_member_cast_shadow 已移除）。
-			_draw_member_contact_shadow(_flat_feet(cell))
+			_draw_member_contact_shadow(feet)
 		else:
 			# USING 成员：设备接触点明暗衔接（脚踩踏板压暗 + 手扶处设备微反光）
 			_draw_using_equipment_junction(
@@ -1483,31 +1490,30 @@ func _draw_members(foreground: bool) -> void:
 			if c_tex != null:
 				var c_draw_pos: Vector2
 				if is_using:
-					var anchor: Vector2 = equip_anchors.get(
-						int(m.get("target_equipment_instance_id", -1)), Vector2.INF)
-					if anchor != Vector2.INF:
-						c_draw_pos = anchor + Vector2(8.0, 10.0)
+					var target_inst_id: int = int(m.get("target_equipment_instance_id", -1))
+					var c_anchor: Vector2 = comm_equip_anchors.get(target_inst_id, Vector2.INF)
+					if c_anchor != Vector2.INF:
+						c_draw_pos = c_anchor
 					else:
-						var feet := _flat_feet(cell)
 						var p := Proj2D.proj(feet.x, feet.y, 0.0)
 						c_draw_pos = p - Vector2(16.0, 38.0)
 				else:
-					var feet := _flat_feet(cell)
 					var p := Proj2D.proj(feet.x, feet.y, 0.0)
 					c_draw_pos = p - Vector2(16.0, 38.0)
-				draw_texture(c_tex, c_draw_pos)
+				draw_texture(c_tex, c_draw_pos.round())
 				if bool(ctx.get("feedback_sequence_active", false)):
-					_draw_member_feedback_fx(c_draw_pos, float(ctx.get("feedback_sequence_elapsed", 0.0)))
+					_draw_member_feedback_fx(c_draw_pos.round(), float(ctx.get("feedback_sequence_elapsed", 0.0)))
 			else:
-				draw_texture(tex, draw_pos)
+				draw_texture(tex, draw_pos.round())
 		else:
-			draw_texture(tex, draw_pos)
+			draw_texture(tex, draw_pos.round())
 
 	# 清理已离场成员的朝向缓存（防止字典无限增长）
 	for member_id in _member_facing.keys():
 		if not alive.has(member_id):
 			_member_facing.erase(member_id)
 			_member_last_cell.erase(member_id)
+			_member_last_pos_x.erase(member_id)
 
 
 ## 构建 instance_id → 设备使用锚点（USING 前景层）。footprint 左上角 +
@@ -1527,6 +1533,86 @@ func _build_equipment_anchors() -> Dictionary:
 			eq_id = str(_resolver.call(inst.instance_id))
 		anchors[inst.instance_id] = _equipment_anchor(eq_id, rect)
 	return anchors
+
+
+## 构建 instance_id → 社区模式 32×40 原生图集设备使用锚点。
+func _build_community_equipment_anchors() -> Dictionary:
+	var anchors: Dictionary = {}
+	if _grid == null or _equip_art == null:
+		return anchors
+	for inst in _grid.get_placed_instances():
+		var rect := _footprint_rect(inst.footprint_cells)
+		if rect.size.x <= 0 or rect.size.y <= 0:
+			continue
+		var eq_id := ""
+		if _resolver.is_valid():
+			eq_id = str(_resolver.call(inst.instance_id))
+		anchors[inst.instance_id] = _community_equipment_anchor(eq_id, rect, inst.rotation)
+	return anchors
+
+
+## 社区模式 32×40 专用设备接触锚点：
+## 跑带居中踏步、单车坐鞍踩蹬、卧推凳贴垫躺姿、瑜伽垫平贴盘坐。
+## 严格根据每类设备及其旋转朝向（0/90/180/270）计算精确接触坐标。
+func _community_equipment_anchor(eq_id: String, rect: Rect2i, rotation: int = 0) -> Vector2:
+	var center_x := rect.position.x + rect.size.x * 0.5
+	var center_y := rect.position.y + rect.size.y * 0.5
+	var flat_contact: Vector2
+	var contact_z: float = 0.0
+	var sprite_offset := Vector2(16.0, 38.0)
+
+	match eq_id:
+		"treadmill":
+			# 跑步机：腰部居中，脚落在运动跑带表面（非前端控制台上方）
+			contact_z = 10.0
+			match rotation:
+				90, 270:
+					flat_contact = Vector2(center_x, rect.position.y + rect.size.y * 0.55)
+				_: # 0, 180
+					flat_contact = Vector2(rect.position.x + rect.size.x * 0.48, center_y)
+			sprite_offset = Vector2(16.0, 38.0)
+
+		"bike":
+			# 动感单车：臀部落座鞍座，双脚踩脚踏
+			contact_z = 14.0
+			match rotation:
+				90:
+					flat_contact = Vector2(rect.position.x + rect.size.x * 0.55, center_y)
+				180:
+					flat_contact = Vector2(center_x, rect.position.y + rect.size.y * 0.42)
+				270:
+					flat_contact = Vector2(rect.position.x + rect.size.x * 0.45, center_y)
+				_: # 0
+					flat_contact = Vector2(center_x, rect.position.y + rect.size.y * 0.48)
+			sprite_offset = Vector2(16.0, 34.0)
+
+		"bench_press":
+			# 卧推架：平卧在卧推凳皮垫，胸部正对杠铃轨迹
+			contact_z = 8.0
+			match rotation:
+				90:
+					flat_contact = Vector2(rect.position.x + rect.size.x * 0.52, center_y)
+				180:
+					flat_contact = Vector2(center_x, rect.position.y + rect.size.y * 0.48)
+				270:
+					flat_contact = Vector2(rect.position.x + rect.size.x * 0.48, center_y)
+				_: # 0
+					flat_contact = Vector2(center_x, rect.position.y + rect.size.y * 0.52)
+			sprite_offset = Vector2(16.0, 28.0)
+
+		"yoga_mat":
+			# 瑜伽垫：盘坐/拉伸紧贴垫面
+			contact_z = 1.0
+			flat_contact = Vector2(center_x, center_y + 2.0)
+			sprite_offset = Vector2(16.0, 36.0)
+
+		_:
+			contact_z = 4.0
+			flat_contact = Vector2(center_x, center_y)
+			sprite_offset = Vector2(16.0, 38.0)
+
+	var p := Proj2D.proj(flat_contact.x, flat_contact.y, contact_z)
+	return p - sprite_offset
 
 
 ## 设备使用锚点（V3.1 P1 投影后）：sprite 左上角（48×48），使成员"落在"
@@ -1567,14 +1653,29 @@ func _equipment_anchor(eq_id: String, rect: Rect2i) -> Vector2:
 	return p - Vector2(sprite_w * 0.5, sprite_w)
 
 
+## 投影锚点：根据脚底扁平坐标计算 sprite 绘制原点。
+func _cell_anchor_feet(feet: Vector2) -> Vector2:
+	var sprite_w := float(_member_sprites.SIZE) if _member_sprites != null else 48.0
+	var p := Proj2D.proj(feet.x, feet.y, 0.0)
+	return p - Vector2(sprite_w * 0.5, sprite_w)
+
+
 ## 普通（非 USING）会员的 cell 锚点（V3.1 P1 投影后）：sprite 左上角 =
 ## 脚底（cell 底部中心）投影后 - (sprite_w/2, sprite_h)。billboard 站立，
 ## 头部向上越出 cell（2.5D 人物高于占用格）。
 func _cell_anchor(cell: Vector2i) -> Vector2:
-	var sprite_w := float(_member_sprites.SIZE) if _member_sprites != null else 48.0
-	var feet := _flat_feet(cell)
-	var p := Proj2D.proj(feet.x, feet.y, 0.0)
-	return p - Vector2(sprite_w * 0.5, sprite_w)
+	return _cell_anchor_feet(_flat_feet(cell))
+
+
+## 扁平脚底点（世界坐标）：结合连续移动 position_xy 计算亚像素平滑脚底坐标。
+func _get_member_feet(m: Dictionary, cell: Vector2i) -> Vector2:
+	var raw_pos: Array = m.get("position_xy", [])
+	if raw_pos.size() >= 2:
+		return Vector2(
+			float(raw_pos[0]) * _cell_size + _cell_size * 0.5,
+			float(raw_pos[1]) * _cell_size + _cell_size
+		)
+	return _flat_feet(cell)
 
 
 ## 扁平脚底点（世界坐标）：cell 底部中心。供投影锚点与贴地亮池使用。
@@ -1892,6 +1993,27 @@ func _update_facing(member_id: int, cell: Vector2i) -> bool:
 			facing_left = true
 		elif cell.x > prev.x:
 			facing_left = false
+	_member_last_cell[member_id] = cell
+	_member_facing[member_id] = facing_left
+	return facing_left
+
+
+## 连续坐标朝向推断（亚格平滑移动）：根据每 tick 的 x 浮点位移灵敏切换左右朝向。
+func _update_facing_continuous(member_id: int, pos_x: float, cell: Vector2i) -> bool:
+	var facing_left := bool(_member_facing.get(member_id, false))
+	if _member_last_pos_x.has(member_id):
+		var prev_x: float = float(_member_last_pos_x[member_id])
+		if pos_x < prev_x - 0.005:
+			facing_left = true
+		elif pos_x > prev_x + 0.005:
+			facing_left = false
+	elif _member_last_cell.has(member_id):
+		var prev: Vector2i = _member_last_cell[member_id]
+		if cell.x < prev.x:
+			facing_left = true
+		elif cell.x > prev.x:
+			facing_left = false
+	_member_last_pos_x[member_id] = pos_x
 	_member_last_cell[member_id] = cell
 	_member_facing[member_id] = facing_left
 	return facing_left

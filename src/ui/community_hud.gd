@@ -294,13 +294,23 @@ func _refresh() -> void:
 		var used_sec: float = float(outing.get("seconds", 0.0))
 		var rem_sec: float = float(outing.get("remaining_seconds", maxf(0.0, 180.0 - used_sec)))
 		details = "1 走路 / 2 慢跑 / 3 冲刺 · 体力 %.0f · 路程 %.1f 米 · 剩余 %.0f 秒" % [float(outing.get("stamina", 100)), progress, rem_sec]
-		if not active_run:
-			speaker_id = "aluo"
-			speaker_name = "阿洛 · 公园"
 	elif phase == "SERVICE":
 		speaker_id = "coach"
 		speaker_name = "程教练 · 晚间营业"
-		details = "营业剩余 %d 秒 · %s · E 指导会员 · H 热图" % [maxi(0, 360 - int(_view.get("service_seconds", 0))), str(course.get("label", course.get("status", "等待课程")))]
+		var course_status_label := "等待课程"
+		var raw_status := str(course.get("label", course.get("status", "")))
+		match raw_status:
+			"scheduled":
+				course_status_label = "学员候课准备"
+			"running":
+				course_status_label = "团体课授课中"
+			"completed":
+				course_status_label = "课程圆满结课"
+			"canceled":
+				course_status_label = "课程取消"
+			_:
+				course_status_label = raw_status if not raw_status.is_empty() else "等待课程"
+		details = "营业剩余 %d 秒 · %s · E 指导会员 · H 热图" % [maxi(0, 360 - int(_view.get("service_seconds", 0))), course_status_label]
 		if int(course.get("block", 0)) > 0:
 			details += " · 第 %d / 4 段" % int(course.block)
 	elif phase == "CLOSE":

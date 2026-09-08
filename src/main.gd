@@ -390,9 +390,10 @@ func _assemble_presentation() -> void:
 	_world_viewport.handle_input_locally = false
 	add_child(_world_viewport)
 
+	Proj2D.enable_shallow_profile(_community_mode)
 	_world_root = Node2D.new()
 	_world_root.name = "WorldRoot"
-	_world_root.position = WORLD_VIEWPORT_OFFSET
+	_world_root.position = _get_world_viewport_offset()
 	_world_root.scale = Vector2(WORLD_SCALE, WORLD_SCALE)
 	_world_viewport.add_child(_world_root)
 
@@ -742,18 +743,22 @@ func _process(_delta: float) -> void:
 			_smoke_report()
 			get_tree().quit(0)
 
+## 动态计算世界原点在 viewport 中的居中偏移（根据当前相机角度 profile 动态自适应）。
+func _get_world_viewport_offset() -> Vector2:
+	return Proj2D.viewport_offset(Vector2(WORLD_VIEWPORT_W, WORLD_VIEWPORT_H), WORLD_SCALE)
+
 ## 屏幕坐标 → 扁平世界坐标（输入桥接：鼠标在根 viewport 的 1280×720
 ## 屏幕坐标；返回扁平世界坐标，供 grid.world_to_grid(cell_size=32)）。
 func _screen_to_world(screen_pos: Vector2) -> Vector2:
 	return Proj2D.screen_to_world(
-		screen_pos, WORLD_VIEWPORT_OFFSET, WORLD_SCALE,
+		screen_pos, _get_world_viewport_offset(), WORLD_SCALE,
 		Vector2(SCREEN_PER_VIEWPORT_X, SCREEN_PER_VIEWPORT_Y))
 
 ## 扁平世界坐标 → 屏幕坐标（世界锚定 UI：tooltip / cue / toolbar 的高分辨率
 ## 定位；可选 height_z —— 带高度的点（设备顶面/墙挂饰）投影到对应屏幕位）。
 func _world_to_screen(world_pos: Vector2, height_z: float = 0.0) -> Vector2:
 	return Proj2D.world_to_screen(
-		world_pos, WORLD_VIEWPORT_OFFSET, WORLD_SCALE,
+		world_pos, _get_world_viewport_offset(), WORLD_SCALE,
 		Vector2(SCREEN_PER_VIEWPORT_X, SCREEN_PER_VIEWPORT_Y), height_z)
 
 
@@ -846,6 +851,9 @@ func load_game() -> bool:
 func set_community_mode(enabled: bool) -> void:
 	_community_mode = enabled
 	_save_name = "gym-adventure" if _community_mode else "manual"
+	Proj2D.enable_shallow_profile(_community_mode)
+	if _world_root != null:
+		_world_root.position = _get_world_viewport_offset()
 	if is_inside_tree() and not _preflight_data.is_empty():
 		switch_mode(enabled)
 
@@ -853,6 +861,9 @@ func set_community_mode(enabled: bool) -> void:
 func switch_mode(to_community: bool) -> void:
 	_community_mode = to_community
 	_save_name = "gym-adventure" if _community_mode else "manual"
+	Proj2D.enable_shallow_profile(_community_mode)
+	if _world_root != null:
+		_world_root.position = _get_world_viewport_offset()
 	if _member != null:
 		_member.community_mode = _community_mode
 	if _econ != null:
