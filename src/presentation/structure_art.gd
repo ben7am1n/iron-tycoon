@@ -371,30 +371,27 @@ func _bake_side_wall(kind: String) -> Image:
 	return img
 
 
-## 西墙装饰烘焙（返工3 P1）：长镜 + 毛巾架（与旧 runtime 同坐标，纹理
-## u = 墙 y - 32）。
+## 西墙装饰烘焙（干净利落的画风，去除边缘抖动碎纹理）：长镜 + 毛巾架
 func _bake_west_wall_decor(img: Image, offset: int) -> void:
-	# 长镜（冷蓝灰，V3 §6 冷调）：墙 y 40..160，高 v 18..92
+	# 长镜（冷蓝灰整洁镜面 + 细框）：墙 y 40..160，高 v 18..92
 	var u0 := 40 - offset
-	_fill_irregular(img, Rect2i(u0, 18, 120, 74), Palette.MIRROR_COLOR, 471)
-	for i in 8:
-		var u := u0 + i * 2
-		var v := 20 + i * 2
+	_fill_rect_clean(img, Rect2i(u0 - 1, 17, 122, 76), Palette.WALL_DARK)
+	_fill_rect_clean(img, Rect2i(u0, 18, 120, 74), Palette.MIRROR_COLOR)
+	for i in 12:
+		var u := u0 + 6 + i * 3
+		var v := 22 + i * 2
 		if u < img.get_width() and v < img.get_height():
 			img.set_pixel(u, v, Palette.MIRROR_HI)
-	# 毛巾架 + 暖橙毛巾：横杆（墙 y 180..210，v 40）+ 两条垂巾
+	# 毛巾架 + 舒缓暖色毛巾：横杆（墙 y 180..210，v 40）+ 两条垂巾
 	var rod_u := 180 - offset
-	img.set_pixel(rod_u, 40, Palette.METAL_HIGHLIGHT)
-	img.set_pixel(rod_u + 1, 40, Palette.METAL_HIGHLIGHT)
-	img.set_pixel(rod_u + 2, 40, Palette.METAL_HIGHLIGHT)
-	_fill_irregular(img, Rect2i(rod_u + 4, 42, 6, 12), Palette.TOWEL, 481)
-	_fill_irregular(img, Rect2i(rod_u + 16, 42, 6, 12), Palette.TOWEL.darkened(0.15), 483)
+	_fill_rect_clean(img, Rect2i(rod_u, 40, 24, 2), Palette.METAL_HIGHLIGHT)
+	_fill_rect_clean(img, Rect2i(rod_u + 4, 42, 6, 12), Palette.TOWEL)
+	_fill_rect_clean(img, Rect2i(rod_u + 14, 42, 6, 12), Palette.TOWEL.darkened(0.18))
 
 
-## 东墙装饰烘焙（返工3 P1）：管道 + 海报 + 置物架 + 挂钟 + 毛巾架 +
-## 第二海报（与旧 runtime + 返工3 新增同坐标，纹理 u = 墙 y）。
+## 东墙装饰烘焙（管道 + 复古海报 + 统一置物架 + 挂钟）：降噪留白，突出中央舞台
 func _bake_east_wall_decor(img: Image, offset: int) -> void:
-	# 竖向管道（中暖灰 + 法兰）：墙 y 60..63，v 20..320（贴图内 20..109）
+	# 竖向管道（中暖灰 + 法兰）：墙 y 60..63，v 20..320
 	var u0 := 60 - offset
 	for v in range(20, 110):
 		if u0 >= img.get_width() or v >= img.get_height():
@@ -402,46 +399,47 @@ func _bake_east_wall_decor(img: Image, offset: int) -> void:
 		img.set_pixel(u0, v, Palette.PIPE_COLOR)
 		img.set_pixel(u0 + 1, v, Palette.PIPE_COLOR)
 		img.set_pixel(u0 + 2, v, Palette.PIPE_COLOR)
-	# 法兰（墙 y 60..64，v 90..93 / 200..203）
+	# 法兰
 	for v in range(90, 94):
 		for u in range(u0 - 1, u0 + 4):
 			if u >= 0 and u < img.get_width() and v < img.get_height():
 				img.set_pixel(u, v, Palette.PIPE_DARK)
-	# 海报（暖色 accent 小面积）：墙 y 180..194，v 30..48
+	# 第一海报（复古暖色，整洁画框）：墙 y 180..194，v 30..48
 	var pu := 180 - offset
-	_fill_irregular(img, Rect2i(pu, 30, 14, 18), Palette.WALL_DARK, 491)
-	_fill_irregular(img, Rect2i(pu + 2, 32, 10, 14), Palette.ACCENT_ORANGE, 493)
-	_fill_irregular(img, Rect2i(pu + 2, 41, 10, 5), Palette.ACCENT_ORANGE.darkened(0.35), 495)
-	# 置物架（墙 y 120..146，v 60..74）：层板 + 小件
+	_fill_rect_clean(img, Rect2i(pu, 30, 14, 18), Palette.WALL_DARK)
+	_fill_rect_clean(img, Rect2i(pu + 2, 32, 10, 14), Palette.ACCENT_ORANGE.darkened(0.15))
+	_fill_rect_clean(img, Rect2i(pu + 2, 41, 10, 5), Palette.ACCENT_ORANGE.darkened(0.35))
+	# 置物架（墙 y 120..146，v 60..74）：木质层板 + 哑光器材件（克制不抢眼）
 	var su := 120 - offset
-	_fill_irregular(img, Rect2i(su, 60, 26, 2), Palette.SHELF_WOOD, 501)
-	_fill_irregular(img, Rect2i(su + 2, 62, 4, 12), Palette.ACCENT_CYAN.darkened(0.15), 503)
-	_fill_irregular(img, Rect2i(su + 10, 62, 4, 12), Palette.ACCENT_YELLOW.darkened(0.1), 505)
-	_fill_irregular(img, Rect2i(su + 18, 62, 4, 12), Palette.ACCENT_ORANGE.darkened(0.2), 507)
+	_fill_rect_clean(img, Rect2i(su, 60, 26, 2), Palette.SHELF_WOOD)
+	_fill_rect_clean(img, Rect2i(su + 3, 62, 4, 10), Palette.ACCENT_CYAN.darkened(0.45))
+	_fill_rect_clean(img, Rect2i(su + 10, 62, 5, 8), Palette.METAL_DARK)
+	_fill_rect_clean(img, Rect2i(su + 18, 62, 4, 11), Palette.WALL_DARK)
 	# 挂钟（墙 y 124..138，v 88..104）
 	var cu := 124 - offset
-	_fill_irregular(img, Rect2i(cu, 88, 14, 16), Palette.CLOCK_FACE, 511)
-	img.set_pixel(cu + 6, 90, Palette.CLOCK_HAND)
-	img.set_pixel(cu + 6, 91, Palette.CLOCK_HAND)
+	_fill_rect_clean(img, Rect2i(cu, 88, 14, 16), Palette.CLOCK_FACE)
+	for y in range(88, 104):
+		img.set_pixel(cu, y, Palette.WALL_DARK)
+		img.set_pixel(cu + 13, y, Palette.WALL_DARK)
+	for x in range(cu, cu + 14):
+		img.set_pixel(x, 88, Palette.WALL_DARK)
+		img.set_pixel(x, 103, Palette.WALL_DARK)
 	img.set_pixel(cu + 6, 92, Palette.CLOCK_HAND)
 	img.set_pixel(cu + 6, 93, Palette.CLOCK_HAND)
 	img.set_pixel(cu + 6, 94, Palette.CLOCK_HAND)
-	img.set_pixel(cu + 6, 96, Palette.CLOCK_HAND)
-	img.set_pixel(cu + 7, 96, Palette.CLOCK_HAND)
-	img.set_pixel(cu + 8, 96, Palette.CLOCK_HAND)
-	img.set_pixel(cu + 9, 96, Palette.CLOCK_HAND)
-	img.set_pixel(cu + 10, 96, Palette.CLOCK_HAND)
-	# 毛巾架 + 毛巾（墙 y 170..196，v 100..102 横杆 + 垂巾）
+	img.set_pixel(cu + 6, 95, Palette.CLOCK_HAND)
+	img.set_pixel(cu + 7, 95, Palette.CLOCK_HAND)
+	img.set_pixel(cu + 8, 95, Palette.CLOCK_HAND)
+	# 毛巾架
 	var ru := 170 - offset
-	img.set_pixel(ru, 100, Palette.METAL_HIGHLIGHT)
-	img.set_pixel(ru + 1, 100, Palette.METAL_HIGHLIGHT)
-	_fill_irregular(img, Rect2i(ru + 6, 102, 6, 12), Palette.TOWEL, 521)
-	_fill_irregular(img, Rect2i(ru + 16, 102, 6, 12), Palette.TOWEL.darkened(0.15), 523)
-	# 第二海报（墙 y 220..234，v 30..48 —— 暖黄 accent）
+	_fill_rect_clean(img, Rect2i(ru, 100, 24, 2), Palette.METAL_HIGHLIGHT)
+	_fill_rect_clean(img, Rect2i(ru + 4, 102, 6, 12), Palette.TOWEL)
+	_fill_rect_clean(img, Rect2i(ru + 14, 102, 6, 12), Palette.TOWEL.darkened(0.18))
+	# 第二海报（墙 y 220..234，v 30..48 —— 哑光暖黄画框）
 	var qu := 220 - offset
-	_fill_irregular(img, Rect2i(qu, 30, 14, 18), Palette.WALL_DARK, 531)
-	_fill_irregular(img, Rect2i(qu + 2, 32, 10, 14), Palette.ACCENT_YELLOW.darkened(0.05), 533)
-	_fill_irregular(img, Rect2i(qu + 2, 41, 10, 5), Palette.ACCENT_YELLOW.darkened(0.4), 535)
+	_fill_rect_clean(img, Rect2i(qu, 30, 14, 18), Palette.WALL_DARK)
+	_fill_rect_clean(img, Rect2i(qu + 2, 32, 10, 14), Palette.ACCENT_YELLOW.darkened(0.25))
+	_fill_rect_clean(img, Rect2i(qu + 2, 41, 10, 5), Palette.ACCENT_YELLOW.darkened(0.45))
 
 
 # === 烘焙 ===
@@ -539,7 +537,16 @@ func _col(c: Color) -> Color:
 	return c
 
 
-# === V3.1 P3 手绘原语（全部确定性，无 RNG 状态） ===
+## 干净整洁矩形填充：去除边界无序微抖动，保证画框/镜面/挂架线条齐整。
+func _fill_rect_clean(img: Image, r: Rect2i, c: Color) -> void:
+	for y in range(r.position.y, r.position.y + r.size.y):
+		if y < 0 or y >= img.get_height():
+			continue
+		for x in range(r.position.x, r.position.x + r.size.x):
+			if x < 0 or x >= img.get_width():
+				continue
+			img.set_pixel(x, y, c)
+
 
 ## 不规则矩形填充（P3 无完美矩形）：逐行左右边界抖动 ±2，少量磨损缺口。
 func _fill_irregular(img: Image, r: Rect2i, c: Color, seed: int) -> void:
