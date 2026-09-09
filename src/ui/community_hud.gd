@@ -379,10 +379,12 @@ func _refresh() -> void:
 		_speaker_label.visible = false
 		_details.position = Vector2(36, base_py + 12.0)
 		_details.size = Vector2(820, 26)
-		_feedback.position = Vector2(36, base_py + 12.0)
+		_details.visible = true
+		_feedback.visible = false
 		_actions.position = Vector2(880, base_py + 6.0)
 	else:
 		base_py = 480.0 if _building else 514.0
+		_details.visible = true
 		if show_portrait:
 			_portrait.texture = tex
 			_portrait.visible = true
@@ -394,12 +396,14 @@ func _refresh() -> void:
 			_details.position = Vector2(108, base_py + 34.0)
 			_details.size = Vector2(1130, 36)
 			_feedback.position = Vector2(108, base_py + 70.0)
+			_feedback.visible = not _feedback.text.is_empty() and _feedback.text != details
 		else:
 			_portrait.visible = false
 			_speaker_label.visible = false
 			_details.position = Vector2(38, base_py + 18.0)
 			_details.size = Vector2(1200, 42)
 			_feedback.position = Vector2(38, base_py + 64.0)
+			_feedback.visible = not _feedback.text.is_empty() and _feedback.text != details
 		_actions.position = Vector2(38, base_py + 104.0)
 	_details.text = details
 	for button: Button in _buttons.values():

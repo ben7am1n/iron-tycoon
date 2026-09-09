@@ -1,6 +1,25 @@
 # 撸铁大亨 (Iron Tycoon) — 项目进度速览
 
-## 当前更新 — 2026-09-08
+## 当前更新 — 2026-09-09
+
+**动作边界过渡解耦、按键驱动声画闭环与 30 FPS 高清实机验收完成**：全量测试 125 文件、**6,753 项断言全部通过、0 失败（100% 通过率）**。
+1. **表现层独立计时与全场景无瞬移上下机**：
+   - 彻底解耦 `trained_ticks` 业务计数：在 `WorldCanvas` 引入独立表现层追踪器 `_member_using_tracker`，记录每次设备使用计时与上机插值；
+   - 散客首次上机、团体课成员二次换站平滑重置、4-tick 内暂停保持（last_sim_tick 冻结）与读档不跳变全覆盖；
+   - 器械朝向（0/90 vs 180/270）动态绑定会员精灵左右面朝向，实现手足身体与器械贴合；
+   - 补充 5 项专项集成回归断言，基线增至 6,753 项全绿。
+2. **结构层材质精修与焦点收敛**：
+   - 重构边墙与置物架道具（`_fill_rect_clean`），消除边缘噪点毛刺与不规则锯齿；
+   - 水壶、摇摇杯、粉盒等置物架陈列色彩克制，边墙弱化杂光，将视觉轮廓与亮度焦点汇聚在中央运动器械区。
+3. **真实键盘事件驱动与 30 FPS 高清声画交付**：
+   - 编写并执行按键驱动实机闭环脚本 [capture_natural_playthrough.gd](production/qa/evidence/2026-09-09-art-review/capture_natural_playthrough.gd)（WASD 移动、E 交互/确认、3 选指导，无底层状态注入）；
+   - 修复 HUD 折叠下文案重叠与 Main 启动时钟绑定；
+   - 采集 6 阶段真实状态核验截图（05 严格核验 `course.status == "running"` 且 `training_seconds >= 3.0`，双器械均处于真实动作锻炼中）；
+   - 录制 1,800 帧（保留 0.4s 12 帧平滑过渡）并混音交付 30 FPS 高清视频 [natural-gameplay-60s-30fps-with-audio.mp4](production/qa/evidence/2026-09-09-art-review/natural-gameplay-60s-30fps-with-audio.mp4) 与分镜总览 [natural-gameplay-storyboard.png](production/qa/evidence/2026-09-09-art-review/natural-gameplay-storyboard.png)。
+4. **首轮 5 人试玩就绪**：
+   - 游戏默认启动已预装浅镜头与紧凑 HUD，操作反馈与视听闭环均已打通，可直接向外部无文档测试玩家开放第一轮 5 人体验观察。
+
+## 历史更新 — 2026-09-08
 
 **《潜水员戴夫》动态美术核心差距全面收口与真实营业闭环验收通过**：全量测试 125 文件、**6,748 项断言全部通过、0 失败（100% 通过率）**。
 1. **默认接入与显示校准**：

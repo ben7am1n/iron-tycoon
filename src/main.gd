@@ -312,6 +312,7 @@ func _assemble_systems() -> void:
 		_day_cycle = DayCycleSystemScript.new()
 		_day_cycle.init(_preflight_data["gym_adventure.json"], _preflight_data["gym_adventure_fixture.json"], _orch)
 		_day_cycle.phase_changed.connect(_on_community_phase_changed)
+		_orch.day_cycle = _day_cycle
 
 	_save_load = SaveLoadScript.new()
 	_save_load.init(_orch)
