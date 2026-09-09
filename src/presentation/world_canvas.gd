@@ -92,6 +92,7 @@ var _grid_visible: bool = DEFAULT_GRID_VISIBLE
 var _member_facing: Dictionary = {}
 var _member_last_cell: Dictionary = {}
 var _member_last_pos_x: Dictionary = {}
+var _member_using_tracker: Dictionary = {}
 
 var _initialized: bool = false
 
@@ -1450,9 +1451,11 @@ func _draw_members(foreground: bool) -> void:
 	# USING 成员 → 设备 footprint 锚点查找表（本帧构建一次，O(placed)）。
 	var equip_anchors: Dictionary = {}
 	var comm_equip_anchors: Dictionary = {}
+	var comm_equip_rotations: Dictionary = {}
 	if foreground:
 		equip_anchors = _build_equipment_anchors()
 		comm_equip_anchors = _build_community_equipment_anchors()
+		comm_equip_rotations = _build_community_equipment_rotations()
 	for m in _member.members:
 		if not (m is Dictionary) or not m.has("cell") or not m.has("state"):
 			continue
@@ -1471,6 +1474,16 @@ func _draw_members(foreground: bool) -> void:
 		var facing_left := _update_facing(member_id, cell)
 		if raw_pos.size() >= 2:
 			facing_left = _update_facing_continuous(member_id, float(raw_pos[0]), cell)
+		if is_using:
+			var target_inst_id: int = int(m.get("target_equipment_instance_id", -1))
+			var eq_rot: int = int(comm_equip_rotations.get(target_inst_id, 0))
+			if eq_rot in [180, 270]:
+				facing_left = true
+			elif eq_rot in [0, 90]:
+				facing_left = false
+		else:
+			if _member_using_tracker.has(member_id):
+				_member_using_tracker.erase(member_id)
 		var ctx := _member_ctx(m, state)
 		var tex: ImageTexture = _member_sprites.texture_for(state, tick, facing_left, ctx)
 		var draw_pos: Vector2
@@ -1510,10 +1523,13 @@ func _draw_members(foreground: bool) -> void:
 					var c_anchor: Vector2 = comm_equip_anchors.get(target_inst_id, Vector2.INF)
 					if c_anchor != Vector2.INF:
 						var ground_p := Proj2D.proj(feet.x, feet.y, 0.0) - Vector2(16.0, 38.0)
-						var trained: int = int(m.get("trained_ticks", 999))
 						var remaining: int = int(m.get("use_ticks_remaining", 999))
-						if trained < 4:
-							var t_mount := clampf(float(trained) / 4.0, 0.0, 1.0)
+						
+						# 表现层独立跟踪上机过渡：散客首次上机、课程二次换站、暂停冻结及中途读档全场景覆盖
+						var tracker: Dictionary = _update_member_using_mount(member_id, target_inst_id, m, tick)
+						var in_use_ticks: int = int(tracker.get("ticks_in_use", 0))
+						if in_use_ticks < 4:
+							var t_mount := clampf(float(in_use_ticks) / 4.0, 0.0, 1.0)
 							c_draw_pos = ground_p.lerp(c_anchor, t_mount)
 						elif remaining <= 4 and remaining > 0:
 							var t_dismount := clampf(float(remaining) / 4.0, 0.0, 1.0)
@@ -1534,12 +1550,15 @@ func _draw_members(foreground: bool) -> void:
 		else:
 			draw_texture(tex, draw_pos.round())
 
-	# 清理已离场成员的朝向缓存（防止字典无限增长）
+	# 清理已离场成员的朝向与上机过渡缓存（防止字典无限增长）
 	for member_id in _member_facing.keys():
 		if not alive.has(member_id):
 			_member_facing.erase(member_id)
 			_member_last_cell.erase(member_id)
 			_member_last_pos_x.erase(member_id)
+	for member_id in _member_using_tracker.keys():
+		if not alive.has(member_id):
+			_member_using_tracker.erase(member_id)
 
 
 ## 构建 instance_id → 设备使用锚点（USING 前景层）。footprint 左上角 +
@@ -1575,6 +1594,48 @@ func _build_community_equipment_anchors() -> Dictionary:
 			eq_id = str(_resolver.call(inst.instance_id))
 		anchors[inst.instance_id] = _community_equipment_anchor(eq_id, rect, inst.rotation)
 	return anchors
+
+
+## 构建 instance_id → 社区模式设备旋转角度查找表。
+func _build_community_equipment_rotations() -> Dictionary:
+	var rots: Dictionary = {}
+	if _grid == null:
+		return rots
+	for inst in _grid.get_placed_instances():
+		rots[inst.instance_id] = inst.rotation
+	return rots
+
+
+func _update_member_using_mount(member_id: int, target_inst_id: int, m: Dictionary, tick: int) -> Dictionary:
+	var tracker: Dictionary
+	if _member_using_tracker.has(member_id):
+		tracker = _member_using_tracker[member_id]
+		if int(tracker.get("device_id", -1)) != target_inst_id:
+			# 换站或更换目标设备：重置计时开始平滑移动
+			tracker["device_id"] = target_inst_id
+			tracker["ticks_in_use"] = 0
+			tracker["last_sim_tick"] = tick
+		elif tick != int(tracker.get("last_sim_tick", -1)):
+			tracker["ticks_in_use"] = int(tracker.get("ticks_in_use", 0)) + 1
+			tracker["last_sim_tick"] = tick
+	else:
+		var already_deep: bool = int(m.get("trained_ticks", 0)) >= 4 or (m.has("use_ticks_remaining") and int(m["use_ticks_remaining"]) < 30)
+		tracker = {
+			"device_id": target_inst_id,
+			"ticks_in_use": 999 if already_deep else 0,
+			"last_sim_tick": tick
+		}
+		_member_using_tracker[member_id] = tracker
+	return tracker
+
+
+func get_member_using_tracker(member_id: int) -> Dictionary:
+	return _member_using_tracker.get(member_id, {})
+
+
+func clear_member_using_tracker() -> void:
+	_member_using_tracker.clear()
+
 
 
 ## 社区模式 32×40 专用设备接触锚点：

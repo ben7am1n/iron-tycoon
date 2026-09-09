@@ -156,7 +156,52 @@ func _test_visual_contract() -> void:
 	_check(!f_right, "moving right faces right (facing_left=false)")
 	_check(f_left, "moving left within same cell immediately faces left (facing_left=true)")
 
-	# 3e. 验证社区 HUD 文案本地化，绝无 scheduled/running 等程序英文
+	# 3e. 验证表现层独立上机过渡跟踪器（散客首次上机、二次换站、暂停冻结与中途读档）
+	canvas.clear_member_using_tracker()
+	var test_mid := 888
+	var dummy_member := {
+		"member_id": test_mid,
+		"state": "USING",
+		"cell": Vector2i(3, 4),
+		"target_equipment_instance_id": 0,
+		"use_ticks_remaining": 200
+	}
+	_main._orch.member_sim.members.append(dummy_member)
+	
+	# 散客首次上机：初始 ticks_in_use 为 0
+	var trk0: Dictionary = canvas._update_member_using_mount(test_mid, 0, dummy_member, 100)
+	_check(trk0.has("ticks_in_use") and trk0.ticks_in_use == 0, "first-time using starts ticks_in_use at 0")
+
+	# 暂停冻结：相同 tick 下多次调用，ticks_in_use 严格保持不变，不漂移
+	var trk_pause: Dictionary = canvas._update_member_using_mount(test_mid, 0, dummy_member, 100)
+	_check(trk_pause.ticks_in_use == 0, "ticks_in_use remains frozen during pause/same tick")
+
+	# 下一 tick：自然推进 1 tick
+	var trk_next: Dictionary = canvas._update_member_using_mount(test_mid, 0, dummy_member, 101)
+	_check(trk_next.ticks_in_use == 1, "advancing tick increments ticks_in_use")
+
+	# 课程二次换站：目标设备变为 1，ticks_in_use 自动重置为 0 开始二次平滑过渡
+	dummy_member["target_equipment_instance_id"] = 1
+	dummy_member["trained_ticks"] = 240 # 即使在课程中已累计训练过
+	var trk_switch: Dictionary = canvas._update_member_using_mount(test_mid, 1, dummy_member, 102)
+	_check(trk_switch.device_id == 1 and trk_switch.ticks_in_use == 0, "station change resets ticks_in_use for smooth second mount")
+
+	# 中途读档测试：已在深度使用中的成员载入后不会错误重置为 0 产生跳跃
+	var mid_deep := 889
+	var dummy_deep := {
+		"member_id": mid_deep,
+		"state": "USING",
+		"trained_ticks": 50,
+		"use_ticks_remaining": 20
+	}
+	var trk_deep: Dictionary = canvas._update_member_using_mount(mid_deep, 1, dummy_deep, 102)
+	_check(trk_deep.ticks_in_use >= 4, "loaded mid-use member avoids re-mounting jump")
+
+	# 移除测试 dummy member
+	_main._orch.member_sim.members.erase(dummy_member)
+	canvas.clear_member_using_tracker()
+
+	# 3f. 验证社区 HUD 文案本地化，绝无 scheduled/running 等程序英文
 	var comm_hud = _main._community_hud
 	_check(comm_hud != null, "community hud exists")
 	var hud_text: String = comm_hud._details.text
