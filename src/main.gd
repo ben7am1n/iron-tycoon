@@ -842,7 +842,9 @@ func load_game() -> bool:
 	_shop.notify_silent_cancel()
 	_palette.reset_transient_state()
 	_last_snap_cell = Vector2i(-999, -999)
-	_world_canvas.queue_redraw()
+	if _world_canvas != null:
+		_world_canvas.notify_game_loaded()
+		_world_canvas.queue_redraw()
 	_hud.refresh_all()
 	if _community_hud != null:
 		_community_hud.clear_held_input()

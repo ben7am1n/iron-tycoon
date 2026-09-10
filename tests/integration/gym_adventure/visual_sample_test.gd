@@ -156,7 +156,7 @@ func _test_visual_contract() -> void:
 	_check(!f_right, "moving right faces right (facing_left=false)")
 	_check(f_left, "moving left within same cell immediately faces left (facing_left=true)")
 
-	# 3e. 验证表现层独立上机过渡跟踪器（散客首次上机、二次换站、暂停冻结与中途读档）
+	# 3e. 验证表现层独立上机过渡跟踪器（散客首次上机、二次换站、暂停冻结、跳tick、同设备再入场与读档恢复）
 	canvas.clear_member_using_tracker()
 	var test_mid := 888
 	var dummy_member := {
@@ -168,37 +168,67 @@ func _test_visual_contract() -> void:
 	}
 	_main._orch.member_sim.members.append(dummy_member)
 	
-	# 散客首次上机：初始 ticks_in_use 为 0
+	# 1) 散客首次上机：初始 ticks_in_use 必须为 0 开始平滑过渡
 	var trk0: Dictionary = canvas._update_member_using_mount(test_mid, 0, dummy_member, 100)
 	_check(trk0.has("ticks_in_use") and trk0.ticks_in_use == 0, "first-time using starts ticks_in_use at 0")
 
-	# 暂停冻结：相同 tick 下多次调用，ticks_in_use 严格保持不变，不漂移
+	# 2) 暂停冻结：相同 tick 下多次渲染，ticks_in_use 严格保持不变，不漂移
 	var trk_pause: Dictionary = canvas._update_member_using_mount(test_mid, 0, dummy_member, 100)
 	_check(trk_pause.ticks_in_use == 0, "ticks_in_use remains frozen during pause/same tick")
 
-	# 下一 tick：自然推进 1 tick
+	# 3) 下一 tick：自然推进 1 tick (100 -> 101)
 	var trk_next: Dictionary = canvas._update_member_using_mount(test_mid, 0, dummy_member, 101)
 	_check(trk_next.ticks_in_use == 1, "advancing tick increments ticks_in_use")
 
-	# 课程二次换站：目标设备变为 1，ticks_in_use 自动重置为 0 开始二次平滑过渡
-	dummy_member["target_equipment_instance_id"] = 1
-	dummy_member["trained_ticks"] = 240 # 即使在课程中已累计训练过
-	var trk_switch: Dictionary = canvas._update_member_using_mount(test_mid, 1, dummy_member, 102)
-	_check(trk_switch.device_id == 1 and trk_switch.ticks_in_use == 0, "station change resets ticks_in_use for smooth second mount")
+	# 4) 计时器观察频率无关性：tick 从 101 跳至 104（低帧率或合帧），按差值 +3，达到 4（过渡完成）
+	var trk_jump: Dictionary = canvas._update_member_using_mount(test_mid, 0, dummy_member, 104)
+	_check(trk_jump.ticks_in_use == 4, "tick jump 101->104 advances ticks_in_use by dt to 4 (frequency independent)")
 
-	# 中途读档测试：已在深度使用中的成员载入后不会错误重置为 0 产生跳跃
-	var mid_deep := 889
-	var dummy_deep := {
-		"member_id": mid_deep,
+	# 5) 真实生命周期状态机切换（USING -> WALKING_TO -> USING 二次换站）：
+	# 成员结束设备 0 训练，进入 WALKING_TO 前往设备 1，表现层清除 tracker 缓存
+	canvas.erase_member_using_tracker(test_mid)
+	_check(canvas.get_member_using_tracker(test_mid).is_empty(), "exiting USING clears tracker from canvas")
+
+	# 到达设备 1，即使课程已累计训练 trained_ticks = 240，二次上机初始 ticks_in_use 仍必须为 0！
+	dummy_member["target_equipment_instance_id"] = 1
+	dummy_member["trained_ticks"] = 240
+	var trk_switch_walk: Dictionary = canvas._update_member_using_mount(test_mid, 1, dummy_member, 108)
+	_check(trk_switch_walk.device_id == 1 and trk_switch_walk.ticks_in_use == 0, "second station mount after walk resets to 0 regardless of trained_ticks")
+
+	# 6) 同设备再入场生命周期（USING -> RESTING -> USING）：
+	# 散客练完休息后再次使用同一设备 1，清空后再次进入，ticks_in_use 必须同样重置为 0
+	canvas.erase_member_using_tracker(test_mid)
+	var trk_reenter: Dictionary = canvas._update_member_using_mount(test_mid, 1, dummy_member, 120)
+	_check(trk_reenter.device_id == 1 and trk_reenter.ticks_in_use == 0, "re-entering same device resets ticks_in_use to 0")
+
+	# 7) 读档回退 tick 重建：模拟时钟从 120 回退到 90（读更早存档）
+	var trk_rollback: Dictionary = canvas._update_member_using_mount(test_mid, 1, dummy_member, 90)
+	_check(trk_rollback.last_sim_tick == 90 and trk_rollback.ticks_in_use == 999, "tick rollback 120->90 cleanly reconstructs tracker to 999")
+
+	# 8) 真实 notify_game_loaded() 恢复即贴合：
+	# 存档恢复时正在 USING 的成员被预设为 ticks_in_use = 999（恢复即贴合，避免跳变）
+	var mid_restored := 889
+	var dummy_restored := {
+		"member_id": mid_restored,
 		"state": "USING",
+		"target_equipment_instance_id": 2,
 		"trained_ticks": 50,
 		"use_ticks_remaining": 20
 	}
-	var trk_deep: Dictionary = canvas._update_member_using_mount(mid_deep, 1, dummy_deep, 102)
-	_check(trk_deep.ticks_in_use >= 4, "loaded mid-use member avoids re-mounting jump")
+	_main._orch.member_sim.members.append(dummy_restored)
+	canvas.notify_game_loaded()
+	var trk_loaded: Dictionary = canvas.get_member_using_tracker(mid_restored)
+	_check(trk_loaded.get("ticks_in_use", 0) >= 999 and trk_loaded.get("is_restored", false), "notify_game_loaded sets mid-use member to 999 restored")
 
-	# 移除测试 dummy member
+	# 随后该读档成员在下次换站时走完整 WALKING_TO -> USING，新站点仍能以 0 平滑过渡
+	canvas.erase_member_using_tracker(mid_restored)
+	dummy_restored["target_equipment_instance_id"] = 0
+	var trk_restored_next: Dictionary = canvas._update_member_using_mount(mid_restored, 0, dummy_restored, 130)
+	_check(trk_restored_next.ticks_in_use == 0, "restored member next station mount starts at 0")
+
+	# 移除测试 dummy members
 	_main._orch.member_sim.members.erase(dummy_member)
+	_main._orch.member_sim.members.erase(dummy_restored)
 	canvas.clear_member_using_tracker()
 
 	# 3f. 验证社区 HUD 文案本地化，绝无 scheduled/running 等程序英文

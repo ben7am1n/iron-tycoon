@@ -1,6 +1,23 @@
 # 撸铁大亨 (Iron Tycoon) — 项目进度速览
 
-## 当前更新 — 2026-09-09
+## 当前更新 — 2026-09-10
+
+**动作全生命周期原速实机验收通过、四器械全朝向贴合核验与首轮 5 人试玩方案发布**：全量测试 125 文件、**6,758 项断言全部通过、0 失败（100% 通过率）**。
+1. **上机生命周期漏洞彻底修复与全场景覆盖**：
+   - 彻底修复散客与课程学员二次上机/换站跳过过渡的缺陷：重构 `WorldCanvas._member_using_tracker`，移除非必要的 `trained_ticks >= 4` 判定，换站经过走路再入 `USING` 状态时平滑插值重置为 `0`；
+   - 计时推进解耦观察频率：改用 `dt = tick - last_sim_tick` 真实步进，解决低帧率或合帧时过渡不均的问题；空格暂停（`dt == 0`）完全冻结零增量；读档或回退（`dt < 0`）安全重建；
+   - 真实读档缓存连接：在 `src/main.gd` 的 `load_game` 中正式装配 `_world_canvas.notify_game_loaded()`，实现中途正在使用器械的会员贴合姿态重建，未上机及新会员保留平滑插值；
+   - 补充 8 重生命周期集成测试，基线增至 6,758 项全绿。
+2. **原速 30 FPS 视听交付与全向接触锚点抽查**：
+   - 编写并执行全流程原速实机脚本 [capture_mounting_lifecycle.gd](production/qa/evidence/2026-09-09-art-review/capture_mounting_lifecycle.gd)，原速录制 900 帧（30.0s @ 30 FPS 无快进）；
+   - 交付实机视听录像 [mounting-lifecycle-30fps.mp4](production/qa/evidence/2026-09-09-art-review/mounting-lifecycle-30fps.mp4) 与 8 阶段分镜总览 [mounting-lifecycle-storyboard.png](production/qa/evidence/2026-09-09-art-review/mounting-lifecycle-storyboard.png)；
+   - 交付四大器械（跑步机、动感单车、卧推架、瑜伽垫）在 0°/90°/180°/270° 四朝向全组合贴合验收大图 [equipment-contact-verification.png](production/qa/evidence/2026-09-09-art-review/equipment-contact-verification.png)，抽查 16 个工位全部贴合无穿模。
+3. **首轮 5 人真实玩家试玩方案就绪**：
+   - 编制并归档 [2026-09-10-first-playtest-plan.md](docs/plans/2026-09-10-first-playtest-plan.md)；
+   - 明确零文档盲测规约、5 类玩家画像（经营/治愈/动作/休闲/健身）、四大核心指标（T1 首次指导耗时、M1 误操作率、W1 等待感、R1 续玩意向）；
+   - 确立依据 5 人测试反馈只收敛出唯一单项美术精修的决策规则，严守素材与系统冻结红线。
+
+## 历史更新 — 2026-09-09
 
 **动作边界过渡解耦、按键驱动声画闭环与 30 FPS 高清实机验收完成**：全量测试 125 文件、**6,753 项断言全部通过、0 失败（100% 通过率）**。
 1. **表现层独立计时与全场景无瞬移上下机**：

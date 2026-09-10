@@ -1615,15 +1615,27 @@ func _update_member_using_mount(member_id: int, target_inst_id: int, m: Dictiona
 			tracker["device_id"] = target_inst_id
 			tracker["ticks_in_use"] = 0
 			tracker["last_sim_tick"] = tick
-		elif tick != int(tracker.get("last_sim_tick", -1)):
-			tracker["ticks_in_use"] = int(tracker.get("ticks_in_use", 0)) + 1
-			tracker["last_sim_tick"] = tick
+			tracker["is_restored"] = false
+		else:
+			var last_tick: int = int(tracker.get("last_sim_tick", tick))
+			var dt: int = tick - last_tick
+			if dt > 0:
+				# 独立于观察频率：按模拟 tick 差值推进，低帧率或跳 tick 不慢放
+				tracker["ticks_in_use"] = int(tracker.get("ticks_in_use", 0)) + dt
+				tracker["last_sim_tick"] = tick
+			elif dt < 0:
+				# 读档回退 tick：明确重建 tracker，避免状态错乱并直接贴合
+				tracker["ticks_in_use"] = 999
+				tracker["last_sim_tick"] = tick
+			# dt == 0 时为同 tick 暂停或重复绘制，ticks_in_use 严格保持不变
 	else:
-		var already_deep: bool = int(m.get("trained_ticks", 0)) >= 4 or (m.has("use_ticks_remaining") and int(m["use_ticks_remaining"]) < 30)
+		# 首次进入 USING（无论散客首用、课程开班或二次换站）：均从 0 开始平滑过渡
+		# 读档恢复的成员已由 notify_game_loaded() 显式预设为 999，此处不再用 trained_ticks 猜测
 		tracker = {
 			"device_id": target_inst_id,
-			"ticks_in_use": 999 if already_deep else 0,
-			"last_sim_tick": tick
+			"ticks_in_use": 0,
+			"last_sim_tick": tick,
+			"is_restored": false
 		}
 		_member_using_tracker[member_id] = tracker
 	return tracker
@@ -1633,8 +1645,31 @@ func get_member_using_tracker(member_id: int) -> Dictionary:
 	return _member_using_tracker.get(member_id, {})
 
 
+func erase_member_using_tracker(member_id: int) -> void:
+	_member_using_tracker.erase(member_id)
+
+
 func clear_member_using_tracker() -> void:
 	_member_using_tracker.clear()
+
+
+## 读档恢复通知：明确将当前处于 USING 状态的成员预置为「已在设备上稳定训练（ticks_in_use = 999）」，
+## 恢复即贴合设备锚点，避免中途读档产生跳跃或多余过渡；后续散客再入场或课程换站仍正常平滑过渡。
+func notify_game_loaded() -> void:
+	_member_using_tracker.clear()
+	var cur_tick: int = int(_tick_provider.call()) if _tick_provider.is_valid() else 0
+	if _member == null or not ("members" in _member):
+		return
+	for m in _member.members:
+		if str(m.get("state", "")) == "USING":
+			var mid: int = int(m.get("member_id", -1))
+			var target_id: int = int(m.get("target_equipment_instance_id", -1))
+			_member_using_tracker[mid] = {
+				"device_id": target_id,
+				"ticks_in_use": 999,
+				"last_sim_tick": cur_tick,
+				"is_restored": true
+			}
 
 
 
