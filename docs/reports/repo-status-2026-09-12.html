@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>撸铁大亨 · 仓库状态与下一步行动（2026-09-12）</title>
+<style>
+  :root{
+    --bg:#F4F1EA; --card:#FFFFFF; --ink:#2B2621; --ink2:#5C554C; --ink3:#8A8177;
+    --line:#E3DCD0; --line2:#EFEAE1;
+    --red:#C0392B; --amber:#C87B2A; --teal:#2E7D6E; --blue:#2E6F9E; --purple:#6B5B95;
+    --okbg:#EAF5EF; --warnbg:#FCEFE4; --errbg:#FBEAE7; --infobg:#EAF1F7;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; padding:36px 28px 64px;
+    background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    font-size:14px; line-height:1.7; -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1080px; margin:0 auto;}
+
+  header{margin-bottom:28px; padding-bottom:20px; border-bottom:2px solid var(--ink);}
+  h1{margin:0 0 6px; font-size:25px; letter-spacing:-.3px;}
+  .sub{color:var(--ink3); font-size:12.5px; letter-spacing:.2px;}
+  .sub b{color:var(--ink2); font-weight:600;}
+
+  .verdict{
+    background:var(--ink); color:#F7F3EC; border-radius:10px;
+    padding:18px 22px; margin:22px 0 30px;
+  }
+  .verdict .vt{font-size:11px; letter-spacing:2px; color:#B9AFA1; margin-bottom:8px;}
+  .verdict .vm{font-size:15.5px; line-height:1.75;}
+  .verdict .vm b{color:#F0B429;}
+
+  h2{
+    font-size:15px; margin:36px 0 14px; padding-left:11px;
+    border-left:4px solid var(--red); letter-spacing:.3px;
+  }
+  h3{font-size:13px; margin:22px 0 9px; color:var(--ink2); letter-spacing:.3px;}
+
+  .cards{display:grid; grid-template-columns:repeat(auto-fit,minmax(168px,1fr)); gap:11px;}
+  .card{background:var(--card); border:1px solid var(--line); border-radius:9px; padding:14px 15px;}
+  .card .lab{font-size:11px; color:var(--ink3); letter-spacing:.5px; margin-bottom:6px;}
+  .card .num{font-size:24px; font-weight:650; letter-spacing:-.5px; font-variant-numeric:tabular-nums;}
+  .card .note{font-size:11.5px; color:var(--ink3); margin-top:3px;}
+  .n-red{color:var(--red);} .n-teal{color:var(--teal);} .n-blue{color:var(--blue);}
+  .n-amber{color:var(--amber);} .n-purple{color:var(--purple);}
+
+  table{width:100%; border-collapse:collapse; background:var(--card);
+    border:1px solid var(--line); border-radius:9px; overflow:hidden; font-size:12.5px;}
+  th{background:#F7F4EE; text-align:left; padding:9px 12px; font-weight:600;
+    color:var(--ink2); font-size:11.5px; letter-spacing:.4px; border-bottom:1px solid var(--line);}
+  td{padding:8px 12px; border-bottom:1px solid var(--line2); vertical-align:top;}
+  tr:last-child td{border-bottom:none;}
+  td.num, th.num{text-align:right; font-variant-numeric:tabular-nums;}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11.5px;}
+
+  .tag{display:inline-block; padding:1px 7px; border-radius:20px; font-size:10.5px;
+    font-weight:600; letter-spacing:.3px; white-space:nowrap;}
+  .t-ok{background:var(--okbg); color:#1F6B4F;}
+  .t-warn{background:var(--warnbg); color:#9C5A15;}
+  .t-err{background:var(--errbg); color:#9E2B20;}
+  .t-info{background:var(--infobg); color:#20567A;}
+  .t-idle{background:#F0EDE7; color:#7A736A;}
+
+  .bar{height:7px; border-radius:4px; background:#EDE8E0; overflow:hidden; min-width:70px;}
+  .bar i{display:block; height:100%; border-radius:4px;}
+
+  .panel{background:var(--card); border:1px solid var(--line); border-radius:10px; padding:17px 19px; margin-bottom:12px;}
+  .panel.warn{background:var(--warnbg); border-color:#F0D9BE;}
+  .panel.err{background:var(--errbg); border-color:#EFC9C3;}
+  .panel.info{background:var(--infobg); border-color:#CFE0EE;}
+  .panel h4{margin:0 0 8px; font-size:13px;}
+  .panel ul{margin:0; padding-left:19px;}
+  .panel li{margin:4px 0;}
+
+  .p-grid{display:grid; grid-template-columns:64px 1fr; gap:0 14px; margin-bottom:11px;}
+  .p-badge{align-self:start; text-align:center; border-radius:7px; padding:6px 0; font-weight:700; font-size:13px;}
+  .p0 .p-badge{background:var(--red); color:#fff;}
+  .p1 .p-badge{background:var(--amber); color:#fff;}
+  .p2 .p-badge{background:var(--blue); color:#fff;}
+  .p3 .p-badge{background:#9C9488; color:#fff;}
+  .p-body h4{margin:0 0 5px; font-size:13.5px;}
+  .p-body p{margin:0 0 6px; font-size:12.5px;}
+  .p-body .goal{font-size:12px; color:var(--ink2); background:#F7F4EE;
+    border-left:3px solid var(--line); padding:6px 10px; border-radius:0 5px 5px 0;}
+  .p-body .goal b{color:var(--ink);}
+
+  .split{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+  @media(max-width:760px){ .split{grid-template-columns:1fr;} }
+
+  footer{margin-top:44px; padding-top:16px; border-top:1px solid var(--line);
+    font-size:11.5px; color:var(--ink3);}
+  code{background:#F0ECE4; padding:1px 5px; border-radius:4px; font-size:11.5px;
+    font-family:ui-monospace,Menlo,monospace;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>撸铁大亨 Iron Tycoon — 仓库状态与下一步行动</h1>
+  <div class="sub">
+    分析日期 <b>2026-09-12</b> · 工作区 <b>/Users/bmac/CodeBase/gym_manager</b> · 引擎 <b>Godot 4.7.1 / GDScript</b> · 阶段 <b>Production</b><br>
+    本报告全部数字来自本次对仓库的实测（git 查询 + headless 测试套件实跑），非引用既有文档结论。
+  </div>
+</header>
+
+<div class="verdict">
+  <div class="vt">结 论 速 览</div>
+  <div class="vm">
+    代码与测试本身是健康的：<b>6761 项断言全绿、0 失败</b>，5 层 15 个 epic 的实现工作已全部收口，可玩构建（<code>src/main.tscn</code>）已装配。<br>
+    真正的风险不在代码，而在<b>工程状态管理</b>：<b>117 个提交从未推送</b>（origin 停在 8-10），<b>178 个 worktree / 189 个分支</b>仅本机存在，另有<b>一项正在开发中的「试玩存档隔离」功能未提交也未验证</b>。<br>
+    建议的下一步不是写新功能，而是<b>把已完成的工作固化下来，并执行早已就绪的首轮 5 人试玩</b>。
+  </div>
+</div>
+
+<h2>一、版本控制状态</h2>
+
+<div class="cards">
+  <div class="card"><div class="lab">未推送提交</div><div class="num n-red">117</div><div class="note">origin/main 停在 2026-08-10</div></div>
+  <div class="card"><div class="lab">未提交改动</div><div class="num n-amber">3</div><div class="note">+214 / −30 行</div></div>
+  <div class="card"><div class="lab">未跟踪文件</div><div class="num n-amber">293</div><div class="note">其中 189 个 .import</div></div>
+  <div class="card"><div class="lab">本地分支</div><div class="num">189</div><div class="note">180 条已并入 main</div></div>
+  <div class="card"><div class="lab">未合并分支</div><div class="num n-amber">23</div><div class="note">多为遗留 worktree</div></div>
+  <div class="card"><div class="lab">worktree 目录</div><div class="num n-red">178</div><div class="note">.worktrees/ 体积庞大</div></div>
+</div>
+
+<h3>分支情况</h3>
+<table>
+  <tr><th>项</th><th>实测值</th><th>判断</th></tr>
+  <tr><td>当前分支</td><td class="mono">main → 29c01bd</td><td><span class="tag t-ok">领先 origin 117 提交</span></td></tr>
+  <tr><td>远端 origin/main</td><td class="mono">2026-08-10 02:25</td><td><span class="tag t-err">落后本地一个月</span></td></tr>
+  <tr><td>分支总数 / 已并入 main</td><td class="mono">189 / 160</td><td>worktree 并行开发遗留</td></tr>
+  <tr><td>未合并分支</td><td class="mono">23（wt/t_*）</td><td><span class="tag t-warn">需判定后清理</span></td></tr>
+  <tr><td>其中「零独有提交」</td><td class="mono">5 条</td><td><span class="tag t-ok">内容已等价落地，可安全删除</span></td></tr>
+  <tr><td>stash</td><td class="mono">1 条（evidence pngs pre-rebase）</td><td>陈旧，可评估丢弃</td></tr>
+</table>
+
+<div class="panel info" style="margin-top:14px;">
+  <h4>关于 23 个未合并分支 —— 不是「未落地的工作」</h4>
+  用 <code>git cherry</code> 逐条比对后确认：这些分支相对 main 只领先 <b>1–2 个提交</b>，而 main 已领先它们 <b>200–280 个提交</b>。绝大多数分支的成果早已通过其他分支合入 main（例如 BSUI-004 在 main 中有 5 个提交，而该分支自认为「未合并」）。其中 5 条（<span class="mono">t_3c527da5 / t_75a395c0 / t_aa618b98 / t_f1010c0a / t_b7d89829</span>）独有提交数为 0，属纯冗余。<br>
+  另有 1 条 <span class="mono">/private/tmp/p1_baseline</span> 已标记 <span class="mono">prunable</span>。
+</div>
+
+<h3>未提交改动的内容（3 个文件）</h3>
+<table>
+  <tr><th>文件</th><th class="num">增/删</th><th>内容</th></tr>
+  <tr><td class="mono">src/main.gd</td><td class="num">+97</td>
+      <td>新增 <code>--playtest-id=&lt;ID&gt;</code>（两种传参形式）与 <code>--resume</code> 启动参数；<code>set_playtest_id()</code> / <code>get_active_save_path()</code> 查询接口；存档成功提示区分试玩槽位；headless 启动失败时正确 <code>quit(1)</code>；<code>_ready()</code> 提前返回防重复初始化。</td></tr>
+  <tr><td class="mono">src/systems/save_load.gd</td><td class="num">+74</td>
+      <td>新增 <code>normalize_playtest_id()</code> / <code>validate_playtest_id()</code>（1–64 位字母数字与 <code>-_</code>，显式拒绝 <code>..</code> <code>/</code> <code>\</code> <code>:</code> 路径穿越）；试玩存档写入独立子目录 <code>saves/playtests/&lt;ID&gt;/</code>；存档「先写临时文件再替换」的原子化保护（失败时保留上一份存档）。</td></tr>
+  <tr><td class="mono">tests/integration/save_load/<br>file_io_version_test.gd</td><td class="num">+73</td>
+      <td>为上述原子替换路径补充断言。</td></tr>
+</table>
+
+<div class="panel warn">
+  <h4>这组改动是「首轮 5 人试玩」的直接前置</h4>
+  5 名受试者需要在同一台机器上互不覆盖地存档 —— 这正是试玩 ID 隔离要做的事。它<b>已完成编码但处于游离状态</b>：未提交、未跑 QA、未进入任何 story 记录。本次实测确认它<b>没有破坏测试套件</b>（见第三节），可以放心收编。
+</div>
+
+<h2>二、关键文件结构与实现规模</h2>
+
+<div class="split">
+  <table>
+    <tr><th>层 / 目录</th><th class="num">规模</th></tr>
+    <tr><td><span class="mono">src/</span> 源码</td><td class="num">77 个 .gd · 33,818 行</td></tr>
+    <tr><td><span class="mono">tests/</span> 测试</td><td class="num">127 个测试文件</td></tr>
+    <tr><td><span class="mono">production/epics/</span></td><td class="num">16 个 epic · 81 个 story</td></tr>
+    <tr><td><span class="mono">design/gdd/</span></td><td class="num">16 个 MVP GDD + 冒险模式</td></tr>
+    <tr><td><span class="mono">data/</span> 配置</td><td class="num">6 个 JSON</td></tr>
+    <tr><td><span class="mono">docs/plans/</span></td><td class="num">10 份规划 / 复评文档</td></tr>
+    <tr><td><span class="mono">assets/</span></td><td class="num">31 张图 · 11 个音效</td></tr>
+    <tr><td><span class="mono">tools/</span></td><td class="num">7 个美术 / 音频生成工具</td></tr>
+  </table>
+  <div>
+    <table>
+      <tr><th>分层架构</th><th class="num">落地情况</th></tr>
+      <tr><td>Foundation（网格/器械/时间/存档）</td><td class="num"><span class="tag t-ok">23 story 完成</span></td></tr>
+      <tr><td>Core（放置 / 导航）</td><td class="num"><span class="tag t-ok">13 story 完成</span></td></tr>
+      <tr><td>Feature（会员/拥挤/分区/满意/经济）</td><td class="num"><span class="tag t-ok">21 story 完成</span></td></tr>
+      <tr><td>Presentation（HUD/叠加层/选择/建造商店）</td><td class="num"><span class="tag t-ok">17 story 完成</span></td></tr>
+      <tr><td>Gym Adventure（社区教练冒险切片）</td><td class="num"><span class="tag t-warn">7 story：5 完成 / 2 文档状态滞后</span></td></tr>
+    </table>
+    <div class="panel" style="margin-top:12px;">
+      <h4>可玩构建已就绪</h4>
+      <code>project.godot</code> 中 <code>run/main_scene = "res://src/main.tscn"</code>，1280×720 视口，纹理默认 Nearest 过滤。<br>
+      注：Sprint 5 QA 签核当时把「缺少 main_scene」列为待办，该问题<b>此后已解决</b>，签核文档未回填。
+    </div>
+  </div>
+</div>
+
+<h2>三、实测验证：测试套件真实状态</h2>
+
+<div class="cards" style="margin-bottom:14px;">
+  <div class="card"><div class="lab">断言通过</div><div class="num n-teal">6761</div><div class="note">本次实跑</div></div>
+  <div class="card"><div class="lab">断言失败</div><div class="num n-teal">0</div><div class="note">EXIT=0</div></div>
+  <div class="card"><div class="lab">测试文件</div><div class="num">119 + 8</div><div class="note">119 启用 / 8 子套件</div></div>
+  <div class="card"><div class="lab">隔离（SKIPPED）</div><div class="num">1</div><div class="note">core_smoke_test</div></div>
+</div>
+
+<div class="panel warn">
+  <h4>重要：测试套件对环境写入敏感，会伪装成失败</h4>
+  首次在受沙箱限制的环境下运行时，套件报出 <b>16 项失败</b>（TOTAL: 6733 passed / 16 failed），涉及 <span class="mono">file_io_version_test.gd</span>（12）、<span class="mono">first_day_playable_test.gd</span>（3）、<span class="mono">main_entry_process_test.gd</span>（1）。<br>
+  逐条核查失败信息后确认，<b>全部是同一原因</b>：<code>SaveLoad: failed to replace save ... (error 1)</code> —— 存档被写入操作系统用户目录 <code>~/Library/Application Support/Godot/app_userdata/GymManager/saves/</code>，而该路径被沙箱拒绝写入。<br>
+  把 HOME 指向临时目录后重跑，结果 <b>6761 passed / 0 failed / EXIT=0</b>。结论：<b>代码是绿的，那 16 项失败是环境假阳性</b>。
+</div>
+
+<div class="panel info">
+  <h4>由此暴露的一个真实工程问题</h4>
+  <code>SaveLoad</code> 的落盘路径硬编码在 OS 用户数据目录下，<b>任何受限环境（沙箱、无家目录的容器、CI 中未挂载的 HOME）都会让存档类测试失败</b>。CI 目前跑在 ubuntu 上恰好有可写的 HOME，所以问题被掩盖了。建议给测试提供一个可注入的存档根目录，让套件与运行环境解耦。
+</div>
+
+<h3>断言规模增长（里程碑）</h3>
+<table>
+  <tr><th>里程碑</th><th class="num">断言数</th><th>增量</th><th style="width:34%">趋势</th></tr>
+  <tr><td>Sprint 1 收官（Foundation 开工）</td><td class="num">1,040</td><td>—</td><td><div class="bar"><i style="width:15%;background:var(--teal)"></i></div></td></tr>
+  <tr><td>Sprint 2 收官（Foundation 完成）</td><td class="num">1,789</td><td>+749</td><td><div class="bar"><i style="width:26%;background:var(--teal)"></i></div></td></tr>
+  <tr><td>Sprint 3 收官（Core 层）</td><td class="num">2,760</td><td>+971</td><td><div class="bar"><i style="width:41%;background:var(--teal)"></i></div></td></tr>
+  <tr><td>Sprint 4 收官（Feature 层）</td><td class="num">3,428</td><td>+668</td><td><div class="bar"><i style="width:51%;background:var(--blue)"></i></div></td></tr>
+  <tr><td>Sprint 5 收官（Presentation 层）</td><td class="num">5,028</td><td>+1,600</td><td><div class="bar"><i style="width:74%;background:var(--blue)"></i></div></td></tr>
+  <tr><td>社区冒险切片（GA-001…007）</td><td class="num">6,306</td><td>+1,278</td><td><div class="bar"><i style="width:93%;background:var(--purple)"></i></div></td></tr>
+  <tr><td><b>本次实测基线（含未提交改动）</b></td><td class="num"><b>6,761</b></td><td>+455</td><td><div class="bar"><i style="width:100%;background:var(--red)"></i></div></td></tr>
+</table>
+
+<h2>四、游戏功能与设计实现进度</h2>
+
+<h3>已完成</h3>
+<div class="panel">
+  <ul>
+    <li><b>完整核心循环</b>：网格放置 → 寻路 → 会员使用器械 → 拥挤度反馈 → 分区规则 → 满意度 → 经济收入，端到端打通并有 <span class="mono">core_loop_test</span> 覆盖（15 断言通过，隔离已解除）。</li>
+    <li><b>四个 Foundation 系统</b>：GridSystem（8 story）、EquipmentCatalog（7）、TimeSystem + 编排器 + 种子 RNG（4）、SaveLoad（4），存档确定性经 <span class="mono">roundtrip_determinism_test</span>（152 断言）验证。</li>
+    <li><b>四个 Presentation epic</b>：HUD、拥挤度流叠加层（含 access-blocked 默认可见层）、选择系统（检视/移动/出售）、建造商店 UI，全部通过 QA 终审。</li>
+    <li><b>社区教练冒险切片</b>：三天玩法闭环、公园场景、三名命名 NPC、团体课节奏、四时段光影与 32×40 原生像素资产接入；<span class="mono">three_day_playable_test</span> / <span class="mono">visual_sample_test</span> 均通过。</li>
+    <li><b>音频系统</b>：11 项音效与 BGM 已合成并接入事件路由（75 断言），AudioManager 已实现。</li>
+    <li><b>表现层收口</b>：32° 浅斜俯视默认构图、会员连续亚格移动、四器械精准接触锚点、上下机平滑过渡（含读档重建）、中文状态文案。</li>
+  </ul>
+</div>
+
+<h3>进行中 / 未收口</h3>
+<table>
+  <tr><th>项</th><th>实际状态</th><th>缺口</th></tr>
+  <tr>
+    <td>试玩存档隔离<br><span class="mono">（--playtest-id）</span></td>
+    <td><span class="tag t-warn">代码完成 · 游离未提交</span></td>
+    <td>未提交、无 story 记录、无 QA 记录、无专项测试文件（仅顺带改了一个既有测试）。</td>
+  </tr>
+  <tr>
+    <td>GA-001 / GA-002<br>（冒险模式基础状态与入口）</td>
+    <td><span class="tag t-warn">story 文档仍标 In Progress</span></td>
+    <td>功能实际已随 GA-003…007 交付并通过测试，属<b>文档状态滞后</b>，非真实未完成。</td>
+  </tr>
+  <tr>
+    <td>四器械 × 四朝向逐帧接触核验</td>
+    <td><span class="tag t-info">已在 09-10 交付验收大图</span></td>
+    <td>09-09 复评曾指出「锚点存在 ≠ 身体接触全通过」，需确认抽查覆盖面。</td>
+  </tr>
+  <tr>
+    <td>真实键鼠长时试玩原片</td>
+    <td><span class="tag t-info">09-09 已交按键驱动脚本录像</span></td>
+    <td>复评指出早期录像为自动化业务命令精选；09-09 版本改用真实键盘事件，需人工复核听感与操作同步。</td>
+  </tr>
+  <tr>
+    <td>仓库卫生</td>
+    <td><span class="tag t-err">持续恶化</span></td>
+    <td>178 个 worktree、293 个未跟踪文件（189 个 <code>.import</code> 被漏出）、根目录遗留 <span class="mono">V31_R7_P3_EVIDENCE.md</span>。</td>
+  </tr>
+</table>
+
+<h3>尚未开始</h3>
+<table>
+  <tr><th>系统（design/gdd/systems-index.md 编号）</th><th>优先级</th><th>依赖</th></tr>
+  <tr><td>#17 Equipment Info Panel（器械信息面板）</td><td><span class="tag t-idle">Vertical Slice</span></td><td>EquipmentCatalog, ZoneRules, SelectionSystem</td></tr>
+  <tr><td>#18 Milestones（里程碑）</td><td><span class="tag t-idle">Vertical Slice</span></td><td>Satisfaction, Economy</td></tr>
+  <tr><td>#19 Progression / Unlocks（进度与解锁）</td><td><span class="tag t-idle">Vertical Slice</span></td><td>Economy, Milestones</td></tr>
+  <tr><td>#20 Onboarding / Tutorial（新手引导）</td><td><span class="tag t-idle">Vertical Slice</span></td><td>核心 MVP 系统</td></tr>
+  <tr><td>#22 Settings &amp; Accessibility（设置与无障碍）</td><td><span class="tag t-idle">Vertical Slice</span></td><td>UI 层</td></tr>
+</table>
+
+<div class="panel info">
+  <h4>文档与实现的偏差（需回填，非功能缺口）</h4>
+  <ul>
+    <li><code>systems-index.md</code> 把 <b>#21 Audio 标为 Not Started</b>，但音频系统已完整实现并有 75 项断言 —— 属明显滞后。</li>
+    <li>GDD <b>#13 SelectionSystem（In Review）、#14 SaveLoad（Designed）、#15 Build/Shop UI（Designed）</b> 状态未终审，而对应 epic 的 16 个 story 早已 Complete 并通过 QA。</li>
+    <li>Sprint 5 QA 签核中的「无 main_scene」条件已不成立，未回填。</li>
+    <li><code>production/sprints/</code> 只有 sprint-1..3 文件，而 <code>sprint-status.yaml</code> 已到 sprint 4，sprint 5 与冒险切片没有 sprint 文件。</li>
+  </ul>
+</div>
+
+<h2>五、下一步开发建议与优先级</h2>
+
+<div class="p-grid p0">
+  <div class="p-badge">P0</div>
+  <div class="p-body">
+    <h4>收编试玩存档隔离功能，恢复仓库可信状态</h4>
+    <p>把 <code>src/main.gd</code>、<code>src/systems/save_load.gd</code> 与测试改动提交，补一个专项测试文件覆盖 ID 校验（路径穿越、超长、空值、大小写归一化）与两玩家存档互不覆盖，并登记 story。同时把 117 个提交推送到 origin/main。</p>
+    <div class="goal"><b>预期目标：</b>工作区回到 clean，远端与本地一致；试玩 ID 隔离有独立断言保护，不再是一次性脚本式改动。</div>
+  </div>
+</div>
+
+<div class="p-grid p1">
+  <div class="p-badge">P1</div>
+  <div class="p-body">
+    <h4>执行首轮 5 人真实玩家试玩</h4>
+    <p>方案 <span class="mono">docs/plans/2026-09-10-first-playtest-plan.md</span> 已就绪（5 类画像、零文档盲测、T1/M1/W1/R1 四项指标、单点精修决策规则）。用 P0 的 <code>--playtest-id</code> 为每人分配独立存档，<code>--resume</code> 支持中断续玩。这是当前<b>唯一能产出新信息</b>的动作。</p>
+    <div class="goal"><b>预期目标：</b>产出 5 份观测记录与一段原始录屏；依据预设规则自动裁决出唯一一项美术精修方向（人物动作 / 脚底接触 / 器械材质三选一）。</div>
+  </div>
+</div>
+
+<div class="p-grid p1">
+  <div class="p-badge">P1</div>
+  <div class="p-body">
+    <h4>清理 worktree 与分支</h4>
+    <p>178 个 worktree 中 160 条分支已并入 main。优先删除零独有提交的 5 条与 <span class="mono">prunable</span> 的 <span class="mono">/private/tmp/p1_baseline</span>；其余 18 条逐条用 <code>git cherry</code> 判定后再删。保留 1 条 stash 待评估。</p>
+    <div class="goal"><b>预期目标：</b>分支数降到个位数；<code>git branch</code> 输出不再把已完成工作误报为「未合并」，消除后续误判风险。</div>
+  </div>
+</div>
+
+<div class="p-grid p2">
+  <div class="p-badge">P2</div>
+  <div class="p-body">
+    <h4>让测试套件与环境解耦</h4>
+    <p>为 <code>SaveLoad</code> 引入可注入的存档根目录（测试用临时目录，生产用 <code>user_data_dir</code>），消除「因无写权限而假性失败」的整类问题；同时把 189 个 <code>.import</code> 与 71 个 <code>.uid</code> 纳入版本控制或明确忽略，收编 <span class="mono">tests/evidence/gate/</span> 与 4 个 <span class="mono">.sh</span> 脚本。</p>
+    <div class="goal"><b>预期目标：</b>套件在任意环境（沙箱、容器、CI）给出同一结果；<code>git status</code> 干净可读，不再有近 300 项噪声。</div>
+  </div>
+</div>
+
+<div class="p-grid p2">
+  <div class="p-badge">P2</div>
+  <div class="p-body">
+    <h4>回填文档与 CI 增强</h4>
+    <p>同步 <code>systems-index.md</code>（#21 Audio 标为已实现）、GA-001/002 状态、GDD #13/#14/#15 终审状态、Sprint 5 签核条件；补 sprint-4/5 与冒险切片的 sprint 文件；根目录 <span class="mono">V31_R7_P3_EVIDENCE.md</span> 归档进 <span class="mono">docs/</span>。CI 增加一次导出版构建（当前只跑 headless 测试，无法发现打包问题）。</p>
+    <div class="goal"><b>预期目标：</b>文档不再与代码矛盾，新会话不必再靠交叉比对推断真实进度；CI 覆盖从「测试通过」扩展到「能打出可运行构建」。</div>
+  </div>
+</div>
+
+<div class="p-grid p3">
+  <div class="p-badge">P3</div>
+  <div class="p-body">
+    <h4>按试玩结论推进 Vertical Slice 系统</h4>
+    <p>试玩结果落地后再启动 design/gdd #17–#20、#22（器械信息面板、里程碑、进度解锁、新手引导、设置与无障碍）。<b>在此之前不建议动这些系统</b> —— 试玩很可能改写优先级，甚至改变哪些系统值得做。</p>
+    <div class="goal"><b>预期目标：</b>由真实玩家数据驱动功能取舍，避免在未经验证的假设上投入 Vertical Slice 工作量。</div>
+  </div>
+</div>
+
+<h2>六、需要留意的三处一致性风险</h2>
+<div class="panel err">
+  <h4>1 · 单一事实来源正在失效</h4>
+  本仓库同时存在四套进度表述：<code>PROGRESS.md</code>、<code>production/epics/index.md</code>、<code>sprint-status.yaml</code>、各 story/EPIC 文件。四者在 Audio、GA-001/002、GDD #13/#14/#15 上互相矛盾。当前靠人工交叉比对才能还原真相，建议明确以 story 文件为唯一权威并让其余三处自动派生。
+</div>
+<div class="panel warn">
+  <h4>2 · 178 个 worktree 会制造虚假的「进行中」</h4>
+  本次分析中，23 个「未合并分支」一度看起来像是待收编的工作，实际逐条比对后确认绝大多数早已落地。这类噪声会随 worktree 数量增长而放大，建议把 worktree 清理纳入常规流程。
+</div>
+<div class="panel warn">
+  <h4>3 · 「所有动作验收已通过」的表述仍需证据</h4>
+  09-09 复评曾明确记录：四 tick 上机过渡并非覆盖所有使用场景、锚点存在不等于四朝向接触全通过、部分录像为自动化业务命令而非真实输入。09-10 的提交声称已修复并交付验收图，但<b>尚未见到独立复评确认</b>。建议在试玩前安排一次针对性复核，避免把未验证的结论带入玩家测试。
+</div>
+
+<footer>
+  数据来源：本次会话对仓库的实测 —— <code>git status / branch / worktree / cherry / diff</code>、<code>godot --headless --script tests/headless_runner.gd</code>（含临时 HOME 对照运行）、对 <code>project.godot</code>、<code>PROGRESS.md</code>、<code>production/epics/index.md</code>、<code>sprint-status.yaml</code>、<code>systems-index.md</code> 与 <code>docs/plans/</code> 的读取。<br>
+  报告生成于 2026-09-12 · 基线提交 <span class="mono">29c01bd</span>（main，领先 origin/main 117 提交）
+</footer>
+
+</div>
+</body>
+</html>
