@@ -22,6 +22,9 @@ func _run() -> void:
 	_main = Main.new()
 	root.add_child(_main)
 	await process_frame
+	# Point the save tree at an OS temp dir (SaveLoad test seam) so this probe
+	# does not depend on write access to the OS user data directory.
+	_main._save_load.call("set_save_root_override", OS.get_temp_dir().path_join("gym_manager_ga002_probe_saves"))
 	_main._save_name = "ga002-main-probe"
 	_main._orch.time_system.pause()
 	_check(_main._save_entry.get_node("Actions/SaveButton").text.contains("保存"), "visible Chinese save button")
@@ -48,7 +51,7 @@ func _run() -> void:
 	_check(_main._save_entry.get_feedback().contains("读档失败"), "failure feedback remains visible")
 	_check(not Preflight.check("res://tests/nonexistent-ga002-data").ok, "missing required data fails preflight")
 	_check(Preflight.check().ok, "shipped resources pass preflight")
-	DirAccess.remove_absolute(OS.get_user_data_dir().path_join("saves/ga002-main-probe.sav.json"))
+	DirAccess.remove_absolute(_main._save_load.call("get_save_path", "ga002-main-probe"))
 	_main.queue_free()
 	await process_frame
 	print("GA-002 MAIN ENTRY: %d checks, %d failures" % [_checks, _failures])

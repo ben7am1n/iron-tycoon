@@ -70,6 +70,14 @@ func run_all() -> Dictionary:
 	return {"pass": _pass, "fail": _fail}
 
 
+## Save-tree root for this file's save/load assertions. Anchored at an OS temp
+## dir via SaveLoad's set_save_root_override() seam so the suite does not depend
+## on write access to the OS user data directory (sandboxed / HOME-less runners
+## otherwise turn these three assertions into false failures — observed 2026-09-12).
+func _test_save_root() -> String:
+	return OS.get_temp_dir().path_join("gym_manager_ga004_test_saves")
+
+
 func _test_headless_contract() -> void:
 	_main = Main.new()
 	_main.set_community_mode(true)
@@ -78,6 +86,8 @@ func _test_headless_contract() -> void:
 	if win != null:
 		win.add_child(_main)
 	_main._save_name = "ga004-test-save"
+	if _main._save_load != null:
+		_main._save_load.call("set_save_root_override", _test_save_root())
 
 	# 1. 验证启动与社区模式装配
 	_check(_main._community_mode, "community mode enabled on main")
@@ -242,6 +252,8 @@ func _execute_test() -> void:
 	_main._save_name = "ga004-test-save"
 	root.add_child(_main)
 	_main._save_name = "ga004-test-save"
+	if _main._save_load != null:
+		_main._save_load.call("set_save_root_override", _test_save_root())
 	await process_frame
 	await process_frame
 

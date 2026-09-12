@@ -193,6 +193,37 @@ var _save_pending: bool = false
 var _initialized: bool = false
 var _playtest_id: String = ""
 
+## Test seam: when non-empty, the whole save tree is rooted here instead of
+## OS.get_user_data_dir(). Production never sets it. Tests point it at an OS
+## temp dir so save/load coverage does not depend on the runner being allowed
+## to write to the OS user data directory — a sandboxed, containerised or
+## HOME-less environment would otherwise turn every disk-touching assertion
+## into a false failure (verified: 16 such false failures on 2026-09-12).
+var _save_root_override: String = ""
+
+
+## The active save-tree root: the test override when set, else the OS user data dir.
+func _save_root() -> String:
+	if _save_root_override.is_empty():
+		return OS.get_user_data_dir()
+	return _save_root_override
+
+
+## Points the save tree at an arbitrary root. Empty string restores the
+## production default (OS.get_user_data_dir()).
+func set_save_root_override(path: String) -> void:
+	_save_root_override = path.strip_edges()
+
+
+func get_save_root_override() -> String:
+	return _save_root_override
+
+
+## Returns the active root, override-aware. Exposed so tests can build expected
+## paths without duplicating the override logic.
+func get_save_root() -> String:
+	return _save_root()
+
 
 ## Normalizes a playtest ID: strips whitespace and converts to uppercase for macOS/APFS case-insensitive safety.
 static func normalize_playtest_id(id: String) -> String:
@@ -236,11 +267,11 @@ static func validate_playtest_id(id: String) -> String:
 
 
 ## Returns the active save directory path.
-## When _playtest_id is set (e.g. "P01"): user_data_dir/saves/playtests/P01
-## When empty: user_data_dir/saves
+## When _playtest_id is set (e.g. "P01"): <save_root>/saves/playtests/P01
+## When empty: <save_root>/saves
+## <save_root> is OS.get_user_data_dir() in production, or the test override.
 func _get_save_dir() -> String:
-	var user_dir := OS.get_user_data_dir()
-	var base_dir := user_dir.path_join(SAVE_DIR)
+	var base_dir := _save_root().path_join(SAVE_DIR)
 	if not _playtest_id.is_empty():
 		return base_dir.path_join("playtests").path_join(_playtest_id)
 	return base_dir
@@ -846,12 +877,12 @@ func save_to_file(save_name: String) -> String:
 	# Resolve save path
 	var save_dir := _get_save_dir()
 
-	# Ensure directory exists (AC-FILE-4 edge: save_dir doesn't exist yet)
-	var dir := DirAccess.open("user://")
-	if dir == null:
-		return "SaveLoad: failed to open user data dir (error %d)" % DirAccess.get_open_error()
-	if not dir.dir_exists(save_dir):
-		var mkdir_result := dir.make_dir_recursive(save_dir)
+	# Ensure directory exists (AC-FILE-4 edge: save_dir doesn't exist yet).
+	# Absolute-path statics, so the check honours whichever save root is active
+	# (production user data dir, or a test override) without needing DirAccess
+	# rooted at user://.
+	if not DirAccess.dir_exists_absolute(save_dir):
+		var mkdir_result := DirAccess.make_dir_recursive_absolute(save_dir)
 		if mkdir_result != OK:
 			return "SaveLoad: failed to create save directory '%s' (error %d)" % [save_dir, mkdir_result]
 
@@ -1022,8 +1053,9 @@ static func _validate_save_name(save_name: String) -> String:
 	return ""
 
 
-## Resolves the on-disk path for a save slot: user_data_dir/saves/<name>.sav.json
-## (or user_data_dir/saves/playtests/<playtest_id>/<name>.sav.json when playtest active).
+## Resolves the on-disk path for a save slot: <save_root>/saves/<name>.sav.json
+## (or <save_root>/saves/playtests/<playtest_id>/<name>.sav.json when a playtest
+## ID is active). <save_root> is the OS user data dir in production.
 func _save_path(save_name: String) -> String:
 	return _get_save_dir().path_join(save_name + SAVE_EXTENSION)
 

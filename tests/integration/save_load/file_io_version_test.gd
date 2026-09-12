@@ -38,6 +38,17 @@ const SPY_FIELDS: Array[String] = [
 	"grid_system", "member_sim", "congestion", "satisfaction", "economy",
 ]
 
+# Save-tree root for this file's on-disk assertions. Anchored at an OS temp dir
+# via SaveLoad's set_save_root_override() seam so the suite does not depend on
+# the runner being allowed to write to the OS user data directory (a sandboxed
+# or HOME-less environment otherwise turns every disk assertion into a false
+# failure — 12 of them in this file alone, observed 2026-09-12).
+const TEST_SAVE_ROOT_NAME := "gym_manager_file_io_test_saves"
+
+
+func _test_save_root() -> String:
+	return OS.get_temp_dir().path_join(TEST_SAVE_ROOT_NAME)
+
 ## Mock write handle (duck-typed FileAccess replacement). Records the call
 ## order so AC-FILE-2 can assert flush-before-close, and lets the test
 ## simulate a failed store_string() (AC-FILE-1) or a failed open.
@@ -192,6 +203,7 @@ func _make_rig(master_seed: int) -> Dictionary:
 		spies[field] = spy
 
 	var sl: RefCounted = _SL().new()
+	sl.call("set_save_root_override", _test_save_root())
 	sl.call("init", orch)
 	sl.call("_post_init")
 	return {"orchestrator": orch, "seeded_rng": srg, "time_system": ts, "spies": spies, "save_load": sl}
@@ -205,18 +217,19 @@ func _total_serialize_calls(rig: Dictionary) -> int:
 	return total
 
 
-## Resolves the on-disk path the same way save_to_file() does.
+## Resolves the on-disk path the same way save_to_file() does (under this
+## file's temp save root).
 func _save_path(save_name: String) -> String:
-	return OS.get_user_data_dir().path_join("saves").path_join(save_name + ".sav.json")
+	return _test_save_root().path_join("saves").path_join(save_name + ".sav.json")
 
 
 ## Writes a raw string to a save slot on disk (test fixture — bypasses
 ## SaveLoad entirely so corrupt-file tests can plant arbitrary content).
 func _plant_file(save_name: String, content: String) -> String:
 	var path := _save_path(save_name)
-	var dir := DirAccess.open("user://")
-	if not dir.dir_exists(OS.get_user_data_dir().path_join("saves")):
-		dir.make_dir_recursive(OS.get_user_data_dir().path_join("saves"))
+	var saves_dir := _test_save_root().path_join("saves")
+	if not DirAccess.dir_exists_absolute(saves_dir):
+		DirAccess.make_dir_recursive_absolute(saves_dir)
 	var f := FileAccess.open(path, FileAccess.WRITE)
 	if f == null:
 		return ""
@@ -471,8 +484,11 @@ func _test_file4_creates_save_dir() -> void:
 	var test_playtest_id := "SL004_DIR_" + suffix
 	var sentinel_name := "sl004_sentinel_%s.tmp" % suffix
 
-	# Plant a unique sentinel file in normal saves directory to prove normal path is untouched
-	var normal_saves_dir := OS.get_user_data_dir().path_join("saves")
+	# Plant a unique sentinel in the SHARED saves dir (the parent namespace under
+	# this file's temp save root) to prove a playtest save does not disturb it.
+	# Anchored under the temp root, not the OS user data dir, so this assertion
+	# needs no write access outside the sandbox.
+	var normal_saves_dir := _test_save_root().path_join("saves")
 	if not DirAccess.dir_exists_absolute(normal_saves_dir):
 		DirAccess.make_dir_recursive_absolute(normal_saves_dir)
 	var sentinel_path := normal_saves_dir.path_join(sentinel_name)
@@ -482,7 +498,7 @@ func _test_file4_creates_save_dir() -> void:
 
 	var sentinel_content := "sentinel_sl004_%s" % suffix
 	var sf := FileAccess.open(sentinel_path, FileAccess.WRITE)
-	_check(sf != null, "created sentinel file in normal saves dir")
+	_check(sf != null, "created sentinel file in shared saves dir")
 	if sf == null:
 		return
 	sf.store_string(sentinel_content)
@@ -510,14 +526,14 @@ func _test_file4_creates_save_dir() -> void:
 	var expected: String = sl.call("get_save_path", save_name)
 	_check(FileAccess.file_exists(expected), "file exists after dir auto-creation")
 
-	# Verify normal path sentinel was untouched throughout the operation
-	_check(FileAccess.file_exists(sentinel_path), "normal saves dir sentinel exists after playtest save")
+	# Verify the shared-namespace sentinel was untouched throughout the operation
+	_check(FileAccess.file_exists(sentinel_path), "shared saves dir sentinel exists after playtest save")
 	var sf_read := FileAccess.open(sentinel_path, FileAccess.READ)
 	var read_content := ""
 	if sf_read != null:
 		read_content = sf_read.get_as_text()
 		sf_read.close()
-	_check(read_content == sentinel_content, "normal saves dir sentinel content untouched")
+	_check(read_content == sentinel_content, "shared saves dir sentinel content untouched")
 
 	# Clean up ONLY self-created files and test directory
 	if FileAccess.file_exists(expected):

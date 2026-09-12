@@ -21,7 +21,9 @@ func run_all() -> Dictionary:
 	output.clear()
 	status = OS.execute(OS.get_executable_path(), ["--headless", "--path", path, "--", "--smoke", "--preflight-root=res://tests/nonexistent-ga002-data"], output, true)
 	_check(status == 1 and str(output).contains("FAIL (resource preflight)") and not str(output).contains("RESULT: PASS"), "missing resources fail startup with nonzero exit")
-	var fixture_dir := OS.get_user_data_dir().path_join("ga002-preflight-fixture")
+	# Preflight fixture files live under an OS temp dir, not the user data dir,
+	# so this assertion needs no write access outside the sandbox.
+	var fixture_dir := OS.get_temp_dir().path_join("gym_manager_ga002_preflight_fixture")
 	DirAccess.make_dir_recursive_absolute(fixture_dir)
 	var files: Array = load("res://src/bootstrap/resource_preflight.gd").REQUIRED_FILES
 	for filename: String in files:
