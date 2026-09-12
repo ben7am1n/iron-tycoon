@@ -191,6 +191,72 @@ var _day_cycle         # DayCycleSystem — null in rigs without adventure mode
 
 var _save_pending: bool = false
 var _initialized: bool = false
+var _playtest_id: String = ""
+
+
+## Normalizes a playtest ID: strips whitespace and converts to uppercase for macOS/APFS case-insensitive safety.
+static func normalize_playtest_id(id: String) -> String:
+	return id.strip_edges().to_upper()
+
+
+## Sets the isolated playtest participant ID. Validates format and rejects path traversal.
+## Empty ID resets back to the default shared saves namespace.
+func set_playtest_id(id: String) -> String:
+	if id.is_empty():
+		_playtest_id = ""
+		return ""
+	var err := validate_playtest_id(id)
+	if not err.is_empty():
+		push_error(err)
+		return err
+	_playtest_id = normalize_playtest_id(id)
+	return ""
+
+
+func get_playtest_id() -> String:
+	return _playtest_id
+
+
+## Validates a playtest ID. Strictly requires 1-64 alphanumeric, '-', and '_' characters.
+## Rejects empty strings, path traversal tokens ('..', '/', '\\', ':'), spaces, and special symbols.
+static func validate_playtest_id(id: String) -> String:
+	var norm_id := normalize_playtest_id(id)
+	if norm_id.is_empty():
+		return "SaveLoad: playtest ID must not be empty"
+	if norm_id.length() > 64:
+		return "SaveLoad: playtest ID '%s' is too long (max 64 characters)" % norm_id
+	if norm_id.contains("/") or norm_id.contains("\\") or norm_id.contains("..") or norm_id.contains(":") or norm_id.contains(" "):
+		return "SaveLoad: invalid playtest ID '%s' — must not contain path separators, spaces, or '..'" % norm_id
+	var regex := RegEx.new()
+	var compile_err := regex.compile("^[A-Z0-9_-]+$")
+	if compile_err != OK or regex.search(norm_id) == null:
+		return "SaveLoad: invalid playtest ID '%s' — only alphanumeric, '-', and '_' are allowed" % norm_id
+	return ""
+
+
+
+## Returns the active save directory path.
+## When _playtest_id is set (e.g. "P01"): user_data_dir/saves/playtests/P01
+## When empty: user_data_dir/saves
+func _get_save_dir() -> String:
+	var user_dir := OS.get_user_data_dir()
+	var base_dir := user_dir.path_join(SAVE_DIR)
+	if not _playtest_id.is_empty():
+		return base_dir.path_join("playtests").path_join(_playtest_id)
+	return base_dir
+
+
+func get_save_dir() -> String:
+	return _get_save_dir()
+
+
+func get_save_path(save_name: String) -> String:
+	return _save_path(save_name)
+
+
+func save_exists(save_name: String) -> bool:
+	return FileAccess.file_exists(_save_path(save_name))
+
 
 ## Test seam (AC-FILE-1/AC-FILE-2): when set, save_to_file() obtains the
 ## write handle from this factory instead of FileAccess.open(). The factory
@@ -778,8 +844,7 @@ func save_to_file(save_name: String) -> String:
 		push_warning("SaveLoad: save '%s' is %d bytes — exceeds 1 MB guardrail" % [save_name, json_string.length()])
 
 	# Resolve save path
-	var user_dir := OS.get_user_data_dir()
-	var save_dir := user_dir.path_join(SAVE_DIR)
+	var save_dir := _get_save_dir()
 
 	# Ensure directory exists (AC-FILE-4 edge: save_dir doesn't exist yet)
 	var dir := DirAccess.open("user://")
@@ -957,9 +1022,10 @@ static func _validate_save_name(save_name: String) -> String:
 	return ""
 
 
-## Resolves the on-disk path for a save slot: user_data_dir/saves/<name>.sav.json.
+## Resolves the on-disk path for a save slot: user_data_dir/saves/<name>.sav.json
+## (or user_data_dir/saves/playtests/<playtest_id>/<name>.sav.json when playtest active).
 func _save_path(save_name: String) -> String:
-	return OS.get_user_data_dir().path_join(SAVE_DIR).path_join(save_name + SAVE_EXTENSION)
+	return _get_save_dir().path_join(save_name + SAVE_EXTENSION)
 
 
 ## Formats a version value for user-facing messages. JSON parses integer

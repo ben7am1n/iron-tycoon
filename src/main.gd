@@ -150,6 +150,8 @@ var _preflight_data: Dictionary = {}
 var _preflight_root := "res://data"
 var _startup_failed := false
 var _save_name := "manual"
+var _playtest_id := ""
+var _auto_resume := false
 var _community_mode := false
 var _day_cycle = null
 var _community_hud = null
@@ -200,6 +202,8 @@ var _last_snap_cell := Vector2i(-999, -999)
 
 func _ready() -> void:
 	_parse_args()
+	if _startup_failed:
+		return
 	var preflight := ResourcePreflight.check(_preflight_root)
 	if not preflight.ok:
 		_show_startup_failure(preflight.errors)
@@ -213,11 +217,24 @@ func _ready() -> void:
 	_initial_layout()
 	if _smoke:
 		_orch.time_system.resume()  # 让 tick 循环跑起来以便 smoke 观察
+	if _auto_resume and _save_load != null:
+		if _save_load.save_exists(_save_name):
+			var ok := load_game()
+			if not ok:
+				push_warning("Playtest: --resume failed to load existing save '%s'" % _save_name)
+		else:
+			push_warning("Playtest: --resume requested but no save file found for '%s'; starting fresh Day 1" % _save_name)
+			if _save_entry != null:
+				_save_entry.show_result(tr("未找到历史存档 · 已开启全新第 1 天"), true)
 
 
-## --smoke 解析：headless 冒烟验证模式。
+## 启动参数解析：仅读取用户参数 OS.get_cmdline_user_args()，避免扩大解释引擎参数。
+## 支持 --smoke、--community、--sandbox、--preflight-root、--playtest-id 与 --resume。
 func _parse_args() -> void:
-	for arg in OS.get_cmdline_user_args():
+	var args := OS.get_cmdline_user_args()
+	var i := 0
+	while i < args.size():
+		var arg: String = args[i]
 		if arg == "--smoke":
 			_smoke = true
 		elif arg == "--community" or arg == "--mode=community":
@@ -226,6 +243,30 @@ func _parse_args() -> void:
 			_community_mode = false
 		elif arg.begins_with("--preflight-root="):
 			_preflight_root = arg.trim_prefix("--preflight-root=")
+		elif arg == "--playtest-id=":
+			_show_startup_failure(["SaveLoad: --playtest-id requires a non-empty participant ID value"])
+			return
+		elif arg.begins_with("--playtest-id="):
+			var raw_id: String = arg.trim_prefix("--playtest-id=")
+			var id_err := SaveLoadScript.validate_playtest_id(raw_id)
+			if not id_err.is_empty():
+				_show_startup_failure([id_err])
+				return
+			_playtest_id = SaveLoadScript.normalize_playtest_id(raw_id)
+		elif arg == "--playtest-id":
+			if i + 1 >= args.size() or args[i + 1].begins_with("--"):
+				_show_startup_failure(["SaveLoad: --playtest-id requires a non-empty participant ID value"])
+				return
+			i += 1
+			var raw_id: String = args[i]
+			var id_err := SaveLoadScript.validate_playtest_id(raw_id)
+			if not id_err.is_empty():
+				_show_startup_failure([id_err])
+				return
+			_playtest_id = SaveLoadScript.normalize_playtest_id(raw_id)
+		elif arg == "--resume" or arg == "--load":
+			_auto_resume = true
+		i += 1
 
 
 # === 第 1 层：模拟系统（数据源 + orchestrator composition root + tick 系统） ===
@@ -317,6 +358,8 @@ func _assemble_systems() -> void:
 	_save_load = SaveLoadScript.new()
 	_save_load.init(_orch)
 	_save_load._post_init()
+	if not _playtest_id.is_empty():
+		_save_load.set_playtest_id(_playtest_id)
 
 
 ## MemberSim 组装配置（到达率/容量；use_duration 由 catalog def 提供，
@@ -816,7 +859,8 @@ func save_game() -> bool:
 		_orch.time_system.resume()
 	if error.is_empty() and _audio_manager != null:
 		_audio_manager.notify_save_completed()
-	_save_entry.show_result(tr("保存成功 · 可随时读档") if error.is_empty() else tr("保存失败：") + error, error.is_empty())
+	var success_msg: String = (tr("保存成功 · 试玩槽位[%s]") % _playtest_id) if not _playtest_id.is_empty() else tr("保存成功 · 可随时读档")
+	_save_entry.show_result(success_msg if error.is_empty() else tr("保存失败：") + error, error.is_empty())
 	return error.is_empty()
 
 
@@ -849,7 +893,8 @@ func load_game() -> bool:
 	if _community_hud != null:
 		_community_hud.clear_held_input()
 	_update_scene_visibility()
-	_save_entry.show_result(tr("读档成功 · 已暂停，按空格继续"), true)
+	var load_msg: String = (tr("读档成功 · 试玩[%s]已恢复，按空格继续") % _playtest_id) if not _playtest_id.is_empty() else tr("读档成功 · 已暂停，按空格继续")
+	_save_entry.show_result(load_msg, true)
 	return true
 
 
@@ -879,12 +924,12 @@ func switch_mode(to_community: bool) -> void:
 			_day_cycle = DayCycleSystemScript.new()
 			_day_cycle.init(_preflight_data["gym_adventure.json"], _preflight_data["gym_adventure_fixture.json"], _orch)
 			_day_cycle.phase_changed.connect(_on_community_phase_changed)
-			if _save_load != null:
-				_save_load.set("_day_cycle", _day_cycle)
 		elif _day_cycle != null:
 			if _orch != null:
 				_orch.day_cycle = _day_cycle
 			_day_cycle._restore_layout()
+		if _save_load != null and _day_cycle != null:
+			_save_load.set("_day_cycle", _day_cycle)
 		if _orch != null and _day_cycle != null:
 			_orch.day_cycle = _day_cycle
 			_day_cycle._apply_protection()
@@ -906,6 +951,37 @@ func switch_mode(to_community: bool) -> void:
 
 func _on_mode_switch_pressed() -> void:
 	switch_mode(not _community_mode)
+
+
+## 设置并同步试玩 ID。自动规范化并在 SaveLoad 实例上生效。
+func set_playtest_id(id: String) -> String:
+	if not id.is_empty():
+		var err := SaveLoadScript.validate_playtest_id(id)
+		if not err.is_empty():
+			push_error(err)
+			return err
+	_playtest_id = SaveLoadScript.normalize_playtest_id(id) if not id.is_empty() else ""
+	if _save_load != null:
+		_save_load.set_playtest_id(_playtest_id)
+	return ""
+
+
+func get_playtest_id() -> String:
+	return _playtest_id
+
+
+func get_save_name() -> String:
+	return _save_name
+
+
+func get_active_save_path() -> String:
+	if _save_load != null:
+		return _save_load.get_save_path(_save_name)
+	var base_dir := OS.get_user_data_dir().path_join("saves")
+	if not _playtest_id.is_empty():
+		base_dir = base_dir.path_join("playtests").path_join(_playtest_id)
+	return base_dir.path_join(_save_name + ".sav.json")
+
 
 
 func _update_mode_ui() -> void:
@@ -1019,7 +1095,7 @@ func _on_community_phase_changed(phase: String) -> void:
 
 func _show_startup_failure(errors: Array) -> void:
 	_startup_failed = true
-	var message := "启动失败：必要游戏资源缺失或无效\n" + "\n".join(errors)
+	var message := "启动失败：必要游戏资源缺失或启动参数无效\n" + "\n".join(errors)
 	var label := Label.new()
 	label.name = "StartupFailure"
 	label.position = Vector2(48, 80)
@@ -1033,4 +1109,7 @@ func _show_startup_failure(errors: Array) -> void:
 	push_error(message)
 	if _smoke:
 		print("PLAYABLE BUILD SMOKE RESULT: FAIL (resource preflight)")
+		get_tree().quit(1)
+	elif DisplayServer.get_name() == "headless":
+		print("STARTUP FAILURE (headless): %s" % ", ".join(errors))
 		get_tree().quit(1)

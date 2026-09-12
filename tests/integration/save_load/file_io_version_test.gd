@@ -465,28 +465,67 @@ func _test_file4_overwrite_same_name() -> void:
 func _test_file4_creates_save_dir() -> void:
 	print("\n[AC-FILE-4] save dir is created when missing (make_dir_recursive)")
 	var rig := _make_rig(67)
-	var save_dir := OS.get_user_data_dir().path_join("saves")
-	# Remove the dir if present so we prove creation (safe: only our sl004_ files live there from this run).
-	if DirAccess.dir_exists_absolute(save_dir):
-		var dir := DirAccess.open(save_dir)
-		if dir != null:
-			dir.list_dir_begin()
-			var fn := dir.get_next()
-			while fn != "":
-				if not dir.current_is_dir():
-					DirAccess.remove_absolute(save_dir.path_join(fn))
-				fn = dir.get_next()
-			dir.list_dir_end()
-		_created_files.clear()
-		DirAccess.remove_absolute(save_dir)
-	_check(not DirAccess.dir_exists_absolute(save_dir), "save dir absent before save")
+	var sl: Object = rig["save_load"]
 
-	var err: String = rig["save_load"].call("save_to_file", "sl004_dircreate")
+	var suffix := "%d_%d" % [OS.get_process_id(), Time.get_ticks_usec()]
+	var test_playtest_id := "SL004_DIR_" + suffix
+	var sentinel_name := "sl004_sentinel_%s.tmp" % suffix
+
+	# Plant a unique sentinel file in normal saves directory to prove normal path is untouched
+	var normal_saves_dir := OS.get_user_data_dir().path_join("saves")
+	if not DirAccess.dir_exists_absolute(normal_saves_dir):
+		DirAccess.make_dir_recursive_absolute(normal_saves_dir)
+	var sentinel_path := normal_saves_dir.path_join(sentinel_name)
+	if FileAccess.file_exists(sentinel_path):
+		_check(false, "sentinel file unexpectedly already exists: %s" % sentinel_path)
+		return
+
+	var sentinel_content := "sentinel_sl004_%s" % suffix
+	var sf := FileAccess.open(sentinel_path, FileAccess.WRITE)
+	_check(sf != null, "created sentinel file in normal saves dir")
+	if sf == null:
+		return
+	sf.store_string(sentinel_content)
+	sf.flush()
+	sf.close()
+
+	# Set unique playtest namespace for isolated directory auto-creation test
+	sl.call("set_playtest_id", test_playtest_id)
+	var save_dir: String = sl.call("get_save_dir")
+
+	# If the directory unexpectedly exists, record failure and return without deleting it
+	if DirAccess.dir_exists_absolute(save_dir):
+		_check(false, "isolated save dir unexpectedly already exists: %s" % save_dir)
+		if FileAccess.file_exists(sentinel_path):
+			DirAccess.remove_absolute(sentinel_path)
+		return
+	_check(not DirAccess.dir_exists_absolute(save_dir), "isolated save dir absent before save")
+
+	# Perform save to missing dir
+	var save_name := "sl004_dircreate"
+	var err: String = sl.call("save_to_file", save_name)
 	_check(err == "", "save_to_file succeeded with missing dir")
 	_check(DirAccess.dir_exists_absolute(save_dir), "save dir exists after save (make_dir_recursive)")
-	var expected := _save_path("sl004_dircreate")
+
+	var expected: String = sl.call("get_save_path", save_name)
 	_check(FileAccess.file_exists(expected), "file exists after dir auto-creation")
-	_created_files.append(expected)
+
+	# Verify normal path sentinel was untouched throughout the operation
+	_check(FileAccess.file_exists(sentinel_path), "normal saves dir sentinel exists after playtest save")
+	var sf_read := FileAccess.open(sentinel_path, FileAccess.READ)
+	var read_content := ""
+	if sf_read != null:
+		read_content = sf_read.get_as_text()
+		sf_read.close()
+	_check(read_content == sentinel_content, "normal saves dir sentinel content untouched")
+
+	# Clean up ONLY self-created files and test directory
+	if FileAccess.file_exists(expected):
+		DirAccess.remove_absolute(expected)
+	if DirAccess.dir_exists_absolute(save_dir):
+		DirAccess.remove_absolute(save_dir)
+	if FileAccess.file_exists(sentinel_path):
+		DirAccess.remove_absolute(sentinel_path)
 
 
 func _test_file4_rejects_unsafe_save_names() -> void:
